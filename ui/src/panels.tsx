@@ -2,7 +2,7 @@
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes } from "./store";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
 import { edgeCount, edgePts, outline, area } from "./geom";
@@ -77,9 +77,14 @@ export const Tree = () => {
           <Show when={frame()}><Group t="Sections" n={mm().sections.length} help="sections" add={() => D.sections()}><For each={mm().sections}>{x => <button class="ti" onClick={() => D.sections(x.id)}><span>{x.name}</span></button>}</For></Group></Show>
           <Group t="Supports" n={mm().supports.length} help="supports"><For each={mm().supports}>{s => <Leaf id={s.id} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Group>
           <Group t="Loads" n={mm().loads.length} help="loads"><For each={mm().loads}>{l => <Leaf id={l.id} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></Group>
-          <Show when={!frame()}><Group t="Mesh" n={0} help="mesh"><p class="muted tnote">Meshing arrives in 0.1.3.</p></Group></Show>
-          <Group t="Results" n={results() ? 1 : 0} help="results"><Show when={frame()} fallback={<p class="muted tnote">Solving parts arrives in 0.1.3.</p>}>
-            <Show when={results()} fallback={<p class="muted tnote">Not solved yet: press F5.</p>}><button class="ti" onClick={() => setView("results")}><span>{stale() ? "Out of date" : "Solved"}</span><small>{results()!.stats.equations} equations</small></button></Show></Show></Group>
+          <Show when={!frame()}><Group t="Mesh" n={mm().mesh.refine.length} help="mesh">
+            <button class="ti" onClick={() => C.mesh()}><span>{(meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} elements` : "Not meshed yet"}</span><small>{mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} · {mm().mesh.order === 2 ? "6-node" : "3-node"}</small></button>
+            <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><span>Finer near {targetName(mm(), r.at)}</span>
+              <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => v > 0 && C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }), () => num(toU("len", r.size), 4))} />
+              <button class="x" title="Remove" onClick={() => C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) })}>×</button></div>}</For>
+          </Group></Show>
+          <Group t="Results" n={results() ? 1 : 0} help="results">
+            <Show when={results()} fallback={<p class="muted tnote">Not solved yet: press F5.</p>}><button class="ti" onClick={() => setView("results")}><span>{stale() ? "Out of date" : "Solved"}</span><small>{results()!.stats.equations.toLocaleString()} equations</small></button></Show></Group>
         </>}</Show>
       </div>
     </aside>
@@ -236,6 +241,12 @@ const ModelInsp = (p: { m: Model }) => {
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
     <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
     <Show when={p.m.analysis === "stress" || p.m.analysis === "heat"}><NumField label="Thickness" q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
+    <Show when={p.m.analysis !== "frame"}>
+      <h4>Mesh<Help k="mesh" /></h4>
+      <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part)." />
+      <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>
+      <div class="iprow"><label>Smallest angle<span class="unit">°</span></label><input class="mono" value={p.m.mesh.min_angle} onChange={numIn(v => v >= 5 && v <= 33 && settings({ mesh: { ...p.m.mesh, min_angle: v } }), () => p.m.mesh.min_angle)} /><span class="hint">5° to 33°; 25° is a good balance.</span></div>
+    </Show>
     <Row label="Notes"><textarea rows="4" value={p.m.notes} onChange={e => act({ SetMeta: { name: p.m.name, notes: e.currentTarget.value } })} /></Row>
     <table class="vmini"><tbody>
       <Show when={p.m.analysis === "frame"} fallback={<tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>

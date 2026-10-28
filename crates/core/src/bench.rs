@@ -14,7 +14,8 @@ pub struct Check {
     pub bench: u32,
     pub name: &'static str,
     pub quantity: &'static str,
-    /// Kind of value for display units: "len", "moment", "force", "stress", "temp".
+    /// Kind of value for display units: "len", "moment", "force", "stress", "dtemp", "flux",
+    /// "flowlen" (W/m), "rad", or "ratio" (a plain number).
     pub q: &'static str,
     pub reference: f64,
     pub result: f64,
@@ -77,7 +78,7 @@ fn cantilever() -> Vec<Check> {
     vec![
         check(1, "Cantilever, end load", "Tip deflection PL³/3EI", "len", p * l.powi(3) / (3.0 * e * i), -r.disp[ti][1], 1e-9, src),
         check(1, "Cantilever, end load", "Root moment PL (hogging)", "moment", p * l, -root.m[0], 1e-9, src),
-        check(1, "Cantilever, end load", "Tip rotation PL²/2EI", "ratio", p * l * l / (2.0 * e * i), -r.disp[ti][2], 1e-9, src),
+        check(1, "Cantilever, end load", "Tip rotation PL²/2EI", "rad", p * l * l / (2.0 * e * i), -r.disp[ti][2], 1e-9, src),
     ]
 }
 

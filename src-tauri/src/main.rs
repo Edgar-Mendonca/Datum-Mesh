@@ -5,7 +5,7 @@ mod update;
 
 use datum_core::doc::{Doc, Op};
 use datum_core::model::{self, Analysis, Model, SectionShape};
-use datum_core::{bench, examples, frame, sections};
+use datum_core::{bench, examples, materials, mesh, sections, Results};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -131,14 +131,28 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
     Ok(out(&a))
 }
 
-/// Solve the open model. Frames and trusses solve here in 0.1.1; parts follow in 0.1.3.
+/// Solve the open model: frames and trusses, plane stress or strain, or heat conduction. Parts are
+/// meshed first. Runs off the window's thread.
 #[tauri::command]
-async fn solve(st: State<'_, St>) -> R<frame::FrameResults> {
+async fn solve(st: State<'_, St>) -> R<Results> {
     let m = st.lock().doc.m.clone();
-    if m.analysis.is_plane() {
-        return Err("Meshing and solving parts arrive in 0.1.3. Frames and trusses solve now.".into());
+    tauri::async_runtime::spawn_blocking(move || datum_core::solve(&m)).await.map_err(|e| e.to_string())?
+}
+
+/// Mesh the open part without solving it (the Mesh view and its statistics).
+#[tauri::command]
+async fn mesh(st: State<'_, St>) -> R<mesh::Mesh> {
+    let m = st.lock().doc.m.clone();
+    if !m.analysis.is_plane() {
+        return Err("Frames and trusses are not meshed: each member is one element.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || frame::solve(&m)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || mesh::mesh(&m)).await.map_err(|e| e.to_string())?
+}
+
+/// The materials library (from Datum Atlas, with sources).
+#[tauri::command]
+fn materials_library() -> Vec<materials::LibMaterial> {
+    materials::library()
 }
 
 /// The verification benchmarks, solved now by this version's engine.
@@ -402,7 +416,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            state, apply, history, examples_list, new_model, section_props, solve, verification, open, save, save_file,
+            state, apply, history, examples_list, new_model, section_props, solve, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

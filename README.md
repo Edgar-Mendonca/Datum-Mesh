@@ -21,24 +21,26 @@
   <a href="docs/MEMORY.md"><img src="https://img.shields.io/badge/Memory_&_roadmap-5B6878?style=for-the-badge" alt="Memory and roadmap"></a>
 </p>
 
-![Datum Mesh: a portal frame solved, with its bending moment diagram, deflected shape and reactions](docs/images/portal-solved.png)
+![Datum Mesh: an L-bracket solved, with von Mises stress contours, the deformed shape and the largest stress at the fillet](docs/images/bracket-solved.png)
 
 Draw a frame of beams and truss bars, or the outline of a part with its holes; put on the supports and loads; solve, and see the deflections, stresses and temperatures. Datum Mesh is for mechanical, structural, process and aerospace engineers, students and lecturers. It is free and open source (MIT), Windows first, installs in seconds and updates itself. More on the family site: [edgar-mendonca.github.io/Datum/apps/mesh](https://edgar-mendonca.github.io/Datum/apps/mesh).
 
 ## What it does
 
 - **Frames and trusses, solved**: draw beams and truss bars on a grid, put on supports and loads, press Solve (F5). See the deflected shape, the moment, shear and axial diagrams, the reactions, stresses and utilisation; hover a member to read the values there.
-- **The equilibrium check** after every solve, and **Help › Verification**: benchmarks with known answers solved in front of you.
+- **Parts, meshed and solved**: plane stress, plane strain and steady heat conduction on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
+- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 27 benchmark checks with known answers solved in front of you, from beam theory to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
+- **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out.
-- **Parts**: rectangles, circles and polygons with arc edges, and holes; plane stress, plane strain and heat conduction; supports and loads on edges.
+- **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; supports and loads on edges and points.
 - **Units**: SI (mm, kN, MPa) or US (in, kip, ksi); files keep SI.
 - **Worked examples**: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink.
-- **Print to PDF** with a title block and the results, a `?` card beside every tool, light and dark themes, recovery of unsaved work, updates from inside the app.
+- **Print to PDF**: the model with a title block and a report with the mesh, contour pictures, the largest values, reactions and the equilibrium check; a `?` card beside every tool, light and dark themes, recovery of unsaved work, updates from inside the app.
 
 | Release | What arrives |
 | --- | --- |
-| 0.1.3 | Parts meshed (6-node triangles) and solved: stress and displacement contours, deformed shape, probe; plate with a hole, thick cylinder and NAFEMS LE1 benchmarks |
-| 0.1.4 | Heat conduction, the materials library from Datum Atlas, the full results report |
+| 0.1.4 | Polish: fixes from first use on a clean Windows PC, speed on very large meshes |
+| 0.2 | Axisymmetric solids, 3D frames, natural frequencies and buckling, DXF import, thermal stress |
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.
 

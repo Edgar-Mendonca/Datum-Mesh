@@ -70,4 +70,17 @@ export interface MemberResult { id: number; length: number; x: number[]; n: numb
 export interface Reaction { node: number; fx: number; fy: number; m: number }
 export interface SolveStats { equations: number; nonzeros: number; residual: number; ms: number }
 export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
-export interface Check { bench: number; name: string; quantity: string; q: string; reference: number; result: number; error: number; tolerance: number; source: string; pass: boolean }
+export interface Check { bench: number; name: string; quantity: string; q: string; reference: number; result: number; error: number; tolerance: number; source: string; pass: boolean; steps: [number, number][] }
+
+// Parts: the mesh, nodal and element fields, and the results of plane stress, strain and heat.
+export interface BEdge { shape: number; edge: number; n: [number, number, number] }
+export interface Quality { min_angle: number; max_aspect: number; good: number }
+export interface Mesh { nodes: Pt[]; tris: number[][]; order: number; mat: number[]; edges: BEdge[]; points: [Pt, number][]; size: number; quality: Quality }
+export interface Field { key: string; v: number[]; min: number; max: number; at_min: Pt; at_max: Pt }
+export interface PlaneReaction { support: number; fx: number; fy: number }
+export interface PlaneResults { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; disp: Pt[]; fields: Field[]; elem: Field[]; reactions: PlaneReaction[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
+export interface Flow { id: number; q: number }
+export interface HeatResults { kind: "heat"; mesh: Mesh; draw: [number, number, number][]; fields: Field[]; elem: Field[]; supports: Flow[]; loads: Flow[]; imbalance: number; stats: SolveStats; warnings: string[] }
+export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults;
+export type PartResults = PlaneResults | HeatResults;
+export interface LibMaterial { id: string; name: string; family: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }

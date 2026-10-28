@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.1.2 (2026-10-28) |
+| **Current version** | 0.1.3 (2026-10-28) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -30,6 +30,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/doc.rs` | Edit operations (Add, Set, AddMember by points, Move, Delete with cascade, SetSettings, SetMeta, Batch) on a copy, kept only if `check` passes; snapshot undo/redo |
 | `crates/core/src/sections.rs` | Section properties (A, I, c) for rectangle, round bar, tube, box, I, channel, angle and custom |
 | `crates/core/src/sparse.rs` | The shared linear solver: triplets, supports by elimination, prescribed values, faer sparse Cholesky, a probe solve that catches mechanisms, residual |
+| `crates/core/src/mesh.rs` | Meshing parts: outlines (arcs split by the local size) into a spade constrained Delaunay triangulation inside a frame round the part, refined for angle and size; local sizes from refined edges and points grow into the global size (a size field: too-large triangles get a point at their centre, then refinement again); triangles kept where there is material (centroid test); 6-node triangles with midside nodes on true arcs; boundary edges tagged with their shape edge; quality |
+| `crates/core/src/plane.rs` | Plane stress and plane strain: T3/T6 elements, edge pressure (× thickness) and edge forces (whole force or per length, for the whole thickness), gravity, point loads, fixed/pinned/roller/symmetry supports (rollers on sloping or curved edges by a stiff spring along the normal), reactions, the equilibrium check (forces, and moments against forces × reach), stresses recovered and averaged at nodes, per-element values, von Mises, principals, safety factor |
+| `crates/core/src/heat.rs` | Steady heat conduction: T3/T6, fixed temperatures, flux, convection, generation; heat flux recovered at nodes and per element; heat flows at every support and load and the heat balance |
+| `crates/core/src/materials.rs`, `crates/core/data/materials.json`, `tools/materials.py` | The materials library: 54 metals and plastics from Datum Atlas with sources (E, ρ, k, α the middle of the range, yield the low end, ν typical for the family); the script rebuilds the JSON from an Atlas checkout |
+| `crates/core/src/lib.rs` | `Results` (frame, plane or heat, tagged by `kind`) and `solve()` for any analysis; tests that every example solves, balances and agrees with hand checks |
+| `crates/core/examples/bigpart.rs` | A 25 000-element bracket's results as JSON, for timing the window by hand (not a test) |
 | `crates/core/src/frame.rs` | Frames and trusses: beam and truss stiffness, linear member loads as consistent nodal loads, self-weight, springs, reactions, equilibrium sums, exact N, V, M and deflection along each member (41 stations), stress and utilisation |
 | `crates/core/src/bench.rs` | The verification benchmarks as data (`run()` → rows with result, reference, error, source); the test fails on any row over its tolerance |
 | `crates/core/examples/verify.rs` | Writes the dated verification record (`docs/verification/x.y.z.md`) |
@@ -49,12 +55,13 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/cmds.ts` | Every command (ribbon, menus, keys, Tell Me) |
 | `ui/src/dialogs.tsx` | Materials, sections, node at coordinates, shortcuts, getting started, glossary, recovery, close |
 | `ui/src/backstage.tsx` | File page: examples, recent, export, options, updates |
+| `ui/src/parts.tsx` | Part results: fields and colour scales (12 bands, rainbow or viridis, safety factor reversed), band paths built once in model coordinates (isobands by clipping) and painted on a canvas under the drawing with one transform, the deformed shape, mesh lines, min/max markers, the probe (grid of drawing triangles), the legend, the Mesh view bar (quality colours), the part Results page, contour images for print |
 | `ui/src/results.tsx` | Frame results over the canvas (deflected shape, diagrams, reactions, utilisation, probe), the legend bar, and View › Results (equilibrium, reactions, members, solver) |
 | `ui/src/print.tsx` | Print: the model drawn to fit the page with a title block, and a report with the results and the equilibrium check |
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 65 UI checks of the built window with a mocked bridge |
+| `tests_ui/run.cjs` | 86 UI checks of the built window with a mocked bridge |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -102,6 +109,16 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.2 | Display values below 1e-9 of their scale are shown as 0 (`clean`); typed numbers go through `parseNum` ("−", "1,5", "1,200", empty refused) | Noise like 1.5e-14 kN·m; negative corners could not be typed; empty became 0 |
 | 0.1.2 | Switching units picks a round grid step in the new units (`niceGrid`); member lengths use the drawing's unit | 0.5 m showed as 1.6404 ft |
 | 0.1.2 | Open, New, an example or a recent file ask to save unsaved changes first | Work was lost without a question |
+| 0.1.3 | The user asked for 0.1.4's work (heat, materials library, report) inside 0.1.3: one release with meshing, plane stress and strain, heat, the library and the report; polish becomes 0.1.4 | The user: "carry on with 0.1.3 and add 0.1.4 part too in 0.1.3" |
+| 0.1.3 | A frame of four points round the part before triangulating; minimum area for refinement from the finest local size | Near-collinear points on a sloping edge made hull slivers spade could never refine; a minimum area from the global size skipped the small triangles near a refined hole |
+| 0.1.3 | Local sizes are a size field (local size + 0.2 × distance, capped by the global size), applied by inserting centroids of too-large triangles and refining again | Refining only the points on an edge let the mesh coarsen within one element of a hole; the plate-with-a-hole error jumped about (1 %, 0.1 %, 0.4 %) instead of falling. Now 1.1 % → 0.5 % → 0.1 % → 0.04 % |
+| 0.1.3 | Benchmark 4 is a quarter plate 200 hole diameters wide with the hole's edge refined, against Kirsch's 3.0 | A plate 20 diameters wide converged to 3.018 (its own finite-size answer), not 3.0 |
+| 0.1.3 | Pressure acts per area (× thickness); an edge force is per length of edge for the whole thickness, or the whole force | Found in the app: the L-bracket's 1.5 kN edge force was multiplied by the 10 mm thickness, giving 2.9 MPa instead of 287 MPa; now a test, and a hand check of the bracket |
+| 0.1.3 | Stresses: nodal averages (smoothed) and each element's own average (per element), both sent to the window | Comparing the two shows where the mesh is too coarse, without a separate error estimate |
+| 0.1.3 | Contours as 12 band paths (Path2D) in model coordinates on a canvas under the SVG; polygons closed with lineTo, never closePath | closePath on 100 000 sub-paths took 10 s in Chromium; now 0.2 s to switch result, 0.8 s to draw 25 000 elements |
+| 0.1.3 | The safety factor's colours run red (low) to blue, capped at 10; nodes with no yield strength are grey | A factor of 10⁶ in a lightly loaded corner would otherwise squash the scale |
+| 0.1.3 | Moments in the equilibrium check of parts are judged against forces × the model's reach (as frames) | A bore pressure centred on the origin has no moment of its own: the flange showed a 110 % "imbalance" of rounding noise |
+| 0.1.3 | `Model::check` looks members' nodes up in a map | Each edit of a 10 000-member frame took 52 ms (a linear search per member); now 14 ms |
 | 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
 
 ## 3. Roadmap
@@ -114,9 +131,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.0 | Shell, updater, Home, File page, the canvas that saves and opens; model, edits, sections, examples, hardening tests; CI and release | ✅ |
 | 0.1.1 | Frames and trusses end to end: beam and truss elements, sparse assembly and Cholesky (faer), member loads, self-weight, reactions, equilibrium check, diagrams, member stresses; benchmarks 1–3; Help › Verification | ✅ |
 | 0.1.2 | Fixes release: the 13 findings of the 0.1.1 review (see Decisions) | ✅ |
-| 0.1.3 | Meshing (spade CDT + refinement) and T6/T3 plane stress and strain; benchmarks 4–6 and patch tests; contours, probe, deformed shape (work in progress in `git stash`: mesh.rs, plane.rs) | 🔜 |
-| 0.1.4 | Heat conduction (benchmark 7), materials library from Atlas, results report, convention build | ⬜ |
-| 0.1.5 | Fixes from a clean Windows PC, speed on large meshes, README and screenshots | ⬜ |
+| 0.1.3 | Meshing (spade CDT + refinement, graded local sizes), T6/T3 plane stress and strain, steady heat conduction; contours, probe, deformed shape, mesh view; materials library from Atlas; results report; benchmarks 4–8 with convergence (27 checks) | ✅ |
+| 0.1.4 | Fixes from a clean Windows PC, smaller result transfers on very large meshes (25 000 elements send 22 MB of JSON), more screenshots | 🔜 |
 | 0.2 | Axisymmetric, 3D frames, modal, buckling, DXF import, thermal stress, Send to Calc and Plot | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
@@ -144,9 +160,20 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - The unreleased 0.1.3 meshing work (mesh.rs with spade, plane.rs with T3/T6) is parked in `git stash` ("WIP 0.1.2: mesh.rs, plane.rs"); its plane tests passed except a roller-on-a-slope case that hit the refinement vertex limit.
 - Not fixed (low, from the review): save is not atomic (temp file + rename), undo to the saved state still marks the model changed, the autosave interval needs a restart, load arrows do not follow a drag, drag snaps the offset not the position, the print title block says mm for frames and its equilibrium table has no moment row, a few damaged scalars (negative `next`, unknown `analysis`) still refuse the whole file.
 
-## 5. Known limits (0.1.2)
+### 2026-10-28: Session 1, continued (0.1.3: parts, heat, materials, report)
+- The user asked for 0.1.3 with 0.1.4's work in it. Restored the stashed mesh.rs and plane.rs; fixed the sloping-roller case (a frame round the part); found and fixed a slow check that made edits of large frames take 52 ms each.
+- Engine: benchmarks 4–8 (Kirsch, Lamé, NAFEMS LE1 with convergence series; wall and fin; patch tests), heat.rs, materials.rs (54 materials from Atlas), one `solve()` for every analysis. Building benchmark 4 found that local refinement did not grade (now a size field) and that the minimum refinement area hid small triangles. Random parts and a 50 000-node speed gate in the hardening tests (42 engine tests).
+- Window: parts.tsx (contours, markers, probe, legend, Mesh view, results page), ribbon Mesh and Results tabs live, Refine Near tool, mesh settings in the Inspector and tree, the library dialog, convergence tables in Help › Verification, the Report view and the part report with contour pictures.
+- Found in the real app: the edge-force thickness bug (2.9 MPa instead of 287 MPa in the L-bracket) and 25 s to draw a 25 000-element result (Path2D.closePath); both fixed, the first with an engine test and a hand check.
+- Checked: clippy, 42 engine tests, 86 UI checks, cargo deny, real app (bracket, heat sink, mesh view, results, report, a 25 000-element bracket: 103 000 equations in 1.5 s in a debug build).
 
-- Parts do not solve yet (0.1.3).
+## 5. Known limits (0.1.3)
+
+- Results of very large parts are sent to the window as JSON (22 MB for 25 000 6-node elements); fine, but slow over 100 000 elements.
+- The pin of the lifting lug is modelled as a force spread evenly round the whole hole, not a bearing pressure on half of it.
+- Stresses at the corner where a fixed edge meets a free edge, or at a sharp inside corner, keep rising with mesh refinement (a singularity); the help says so, the app does not mark them.
+- No thermal stress (0.2); heat and stress are separate models.
+- NAFEMS LE1's error is flat between the first two meshes (0.24 %) before falling to 0.09 %.
 - Crossing members (an X) are not joined where they cross; only nodes on members join.
 - The low findings listed in the last session-log entry.
 - No member end releases (hinges inside a frame), no buckling check of members in compression.

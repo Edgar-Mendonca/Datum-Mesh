@@ -53,4 +53,21 @@ mod tests {
             assert!(warnings.is_empty(), "{}: {warnings:?}", e.id);
         }
     }
+
+    #[test]
+    fn the_examples_agree_with_hand_checks() {
+        // L-bracket: bending in the horizontal leg just past the fillet (x = 30 mm): 1.5 kN × 70 mm
+        // over Z = t h²/6 = 10 × 20² / 6 mm³ is 158 MPa; the fillet raises the peak above that.
+        let Ok(crate::Results::Plane(r)) = crate::solve(&crate::examples::get("bracket").unwrap()) else { panic!() };
+        let vm = r.field("vm").max;
+        assert!(vm > 158e6 && vm < 400e6, "bracket peak {vm:e}");
+        // Lifting lug: 60 kN through a 120 × 20 mm base is 25 MPa on average.
+        let Ok(crate::Results::Plane(r)) = crate::solve(&crate::examples::get("lug").unwrap()) else { panic!() };
+        let fy: f64 = r.reactions.iter().map(|x| x.fy).sum();
+        assert!((fy + 60e3).abs() < 1e-6 * 60e3, "{fy}");
+        // Heat sink: every temperature between the air (25 °C) and the base (80 °C).
+        let Ok(crate::Results::Heat(h)) = crate::solve(&crate::examples::get("fin").unwrap()) else { panic!() };
+        let t = h.field("t");
+        assert!(t.min > 298.15 && t.max <= 353.15 + 1e-9, "{} {}", t.min, t.max);
+    }
 }

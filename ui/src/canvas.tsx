@@ -4,12 +4,13 @@
 // model: the canvas only draws it and sends edits.
 import { For, Show, JSX, createSignal, createMemo, onMount, onCleanup, batch } from "solid-js";
 import { Pt, Geom, Model, Target, Support, Load, Shape, Member } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act, opts, setCursor, openMenu, Item, toast } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act, opts, setCursor, openMenu, Item, toast, partRes, view, meshed } from "./store";
 import { C } from "./cmds";
 import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient } from "./geom";
 import { fmt } from "./units";
 import { defaultLoad, defaultSupport } from "./panels";
 import { ResultsLayer, ResultsProbe } from "./results";
+import { PartLayer, PartMarkers, PartProbe } from "./parts";
 
 export const [scale, setScale] = createSignal(60); // px per metre
 export const [pan, setPan] = createSignal<Pt>([80, 500]); // screen position of the world origin
@@ -36,6 +37,9 @@ export const zoomBy = (f: number, at?: Pt) => {
   batch(() => { setPan([cx - (cx - pan()[0]) * s / s0, cy - (cy - pan()[1]) * s / s0]); setScale(s); });
 };
 export const zoomPct = () => scale();
+
+/** The automatic element size, as the engine picks it: a twenty-fifth of the part's larger side. */
+const autoSize = (m: Model) => { const b = boundsOf(m); return b ? Math.max(b[2] - b[0], b[3] - b[1]) / 25 : 0.01; };
 
 const boundsOf = (m: Model): [number, number, number, number] | null => {
   const ps: Pt[] = [...m.nodes.map(n => [n.x, n.y] as Pt), ...m.shapes.flatMap(s => s.geom.kind === "circle" ? [[s.geom.c[0] - s.geom.r, s.geom.c[1] - s.geom.r], [s.geom.c[0] + s.geom.r, s.geom.c[1] + s.geom.r]] as Pt[] : outline(s.geom, Infinity))];
@@ -342,6 +346,15 @@ export const Canvas = () => {
       if (dr.length && p[0] === dr[dr.length - 1][0] && p[1] === dr[dr.length - 1][1]) return;
       setDraft([...dr, p]); return;
     }
+    if (t === "refine") {
+      const h = hitTest(w), at = placeOn(h, p, false);
+      if (!at || at.on === "node" || at.on === "member") return toast("Click an edge or a point of the part to make the elements finer there.");
+      const ms = mm.mesh, base = ms.size > 0 ? ms.size : (meshed()?.size ?? partRes()?.mesh.size ?? autoSize(mm));
+      const same = (x: Target) => JSON.stringify(x) === JSON.stringify(at);
+      const refine = [...ms.refine.filter(r => !same(r.at)), { at, size: base / 4 }];
+      await act({ SetSettings: { s: { analysis: mm.analysis, units: mm.units, grid: mm.grid, thickness: mm.thickness, mesh: { ...ms, refine } } } });
+      return toast(`Elements a quarter of the size (${fmt("len", base / 4)}) near there. Change or remove it in the tree, under Mesh.`, true);
+    }
     if (t.startsWith("sup:") || t.startsWith("load:")) {
       const h = hitTest(w), at = placeOn(h, frame() ? w : p, frame());
       if (!at) return toast(t.startsWith("sup:") ? (frame() ? "Click a node to put the support on." : "Click an edge or a point of the part.") : "Click where the load goes: a node, a member or an edge.");
@@ -419,18 +432,23 @@ export const Canvas = () => {
   const gravity = () => (m()?.loads ?? []).filter(l => l.kind.kind === "gravity" || l.kind.kind === "heat");
   const labels = createMemo(() => (m() ? labelled(m()!) : new Set<number>()));
   const empty = () => { const mm = m(); return !!mm && !mm.nodes.length && !mm.shapes.length; };
+  /** Contours or the mesh are drawn under the outlines: shapes are not filled then. */
+  const under = () => !frame() && (view() === "mesh" ? true : !!partRes());
+  const refines = () => (m()?.mesh.refine ?? []);
 
   return (
     <div class="canvas" classList={{ panning: panning(), [`t-${tool().split(":")[0]}`]: true }} ref={box} tabIndex={0}
       onMouseDown={onDown} onMouseMove={onMove} onMouseUp={onUp} onDblClick={onDbl} onWheel={onWheel} onKeyDown={onKey} onKeyUp={onKeyUp} onContextMenu={onCtx}
       onMouseLeave={() => { setCursor(null); setHover(null); }}>
-      <svg class="dsvg" ref={svg}>
+      <PartLayer size={size()} />
+      <svg class="dsvg" ref={svg} classList={{ under: under() }}>
         <path d={gridLines().minor} class="gminor" /><path d={gridLines().major} class="gmajor" />
         <path d={`M${pan()[0]} 0V${size()[1]}M0 ${pan()[1]}H${size()[0]}`} class="gaxis" />
         {/* plane geometry */}
         <For each={shapes()}>{s => <path d={shapePath(s)} class="shape" classList={{ hole: s.hole, sel: selSet().has(s.id), hover: hoverIs("shape", s.id) }} data-id={s.id} />}</For>
         <Show when={edgeHover()}>{e => <path d={edgePath(e())} class="edgehl" />}</Show>
         <Show when={edgeSel()}>{e => <path d={edgePath(e())} class="edgesel" />}</Show>
+        <For each={refines()}>{r => <Show when={r.at.on === "edge" || r.at.on === "point"}>{r.at.on === "edge" ? <path d={edgePath(r.at as any)} class="refl" /> : <circle cx={S([(r.at as any).x, (r.at as any).y])[0]} cy={S([(r.at as any).x, (r.at as any).y])[1]} r={9} class="refl" />}</Show>}</For>
         <For each={supportsOnEdges()}>{s => { const sh = () => m()!.shapes.find(x => x.id === (s.at as any).shape); return <Show when={sh()}><EdgeSupport s={s} sh={sh()!} on={selSet().has(s.id)} /></Show>; }}</For>
         {/* frames */}
         <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id) }} data-id={mb.id}>
@@ -438,6 +456,7 @@ export const Canvas = () => {
           <Show when={mb.kind === "truss"}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * 0.06} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * 0.06} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /></Show>
         </g>}</Show>}</For>
         <ResultsLayer />
+        <PartMarkers />
         <For each={supportsAtNodes()}>{s => <Show when={supAt(s)}>{p => <SupportGlyph s={s} at={S(p())} on={selSet().has(s.id)} />}</Show>}</For>
         <For each={m()?.nodes ?? []}>{n => { const p = () => S(np().get(n.id) ?? [n.x, n.y]); return <rect x={p()[0] - 3.5} y={p()[1] - 3.5} width={7} height={7} class="node" classList={{ sel: selSet().has(n.id), hover: hoverIs("node", n.id) }} data-id={n.id} />; }}</For>
         <For each={(m()?.loads ?? []).filter(l => l.at.on !== "body")}>{l => <LoadGlyph l={l} m={m()!} on={selSet().has(l.id)} label={labels().has(l.id)} />}</For>
@@ -461,6 +480,7 @@ export const Canvas = () => {
           <button class="btn pri" onClick={() => setTool(frame() ? "beam" : "rect")}>{frame() ? "Draw members" : "Draw a rectangle"}</button></div>
       </Show>
       <ResultsProbe />
+      <PartProbe />
       <div class="zoomctl"><button title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>−</button><button title="Fit (F)" onClick={fit}>Fit</button><button title="Zoom in" onClick={() => zoomBy(1.25)}>+</button></div>
     </div>
   );

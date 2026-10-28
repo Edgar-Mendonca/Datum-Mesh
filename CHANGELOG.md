@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.1.3 — 2026-10-28
+
+Parts are meshed and solved: plane stress, plane strain and steady heat conduction, with stress and temperature contours, a probe, the deformed shape, a materials library and a printed results report. Help › Verification now covers every benchmark in the plan.
+
+**Meshing**
+- Solve (F5) splits a part into triangles automatically, keeping their angles above a minimum (25° by default) and holes and fillets round.
+- Element size: automatic, coarser or finer (Mesh tab, or type it in the Inspector). Refine Near: click an edge or a point to make the elements a quarter of the size there; they grow back gradually into the rest of the part.
+- Quadratic 6-node triangles (accurate, the default) or linear 3-node triangles.
+- The Mesh view shows the triangles coloured by quality (smallest angle), with the numbers of elements and nodes, the smallest angle and the worst aspect ratio.
+
+**Solving parts**
+- Plane stress (thin plates, with a thickness) and plane strain (long bodies).
+- Supports on edges and points: fixed, pinned, roller (sliding along the edge, also on sloping and curved edges) and symmetry.
+- Loads: pressure on edges, edge forces (the whole force or per length), point forces, and gravity from each material's density.
+- **Heat conduction**: fixed temperatures, heat flux, convection to a fluid and heat generated inside; temperatures and heat flux.
+
+**Results of parts**
+- Contours in 12 bands, blue to red (or the colour-blind-safe scale in Options): von Mises stress, principal stresses, σx, σy, τxy, σz in plane strain, displacement, the safety factor against yield, temperature and heat flux.
+- Smoothed (averaged at nodes) or per element, so you can see where the mesh is too coarse.
+- The deformed shape, drawn larger by a round factor you can change; mesh lines on or off.
+- The largest and smallest values marked on the part; hover anywhere to read the values at that point.
+- The equilibrium check for parts (forces and moments), and the heat balance for heat models: what flows in equals what flows out.
+- View › Results: the check, the reactions or heat flows at every support and load, the largest and smallest value of every result with where it is, and the mesh and solver report.
+
+**Materials library**
+- 54 metals and plastics copied from Datum Atlas, each with its source: steels, stainless steels, cast irons, aluminium, copper, titanium, magnesium and nickel alloys, and common plastics. Home › Materials › From the library. Atlas has no Poisson's ratio, so typical values for each family are used and said so.
+
+**Report**
+- The printed report and the new Report view now include, for parts, the mesh and its quality, contour pictures with their scales, the largest and smallest values, the reactions or heat flows and the equilibrium check.
+
+**Trust**
+- Help › Verification: 27 checks, all passing. New: a plate with a hole (stress concentration 3.0, Kirsch), a thick cylinder under pressure (Lamé), NAFEMS LE1 (the elliptic membrane, 92.7 MPa), a plane wall and a fin cooled by convection, and patch tests for 3- and 6-node triangles in stress, strain and heat. The plate, cylinder and LE1 are solved on three or four meshes, and the error falls as the mesh gets finer. The record is in [docs/verification/0.1.3.md](docs/verification/0.1.3.md).
+
+**Also**
+- Editing large frames is faster: a model with 10 000 members took 50 ms per edit, now 14 ms.
+
 ## 0.1.2 — 2026-10-28
 
 A fixes release: thirteen problems found by reviewing and using 0.1.1, each now covered by a test.

@@ -1,6 +1,6 @@
 //! Writes the engine's real output for the UI tests (tests_ui/fixture.json):
 //! cargo run -q -p datum-core --example dump > tests_ui/fixture.json
-use datum_core::{bench, examples, frame};
+use datum_core::{bench, examples, materials, mesh};
 use serde_json::json;
 
 fn main() {
@@ -23,11 +23,15 @@ fn main() {
         "bracket": out("bracket"),
         "lug": out("lug"),
         "fin": out("fin"),
-        "portal_results": frame::solve(&examples::get("portal").unwrap()).unwrap(),
-        "truss_results": frame::solve(&examples::get("truss").unwrap()).unwrap(),
+        "portal_results": datum_core::solve(&examples::get("portal").unwrap()).unwrap(),
+        "truss_results": datum_core::solve(&examples::get("truss").unwrap()).unwrap(),
+        "bracket_results": datum_core::solve(&examples::get("bracket").unwrap()).unwrap(),
+        "fin_results": datum_core::solve(&examples::get("fin").unwrap()).unwrap(),
+        "bracket_mesh": mesh::mesh(&examples::get("bracket").unwrap()).unwrap(),
+        "library": materials::library(),
         "verification": bench::run(),
         "noload": out_m(&noload),
-        "noload_results": frame::solve(&noload).unwrap(),
+        "noload_results": datum_core::solve(&noload).unwrap(),
     });
     println!("{}", serde_json::to_string(&fix).unwrap());
 }

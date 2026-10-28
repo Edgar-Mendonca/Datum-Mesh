@@ -1,6 +1,6 @@
 // Window state: the open model, the selection, the drawing tool, menus, dialogs and messages.
 import { createSignal, batch, JSX } from "solid-js";
-import { invoke, Out, Options, Model, Target, FrameResults } from "./api";
+import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, Mesh } from "./api";
 
 export const [out, setOutRaw] = createSignal<Out | null>(null);
 export const model = (): Model | undefined => out()?.m;
@@ -53,15 +53,24 @@ export const selTargets = (): Target[] => {
 
 // ---------- results ----------
 /** The last solve, and whether the model has changed since. */
-export const [results, setResults] = createSignal<FrameResults | null>(null);
+export const [results, setResults] = createSignal<Results | null>(null);
+export const frameRes = (): FrameResults | null => { const r = results(); return r?.kind === "frame" ? r : null; };
+export const partRes = (): PartResults | null => { const r = results(); return r && r.kind !== "frame" ? r : null; };
 export const [stale, setStale] = createSignal(false);
-export type Show = { deformed: boolean; diagram: "none" | "n" | "v" | "m"; reactions: boolean; util: boolean; scale: number };
-export const [show, setShow] = createSignal<Show>({ deformed: true, diagram: "m", reactions: true, util: false, scale: 1 });
+/**
+ * What the results show. Frames: deflected shape, a diagram, reactions, utilisation. Parts: the
+ * contoured field, smoothed (averaged at nodes) or per element, the deformed shape, mesh lines.
+ */
+export type Show = { deformed: boolean; diagram: "none" | "n" | "v" | "m"; reactions: boolean; util: boolean; scale: number; field: string; elem: boolean; mesh: boolean; quality: boolean };
+export const [show, setShow] = createSignal<Show>({ deformed: true, diagram: "m", reactions: true, util: false, scale: 1, field: "vm", elem: false, mesh: false, quality: true });
 export const [solving, setSolving] = createSignal(false);
+/** The part's mesh without results (Mesh view), and whether the model changed since. */
+export const [meshed, setMeshed] = createSignal<Mesh | null>(null);
+export const [meshStale, setMeshStale] = createSignal(false);
 
 // ---------- editing ----------
 export const act = async (op: object, quiet = false): Promise<Out | null> => {
-  try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); return o; }
+  try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); return o; }
   catch (e) { if (!quiet) toast(String(e)); return null; }
 };
 export const call = async <T = any>(cmd: string, args?: object): Promise<T | undefined> => {
@@ -69,7 +78,7 @@ export const call = async <T = any>(cmd: string, args?: object): Promise<T | und
 };
 export const loadOut = async (cmd: string, args?: object) => {
   const o = await call<Out | null>(cmd, args);
-  if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setResults(null); setStale(false); setOut(o); setBackstage(null); setView("model"); });
+  if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setOut(o); setBackstage(null); setView("model"); });
   return o;
 };
 

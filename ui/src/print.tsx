@@ -6,7 +6,9 @@ import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
 import { Model, Pt, num } from "./api";
-import { out, opts, call, toast, model, results, stale } from "./store";
+import { out, opts, call, toast, model, frameRes as results, partRes, stale, setBackstage } from "./store";
+import { FIELDS, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
+import { Help } from "./help";
 import { Pick, Check } from "./ui";
 import { svgPath, outline } from "./geom";
 import { fmt, unit } from "./units";
@@ -94,7 +96,8 @@ const Report = (p: { m: Model }) => {
     <table class="tbl"><tbody><For each={m.supports} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td></tr>}</For></tbody></table>
     <h4>Loads</h4>
     <table class="tbl"><tbody><For each={m.loads} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td><td>{loadValue(x.kind)}</td></tr>}</For></tbody></table>
-    <Show when={results() && !stale() && m.analysis === "frame"} fallback={<p class="muted">{m.analysis === "frame" ? "Solve the model (F5) to add its results, reactions and the equilibrium check to this page." : "Results of parts join this page in 0.1.3."}</p>}>{_ => { const r = results()!; return <>
+    <Show when={m.analysis !== "frame"}><PartReport m={m} /></Show>
+    <Show when={results() && !stale() && m.analysis === "frame"} fallback={<Show when={m.analysis === "frame"}><p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p></Show>}>{_ => { const r = results()!; return <>
       <h4>Equilibrium check</h4>
       <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
         <tr><td>Σ Fx</td><td class="r">{fmt("force", r.applied[0])}</td><td class="r">{fmt("force", r.reacted[0])}</td><td class="r">{fmt("force", r.applied[0] + r.reacted[0])}</td></tr>
@@ -107,6 +110,48 @@ const Report = (p: { m: Model }) => {
         <For each={r.members}>{(x, i) => <tr><td>{i() + 1}</td><td class="r">{fmt("force", Math.max(...x.n))} / {fmt("force", Math.min(...x.n))}</td><td class="r">{fmt("moment", Math.max(...x.m.map(Math.abs)))}</td><td class="r">{fmt("len", Math.max(...x.d.map(d => Math.hypot(d[0], d[1]))))}</td><td class="r">{fmt("stress", x.stress)}</td><td class="r">{x.util ? `${num(x.util * 100, 3)} %` : "—"}</td></tr>}</For></tbody></table>
       <p class="muted">Solved by Datum Mesh {version()}: {r.stats.equations} equations, residual {r.stats.residual.toExponential(1)}. 2D Euler–Bernoulli beam and truss elements.</p>
     </>; }}</Show>
+  </div>;
+};
+
+/** The results of a part: mesh, pictures with legends, extremes, reactions or heat flows, the check. */
+const PartReport = (p: { m: Model }) => {
+  const r = () => (stale() ? null : partRes());
+  const pics = createMemo(() => {
+    const rr = r(); if (!rr) return [];
+    const keys = rr.kind === "heat" ? ["t", "qmag"] : [curField().key === "umag" ? "vm" : curField().key, "umag"];
+    return [...new Set(keys)].map(k => { const d = FIELDS.find(f => f.key === k)!, cs = palette(opts().contours, d.reverse); return { d, cs, src: contourImage(rr, d, 640, 300, cs), range: rangeOf(d, rr.fields.find(f => f.key === k)!.v) }; });
+  });
+  return <Show when={r()} fallback={<p class="muted">Solve the model (F5) to add the mesh, result pictures, the largest values, reactions and the equilibrium check to this page.</p>}>{rr => <>
+    <h4>Mesh</h4>
+    <table class="tbl"><tbody><tr><td>Elements</td><td>{rr().mesh.tris.length.toLocaleString()} {rr().mesh.order === 2 ? "6-node (quadratic)" : "3-node (linear)"} triangles, {rr().mesh.nodes.length.toLocaleString()} nodes; size {fmt("len", rr().mesh.size)}{p.m.mesh.refine.length ? `, finer at ${p.m.mesh.refine.length} places` : ""}</td></tr>
+      <tr><td>Quality</td><td>smallest angle {num(rr().mesh.quality.min_angle, 3)}°, worst aspect ratio {num(rr().mesh.quality.max_aspect, 3)}, {num(rr().mesh.quality.good * 100, 3)} % of triangles with every angle over 30°</td></tr></tbody></table>
+    <For each={pics()}>{x => <div class="rpic"><h4>{x.d.name}{rr().kind === "plane" && deformOf(rr()) > 0 ? ` (deformed shape × ${num(deformOf(rr()), 3)})` : ""}</h4><img src={x.src} width={640} height={300} alt={x.d.name} /><div class="rlegend"><ColourBar d={x.d} range={x.range} colours={x.cs} /></div></div>}</For>
+    <h4>Largest and smallest values</h4>
+    <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
+      <For each={fieldsFor(rr().kind === "heat" ? "heat" : p.m.analysis).filter(d => d.key !== "sf")}>{d => { const f = rr().fields.find(x => x.key === d.key)!; const at = (q: Pt) => `${fmt("coord", q[0]).split(" ")[0]}, ${fmt("coord", q[1])}`; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For>
+      <Show when={rr().kind === "plane" && rr().fields.find(f => f.key === "sf")!.max > 0}><tr><td>Smallest safety factor against yield</td><td class="r">{num(Math.min(...rr().fields.find(f => f.key === "sf")!.v.filter(v => v > 0)), 3)}</td><td colSpan={3} /></tr></Show></tbody></table>
+    <Show when={rr().kind === "plane"}>{_ => { const pr = rr() as any; return <>
+      <h4>Equilibrium check</h4><EqTable applied={pr.applied} reacted={pr.reacted} scale={pr.scale} />
+      <p class={pr.imbalance > 1e-6 ? "badline" : "okline"}>{pr.imbalance > 1e-6 ? `The reactions miss the loads by ${num(pr.imbalance * 100, 2)} %.` : `The reactions balance the loads (difference ${num(pr.imbalance * 100, 2)} %).`}</p>
+      <h4>Reactions</h4>
+      <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx</th><th class="r">Fy</th></tr></thead><tbody><For each={pr.reactions}>{(x: any) => <tr><td>{itemName(p.m, x.support)}</td><td class="r">{fmt("force", x.fx)}</td><td class="r">{fmt("force", x.fy)}</td></tr>}</For></tbody></table>
+    </>; }}</Show>
+    <Show when={rr().kind === "heat"}>{_ => { const hr = rr() as any; return <>
+      <h4>Heat balance</h4>
+      <table class="tbl"><thead><tr><th>Where</th><th class="r">Heat into the part</th></tr></thead><tbody><For each={[...hr.supports, ...hr.loads]}>{(x: any) => <tr><td>{itemName(p.m, x.id)}</td><td class="r">{fmt("power", x.q)}</td></tr>}</For></tbody></table>
+      <p class={hr.imbalance > 1e-6 ? "badline" : "okline"}>{hr.imbalance > 1e-6 ? `Heat in and out differ by ${num(hr.imbalance * 100, 2)} %.` : `Heat flowing in equals heat flowing out (difference ${num(hr.imbalance * 100, 2)} %).`}</p>
+    </>; }}</Show>
+    <p class="muted">Solved by Datum Mesh {version()}: {rr().stats.equations.toLocaleString()} equations, residual {rr().stats.residual.toExponential(1)}. {rr().kind === "heat" ? "Steady heat conduction" : p.m.analysis === "strain" ? "Plane strain" : "Plane stress"} with {rr().mesh.order === 2 ? "6-node" : "3-node"} triangles; stresses averaged at nodes. Help › Verification lists the benchmarks this version passes.</p>
+  </>}</Show>;
+};
+
+/** The Report view: the printed report on screen, with a button to print it. */
+export const ReportPage = () => {
+  onMount(async () => { if (!version()) setVersion(await call<string>("version") ?? ""); });
+  return <div class="page">
+    <h1>Report <Help k="report" /></h1>
+    <p class="muted">What prints with the model drawing: the model, materials, supports and loads{model()?.analysis === "frame" ? ", and once solved the reactions, member forces and the equilibrium check" : ", and once solved the mesh, result pictures with their scales, the largest values, reactions and the equilibrium check"}. <button class="btn pri sm" onClick={() => setBackstage("print")}>Print or save as PDF</button></p>
+    <div class="rsheet"><Show when={model()}>{m => <Report m={m()} />}</Show></div>
   </div>;
 };
 
@@ -140,7 +185,7 @@ export const PrintPage = () => {
         <p class="muted">In the print window choose your printer, or <b>Save as PDF</b>. {pages().length} {pages().length === 1 ? "page" : "pages"} · {ps.paper} {ps.landscape ? "landscape" : "portrait"}.</p>
         <h4>What to print</h4>
         <Check label="The model, drawn to fit the page" value={ps.drawing} set={v => setPs("drawing", v)} />
-        <Check label="A model report (materials, supports, loads)" value={ps.report} set={v => setPs("report", v)} />
+        <Check label="The report: materials, supports, loads and results" value={ps.report} set={v => setPs("report", v)} />
         <div class="prow"><label>Paper<Pick value={ps.paper} set={v => setPs("paper", v)} options={PAPERS.map(p => p[0])} /></label><label>Orientation<Pick value={ps.landscape ? "1" : "0"} set={v => setPs("landscape", v === "1")} options={[["1", "Landscape"], ["0", "Portrait"]]} /></label></div>
         <h4>Header and footer</h4>
         <For each={["header", "footer"] as const}>{k => <div class="pslots"><b>{k === "header" ? "Header" : "Footer"}</b>

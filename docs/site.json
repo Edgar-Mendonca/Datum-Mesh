@@ -7,7 +7,7 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
-    "Frames and trusses solve now: the deflected shape, the moment, shear and axial diagrams, the reactions, member stresses and utilisation, and an equilibrium check after every solve. Parts are drawn and loaded today; their meshing and solving arrive in 0.1.2, heat conduction and the materials library in 0.1.3. Help › Verification solves benchmarks with known answers in front of you, so you can see how far to trust each result."
+    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
   ],
   "steps": [
     {
@@ -24,50 +24,31 @@
     }
   ],
   "highlights": [
+    "Parts meshed automatically into quality triangles, finer where you ask, and solved in plane stress, plane strain or heat conduction",
+    "Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; hover anywhere to read values",
+    "An equilibrium check after every solve (a heat balance for heat models): the reactions are added up against the loads",
+    "Help › Verification: 27 benchmark checks with known answers solved in front of you, with mesh convergence for the plate with a hole, the thick cylinder and NAFEMS LE1",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
-    "An equilibrium check after every solve: the reactions are added up against the loads",
-    "Help › Verification: benchmarks with known answers solved in front of you; all agree to better than one part in a billion",
-    "Hover a member to read the axial force, shear, moment and deflection at that point; utilisation colours against the yield strength",
-    "Sections: rectangle, round bar, tube, box, I, channel, angle, or your own values, with their properties worked out",
-    "Parts: rectangles, circles and polygons with arcs, and holes cut out of them, with supports and loads on their edges",
+    "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
+    "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
     "Six worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink"
   ],
   "screenshots": [
+    "docs/images/bracket-solved.png",
     "docs/images/portal-solved.png",
-    "docs/images/truss-solved.png",
-    "docs/images/bracket.png"
+    "docs/images/verification.png",
+    "docs/images/fin-solved.png"
   ],
   "roadmap": [
     {
-      "v": "0.1.3",
-      "title": "Parts meshed and solved",
+      "v": "0.1.4",
+      "title": "Polish",
       "when": "Next",
       "items": [
-        "Automatic triangle meshing with quality refinement and local sizes",
-        "6-node triangles (3-node as an option), plane stress and plane strain",
-        "Stress and displacement contours, deformed shape, probe, min and max",
-        "Verified: plate with a hole, thick cylinder, NAFEMS LE1, patch tests"
-      ]
-    },
-    {
-      "v": "0.1.4",
-      "title": "Heat, materials and reports",
-      "when": "Soon",
-      "items": [
-        "Steady heat conduction with convection",
-        "Materials library from Datum Atlas, with sources",
-        "Printed results report",
-        "Help › Verification: every benchmark with Datum Mesh's answer, the reference and the error"
-      ]
-    },
-    {
-      "v": "0.1.5",
-      "title": "Polish",
-      "when": "Soon",
-      "items": [
-        "Speed on large meshes",
-        "Fixes from first use"
+        "Fixes from first use on a clean Windows PC",
+        "Speed and smaller result transfers on very large meshes",
+        "Screenshots and a fuller README"
       ]
     },
     {

@@ -1,6 +1,6 @@
 // Datum Mesh window: layout, sidebar, status bar, keyboard shortcuts, startup and recovery.
 import { render } from "solid-js/web";
-import { For, Show, Switch, Match, onMount } from "solid-js";
+import { For, Show, Switch, Match, onMount, createEffect, on } from "solid-js";
 import "@fontsource/ibm-plex-sans/latin-400.css";
 import "@fontsource/ibm-plex-sans/latin-500.css";
 import "@fontsource/ibm-plex-sans/latin-600.css";
@@ -10,13 +10,15 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles.css";
 import { invoke, listen, Out, Options, num } from "./api";
-import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving } from "./store";
+import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed } from "./store";
 import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
 import { Canvas, fit, scale } from "./canvas";
 import { Tree, Inspector, ANALYSES } from "./panels";
 import { ResultsPage, ResultsLegend } from "./results";
+import { PartLegend, MeshBar } from "./parts";
+import { ReportPage } from "./print";
 import { Menu, Toast, Icon } from "./ui";
 import { fmt } from "./units";
 import * as D from "./dialogs";
@@ -27,13 +29,11 @@ const TOOL_HINT: Record<string, string> = {
   node: "Click to place a node.", beam: "Click the start, then the end of each beam; Esc stops.", truss: "Click the start, then the end of each bar; Esc stops.",
   rect: "Click two opposite corners.", hrect: "Click two opposite corners of the hole.", circle: "Click the centre, then a point on the circle.", hcircle: "Click the centre, then a point on the hole's edge.",
   poly: "Click each corner; click the first one, double-click or press Enter to close.",
+  refine: "Click an edge or a point: the elements there become a quarter of the size.",
 };
-const toolHint = () => { const t = tool(); if (t === "select" && solving()) return "Solving…"; if (t === "select" && results() && !stale()) return `Solved · ${results()!.stats.equations} equations · ${num(results()!.stats.ms, 2)} ms`; if (TOOL_HINT[t]) return TOOL_HINT[t]; if (t.startsWith("sup:")) return "Click where the support goes."; if (t.startsWith("load:")) return "Click where the load acts."; return "Ready"; };
+const toolHint = () => { const t = tool(); if (t === "select" && solving()) return model()?.analysis === "frame" ? "Solving…" : "Meshing and solving…"; if (t === "select" && results() && !stale()) return `Solved · ${results()!.stats.equations} equations · ${num(results()!.stats.ms, 2)} ms`; if (TOOL_HINT[t]) return TOOL_HINT[t]; if (t.startsWith("sup:")) return "Click where the support goes."; if (t.startsWith("load:")) return "Click where the load acts."; return "Ready"; };
 
-const Planned = (p: { t: string; v: string; what: string }) => (
-  <div class="page"><h1>{p.t}</h1><div class="emptypage"><Icon n="list" size={34} /><b>{p.t} arrives in {p.v}</b><p class="muted">{p.what}</p>
-    <p><button class="btn" onClick={() => setBackstage("roadmap")}>See the roadmap</button> <button class="btn" onClick={() => setView("model")}>Back to the model</button></p></div></div>
-);
+const FrameNoMesh = () => <div class="legend"><div class="lrow"><span>Frames and trusses are not meshed: each member is one exact element.</span><button class="btn sm" onClick={() => setView("model")}>Back to the model</button></div></div>;
 
 const Status = () => {
   const ratio = () => { const r = 3779.5 / scale(); return r >= 1 ? `1:${num(r, 3)}` : `${num(1 / r, 3)}:1`; };
@@ -41,7 +41,7 @@ const Status = () => {
     <footer class="status">
       <span>{toolHint()}</span>
       <Show when={cursor()}>{c => <span class="mono muted">x {fmt("coord", c()[0])} · y {fmt("coord", c()[1])}</span>}</Show>
-      <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${model()!.analysis === "frame" ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : `${model()!.shapes.length} shapes`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
+      <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${model()!.analysis === "frame" ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
       <span class="grow" />
       <span class="vsc"><For each={SIDE.filter(x => x !== "-") as [View, string, string][]}>{x => <button title={x[2]} onClick={() => setView(x[0])}><Icon n={x[1]} /></button>}</For></span>
       <button onClick={C.zoomOut}>−</button><span class="muted zoomv" title="Drawing scale on a 96 dpi screen">{ratio()}</span><button onClick={C.zoomIn}>+</button>
@@ -50,6 +50,8 @@ const Status = () => {
 };
 
 const App = () => {
+  // Opening the Mesh view of a part that has no mesh yet meshes it.
+  createEffect(on(view, v => { const m = model(); if (v === "mesh" && m && m.analysis !== "frame" && !meshed() && !partRes()) C.mesh(); }));
   onMount(async () => {
     try {
       const o = await invoke<Options>("options"); setOpts(o); setThemeRaw(o.theme || "auto"); applyTheme();
@@ -87,10 +89,9 @@ const App = () => {
         <nav class="side"><For each={SIDE}>{x => x === "-" ? <hr /> : <button classList={{ on: view() === x[0] }} onClick={() => setView(x[0])} title={x[2]}><Icon n={x[1]} /><span>{x[2]}</span></button>}</For></nav>
         <div class="content">
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /><ResultsLegend /></div><Inspector /></div>}>
-              <Match when={view() === "mesh"}><Planned t="Mesh" v="0.1.3" what="The part split into triangles, with the number of elements and nodes and the quality of every triangle (smallest angle, aspect ratio)." /></Match>
+            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /><Show when={view() === "mesh"} fallback={<><ResultsLegend /><PartLegend /></>}><Show when={model()?.analysis !== "frame"} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
               <Match when={view() === "results"}><ResultsPage /></Match>
-              <Match when={view() === "report"}><Planned t="Report" v="0.1.4" what="A printable report: the model, the mesh, materials, loads and supports, result pictures with legends, tables of maxima and reactions, and the equilibrium check." /></Match>
+              <Match when={view() === "report"}><ReportPage /></Match>
             </Switch>
           </Show>
         </div>

@@ -2,7 +2,8 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving } from "./store";
+import { call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view } from "./store";
+import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
 import { Icon } from "./ui";
@@ -26,6 +27,20 @@ const G = (p: { l: string; h?: string; children: JSX.Element }) => <div class="g
 const S = (p: { children: JSX.Element }) => <div class="stack">{p.children}</div>;
 /** A planned tool: shown dimmed with the release it arrives in. */
 const Planned = (p: { i: string; l: string; v: string; big?: boolean }) => <B i={p.i} l={p.l} big={p.big} off title={`${p.l}: planned for ${p.v}`} />;
+/** A contour field button: shows that result on the part. */
+const F = (p: { k: string; l: string; big?: boolean }) => <B i="contour" l={p.l} big={p.big} on={!!partRes() && curField().key === p.k} off={!partRes()} run={() => C.show({ field: p.k })} />;
+/** Element size: automatic, or the current size made coarser or finer. */
+const sizeMenu = (e: MouseEvent) => {
+  const m = model(); if (!m) return;
+  const now = m.mesh.size > 0 ? m.mesh.size : partRes()?.mesh.size ?? 0;
+  const at = (f: number) => () => { if (now > 0) C.meshSettings({ size: now * f }); else toastAuto(); };
+  openMenu(e, [
+    { label: "Automatic", on: m.mesh.size === 0, run: () => C.meshSettings({ size: 0 }) },
+    { label: "Coarser (× 2)", run: at(2) }, { label: "Finer (÷ 2)", run: at(0.5) }, { label: "Much finer (÷ 4)", run: at(0.25) },
+    "-", { label: "Type a size…", run: () => { setSel([]); setEdgeSel(null); C.toastSize(); } },
+  ]);
+};
+const toastAuto = () => C.mesh().then(() => C.toastSize());
 /** A canvas tool: highlighted while it is picked. */
 const T = (p: { i: string; l: string; t: string; big?: boolean; title?: string }) => <B i={p.i} l={p.l} big={p.big} on={tool() === p.t} title={p.title ?? p.l} run={() => C.tool(p.t)} />;
 
@@ -113,7 +128,7 @@ export const Ribbon = () => {
         <G l="Units" h="units"><S><B i="units" l="SI: mm, kN, MPa" on={m()?.units === "SI"} run={() => C.units("SI")} /><B i="units" l="US: in, kip, ksi" on={m()?.units === "US"} run={() => C.units("US")} /></S></G>
         <G l="Select" h="select"><T big i="select" l="Select" t="select" /><S><B i="all" l="Select All" run={C.selectAll} /><B i="del" l="Delete" run={C.del} off={!sel().length} /></S></G>
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
-        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.3" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show></G>
+        <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></G>
       </Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
@@ -129,9 +144,12 @@ export const Ribbon = () => {
         <G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G>
       </Show>
       <Show when={tab() === "mesh"}>
-        <G l="Mesh" h="mesh"><Planned big i="mesh" l="Mesh" v="0.1.3" /><S><Planned i="mesh" l="Element Size" v="0.1.3" /><Planned i="mesh" l="Refine Near" v="0.1.3" /></S></G>
-        <G l="Elements" h="elements"><S><Planned i="tri6" l="Quadratic (6-node)" v="0.1.3" /><Planned i="tri3" l="Linear (3-node)" v="0.1.3" /></S></G>
-        <G l="Quality" h="mesh"><S><Planned i="check" l="Mesh Quality" v="0.1.3" /><Planned i="table" l="Statistics" v="0.1.3" /></S></G>
+        <Show when={!frame()} fallback={<G l="Mesh" h="mesh"><div class="rnote">Frames and trusses are not meshed: each member is one exact element. Meshing is for parts.</div></G>}>
+          <G l="Mesh" h="mesh"><B big i="mesh" l="Mesh" run={C.mesh} off={solving()} title="Mesh the part and show it" />
+            <S><B i="mesh" l="Element Size" dd={sizeMenu} /><T i="refine" l="Refine Near" t="refine" title="Click an edge or a point: elements a quarter of the size there" /></S></G>
+          <G l="Elements" h="elements"><S><B i="tri6" l="Quadratic (6-node)" on={m()?.mesh.order === 2} run={() => C.meshSettings({ order: 2 })} /><B i="tri3" l="Linear (3-node)" on={m()?.mesh.order === 1} run={() => C.meshSettings({ order: 1 })} /></S></G>
+          <G l="Quality" h="mesh"><S><B i="check" l="Colour by Quality" on={show().quality && view() === "mesh"} run={() => { C.show({ quality: view() !== "mesh" || !show().quality }); if (view() !== "mesh") C.mesh(); }} /><B i="table" l="Statistics" run={() => C.mesh()} /></S></G>
+        </Show>
       </Show>
       <Show when={tab() === "loads"}>
         <Show when={!heat()}>
@@ -148,18 +166,24 @@ export const Ribbon = () => {
         <G l="Load Cases" h="loads"><S><Planned i="table" l="Load Cases" v="0.2" /><Planned i="table" l="Combinations" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "solve"}>
-        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.3" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show>
+        <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
-        <G l="Studies" h="solve"><S><Planned i="mesh" l="Mesh Convergence" v="0.1.4" /><Planned i="solve" l="Natural Frequencies" v="0.2" /><Planned i="solve" l="Buckling" v="0.2" /></S></G>
+        <G l="Studies" h="solve"><S><Planned i="mesh" l="Mesh Convergence" v="0.2" /><Planned i="solve" l="Natural Frequencies" v="0.2" /><Planned i="solve" l="Buckling" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
-        <Show when={frame()} fallback={<G l="Contours" h="results"><Planned big i="contour" l="Von Mises" v="0.1.3" /><S><Planned i="contour" l="Displacement" v="0.1.3" /><Planned i="contour" l="Principal Stresses" v="0.1.3" /><Planned i="contour" l="Safety Factor" v="0.1.3" /></S></G>}>
+        <Show when={frame()} fallback={<>
+          <G l="Contours" h="contours"><Show when={!heat()} fallback={<><F big k="t" l="Temperature" /><S><F k="qmag" l="Heat Flux" /><F k="qx" l="Flux in x" /><F k="qy" l="Flux in y" /></S></>}>
+            <F big k="vm" l="Von Mises" /><S><F k="umag" l="Displacement" /><F k="s1" l="Principal σ1" /><F k="sf" l="Safety Factor" /></S></Show>
+            <S><B i="contour" l="More Results" dd={e => openMenu(e, fieldsFor(m()!.analysis).map(f => ({ label: f.name, on: curField().key === f.key, run: () => C.show({ field: f.key }) })))} off={!partRes()} /></S></G>
+          <G l="Show" h="contours"><S><Show when={!heat()}><B i="deform" l="Deformed Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!partRes()} /></Show><B i="mesh" l="Mesh Lines" on={show().mesh} run={() => C.show({ mesh: !show().mesh })} off={!partRes()} /><B i="tri3" l="Per Element" on={show().elem} run={() => C.show({ elem: !show().elem })} off={!partRes()} /></S></G>
+          <G l="Inspect" h="results"><S><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!partRes()} /><B i="reactions" l="Report" run={() => C.view("report")} /></S></G>
+        </>}>
           <G l="Shape" h="results"><B big i="deform" l="Deflected Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!results()} /></G>
           <G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
             <S><B i="diagram" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="diagram" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
           <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G>
         </Show>
-        <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><Planned i="report" l="Results Report" v="0.1.4" /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>
+        <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><B i="report" l="Results Report" run={() => C.view("report")} /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "view"}>
         <G l="Zoom" h="zoom"><B big i="fit" l="Fit" run={C.fit} /><S><B i="zin" l="Zoom In" run={C.zoomIn} /><B i="zout" l="Zoom Out" run={C.zoomOut} /></S></G>

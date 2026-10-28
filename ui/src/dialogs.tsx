@@ -1,7 +1,7 @@
 // Dialogs: materials, sections, a node at typed coordinates, and the help pages (shortcuts, getting
 // started, glossary), recovery and closing.
 import { For, Show, createSignal, createResource } from "solid-js";
-import { Out, Material, Section, SectionShape, Props, Check, num } from "./api";
+import { Out, Material, Section, SectionShape, Props, Check, LibMaterial, num } from "./api";
 import { openDialog, closeDialog, act, call, out, setOut, model, setSel } from "./store";
 import { C } from "./cmds";
 import { numIn } from "./panels";
@@ -26,8 +26,9 @@ export const materials = (focus?: number) => openDialog(() => {
     <Dialog title="Materials" wide help="materials">
       <div class="mgr">
         <div class="mlist"><For each={list()}>{x => <button classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)}>{x.name}</button>}</For>
+          <p class="ibtns"><button class="btn sm pri" onClick={() => library(id => setCur(id))}>From the library…</button></p>
           <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={list().length < 2}>Delete</button></p>
-          <p class="muted small">The materials library from Datum Atlas, with sources, arrives in 0.1.4.</p></div>
+          <p class="muted small">The library: metals and plastics from Datum Atlas, each with its source.</p></div>
         <Show when={m()}>{mm => <div class="form">
           <label>Name</label><input value={mm().name} onChange={e => put({ name: e.currentTarget.value })} />
           <F l="Young's modulus E" q="modulus" v={mm().e} set={e => put({ e })} />
@@ -37,6 +38,52 @@ export const materials = (focus?: number) => openDialog(() => {
           <F l="Conductivity" q="cond" v={mm().k} set={k => put({ k })} />
           <F l="Thermal expansion" q="expansion" v={mm().alpha} set={alpha => put({ alpha })} />
           <label>Source</label><input value={mm().source} onChange={e => put({ source: e.currentTarget.value })} />
+        </div>}</Show>
+      </div>
+    </Dialog>
+  );
+});
+
+/** Home › Materials › Library: metals and plastics from Datum Atlas, with sources. Adds the chosen
+ * one to the model (and calls `added` with its id). */
+export const library = (added?: (id: number) => void) => openDialog(() => {
+  const [lib] = createResource(() => call<LibMaterial[]>("materials_library"));
+  const [q, setQ] = createSignal(""), [cur, setCur] = createSignal<string>("al-6061-t6");
+  const shown = () => (lib() ?? []).filter(x => `${x.name} ${x.family}`.toLowerCase().includes(q().toLowerCase()));
+  const families = () => [...new Set(shown().map(x => x.family))];
+  const m = () => (lib() ?? []).find(x => x.id === cur());
+  const use = async (forShapes: boolean) => {
+    const x = m(), mm = model(); if (!x || !mm) return;
+    const have = mm.materials.find(y => y.name === x.name);
+    let id = have?.id;
+    if (!have) {
+      const o = await act({ Add: { item: { Material: { id: 0, name: x.name, e: x.e, nu: x.nu, rho: x.rho, fy: x.fy, k: x.k, alpha: x.alpha, source: x.source } } } });
+      id = o?.created[0];
+    }
+    if (id === undefined) return;
+    if (forShapes) {
+      const m2 = model()!, ops = m2.shapes.filter(s => !s.hole).map(s => ({ Set: { item: { Shape: { ...s, material: id } } } })).concat(m2.members.map(b => ({ Set: { item: { Member: { ...b, material: id } } } })) as any);
+      if (ops.length) await act({ Batch: ops });
+    }
+    closeDialog();
+    added?.(id);
+  };
+  return (
+    <Dialog title="Materials library" wide help="materials">
+      <div class="mgr lib">
+        <div class="mlist"><input placeholder="Search: steel, 6061, nylon…" value={q()} onInput={e => setQ(e.currentTarget.value)} />
+          <Show when={lib()} fallback={<p class="muted">Loading…</p>}>
+            <For each={families()}>{f => <><small class="fam">{f}</small><For each={shown().filter(x => x.family === f)}>{x => <button classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)} onDblClick={() => use(false)}>{x.name}</button>}</For></>}</For>
+          </Show></div>
+        <Show when={m()}>{x => <div class="form">
+          <h3>{x().name}</h3><p class="muted small">{x().family}</p>
+          <table class="vmini"><tbody>
+            <tr><td>Young's modulus E</td><td class="r">{fmt("modulus", x().e)}</td></tr><tr><td>Poisson's ratio ν</td><td class="r">{num(x().nu)}</td></tr>
+            <tr><td>Density</td><td class="r">{fmt("density", x().rho)}</td></tr><tr><td>Yield strength</td><td class="r">{x().fy ? fmt("stress", x().fy) : "— (brittle or not given)"}</td></tr>
+            <tr><td>Conductivity</td><td class="r">{fmt("cond", x().k)}</td></tr><tr><td>Thermal expansion</td><td class="r">{fmt("expansion", x().alpha)}</td></tr></tbody></table>
+          <p class="small"><b>Source:</b> {x().source}</p>
+          <p class="muted small">Typical values for the grade: E, density, conductivity and expansion are the middle of the usual range; the yield strength is its low end. Check them against your supplier's data before relying on a result.</p>
+          <p class="ibtns"><button class="btn pri" onClick={() => use(false)}>Add to the model</button><button class="btn" onClick={() => use(true)}>Add and use everywhere</button></p>
         </div>}</Show>
       </div>
     </Dialog>
@@ -132,7 +179,8 @@ export const gettingStarted = () => openDialog(() => (
       <ol>
         <li>File › Home › <b>Blank part</b>. Draw the outline with Rectangle, Circle or Polygon; cut holes with the hole tools.</li>
         <li>Click an edge, then put a support or a load on it from the Loads tab.</li>
-        <li>Meshing and solving parts arrive in 0.1.3: stress contours, the deformed shape and a probe.</li>
+        <li><b>Solve</b> (F5) meshes the part and colours it by von Mises stress; pick another result under the canvas, and hover to read values. The Mesh view shows the triangles and their quality.</li>
+        <li>For heat, choose Home › <b>Heat conduction</b>: fix a temperature on an edge, add convection or a heat flux, and solve for temperatures.</li>
       </ol>
       <h4>Good to know</h4>
       <ul>
@@ -151,6 +199,13 @@ export const glossary = () => openDialog(() => {
     ["Node", "A point where elements join. Results are found at the nodes."], ["Member", "A beam or truss bar between two nodes."],
     ["Beam", "A member that carries axial force, shear and bending (Euler–Bernoulli theory)."], ["Truss bar", "A member pinned at both ends that carries only axial force."],
     ["Mesh", "The triangles a part is split into. Smaller triangles give more accurate results and take longer."],
+    ["Von Mises stress", "One number for the stress at a point that compares with the yield strength from a tensile test: the part starts to yield where it reaches the yield strength."],
+    ["Principal stresses", "The largest and smallest normal stresses at a point, on the planes where the shear is zero (σ1 and σ2)."],
+    ["Safety factor", "The yield strength over the von Mises stress: below 1 the material yields there."],
+    ["Plane stress", "A thin plate loaded in its own plane: no stress across its thickness."], ["Plane strain", "A long body with the same section all along, held from stretching along its length: no strain along it."],
+    ["Convection", "Heat carried away by a fluid: h (T − T∞) per area, with h the film coefficient."], ["Heat flux", "Heat flowing through an area, W/m²."],
+    ["Smoothed and per element", "Stresses jump between elements; smoothed results average them at the nodes. Where the two differ a lot, the mesh is too coarse there."],
+    ["Patch test", "A check that elements reproduce a constant stress exactly; elements that fail it do not converge."],
     ["Plane stress", "A thin plate loaded in its own plane: the stress through the thickness is zero."],
     ["Plane strain", "A long body (a dam, a pipe, a tunnel) with the same section along its length: the strain along the length is zero."],
     ["Support", "Where the model is held: fixed, pinned, on rollers, on springs, or (for heat) at a fixed temperature."],
@@ -179,7 +234,7 @@ export const recoverDialog = (name: string, saved: string, done: () => void) => 
 export const verification = () => openDialog(() => {
   const [rows] = createResource(() => call<Check[]>("verification"));
   const [ver] = createResource(() => call<string>("version"));
-  const val = (q: string, v: number) => (q === "ratio" ? `${num(v, 6)} rad` : fmt(q as Q, v, 6));
+  const val = (q: string, v: number) => (q === "ratio" ? num(v, 6) : q === "rad" ? `${num(v, 6)} rad` : fmt(q as Q, v, 6));
   return (
     <Dialog title="Verification" wide help="verification">
       <div class="verif">
@@ -188,7 +243,10 @@ export const verification = () => openDialog(() => {
           <p classList={{ okline: r().every(x => x.pass), badline: !r().every(x => x.pass) }}><Icon n={r().every(x => x.pass) ? "check" : "info"} /> {r().filter(x => x.pass).length} of {r().length} checks pass.</p>
           <table class="tbl"><thead><tr><th>#</th><th>Benchmark</th><th>Quantity</th><th class="r">Datum Mesh</th><th class="r">Reference</th><th class="r">Error</th><th>Source</th><th /></tr></thead><tbody>
             <For each={r()}>{x => <tr><td>{x.bench}</td><td>{x.name}</td><td>{x.quantity}</td><td class="r">{val(x.q, x.result)}</td><td class="r">{val(x.q, x.reference)}</td><td class="r">{x.error < 1e-12 ? "< 1e-12" : x.error.toExponential(1)}</td><td>{x.source}</td><td>{x.pass ? "✓ pass" : "✗ fail"}</td></tr>}</For></tbody></table>
-          <p class="muted small">Coming: plates with a hole, a thick cylinder and NAFEMS LE1 with mesh convergence (0.1.3); heat conduction (0.1.4).</p>
+          <h3>Mesh convergence</h3>
+          <p class="muted small">The same model on finer meshes: the error falls as the elements get smaller.</p>
+          <div class="conv"><For each={r().filter(x => x.steps.length)}>{x => <table class="tbl"><thead><tr><th colSpan={2}>{x.name}: {x.quantity}</th></tr><tr><th class="r">Elements</th><th class="r">Error</th></tr></thead><tbody>
+            <For each={x.steps}>{st => <tr><td class="r">{st[0].toLocaleString()}</td><td class="r">{st[1] < 1e-12 ? "< 1e-12" : st[1].toExponential(1)}</td></tr>}</For></tbody></table>}</For></div>
         </>}</Show>
       </div>
     </Dialog>

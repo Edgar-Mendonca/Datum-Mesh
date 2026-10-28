@@ -35,7 +35,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; throw "Meshing and solving parts arrive in 0.1.3."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; throw "There is nothing to mesh."; }
+          if (c === "mesh") return f.bracket_mesh;
+          if (c === "materials_library") return f.library;
           if (c in m) return m[c];
           return null;
         },
@@ -208,9 +210,65 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("an edit marks the results out of date", (await p.$$(".legend .stalebar")).length === 1);
   await p.click('.tabs > button:text-is("Help")'); await p.click('.ribbon button[title="Verification"]'); await p.waitForTimeout(250);
   check("Help › Verification lists every benchmark, all passing", (await p.textContent(".dlg")).includes(`${fix.verification.length} of ${fix.verification.length} checks pass`));
+  check("Help › Verification shows the mesh convergence tables", (await p.$$(".dlg .conv table")).length === fix.verification.filter(x => x.steps.length).length && (await p.textContent(".dlg")).includes("NAFEMS LE1"));
   await p.keyboard.press("Escape");
-  await open("bracket"); await p.keyboard.press("F5"); await p.waitForTimeout(200);
-  check("solving a part says when that arrives", (await p.textContent("#toast")).includes("0.1.3"));
+
+  // 11d. Parts (0.1.3): contours, legend, markers, probe, tables, mesh view, report, heat, library.
+  await open("bracket"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  const br = fix.bracket_results;
+  check("F5 solves a part and says how many elements", (await p.textContent("#toast")).includes(`${br.mesh.tris.length.toLocaleString()} elements`), await p.textContent("#toast"));
+  check("the contours are drawn on the canvas", await p.$eval("canvas.contours", el => el.classList.contains("on") && el.width > 0));
+  const painted = await p.$eval("canvas.contours", el => { const d = el.getContext("2d").getImageData(0, 0, el.width, el.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 97) if (d[i] > 0) n++; return n; });
+  check("the contour canvas has colour on it", painted > 50, String(painted));
+  check("the legend shows von Mises stress with 12 bands in MPa", (await p.$eval(".legend .fpick", el => el.value)) === "vm" && (await p.$$(".legend .cbar .cb i")).length === 12 && (await p.textContent(".legend .cbar")).includes("MPa"));
+  check("the largest and smallest values are marked", (await p.$$(".mm.max")).length === 1 && (await p.$$(".mm.min")).length === 1 && (await p.textContent(".mm.max")).includes("MPa"));
+  check("the legend shows the equilibrium check for the part", (await p.textContent(".legend")).includes("reactions balance the loads"));
+  check("shapes are not filled over the contours", await p.$eval(".dsvg", el => el.classList.contains("under")));
+  // Probe: hover the middle of the vertical leg (x 10 mm, y 60 mm).
+  const leg = await p.evaluate(() => { const r = document.querySelector('.shape').getBoundingClientRect(); return [r.left + r.width * 0.1, r.top + r.height * 0.35]; });
+  await p.mouse.move(leg[0], leg[1]); await p.waitForTimeout(200);
+  check("hovering the part shows the probe with stresses", (await p.$$(".probe")).length === 1 && (await p.textContent(".probe")).includes("σvm") && (await p.textContent(".probe")).includes("MPa"), (await p.$$(".probe")).length ? await p.textContent(".probe") : "no probe");
+  await p.selectOption(".legend .fpick", "umag"); await p.waitForTimeout(200);
+  check("picking Displacement shows it in mm", (await p.textContent(".legend .cbar")).includes("mm") && (await p.textContent(".mm.max")).includes("mm"));
+  check("displacements cannot be shown per element (they are continuous)", await p.$eval(".legend .seg button:nth-child(2)", el => el.disabled));
+  await p.selectOption(".legend .fpick", "sf"); await p.waitForTimeout(200);
+  check("the safety factor legend runs red to blue", await p.$eval(".legend .cbar .cb i:first-child", el => getComputedStyle(el).backgroundColor !== "") && (await p.textContent(".mm.min")).length > 0);
+  await p.selectOption(".legend .fpick", "vm"); await p.waitForTimeout(100);
+  await p.click(".legend .seg button:has-text('Per element')"); await p.waitForTimeout(200);
+  check("stresses can be shown per element", await p.$eval(".legend .seg button:nth-child(2)", el => el.classList.contains("on")));
+  await p.click(".legend .seg button:has-text('Smoothed')");
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  check("the Results page of a part shows equilibrium, reactions and extremes", (await p.textContent(".page")).includes("Largest and smallest values") && (await p.textContent(".page")).includes("balance the loads") && (await p.textContent(".page")).includes("Fixed"), (await p.textContent(".page")).slice(0, 200));
+  await p.click('.side button[title="Mesh"]'); await p.waitForTimeout(200);
+  check("the Mesh view shows the elements and their quality", (await p.textContent(".legend")).includes(`${br.mesh.tris.length.toLocaleString()} 6-node triangles`) && (await p.textContent(".legend")).includes("smallest angle"));
+  await p.click('.side button[title="Report"]'); await p.waitForTimeout(400);
+  check("the Report view has the mesh, a contour picture with its scale, and the equilibrium check", (await p.textContent(".page")).includes("Mesh") && (await p.$$(".page .rpic img")).length >= 1 && (await p.$$(".page .rpic .cbar")).length >= 1 && (await p.textContent(".page")).includes("Equilibrium check"));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  // Refine near an edge: a local size in the mesh settings.
+  await p.click('.tabs > button:text-is("Mesh")'); await p.click('.ribbon button[title^="Click an edge or a point"]'); await p.waitForTimeout(100);
+  const edgeAt = await p.evaluate(() => { const r = document.querySelector('.shape').getBoundingClientRect(); return [r.left + 2, r.top + r.height * 0.5]; });
+  await p.mouse.click(edgeAt[0], edgeAt[1]); await p.waitForTimeout(150);
+  const rf = (await ops()).reverse().find(o => o.SetSettings);
+  check("Refine Near adds a local element size on the edge clicked", !!rf && rf.SetSettings.s.mesh.refine.length === 2 && rf.SetSettings.s.mesh.refine[1].at.on === "edge", JSON.stringify(rf?.SetSettings.s.mesh.refine));
+  await p.keyboard.press("Escape");
+  await p.click('.ribbon button[title="Linear (3-node)"]'); await p.waitForTimeout(100);
+  check("Linear (3-node) sets the element order", (await ops()).reverse().find(o => o.SetSettings)?.SetSettings.s.mesh.order === 1);
+  // Heat sink: temperature contours and the heat balance.
+  await open("fin"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  check("a heat model shows temperatures in °C and the heat balance", (await p.$eval(".legend .fpick", el => el.value)) === "t" && (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".legend")).includes("Heat balance"));
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  check("the heat Results page lists the heat flows and their sum", (await p.textContent(".page")).includes("Heat into the part") && (await p.textContent(".page")).includes("Sum"));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  // The materials library.
+  await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button[title="Materials"]'); await p.waitForTimeout(150);
+  await p.click(".dlg button:has-text('From the library')"); await p.waitForTimeout(250);
+  const libText = await p.$eval(".mgr.lib", el => el.textContent);
+  check("the library lists Atlas materials with their sources", (await p.$$(".mgr.lib .mlist button")).length === fix.library.length && libText.includes("Source:"), `${(await p.$$(".mgr.lib .mlist button")).length} of ${fix.library.length}; ${libText.slice(0, 300)}`);
+  await p.fill(".mgr.lib .mlist input", "7075"); await p.waitForTimeout(100);
+  await p.click(".mgr.lib .mlist button:has-text('7075')"); await p.click(".dlg button:has-text('Add to the model')"); await p.waitForTimeout(150);
+  const addm = (await ops()).reverse().find(o => o.Add && o.Add.item.Material);
+  check("Add to the model adds the library material with its values and source", !!addm && addm.Add.item.Material.name.includes("7075") && addm.Add.item.Material.source.startsWith("Datum Atlas") && addm.Add.item.Material.nu > 0.3, JSON.stringify(addm));
+  while (await p.$(".ov .dlg header .x")) { await p.click(".ov .dlg header .x"); await p.waitForTimeout(80); }
 
   // 11c. 0.1.2 fixes from the 0.1.1 review.
   // (1) Diagrams follow pan and zoom: the moment diagram of a member starts at that member's end.

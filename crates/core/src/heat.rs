@@ -22,6 +22,8 @@ pub struct HeatResults {
     pub draw: Vec<[u32; 3]>,
     /// t (K), qx, qy, qmag (W/m²).
     pub fields: Vec<Field>,
+    /// Heat flux per element, from the element's own values: qx, qy, qmag.
+    pub elem: Vec<Field>,
     /// Heat flowing into the body through each fixed temperature (negative: leaving).
     pub supports: Vec<Flow>,
     /// Heat flowing into the body through each flux, convection and generation load.
@@ -207,6 +209,8 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<HeatResults, String> {
     // Heat flux q = −k ∇T at each element's nodes, averaged by area.
     let mut acc = vec![[0.0f64; 2]; nn];
     let mut wsum = vec![0.0f64; nn];
+    let ne = ms.tris.len();
+    let (mut eq, mut centres) = (vec![[0.0f64; 2]; ne], Vec::with_capacity(ne));
     for (k, tri) in ms.tris.iter().enumerate() {
         let kk = mats[&ms.mat[k]].k;
         let xy: Vec<[f64; 2]> = tri.iter().map(|&i| ms.nodes[i as usize]).collect();
@@ -223,8 +227,16 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<HeatResults, String> {
             acc[n][0] -= kk * gx * area;
             acc[n][1] -= kk * gy * area;
             wsum[n] += area;
+            eq[k][0] -= kk * gx / tri.len() as f64;
+            eq[k][1] -= kk * gy / tri.len() as f64;
         }
+        centres.push([(xy[0][0] + xy[1][0] + xy[2][0]) / 3.0, (xy[0][1] + xy[1][1] + xy[2][1]) / 3.0]);
     }
+    let elem = vec![
+        crate::plane::field("qx", eq.iter().map(|q| q[0]).collect(), &centres),
+        crate::plane::field("qy", eq.iter().map(|q| q[1]).collect(), &centres),
+        crate::plane::field("qmag", eq.iter().map(|q| q[0].hypot(q[1])).collect(), &centres),
+    ];
     let mut cols: Vec<(&'static str, Vec<f64>)> = ["t", "qx", "qy", "qmag"].iter().map(|k| (*k, Vec::with_capacity(nn))).collect();
     for n in 0..nn {
         let w = wsum[n].max(1e-300);
@@ -238,7 +250,7 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<HeatResults, String> {
     if size == 0.0 {
         warnings.push("No heat flows: every temperature is the same. Add a heat flux, convection to a fluid at another temperature, or a second fixed temperature.".into());
     }
-    Ok(HeatResults { mesh: ms, draw, fields, supports, loads, imbalance, stats, warnings })
+    Ok(HeatResults { mesh: ms, draw, fields, elem, supports, loads, imbalance, stats, warnings })
 }
 
 #[cfg(test)]

@@ -36,8 +36,10 @@ pub struct PlaneResults {
     pub disp: Vec<[f64; 2]>,
     /// ux, uy, umag, sx, sy, txy, sz, vm, s1, s2, sf (safety factor against yield; 0 where unknown).
     pub fields: Vec<Field>,
-    /// Von Mises stress averaged over each element (unsmoothed contours).
-    pub elem_vm: Vec<f64>,
+    /// Stresses per element, from the element's own values (not averaged with its neighbours):
+    /// sx, sy, txy, sz, vm, s1, s2, sf. Where they differ much from the smoothed fields, the mesh
+    /// is too coarse there.
+    pub elem: Vec<Field>,
     pub reactions: Vec<Reaction>,
     /// Every applied load and every reaction summed (Fx, Fy, and M about the origin).
     pub applied: [f64; 3],
@@ -248,7 +250,10 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                                 continue;
                             }
                             for c in 0..2 {
-                                sys.f[2 * node as usize + c] += ni * tr[c] * w * jl * t;
+                                // Pressure acts per area (times the thickness); an edge force is per
+                                // length of edge for the whole thickness, or the whole force.
+                                let tt = if matches!(l.kind, LoadKind::Pressure { .. }) { t } else { 1.0 };
+                                sys.f[2 * node as usize + c] += ni * tr[c] * w * jl * tt;
                             }
                         }
                     }
@@ -401,15 +406,16 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     // Stresses at each element's nodes, averaged over the elements that share a node (weighted by area).
     let mut acc = vec![[0.0f64; 4]; nn];
     let mut wsum = vec![0.0f64; nn];
-    let mut elem_vm = Vec::with_capacity(ms.tris.len());
-    let nu_of = |k: usize| mats.get(&ms.mat[k]).map(|x| x.nu).unwrap_or(0.3);
+    let ne = ms.tris.len();
+    let mut ecols: Vec<(&'static str, Vec<f64>)> = ["sx", "sy", "txy", "sz", "vm", "s1", "s2", "sf"].iter().map(|k| (*k, Vec::with_capacity(ne))).collect();
+    let mut centres = Vec::with_capacity(ne);
     for (k, tri) in ms.tris.iter().enumerate() {
         let mt = mats[&ms.mat[k]];
         let d = dmat(m.analysis, mt.e, mt.nu);
         let xy: Vec<[f64; 2]> = tri.iter().map(|&i| ms.nodes[i as usize]).collect();
         let (_, _, det0) = bmat(&xy, ord, 1.0 / 3.0, 1.0 / 3.0);
         let area = det0.abs() / 2.0;
-        let mut vm_sum = 0.0;
+        let mut es = [0.0f64; 4];
         for (q, &(xi, eta)) in NODES_REF.iter().take(tri.len()).enumerate() {
             let (b, _, _) = bmat(&xy, ord, xi, eta);
             let mut eps = [0.0; 3];
@@ -427,11 +433,15 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
             }
             acc[n][3] += sz * area;
             wsum[n] += area;
-            vm_sum += von_mises(s[0], s[1], s[2], sz);
+            for (r, v) in [s[0], s[1], s[2], sz].iter().enumerate() {
+                es[r] += v / tri.len() as f64;
+            }
         }
-        elem_vm.push(vm_sum / tri.len() as f64);
+        for (c, v) in ecols.iter_mut().zip(stress_set(es, mt.fy)) {
+            c.1.push(v);
+        }
+        centres.push([(xy[0][0] + xy[1][0] + xy[2][0]) / 3.0, (xy[0][1] + xy[1][1] + xy[2][1]) / 3.0]);
     }
-    let _ = nu_of;
     let fy_node = {
         // The weakest yield strength of the elements at each node.
         let mut v = vec![f64::INFINITY; nn];
@@ -446,17 +456,15 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     let mut cols: Vec<(&'static str, Vec<f64>)> = ["ux", "uy", "umag", "sx", "sy", "txy", "sz", "vm", "s1", "s2", "sf"].iter().map(|k| (*k, Vec::with_capacity(nn))).collect();
     for n in 0..nn {
         let w = wsum[n].max(1e-300);
-        let (sx, sy, txy, sz) = (acc[n][0] / w, acc[n][1] / w, acc[n][2] / w, acc[n][3] / w);
-        let (c, r) = ((sx + sy) / 2.0, (((sx - sy) / 2.0).powi(2) + txy * txy).sqrt());
-        let vm = von_mises(sx, sy, txy, sz);
-        let fy = fy_node[n];
-        let vals = [u[2 * n], u[2 * n + 1], u[2 * n].hypot(u[2 * n + 1]), sx, sy, txy, sz, vm, c + r, c - r, if fy.is_finite() && fy > 0.0 && vm > 0.0 { (fy / vm).min(1e6) } else { 0.0 }];
+        let st = stress_set([acc[n][0] / w, acc[n][1] / w, acc[n][2] / w, acc[n][3] / w], fy_node[n]);
+        let vals = [u[2 * n], u[2 * n + 1], u[2 * n].hypot(u[2 * n + 1]), st[0], st[1], st[2], st[3], st[4], st[5], st[6], st[7]];
         for (k, v) in vals.iter().enumerate() {
             cols[k].1.push(*v);
         }
     }
     let fields = cols.into_iter().map(|(key, v)| field(key, v, &ms.nodes)).collect();
     let draw = draw_tris(&ms);
+    let elem = ecols.into_iter().map(|(key, v)| field(key, v, &centres)).collect();
     let disp = (0..nn).map(|n| [u[2 * n], u[2 * n + 1]]).collect();
     let size = m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(1.0);
     let umax = (0..nn).map(|n| u[2 * n].hypot(u[2 * n + 1])).fold(0.0, f64::max);
@@ -468,7 +476,7 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     let reach = ms.nodes.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
     applied.scale[1] = applied.scale[0] * reach;
     let imbalance = imbalance(applied.sum, reacted.sum, applied.scale);
-    Ok(PlaneResults { mesh: ms, draw, disp, fields, elem_vm, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })
+    Ok(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })
 }
 
 /// A nodal field with where it is smallest and largest.
@@ -488,6 +496,15 @@ pub(crate) fn field(key: &'static str, v: Vec<f64>, nodes: &[[f64; 2]]) -> Field
 /// Triangles for drawing: 6-node triangles split into four, so contours follow the curved field.
 pub(crate) fn draw_tris(ms: &Mesh) -> Vec<[u32; 3]> {
     ms.tris.iter().flat_map(|t| if t.len() == 6 { vec![[t[0], t[3], t[5]], [t[3], t[1], t[4]], [t[5], t[4], t[2]], [t[3], t[4], t[5]]] } else { vec![[t[0], t[1], t[2]]] }).collect()
+}
+
+/// σx, σy, τxy, σz → σx, σy, τxy, σz, von Mises, σ1, σ2 and the safety factor against yield
+/// (0 where the yield strength is not known or nothing is stressed; at most 10⁶).
+fn stress_set(s: [f64; 4], fy: f64) -> [f64; 8] {
+    let (sx, sy, txy, sz) = (s[0], s[1], s[2], s[3]);
+    let (c, r) = ((sx + sy) / 2.0, (((sx - sy) / 2.0).powi(2) + txy * txy).sqrt());
+    let vm = von_mises(sx, sy, txy, sz);
+    [sx, sy, txy, sz, vm, c + r, c - r, if fy.is_finite() && fy > 0.0 && vm > 0.0 { (fy / vm).min(1e6) } else { 0.0 }]
 }
 
 pub fn von_mises(sx: f64, sy: f64, txy: f64, sz: f64) -> f64 {
@@ -528,6 +545,28 @@ mod tests {
             assert!((r.field("ux").max - 50e6 * 0.2 / e).abs() < 1e-6 * 50e6 * 0.2 / e);
             assert!(r.imbalance() < 1e-9, "{}", r.imbalance());
         }
+    }
+
+    #[test]
+    fn an_edge_force_is_the_force_whatever_the_thickness() {
+        // 0.1.3 bug found in the app: a total edge force was multiplied by the thickness, so the
+        // L-bracket carried 15 N instead of 1.5 kN. Pressure acts per area: times the thickness.
+        let mut d = patch(Analysis::Stress, 2, 0.03);
+        d.m.thickness = 0.01;
+        let s = d.m.shapes[0].id;
+        d.m.loads.clear();
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Traction { fx: 1.5e3, fy: 0.0, total: true } }) }).unwrap();
+        let r = solve(&d.m).unwrap();
+        assert!((r.applied[0] - 1.5e3).abs() < 1e-9 * 1.5e3, "{}", r.applied[0]);
+        // Per length: 2 kN/m on a 0.1 m edge is 200 N.
+        if let LoadKind::Traction { fx, total, .. } = &mut d.m.loads[0].kind { *fx = 2e3; *total = false; }
+        assert!((solve(&d.m).unwrap().applied[0] - 200.0).abs() < 1e-9);
+        // Pressure: 1 MPa on 0.1 m × 0.01 m is 1 kN.
+        d.m.loads[0].kind = LoadKind::Pressure { p: -1e6 };
+        let r = solve(&d.m).unwrap();
+        assert!((r.applied[0] - 1e3).abs() < 1e-9 * 1e3, "{}", r.applied[0]);
+        // And the stress follows: σx = F / (h t) = 1 MPa.
+        assert!((r.field("sx").max - 1e6).abs() < 1e-6 * 1e6);
     }
 
     #[test]

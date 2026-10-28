@@ -3,12 +3,13 @@
 // (equilibrium check, reactions, members, the solver report). The engine computes every number.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Pt, MemberResult, Model, FrameResults, num, clean } from "./api";
-import { results, stale, show, model, cursor, setView, sel, setSel } from "./store";
+import { frameRes as results, partRes, stale, show, model, cursor, setView, sel, setSel } from "./store";
 import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
 import { C, imbalanceOf } from "./cmds";
 import { Help } from "./help";
 import { Icon } from "./ui";
+import { PartResultsPage } from "./parts";
 
 const DIAG: Record<string, [string, "force" | "moment"]> = { n: ["Axial force", "force"], v: ["Shear force", "force"], m: ["Bending moment", "moment"] };
 
@@ -160,7 +161,12 @@ export const ResultsPage = () => {
   return (
     <div class="page">
       <h1>Results <Help k="results" /></h1>
-      <Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>{m().analysis === "frame" ? "Solve the model to see its results" : "Solving parts arrives in 0.1.3"}</b><p class="muted">Deflections, reactions, the equilibrium check and the forces in every member.</p><Show when={m().analysis === "frame"}><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></Show></div>}>{rr => <>
+      <Show when={partRes()}>{pr => <>
+        <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+        <Show when={pr().warnings.length}><For each={pr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+        <PartResultsPage r={pr()} />
+      </>}</Show>
+      <Show when={r() || !partRes()} fallback={null}><Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>Solve the model to see its results</b><p class="muted">{m().analysis === "frame" ? "Deflections, reactions, the equilibrium check and the forces in every member." : m().analysis === "heat" ? "Temperatures, heat flux, the heat balance and the largest and smallest values." : "Stresses, displacements, reactions, the equilibrium check and the largest and smallest values."}</p><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></div>}>{rr => <>
         <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
         <Show when={rr().warnings.length}><For each={rr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
         <h2>Equilibrium check <Help k="equilibrium" /></h2>
@@ -183,7 +189,7 @@ export const ResultsPage = () => {
           <tr><td>Equations</td><td class="r">{rr().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{rr().stats.nonzeros.toLocaleString()}</td></tr>
           <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{rr().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(rr().stats.ms, 3)} ms</td></tr>
           <tr><td>Method</td><td>2D Euler–Bernoulli beam and truss elements; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
-      </>}</Show>
+      </>}</Show></Show>
     </div>
   );
 };

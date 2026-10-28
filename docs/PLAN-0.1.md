@@ -35,6 +35,8 @@ Cut order if time runs short: heat conduction, the linear-triangle option, secti
 
 **Revised after 0.1.1 (the user's decision):** 0.1.2 became a fixes release for the 13 findings of a review of 0.1.1. The rest moves one number: meshing and plane stress/strain 0.1.3, heat, materials, report and the convention build 0.1.4, polish 0.1.5.
 
+**Revised again for 0.1.3 (the user's decision):** 0.1.3 carries 0.1.4's work too: meshing, plane stress and strain, heat conduction, the materials library and the report in one release, with benchmarks 4–8. Polish becomes 0.1.4.
+
 ## 4. Risks
 
 | Risk | What we do |
