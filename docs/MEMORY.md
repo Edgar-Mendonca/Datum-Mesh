@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.1.0 (2026-10-28) |
+| **Current version** | 0.1.1 (2026-10-28) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -29,6 +29,10 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/model.rs` | The model: analysis kind, nodes, members, sections, materials, shapes (polygons with bulge arcs, circles, holes), supports and loads with targets (node, member, edge, point, body), mesh settings; `check` (every invariant); `.dmesh` read item by item with migration and `repair` (damaged files open as far as possible, with warnings) and write |
 | `crates/core/src/doc.rs` | Edit operations (Add, Set, AddMember by points, Move, Delete with cascade, SetSettings, SetMeta, Batch) on a copy, kept only if `check` passes; snapshot undo/redo |
 | `crates/core/src/sections.rs` | Section properties (A, I, c) for rectangle, round bar, tube, box, I, channel, angle and custom |
+| `crates/core/src/sparse.rs` | The shared linear solver: triplets, supports by elimination, prescribed values, faer sparse Cholesky, a probe solve that catches mechanisms, residual |
+| `crates/core/src/frame.rs` | Frames and trusses: beam and truss stiffness, linear member loads as consistent nodal loads, self-weight, springs, reactions, equilibrium sums, exact N, V, M and deflection along each member (41 stations), stress and utilisation |
+| `crates/core/src/bench.rs` | The verification benchmarks as data (`run()` → rows with result, reference, error, source); the test fails on any row over its tolerance |
+| `crates/core/examples/verify.rs` | Writes the dated verification record (`docs/verification/x.y.z.md`) |
 | `crates/core/src/examples.rs` | The worked examples, built in code: blank frame and part, portal frame, roof truss, lifting lug, L-bracket, flange plate, heat sink |
 | `crates/core/src/hardening.rs` | FAMILY §11: failed edits change nothing, random edits keep the model valid and round-trip, damaged files, speed gate |
 | `crates/core/examples/dump.rs` | Writes `tests_ui/fixture.json` (the engine's real examples) for the UI tests |
@@ -45,11 +49,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/cmds.ts` | Every command (ribbon, menus, keys, Tell Me) |
 | `ui/src/dialogs.tsx` | Materials, sections, node at coordinates, shortcuts, getting started, glossary, recovery, close |
 | `ui/src/backstage.tsx` | File page: examples, recent, export, options, updates |
-| `ui/src/print.tsx` | Print: the model drawn to fit the page with a title block, and a model report |
+| `ui/src/results.tsx` | Frame results over the canvas (deflected shape, diagrams, reactions, utilisation, probe), the legend bar, and View › Results (equilibrium, reactions, members, solver) |
+| `ui/src/print.tsx` | Print: the model drawn to fit the page with a title block, and a report with the results and the equilibrium check |
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 40 UI checks of the built window with a mocked bridge |
+| `tests_ui/run.cjs` | 52 UI checks of the built window with a mocked bridge |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -82,6 +87,13 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.0 | `serde_json` with `float_roundtrip` | The hardening test found coordinates changing in the last digit after save and open |
 | 0.1.0 | Atlas has no Poisson's ratio: Mesh's library (0.1.3) adds ν from typical values with its own source | Atlas data checked in session 1 |
 | 0.1.0 | Nodes take clicks before the load arrows drawn on them | The UI test found the wind load's arrows on the portal frame's eave node stealing the drag |
+| 0.1.1 | faer 0.24 (MIT) sparse Cholesky with its own fill-reducing ordering, no default features (no rayon, rand, npy) | The brief's choice; 200 000 equations factor in 0.1 s here |
+| 0.1.1 | A probe solve (a load equal to the diagonal) alongside every solve; an answer over 1e11 means a mechanism | faer factored an exactly singular matrix when rounding left a tiny positive pivot (found by the spring-chain test) |
+| 0.1.1 | Member results are integrated exactly (with linear loads M is a cubic): deflection v = v_a + θ_a s + ∫∫M/EI, stretch from N/EA | Step-by-step integration missed the mid-member deflection by 5e-4 (found by benchmark 2); exact now to 1e-9 |
+| 0.1.1 | Distributed loads in global x or y are per length of the member, not projected | The simplest rule to explain; stated in the help and the Inspector |
+| 0.1.1 | Moments drawn on the tension side; N and V on the member's local +y | Common practice for moments; one fixed rule for the others, stated in the legend |
+| 0.1.1 | After an edit results stay drawn but faded and marked out of date; Solve is F5 (no automatic re-solve) | Clear about what the picture shows; solving is instant for frames, but meshed parts will not be |
+| 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
 
 ## 3. Roadmap
 
@@ -91,8 +103,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | --- | --- | --- |
 | plan | Read the hub, Plan, Sim and Atlas; PLAN-0.1, MEMORY, CLAUDE, icon | ✅ |
 | 0.1.0 | Shell, updater, Home, File page, the canvas that saves and opens; model, edits, sections, examples, hardening tests; CI and release | ✅ |
-| 0.1.1 | Frames and trusses end to end: beam and truss elements, sparse assembly and Cholesky (faer), member loads, self-weight, reactions, equilibrium check, diagrams, member stresses; benchmarks 1–3 | 🔜 |
-| 0.1.2 | Meshing (spade CDT + refinement) and T6/T3 plane stress and strain; benchmarks 4–6 and patch tests; contours, probe, deformed shape | ⬜ |
+| 0.1.1 | Frames and trusses end to end: beam and truss elements, sparse assembly and Cholesky (faer), member loads, self-weight, reactions, equilibrium check, diagrams, member stresses; benchmarks 1–3; Help › Verification | ✅ |
+| 0.1.2 | Meshing (spade CDT + refinement) and T6/T3 plane stress and strain; benchmarks 4–6 and patch tests; contours, probe, deformed shape | 🔜 |
 | 0.1.3 | Heat conduction (benchmark 7), materials library from Atlas, results report, verification report, convention build | ⬜ |
 | 0.1.4 | Fixes from a clean Windows PC, speed on large meshes, README and screenshots | ⬜ |
 | 0.2 | Axisymmetric, 3D frames, modal, buckling, DXF import, thermal stress, Send to Calc and Plot | ⬜ |
@@ -108,8 +120,17 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - UI tests found two more (nodes under load arrows could not be dragged; arcs were drawn mirrored on screen) and now guard them.
 - Checked: clippy, `cargo test`, UI type-check and 40 UI checks, `cargo deny`, screenshots in light and dark.
 
-## 5. Known limits (0.1.0)
+- Released 0.1.0 (Release run 1 from the Actions tab). CI run 1 failed on a type error made after the last type check, run 2 on a clippy lint newer than the local toolchain; both fixed, CI green on Linux, Windows and macOS from run 3.
 
-- Nothing solves yet: frames arrive in 0.1.1, parts in 0.1.2.
+### 2026-10-28: Session 1, continued (day 2 brought forward: 0.1.1)
+- Engine: `sparse.rs` (faer), `frame.rs`, `bench.rs` with benchmarks 1–3 (12 checks, all within 1e-9), solver hardening (random frames always balance and their curves meet their nodes; a 60 × 60 grid frame solves inside the speed gate).
+- Found by tests: faer accepted a singular matrix (now a probe solve), mid-member deflection off by 5e-4 (now exact), and my own wrong reference for a propped cantilever (the engine was right: 11qL/40).
+- Window: Solve (F5), results over the canvas, legend bar, probe, View › Results, Help › Verification, results in the printed report. A support symbol that kept its old position after a fit (props read outside a reactive scope) was fixed and found by screenshot.
+- Checked: clippy, 21 engine tests, 52 UI checks, cargo deny, screenshots.
+
+## 5. Known limits (0.1.1)
+
+- Parts do not solve yet (0.1.2).
+- No member end releases (hinges inside a frame), no buckling check of members in compression.
 - No copy and paste of geometry; members do not split where they cross.
 - Overlapping solid shapes join only when meshed (0.1.2); the canvas draws them overlapping.

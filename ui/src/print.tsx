@@ -6,7 +6,7 @@ import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
 import { Model, Pt, num } from "./api";
-import { out, opts, call, toast, model } from "./store";
+import { out, opts, call, toast, model, results, stale } from "./store";
 import { Pick, Check } from "./ui";
 import { svgPath, outline } from "./geom";
 import { fmt, unit } from "./units";
@@ -94,7 +94,19 @@ const Report = (p: { m: Model }) => {
     <table class="tbl"><tbody><For each={m.supports} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td></tr>}</For></tbody></table>
     <h4>Loads</h4>
     <table class="tbl"><tbody><For each={m.loads} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td><td>{loadValue(x.kind)}</td></tr>}</For></tbody></table>
-    <p class="muted">Results, the equilibrium check and the solver report join this page when solving arrives (frames 0.1.1, parts 0.1.2).</p>
+    <Show when={results() && !stale() && m.analysis === "frame"} fallback={<p class="muted">{m.analysis === "frame" ? "Solve the model (F5) to add its results, reactions and the equilibrium check to this page." : "Results of parts join this page in 0.1.2."}</p>}>{_ => { const r = results()!; return <>
+      <h4>Equilibrium check</h4>
+      <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
+        <tr><td>Σ Fx</td><td class="r">{fmt("force", r.applied[0])}</td><td class="r">{fmt("force", r.reacted[0])}</td><td class="r">{fmt("force", r.applied[0] + r.reacted[0])}</td></tr>
+        <tr><td>Σ Fy</td><td class="r">{fmt("force", r.applied[1])}</td><td class="r">{fmt("force", r.reacted[1])}</td><td class="r">{fmt("force", r.applied[1] + r.reacted[1])}</td></tr></tbody></table>
+      <h4>Reactions</h4>
+      <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx</th><th class="r">Fy</th><th class="r">M</th></tr></thead><tbody>
+        <For each={r.reactions}>{x => <tr><td>Node {m.nodes.findIndex(n => n.id === x.node) + 1}</td><td class="r">{fmt("force", x.fx)}</td><td class="r">{fmt("force", x.fy)}</td><td class="r">{fmt("moment", x.m)}</td></tr>}</For></tbody></table>
+      <h4>Members</h4>
+      <table class="tbl"><thead><tr><th>Member</th><th class="r">N max / min</th><th class="r">|M| max</th><th class="r">Deflection</th><th class="r">Stress</th><th class="r">Utilisation</th></tr></thead><tbody>
+        <For each={r.members}>{(x, i) => <tr><td>{i() + 1}</td><td class="r">{fmt("force", Math.max(...x.n))} / {fmt("force", Math.min(...x.n))}</td><td class="r">{fmt("moment", Math.max(...x.m.map(Math.abs)))}</td><td class="r">{fmt("len", Math.max(...x.d.map(d => Math.hypot(d[0], d[1]))))}</td><td class="r">{fmt("stress", x.stress)}</td><td class="r">{x.util ? `${num(x.util * 100, 3)} %` : "—"}</td></tr>}</For></tbody></table>
+      <p class="muted">Solved by Datum Mesh {version()}: {r.stats.equations} equations, residual {r.stats.residual.toExponential(1)}. 2D Euler–Bernoulli beam and truss elements.</p>
+    </>; }}</Show>
   </div>;
 };
 

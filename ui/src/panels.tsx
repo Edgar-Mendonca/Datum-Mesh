@@ -2,7 +2,7 @@
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView } from "./store";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
 import { edgeCount, edgePts, outline, area } from "./geom";
@@ -78,7 +78,8 @@ export const Tree = () => {
           <Group t="Supports" n={mm().supports.length} help="supports"><For each={mm().supports}>{s => <Leaf id={s.id} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Group>
           <Group t="Loads" n={mm().loads.length} help="loads"><For each={mm().loads}>{l => <Leaf id={l.id} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></Group>
           <Show when={!frame()}><Group t="Mesh" n={0} help="mesh"><p class="muted tnote">Meshing arrives in 0.1.2.</p></Group></Show>
-          <Group t="Results" n={0} help="results"><p class="muted tnote">{frame() ? "Solving frames arrives in 0.1.1." : "Solving parts arrives in 0.1.2."}</p></Group>
+          <Group t="Results" n={results() ? 1 : 0} help="results"><Show when={frame()} fallback={<p class="muted tnote">Solving parts arrives in 0.1.2.</p>}>
+            <Show when={results()} fallback={<p class="muted tnote">Not solved yet: press F5.</p>}><button class="ti" onClick={() => setView("results")}><span>{stale() ? "Out of date" : "Solved"}</span><small>{results()!.stats.equations} equations</small></button></Show></Show></Group>
         </>}</Show>
       </div>
     </aside>

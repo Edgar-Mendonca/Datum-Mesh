@@ -51,3 +51,10 @@ export const num = (v: number, sig = 4) => {
   if (a >= 1e6 || a < 1e-3) return v.toExponential(Math.max(0, sig - 1)).replace(/\.?0+e/, "e");
   return String(+v.toPrecision(sig)).replace("-", "−");
 };
+
+// ---------- results ----------
+export interface MemberResult { id: number; length: number; x: number[]; n: number[]; v: number[]; m: number[]; d: Pt[]; stress: number; util: number; ends: number[] }
+export interface Reaction { node: number; fx: number; fy: number; m: number }
+export interface SolveStats { equations: number; nonzeros: number; residual: number; ms: number }
+export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; stats: SolveStats; warnings: string[] }
+export interface Check { bench: number; name: string; quantity: string; q: string; reference: number; result: number; error: number; tolerance: number; source: string; pass: boolean }

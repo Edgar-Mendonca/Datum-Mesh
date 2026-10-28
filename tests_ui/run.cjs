@@ -23,7 +23,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
     const opts = { autosave: 0, beta: false, theme: "light", openLast: false, units: "SI", snap: true, grid: true, rulers: true, contours: "rainbow", paper: "A4", landscape: true, company: "" };
     window.__cur = f.frame;
     const handlers = {};
-    const m = { examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15 } };
+    const m = { verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15 } };
     window.__calls = [];
     window.__emit = (e, x) => (handlers[e] ?? []).forEach(h => h({ payload: x }));
     window.__TAURI__ = {
@@ -34,6 +34,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") return { ...window.__cur, dirty: true, undo: true, created: [999] };
           if (c === "history") return window.__cur;
+          if (c === "solve") { if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.truss) return f.truss_results; throw "Meshing and solving parts arrive in 0.1.2."; }
           if (c in m) return m[c];
           return null;
         },
@@ -177,6 +178,32 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
     }
   }
   await p.setViewportSize({ width: 1440, height: 900 });
+
+  // 11b. Solving a frame: deflected shape, moment diagram, reactions, legend, probe, tables (0.1.1).
+  await open("portal");
+  await p.keyboard.press("F5"); await p.waitForTimeout(300);
+  const pr2 = fix.portal_results;
+  check("F5 solves and the status bar says so", (await p.textContent(".status")).includes(`Solved · ${pr2.stats.equations} equations`), await p.textContent(".status"));
+  check("the deflected shape is drawn for every member", (await p.$$(".defl")).length === pr2.members.length);
+  check("the moment diagram is drawn for every member", (await p.$$(".diag.d-m")).length === pr2.members.length);
+  check("reactions are drawn at the supports", (await p.$$(".rarrow")).length >= 4);
+  check("the legend shows the equilibrium check", (await p.textContent(".legend")).includes("reactions balance the loads"));
+  check("the Results tab is shown after solving", await p.$eval('.tabs > button:text-is("Results")', el => el.classList.contains("on")));
+  await p.click('.ribbon button[title="Shear Force"]'); await p.waitForTimeout(100);
+  check("Shear Force switches the diagram", (await p.$$(".diag.d-v")).length === pr2.members.length && (await p.$$(".diag.d-m")).length === 0);
+  const col = await p.$eval(`.mem[data-id="${pf.members[0].id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+  await p.mouse.move(col[0], col[1]); await p.waitForTimeout(150);
+  check("hovering a member shows the probe", (await p.$$(".probe")).length === 1 && (await p.textContent(".probe")).includes("Member 1"));
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(150);
+  check("the Results page lists reactions and members", (await p.$$(".page .tbl tbody tr")).length >= pr2.reactions.length + pr2.members.length + 3 && (await p.textContent(".page")).includes("balance the loads"));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await p.mouse.click(col[0], col[1]); await p.keyboard.press("ArrowUp"); await p.waitForTimeout(150);
+  check("an edit marks the results out of date", (await p.$$(".legend .stalebar")).length === 1);
+  await p.click('.tabs > button:text-is("Help")'); await p.click('.ribbon button[title="Verification"]'); await p.waitForTimeout(250);
+  check("Help › Verification lists every benchmark, all passing", (await p.textContent(".dlg")).includes(`${fix.verification.length} of ${fix.verification.length} checks pass`));
+  await p.keyboard.press("Escape");
+  await open("bracket"); await p.keyboard.press("F5"); await p.waitForTimeout(200);
+  check("solving a part says when that arrives", (await p.textContent("#toast")).includes("0.1.2"));
 
   // 12. Dialogs, views and File pages open without errors; dark theme.
   await p.click('.tabs > button:text-is("Home")');

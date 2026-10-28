@@ -7,7 +7,7 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
-    "Version 0.1.0 is the first step: the window, the drawing canvas with snap and rulers, frames and parts with supports and loads, materials and sections, worked examples, printing and updates. Solving frames arrives in 0.1.1, meshing and solving parts in 0.1.2, heat conduction, the materials library and the verification report in 0.1.3. Every result will be checked against known answers, and the checks are listed in the app."
+    "Frames and trusses solve now: the deflected shape, the moment, shear and axial diagrams, the reactions, member stresses and utilisation, and an equilibrium check after every solve. Parts are drawn and loaded today; their meshing and solving arrive in 0.1.2, heat conduction and the materials library in 0.1.3. Help › Verification solves benchmarks with known answers in front of you, so you can see how far to trust each result."
   ],
   "steps": [
     {
@@ -24,35 +24,25 @@
     }
   ],
   "highlights": [
-    "Frames and trusses: draw members on a grid, choose sections (rectangle, round bar, tube, box, I, channel, angle) and see their properties",
-    "Parts: rectangles, circles and polygons with arcs, and holes cut out of them",
-    "Supports and loads on nodes, members and edges: fixed, pinned, rollers, springs, symmetry; forces, moments, distributed loads, pressure, gravity",
-    "Heat: fixed temperatures, heat flux, convection and heat generation",
+    "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
+    "An equilibrium check after every solve: the reactions are added up against the loads",
+    "Help › Verification: benchmarks with known answers solved in front of you; all agree to better than one part in a billion",
+    "Hover a member to read the axial force, shear, moment and deflection at that point; utilisation colours against the yield strength",
+    "Sections: rectangle, round bar, tube, box, I, channel, angle, or your own values, with their properties worked out",
+    "Parts: rectangles, circles and polygons with arcs, and holes cut out of them, with supports and loads on their edges",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Six worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink",
-    "Print to PDF with a title block; updates itself from inside the app"
+    "Six worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink"
   ],
   "screenshots": [
-    "docs/images/bracket.png",
-    "docs/images/portal.png"
+    "docs/images/portal-solved.png",
+    "docs/images/truss-solved.png",
+    "docs/images/bracket.png"
   ],
   "roadmap": [
     {
-      "v": "0.1.1",
-      "title": "Frames and trusses solved",
-      "when": "Next",
-      "items": [
-        "2D beam and truss elements, sparse solver",
-        "Deflected shape, axial, shear and moment diagrams",
-        "Reactions and the equilibrium check",
-        "Member stresses and utilisation against yield",
-        "Verified: cantilever, simply supported beam and a truss against hand calculations"
-      ]
-    },
-    {
       "v": "0.1.2",
       "title": "Parts meshed and solved",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Automatic triangle meshing with quality refinement and local sizes",
         "6-node triangles (3-node as an option), plane stress and plane strain",

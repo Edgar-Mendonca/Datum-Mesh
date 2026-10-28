@@ -1,6 +1,6 @@
 //! Writes the engine's real output for the UI tests (tests_ui/fixture.json):
 //! cargo run -q -p datum-core --example dump > tests_ui/fixture.json
-use datum_core::examples;
+use datum_core::{bench, examples, frame};
 use serde_json::json;
 
 fn main() {
@@ -16,6 +16,9 @@ fn main() {
         "bracket": out("bracket"),
         "lug": out("lug"),
         "fin": out("fin"),
+        "portal_results": frame::solve(&examples::get("portal").unwrap()).unwrap(),
+        "truss_results": frame::solve(&examples::get("truss").unwrap()).unwrap(),
+        "verification": bench::run(),
     });
     println!("{}", serde_json::to_string(&fix).unwrap());
 }

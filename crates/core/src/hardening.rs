@@ -173,6 +173,66 @@ mod tests {
     }
 
     #[test]
+    fn random_frames_solve_or_say_why_and_always_balance() {
+        // Random frames with random supports and loads: the solver never panics; when it answers,
+        // the reactions balance the loads and every member's curve meets its nodes.
+        let mut solved = 0;
+        for seed in 1..=60u64 {
+            let mut r = Rng(seed.wrapping_mul(0x2545_F491_4F6C_DD1D));
+            let mut d = Doc::new(Model::new(Analysis::Frame));
+            for _ in 0..(3 + r.below(10)) {
+                let op = random_op(&mut r, &d.m);
+                if matches!(op, Op::AddMember { .. } | Op::Add { item: Item::Support(_) | Item::Load(_) } | Op::Delete { .. }) {
+                    let _ = d.apply(op);
+                }
+            }
+            // Give most models a fixed support so some solve.
+            if let Some(n) = d.m.nodes.first().map(|n| n.id) {
+                if r.below(4) > 0 {
+                    let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: SupportKind::Fixed }) });
+                }
+            }
+            let Ok(res) = crate::frame::solve(&d.m) else { continue };
+            solved += 1;
+            let scale = res.applied[0].abs().max(res.applied[1].abs()).max(1.0);
+            assert!((res.applied[0] + res.reacted[0]).abs() < 1e-6 * scale && (res.applied[1] + res.reacted[1]).abs() < 1e-6 * scale, "seed {seed}: {:?} vs {:?}", res.applied, res.reacted);
+            for (mr, mb) in res.members.iter().zip(&d.m.members) {
+                let ia = d.m.nodes.iter().position(|n| n.id == mb.a).unwrap();
+                let ib = d.m.nodes.iter().position(|n| n.id == mb.b).unwrap();
+                let (da, db) = (mr.d[0], *mr.d.last().unwrap());
+                let tol = 1e-9 + 1e-6 * res.disp.iter().map(|x| x[0].abs().max(x[1].abs())).fold(0.0, f64::max);
+                assert!((da[0] - res.disp[ia][0]).abs() < tol && (da[1] - res.disp[ia][1]).abs() < tol && (db[0] - res.disp[ib][0]).abs() < tol && (db[1] - res.disp[ib][1]).abs() < tol, "seed {seed}: member ends do not meet their nodes");
+            }
+        }
+        assert!(solved >= 10, "only {solved} random frames solved");
+    }
+
+    #[test]
+    fn speed_gate_on_a_large_frame_solve() {
+        // A 60 × 60 grid of beams (7 320 members, 11 163 equations), fixed along the bottom.
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        let mut ops = vec![];
+        for i in 0..=60 {
+            for j in 0..=60 {
+                let (x, y) = (i as f64, j as f64);
+                if i < 60 { ops.push(Op::AddMember { from: [x, y], to: [x + 1.0, y], kind: MemberKind::Beam, section: None, material: None }); }
+                if j < 60 { ops.push(Op::AddMember { from: [x, y], to: [x, y + 1.0], kind: MemberKind::Beam, section: None, material: None }); }
+            }
+        }
+        d.apply(Op::Batch(ops)).unwrap();
+        let bottom: Vec<u32> = d.m.nodes.iter().filter(|n| n.y == 0.0).map(|n| n.id).collect();
+        let top = d.m.nodes.iter().find(|n| n.y == 60.0 && n.x == 60.0).unwrap().id;
+        let mut ops: Vec<Op> = bottom.iter().map(|id| Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: *id }, kind: SupportKind::Fixed }) }).collect();
+        ops.push(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0 } }) });
+        d.apply(Op::Batch(ops)).unwrap();
+        let t = std::time::Instant::now();
+        let r = crate::frame::solve(&d.m).unwrap();
+        assert!(r.imbalance() < 1e-9);
+        let limit = if cfg!(debug_assertions) { 30.0 } else { 3.0 };
+        assert!(t.elapsed().as_secs_f64() < limit, "solve took {:?}", t.elapsed());
+    }
+
+    #[test]
     fn speed_gate_on_a_large_model() {
         // 10 000 members in a grid, saved and opened, then 200 edits with undo.
         let t = std::time::Instant::now();

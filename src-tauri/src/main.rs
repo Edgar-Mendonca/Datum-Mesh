@@ -5,7 +5,7 @@ mod update;
 
 use datum_core::doc::{Doc, Op};
 use datum_core::model::{self, Analysis, Model, SectionShape};
-use datum_core::{examples, sections};
+use datum_core::{bench, examples, frame, sections};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -129,6 +129,22 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
     let m = fresh(&a, m);
     a.doc = Doc::new(m);
     Ok(out(&a))
+}
+
+/// Solve the open model. Frames and trusses solve here in 0.1.1; parts follow in 0.1.2.
+#[tauri::command]
+async fn solve(st: State<'_, St>) -> R<frame::FrameResults> {
+    let m = st.lock().doc.m.clone();
+    if m.analysis.is_plane() {
+        return Err("Meshing and solving parts arrive in 0.1.2. Frames and trusses solve now.".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || frame::solve(&m)).await.map_err(|e| e.to_string())?
+}
+
+/// The verification benchmarks, solved now by this version's engine.
+#[tauri::command]
+async fn verification() -> R<Vec<bench::Check>> {
+    tauri::async_runtime::spawn_blocking(bench::run).await.map_err(|e| e.to_string())
 }
 
 /// Area, second moment of area and extreme-fibre distance of a section, for the window.
@@ -386,7 +402,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            state, apply, history, examples_list, new_model, section_props, open, save, save_file,
+            state, apply, history, examples_list, new_model, section_props, solve, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

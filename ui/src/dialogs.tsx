@@ -1,10 +1,10 @@
 // Dialogs: materials, sections, a node at typed coordinates, and the help pages (shortcuts, getting
 // started, glossary), recovery and closing.
 import { For, Show, createSignal, createResource } from "solid-js";
-import { Out, Material, Section, SectionShape, Props, num } from "./api";
+import { Out, Material, Section, SectionShape, Props, Check, num } from "./api";
 import { openDialog, closeDialog, act, call, out, setOut, model, setSel } from "./store";
 import { C } from "./cmds";
-import { Dialog } from "./ui";
+import { Dialog, Icon } from "./ui";
 import { Q, toU, fromU, unit, fmt } from "./units";
 
 /** A number field inside a dialog: display units in, SI out. */
@@ -100,7 +100,7 @@ export const shortcuts = () => openDialog(() => (
     <table class="tbl keys"><tbody><For each={[
       ["Save / Save As", "Ctrl+S / Ctrl+Shift+S"], ["Open", "Ctrl+O"], ["New", "Ctrl+N"], ["Print", "Ctrl+P"], ["Tell me what you want to do", "Ctrl+K"],
       ["Undo / Redo", "Ctrl+Z / Ctrl+Y"], ["Delete", "Del"], ["Select all", "Ctrl+A"], ["Select tool, stop drawing", "Esc"], ["Close a polygon", "Enter or double-click"],
-      ["Move the selection one grid step", "Arrows"], ["Fit to window", "F"], ["Zoom", "Wheel"], ["Pan", "Middle button, or Space + drag; Shift + wheel"], ["This list", "F1"],
+      ["Solve", "F5"], ["Move the selection one grid step", "Arrows"], ["Fit to window", "F"], ["Zoom", "Wheel"], ["Pan", "Middle button, or Space + drag; Shift + wheel"], ["This list", "F1"],
     ] as [string, string][]}>{([a, b]) => <tr><td>{a}</td><td><kbd>{b}</kbd></td></tr>}</For></tbody></table>
   </Dialog>
 ));
@@ -114,7 +114,7 @@ export const gettingStarted = () => openDialog(() => (
         <li>File › Home › <b>Blank frame</b>. Geometry › <b>Beam</b>, then click two points on the grid for each member (it continues from the last point; Esc stops).</li>
         <li>Loads › <b>Fixed</b> or <b>Pinned</b>, then click the nodes at the bottom.</li>
         <li>Loads › <b>Force</b> or <b>Distributed</b>, then click a node or a member; set the value in the Inspector on the right.</li>
-        <li>Solve (0.1.1) shows the deflected shape, the moment and shear diagrams and the reactions.</li>
+        <li><b>Solve</b> (F5) shows the deflected shape, the moment, shear and axial diagrams and the reactions; hover a member to read the values there.</li>
       </ol>
       <h4>A part</h4>
       <ol>
@@ -126,7 +126,7 @@ export const gettingStarted = () => openDialog(() => (
       <ul>
         <li>Values are shown in mm, kN and MPa (or in, kip and ksi: Home › Units). The file keeps SI units, so nothing is lost when you switch.</li>
         <li>Every tool has a small ? beside it that says what it is for. File › Home has worked examples.</li>
-        <li>Every result Datum Mesh gives is checked against known answers; Help › Verification (0.1.3) lists them.</li>
+        <li>Every result Datum Mesh gives is checked against known answers; Help › Verification solves them in front of you.</li>
       </ul>
     </div>
   </Dialog>
@@ -162,3 +162,23 @@ export const recoverDialog = (name: string, saved: string, done: () => void) => 
   </Dialog>
 ));
 
+
+/** Help › Verification: every benchmark solved now by this version, against its reference. */
+export const verification = () => openDialog(() => {
+  const [rows] = createResource(() => call<Check[]>("verification"));
+  const [ver] = createResource(() => call<string>("version"));
+  const val = (q: string, v: number) => (q === "ratio" ? `${num(v, 6)} rad` : fmt(q as Q, v, 6));
+  return (
+    <Dialog title="Verification" wide help="verification">
+      <div class="verif">
+        <p>Every check below was solved just now by Datum Mesh {ver()} and compared with a known answer. A check fails if its error is over the tolerance; the same checks run as tests before every release.</p>
+        <Show when={rows()} fallback={<p class="muted">Solving the benchmarks…</p>}>{r => <>
+          <p classList={{ okline: r().every(x => x.pass), badline: !r().every(x => x.pass) }}><Icon n={r().every(x => x.pass) ? "check" : "info"} /> {r().filter(x => x.pass).length} of {r().length} checks pass.</p>
+          <table class="tbl"><thead><tr><th>#</th><th>Benchmark</th><th>Quantity</th><th class="r">Datum Mesh</th><th class="r">Reference</th><th class="r">Error</th><th>Source</th><th /></tr></thead><tbody>
+            <For each={r()}>{x => <tr><td>{x.bench}</td><td>{x.name}</td><td>{x.quantity}</td><td class="r">{val(x.q, x.result)}</td><td class="r">{val(x.q, x.reference)}</td><td class="r">{x.error < 1e-12 ? "< 1e-12" : x.error.toExponential(1)}</td><td>{x.source}</td><td>{x.pass ? "✓ pass" : "✗ fail"}</td></tr>}</For></tbody></table>
+          <p class="muted small">Coming: plates with a hole, a thick cylinder and NAFEMS LE1 with mesh convergence (0.1.2); heat conduction (0.1.3).</p>
+        </>}</Show>
+      </div>
+    </Dialog>
+  );
+});

@@ -10,12 +10,13 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles.css";
 import { invoke, listen, Out, Options, num } from "./api";
-import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model } from "./store";
+import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving } from "./store";
 import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
 import { Canvas, fit, scale } from "./canvas";
 import { Tree, Inspector, ANALYSES } from "./panels";
+import { ResultsPage, ResultsLegend } from "./results";
 import { Menu, Toast, Icon } from "./ui";
 import { fmt } from "./units";
 import * as D from "./dialogs";
@@ -27,7 +28,7 @@ const TOOL_HINT: Record<string, string> = {
   rect: "Click two opposite corners.", hrect: "Click two opposite corners of the hole.", circle: "Click the centre, then a point on the circle.", hcircle: "Click the centre, then a point on the hole's edge.",
   poly: "Click each corner; click the first one, double-click or press Enter to close.",
 };
-const toolHint = () => { const t = tool(); if (TOOL_HINT[t]) return TOOL_HINT[t]; if (t.startsWith("sup:")) return "Click where the support goes."; if (t.startsWith("load:")) return "Click where the load acts."; return "Ready"; };
+const toolHint = () => { const t = tool(); if (t === "select" && solving()) return "Solving…"; if (t === "select" && results() && !stale()) return `Solved · ${results()!.stats.equations} equations · ${num(results()!.stats.ms, 2)} ms`; if (TOOL_HINT[t]) return TOOL_HINT[t]; if (t.startsWith("sup:")) return "Click where the support goes."; if (t.startsWith("load:")) return "Click where the load acts."; return "Ready"; };
 
 const Planned = (p: { t: string; v: string; what: string }) => (
   <div class="page"><h1>{p.t}</h1><div class="emptypage"><Icon n="list" size={34} /><b>{p.t} arrives in {p.v}</b><p class="muted">{p.what}</p>
@@ -74,6 +75,7 @@ const App = () => {
     else if (ctrl && k === "z" && !typing) { e.preventDefault(); C.undo(); }
     else if (ctrl && k === "y" && !typing) { e.preventDefault(); C.redo(); }
     else if (e.key === "F1") { e.preventDefault(); D.shortcuts(); }
+    else if (e.key === "F5") { e.preventDefault(); C.solve(); }
     else if (k === "f" && !ctrl && !typing && !backstage()) fit();
     else if (e.key === "Escape" && backstage() && out()) setBackstage(null);
   };
@@ -85,9 +87,9 @@ const App = () => {
         <nav class="side"><For each={SIDE}>{x => x === "-" ? <hr /> : <button classList={{ on: view() === x[0] }} onClick={() => setView(x[0])} title={x[2]}><Icon n={x[1]} /><span>{x[2]}</span></button>}</For></nav>
         <div class="content">
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /></div><Inspector /></div>}>
+            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /><ResultsLegend /></div><Inspector /></div>}>
               <Match when={view() === "mesh"}><Planned t="Mesh" v="0.1.2" what="The part split into triangles, with the number of elements and nodes and the quality of every triangle (smallest angle, aspect ratio)." /></Match>
-              <Match when={view() === "results"}><Planned t="Results" v={model()?.analysis === "frame" ? "0.1.1" : "0.1.2"} what="Deflected shapes, moment, shear and axial diagrams, stress and temperature contours with a legend, a probe, reactions and the equilibrium check." /></Match>
+              <Match when={view() === "results"}><ResultsPage /></Match>
               <Match when={view() === "report"}><Planned t="Report" v="0.1.3" what="A printable report: the model, the mesh, materials, loads and supports, result pictures with legends, tables of maxima and reactions, and the equilibrium check." /></Match>
             </Switch>
           </Show>

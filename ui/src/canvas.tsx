@@ -9,13 +9,14 @@ import { C } from "./cmds";
 import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient } from "./geom";
 import { fmt } from "./units";
 import { defaultLoad, defaultSupport } from "./panels";
+import { ResultsLayer, ResultsProbe } from "./results";
 
 export const [scale, setScale] = createSignal(60); // px per metre
 export const [pan, setPan] = createSignal<Pt>([80, 500]); // screen position of the world origin
 let box: HTMLDivElement | undefined;
 const RULER = 22;
 
-const toS = (p: Pt): Pt => [pan()[0] + p[0] * scale(), pan()[1] - p[1] * scale()];
+export const toS = (p: Pt): Pt => [pan()[0] + p[0] * scale(), pan()[1] - p[1] * scale()];
 const toW = (cx: number, cy: number): Pt => { const r = box!.getBoundingClientRect(); return [(cx - r.left - pan()[0]) / scale(), -(cy - r.top - pan()[1]) / scale()]; };
 const grid = () => model()?.grid ?? 0.5;
 const snapV = (v: number) => (opts().snap ? Math.round(v / grid()) * grid() : v);
@@ -117,7 +118,9 @@ const arrowPath = (tip: Pt, dir: Pt, len = ARROW) => {
 };
 
 /** A support symbol at a node, in screen space. */
-const SupportGlyph = (p: { s: Support; at: Pt; on: boolean }) => {
+const SupportGlyph = (p: { s: Support; at: Pt; on: boolean }) => <>{supportBody(p)}</>;
+/** Read inside the JSX above, so the symbol follows pan, zoom and edits. */
+const supportBody = (p: { s: Support; at: Pt; on: boolean }) => {
   const [x, y] = p.at, k = p.s.kind.kind;
   const hatch = (y0: number, w: number) => <path d={`M${x - w} ${y0}h${2 * w}` + Array.from({ length: 5 }, (_, i) => `M${x - w + 4 + i * (2 * w - 4) / 5} ${y0}l-5 6`).join("")} class="supl" />;
   if (k === "fixed") return <g class="sup" classList={{ sel: p.on }} data-id={p.s.id}><rect x={x - 12} y={y - 2} width={24} height={4} class="supf" />{hatch(y + 2, 12)}</g>;
@@ -434,6 +437,7 @@ export const Canvas = () => {
           <line x1={e()[0][0]} y1={e()[0][1]} x2={e()[1][0]} y2={e()[1][1]} />
           <Show when={mb.kind === "truss"}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * 0.06} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * 0.06} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /></Show>
         </g>}</Show>}</For>
+        <ResultsLayer />
         <For each={supportsAtNodes()}>{s => <Show when={supAt(s)}>{p => <SupportGlyph s={s} at={S(p())} on={selSet().has(s.id)} />}</Show>}</For>
         <For each={m()?.nodes ?? []}>{n => { const p = () => S(np().get(n.id) ?? [n.x, n.y]); return <rect x={p()[0] - 3.5} y={p()[1] - 3.5} width={7} height={7} class="node" classList={{ sel: selSet().has(n.id), hover: hoverIs("node", n.id) }} data-id={n.id} />; }}</For>
         <For each={(m()?.loads ?? []).filter(l => l.at.on !== "body")}>{l => <LoadGlyph l={l} m={m()!} on={selSet().has(l.id)} label={labels().has(l.id)} />}</For>
@@ -456,6 +460,7 @@ export const Canvas = () => {
           <span>{frame() ? "Pick Beam or Truss in Geometry, then click two points for each member. Supports and loads are on the Loads tab." : "Pick Rectangle, Circle or Polygon in Geometry and draw the outline; holes cut out of it. Supports and loads go on its edges."}</span>
           <button class="btn pri" onClick={() => setTool(frame() ? "beam" : "rect")}>{frame() ? "Draw members" : "Draw a rectangle"}</button></div>
       </Show>
+      <ResultsProbe />
       <div class="zoomctl"><button title="Zoom out" onClick={() => zoomBy(1 / 1.25)}>−</button><button title="Fit (F)" onClick={fit}>Fit</button><button title="Zoom in" onClick={() => zoomBy(1.25)}>+</button></div>
     </div>
   );

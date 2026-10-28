@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act } from "./store";
+import { call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving } from "./store";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
 import { Icon } from "./ui";
@@ -113,7 +113,7 @@ export const Ribbon = () => {
         <G l="Units" h="units"><S><B i="units" l="SI: mm, kN, MPa" on={m()?.units === "SI"} run={() => C.units("SI")} /><B i="units" l="US: in, kip, ksi" on={m()?.units === "US"} run={() => C.units("US")} /></S></G>
         <G l="Select" h="select"><T big i="select" l="Select" t="select" /><S><B i="all" l="Select All" run={C.selectAll} /><B i="del" l="Delete" run={C.del} off={!sel().length} /></S></G>
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
-        <G l="Solve" h="solve"><Planned big i="solve" l="Solve" v="0.1.1" /></G>
+        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.2" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show></G>
       </Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
@@ -148,14 +148,17 @@ export const Ribbon = () => {
         <G l="Load Cases" h="loads"><S><Planned i="table" l="Load Cases" v="0.2" /><Planned i="table" l="Combinations" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "solve"}>
-        <G l="Solve" h="solve"><Planned big i="solve" l="Solve" v={frame() ? "0.1.1" : "0.1.2"} /><S><Planned i="check" l="Check Model" v="0.1.1" /><Planned i="table" l="Solver Report" v="0.1.1" /></S></G>
+        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.2" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show>
+          <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
         <G l="Studies" h="solve"><S><Planned i="mesh" l="Mesh Convergence" v="0.1.3" /><Planned i="solve" l="Natural Frequencies" v="0.2" /><Planned i="solve" l="Buckling" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
         <Show when={frame()} fallback={<G l="Contours" h="results"><Planned big i="contour" l="Von Mises" v="0.1.2" /><S><Planned i="contour" l="Displacement" v="0.1.2" /><Planned i="contour" l="Principal Stresses" v="0.1.2" /><Planned i="contour" l="Safety Factor" v="0.1.2" /></S></G>}>
-          <G l="Diagrams" h="results"><Planned big i="deform" l="Deflected Shape" v="0.1.1" /><S><Planned i="diagram" l="Bending Moment" v="0.1.1" /><Planned i="diagram" l="Shear Force" v="0.1.1" /><Planned i="diagram" l="Axial Force" v="0.1.1" /></S></G>
+          <G l="Shape" h="results"><B big i="deform" l="Deflected Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!results()} /></G>
+          <G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
+            <S><B i="diagram" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="diagram" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
+          <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G>
         </Show>
-        <G l="Inspect" h="results"><S><Planned i="probe" l="Probe" v={frame() ? "0.1.1" : "0.1.2"} /><Planned i="reactions" l="Reactions" v="0.1.1" /><Planned i="check" l="Equilibrium Check" v="0.1.1" /></S></G>
         <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><Planned i="report" l="Results Report" v="0.1.3" /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "view"}>
@@ -174,7 +177,7 @@ export const Ribbon = () => {
       </Show>
       <Show when={tab() === "help"}>
         <G l="Learn"><B big i="report" l="Getting Started" run={() => D.gettingStarted()} /><B big i="info" l="Glossary" run={() => D.glossary()} /><B big i="help" l="What Is This Tool?" dd={e => openMenu(e, Object.entries(HELP).map(([k, h]) => ({ label: h.t, run: () => helpCard(k) })))} /><B big i="keys" l="Shortcuts" run={() => D.shortcuts()} /><B big i="search" l="Tell Me" run={palette} /></G>
-        <G l="Trust"><Planned big i="verify" l="Verification" v="0.1.3" /></G>
+        <G l="Trust"><B big i="verify" l="Verification" run={() => D.verification()} /></G>
         <G l="Datum Mesh on GitHub"><B big i="github" l="GitHub" run={() => call("open_url", { url: GH })} /><B big i="tag" l="Releases" run={() => call("open_url", { url: `${GH}/releases` })} /><B big i="bug" l="Report an Issue" run={() => call("open_url", { url: `${GH}/issues/new` })} /></G>
         <G l="Updates"><B big i="upd" l="Check for Updates" run={() => setBackstage("about")} /><B big i="list" l="Roadmap" run={() => setBackstage("roadmap")} /></G>
       </Show>

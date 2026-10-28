@@ -3,7 +3,8 @@ Copyright (c) 2026 Edgar Mendonca. MIT licence.
 
 The window bundles SolidJS (MIT) and the IBM Plex fonts (SIL Open Font Licence 1.1). The desktop
 shell uses Tauri (MIT or Apache-2.0) and the Rust crates listed in Cargo.lock, each under MIT,
-Apache-2.0, BSD, ISC, Zlib, MPL-2.0 or Unicode licences (checked by cargo deny, deny.toml).
+Apache-2.0, BSD, ISC, Zlib, MPL-2.0 or Unicode licences (checked by cargo deny, deny.toml). The sparse Cholesky solver is faer (MIT,
+https://github.com/sarah-quinones/faer-rs).
 
 No GPL, LGPL or AGPL code is linked into or bundled with Datum Mesh. Open solvers and meshers
 under those licences, planned for later releases, will only ever run as separate programs.
