@@ -1,0 +1,132 @@
+{
+  "id": "mesh",
+  "name": "Datum Mesh",
+  "accent": "#B83250",
+  "logo": "docs/brand/datum-mesh-icon.svg",
+  "tagline": "Finite-element analysis on the desktop: stresses, deflections and temperatures in parts and frames.",
+  "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
+  "about": [
+    "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
+    "Version 0.1.0 is the first step: the window, the drawing canvas with snap and rulers, frames and parts with supports and loads, materials and sections, worked examples, printing and updates. Solving frames arrives in 0.1.1, meshing and solving parts in 0.1.2, heat conduction, the materials library and the verification report in 0.1.3. Every result will be checked against known answers, and the checks are listed in the app."
+  ],
+  "steps": [
+    {
+      "title": "Draw and mesh",
+      "text": "Draw a frame of beams and truss bars, or the outline of a part with its holes, on a grid with snap and rulers."
+    },
+    {
+      "title": "Load and support",
+      "text": "Put supports, forces, pressures, gravity and heat on nodes, members and edges, and set their values with units."
+    },
+    {
+      "title": "Solve and report",
+      "text": "Solve, read the deflections, stresses and temperatures, and print a report with the equilibrium check."
+    }
+  ],
+  "highlights": [
+    "Frames and trusses: draw members on a grid, choose sections (rectangle, round bar, tube, box, I, channel, angle) and see their properties",
+    "Parts: rectangles, circles and polygons with arcs, and holes cut out of them",
+    "Supports and loads on nodes, members and edges: fixed, pinned, rollers, springs, symmetry; forces, moments, distributed loads, pressure, gravity",
+    "Heat: fixed temperatures, heat flux, convection and heat generation",
+    "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
+    "Six worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink",
+    "Print to PDF with a title block; updates itself from inside the app"
+  ],
+  "screenshots": [
+    "docs/images/bracket.png",
+    "docs/images/portal.png"
+  ],
+  "roadmap": [
+    {
+      "v": "0.1.1",
+      "title": "Frames and trusses solved",
+      "when": "Next",
+      "items": [
+        "2D beam and truss elements, sparse solver",
+        "Deflected shape, axial, shear and moment diagrams",
+        "Reactions and the equilibrium check",
+        "Member stresses and utilisation against yield",
+        "Verified: cantilever, simply supported beam and a truss against hand calculations"
+      ]
+    },
+    {
+      "v": "0.1.2",
+      "title": "Parts meshed and solved",
+      "when": "Soon",
+      "items": [
+        "Automatic triangle meshing with quality refinement and local sizes",
+        "6-node triangles (3-node as an option), plane stress and plane strain",
+        "Stress and displacement contours, deformed shape, probe, min and max",
+        "Verified: plate with a hole, thick cylinder, NAFEMS LE1, patch tests"
+      ]
+    },
+    {
+      "v": "0.1.3",
+      "title": "Heat, materials and reports",
+      "when": "Soon",
+      "items": [
+        "Steady heat conduction with convection",
+        "Materials library from Datum Atlas, with sources",
+        "Printed results report",
+        "Help › Verification: every benchmark with Datum Mesh's answer, the reference and the error"
+      ]
+    },
+    {
+      "v": "0.1.4",
+      "title": "Polish",
+      "when": "Soon",
+      "items": [
+        "Speed on large meshes",
+        "Fixes from first use"
+      ]
+    },
+    {
+      "v": "0.2",
+      "title": "More analyses",
+      "when": "Later",
+      "items": [
+        "Axisymmetric solids",
+        "3D frames",
+        "Natural frequencies and buckling of frames",
+        "DXF import",
+        "Thermal stress",
+        "Send results to Datum Calc and Datum Plot"
+      ]
+    },
+    {
+      "v": "0.3",
+      "title": "3D solids",
+      "when": "Later",
+      "items": [
+        "Linear static, modal and thermal analysis of 3D parts",
+        "STEP import"
+      ]
+    },
+    {
+      "v": "0.4",
+      "title": "Nonlinear",
+      "when": "Later",
+      "items": [
+        "Plasticity, large deflection and contact, with open solvers run as separate programs"
+      ]
+    },
+    {
+      "v": "0.5",
+      "title": "Flow",
+      "when": "Later",
+      "items": [
+        "Incompressible flow and conjugate heat transfer with open CFD solvers"
+      ]
+    },
+    {
+      "v": "1.0",
+      "title": "Validated",
+      "when": "Goal",
+      "items": [
+        "A validation report covering every analysis type",
+        "User guide",
+        "Signed installer"
+      ]
+    }
+  ]
+}

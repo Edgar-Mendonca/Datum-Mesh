@@ -1,0 +1,10 @@
+[package]
+name = "datum-core"
+version = "0.1.0"
+license = "MIT"
+edition = "2021"
+description = "Datum Mesh engine: the model and its edits, sections, meshing, finite elements, solver, results and benchmarks."
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true

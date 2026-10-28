@@ -1,0 +1,57 @@
+name: Release
+# Builds one Windows installer, DatumMesh-x.y.z-setup.exe, and publishes it with SHA256SUMS.txt
+# as a GitHub Release (the shape Datum Home and the in-app updater rely on, FAMILY §9).
+# Bump the version in src-tauri/Cargo.toml and crates/core/Cargo.toml, add a CHANGELOG.md section,
+# then run this workflow from the Actions tab (or push a tag: git tag v0.1.0 && git push origin v0.1.0).
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Read the app version
+        shell: bash
+        run: |
+          V=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
+          if [[ "$GITHUB_REF" == refs/tags/* && "v$V" != "$GITHUB_REF_NAME" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match version $V in src-tauri/Cargo.toml"; exit 1
+          fi
+          echo "V=$V" >> "$GITHUB_ENV"
+      - name: Release notes from CHANGELOG.md
+        shell: bash
+        run: |
+          awk -v v="$V" 'index($0, "## " v " ") == 1 || $0 == "## " v {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          cat notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section for $V"; exit 1; }
+      - run: cargo test -p datum-core
+      - name: Installer
+        shell: bash
+        run: |
+          npx tauri build --bundles nsis
+          mkdir -p out
+          cp target/release/bundle/nsis/*-setup.exe "out/DatumMesh-$V-setup.exe"
+          cd out && sha256sum "DatumMesh-$V-setup.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -la
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.V }}
+          target_commitish: ${{ github.sha }}
+          name: Datum Mesh ${{ env.V }}
+          body_path: notes.md
+          make_latest: true
+          files: |
+            out/DatumMesh-${{ env.V }}-setup.exe
+            out/SHA256SUMS.txt
