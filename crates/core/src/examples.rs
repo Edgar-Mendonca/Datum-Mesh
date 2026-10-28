@@ -136,6 +136,8 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             d.m.grid = 5.0 * mm;
             let s = d.apply(shape(poly(&[[0.0, 0.0], [100.0, 0.0], [100.0, 20.0], [30.0, 20.0], [20.0, 30.0], [20.0, 100.0], [0.0, 100.0]], &[(3, -QUARTER)]), false))?[0];
             d.apply(Op::Batch(vec![sup(edge(s, 5), SupportKind::Fixed), load(edge(s, 1), LoadKind::Traction { fx: 0.0, fy: -1.5e3, total: true })]))?;
+            // Finer elements round the fillet, where the stress peaks.
+            d.m.mesh.refine.push(crate::model::Refine { at: edge(s, 3), size: 1.0 * mm });
         }
         "flange" => {
             d.m.notes = "A 200 mm round steel plate, 15 mm thick, with an 80 mm bore under 20 MPa and six 16 mm bolt holes on a 140 mm circle.".into();
@@ -162,11 +164,8 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             pts.insert(2, [60.0, 6.0]);
             pts.push([0.0, 6.0]);
             let s = d.apply(shape(poly(&pts, &[]), false))?[0];
-            // Aluminium: conductivity 167 W/m·K.
-            let mut al = d.m.materials[0].clone();
-            al.name = "Aluminium 6061-T6".into();
-            (al.e, al.nu, al.rho, al.fy, al.k, al.alpha) = (69e9, 0.33, 2700.0, 276e6, 167.0, 23.6e-6);
-            al.source = "Typical handbook values (ASM)".into();
+            // Aluminium 6061-T6 from the materials library.
+            let al = crate::materials::get("al-6061-t6").expect("library").to_material(d.m.materials[0].id);
             let mut ops = vec![Op::Set { item: Item::Material(al) }, sup(edge(s, 0), SupportKind::Temperature { t: 353.15 })];
             for e in 1..pts.len() as u32 {
                 ops.push(load(edge(s, e), LoadKind::Convection { h: 25.0, t_inf: 298.15 }));

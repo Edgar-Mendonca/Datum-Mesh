@@ -526,8 +526,9 @@ impl Model {
             crate::sections::props(&s.shape).map_err(|e| format!("{}: {e}", s.name))?;
         }
         let mut pairs = std::collections::HashSet::new();
+        let at: std::collections::HashMap<u32, &Node> = self.nodes.iter().map(|n| (n.id, n)).collect();
         for mb in &self.members {
-            let (Some(a), Some(b)) = (self.node(mb.a), self.node(mb.b)) else { return Err("A member ends at a node that does not exist.".into()) };
+            let (Some(a), Some(b)) = (at.get(&mb.a), at.get(&mb.b)) else { return Err("A member ends at a node that does not exist.".into()) };
             if mb.a == mb.b || (a.x - b.x).hypot(a.y - b.y) <= 0.0 {
                 return Err("A member must join two nodes at different places.".into());
             }

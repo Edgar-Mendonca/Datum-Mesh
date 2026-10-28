@@ -10,3 +10,5 @@ serde.workspace = true
 serde_json.workspace = true
 # Sparse Cholesky (MIT), https://github.com/sarah-quinones/faer-rs
 faer = { version = "0.24", default-features = false, features = ["std", "sparse-linalg"] }
+# Constrained Delaunay triangulation with refinement (MIT OR Apache-2.0), https://github.com/Stoeoef/spade
+spade = "2.15"

@@ -207,6 +207,89 @@ mod tests {
     }
 
     #[test]
+    fn random_parts_mesh_and_solve_or_say_why_and_balance() {
+        // Random plates with random holes, arcs, supports and loads, as stress, strain and heat
+        // models: meshing and solving never panic; when they answer, loads and reactions (or heat
+        // in and out) balance and every element is the right way round.
+        let mut solved = 0;
+        for seed in 1..=60u64 {
+            let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xABCD);
+            let analysis = [Analysis::Stress, Analysis::Strain, Analysis::Heat][r.below(3)];
+            let mut d = Doc::new(Model::new(analysis));
+            let w = r.f(0.05, 2.0);
+            let h = r.f(0.05, 2.0);
+            let base = if r.below(3) == 0 { Geom::Circle { c: [0.0, 0.0], r: w / 2.0 } } else {
+                let mut g = Geom::rect(-w / 2.0, -h / 2.0, w / 2.0, h / 2.0);
+                if let Geom::Poly { bulge, .. } = &mut g {
+                    for b in bulge.iter_mut() {
+                        if r.below(3) == 0 {
+                            *b = r.f(-0.9, 0.9);
+                        }
+                    }
+                }
+                g
+            };
+            let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: base, ..Shape::default() }) }).unwrap()[0];
+            for _ in 0..r.below(4) {
+                let c = [r.f(-w / 2.0, w / 2.0), r.f(-h / 2.0, h / 2.0)];
+                let _ = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c, r: r.f(0.001, w.min(h) / 3.0) }, ..Shape::default() }) });
+            }
+            let edges = d.m.shape(s).unwrap().geom.edges() as u32;
+            for _ in 0..1 + r.below(3) {
+                let at = Target::Edge { shape: s, edge: r.below(edges as usize) as u32 };
+                let kind = if analysis == Analysis::Heat { SupportKind::Temperature { t: r.f(250.0, 400.0) } } else { [SupportKind::Fixed, SupportKind::Roller, SupportKind::Symmetry, SupportKind::Pinned][r.below(4)].clone() };
+                let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at, kind }) });
+            }
+            for _ in 0..1 + r.below(3) {
+                let at = Target::Edge { shape: s, edge: r.below(edges as usize) as u32 };
+                let kind = match (analysis, r.below(3)) {
+                    (Analysis::Heat, 0) => LoadKind::Flux { q: r.f(-1e4, 1e4) },
+                    (Analysis::Heat, _) => LoadKind::Convection { h: r.f(0.0, 100.0), t_inf: 293.0 },
+                    (_, 0) => LoadKind::Pressure { p: r.f(-1e7, 1e7) },
+                    (_, 1) => LoadKind::Traction { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), total: true },
+                    _ => LoadKind::Traction { fx: r.f(-1e5, 1e5), fy: 0.0, total: false },
+                };
+                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+            }
+            if r.below(3) == 0 {
+                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Point { x: r.f(-w, w) / 2.0, y: r.f(-h, h) / 2.0 }, kind: LoadKind::Force { fx: 1e3, fy: -1e3 } }) });
+            }
+            d.m.mesh.size = w.max(h) / r.f(4.0, 30.0);
+            d.m.mesh.order = 1 + r.below(2) as u8;
+            let Ok(res) = crate::solve(&d.m) else { continue };
+            solved += 1;
+            let (imb, mesh) = match &res {
+                crate::Results::Plane(p) => (p.imbalance, &p.mesh),
+                crate::Results::Heat(p) => (p.imbalance, &p.mesh),
+                crate::Results::Frame(_) => unreachable!(),
+            };
+            assert!(imb < 1e-6, "seed {seed}: imbalance {imb:e}");
+            for t in &mesh.tris {
+                let p = [mesh.nodes[t[0] as usize], mesh.nodes[t[1] as usize], mesh.nodes[t[2] as usize]];
+                assert!((p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]) > 0.0, "seed {seed}: a folded element");
+            }
+        }
+        assert!(solved >= 15, "only {solved} random parts solved");
+    }
+
+    #[test]
+    fn speed_gate_on_a_large_part() {
+        // About 25 000 six-node triangles (50 000 nodes, 100 000 unknowns): meshed and solved.
+        let mut d = Doc::new(Model::new(Analysis::Stress));
+        let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 1.0, 1.0), ..Shape::default() }) }).unwrap()[0];
+        d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c: [0.5, 0.5], r: 0.1 }, ..Shape::default() }) }).unwrap();
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Fixed }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -1e6 } }) }).unwrap();
+        d.m.mesh.size = 0.0095;
+        let t = std::time::Instant::now();
+        let r = crate::plane::solve(&d.m).unwrap();
+        assert!(r.mesh.nodes.len() > 40_000, "{}", r.mesh.nodes.len());
+        assert!(r.imbalance < 1e-9);
+        let limit = if cfg!(debug_assertions) { 120.0 } else { 10.0 };
+        assert!(t.elapsed().as_secs_f64() < limit, "took {:?}", t.elapsed());
+    }
+
+    #[test]
     fn speed_gate_on_a_large_frame_solve() {
         // A 60 × 60 grid of beams (7 320 members, 11 163 equations), fixed along the bottom.
         let mut d = Doc::new(Model::new(Analysis::Frame));
