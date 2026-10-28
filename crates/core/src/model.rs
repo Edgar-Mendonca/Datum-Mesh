@@ -627,11 +627,9 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
                 Some(_) => warn.push(format!("The {k} list was damaged and was left out.")),
             }
         }
-        for (k, ok) in [("mesh", o.get("mesh").is_none_or(|m| serde_json::from_value::<MeshSettings>(m.clone()).is_ok()))] {
-            if !ok {
-                o.remove(k);
-                warn.push("The mesh settings were damaged; the defaults are used.".into());
-            }
+        if !o.get("mesh").is_none_or(|m| serde_json::from_value::<MeshSettings>(m.clone()).is_ok()) {
+            o.remove("mesh");
+            warn.push("The mesh settings were damaged; the defaults are used.".into());
         }
         // Scalars of the wrong type fall back to their defaults.
         let d = serde_json::to_value(Model::default()).unwrap_or_default();

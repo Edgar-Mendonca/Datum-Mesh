@@ -8,3 +8,5 @@ description = "Datum Mesh engine: the model and its edits, sections, meshing, fi
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
+# Sparse Cholesky (MIT), https://github.com/sarah-quinones/faer-rs
+faer = { version = "0.24", default-features = false, features = ["std", "sparse-linalg"] }
