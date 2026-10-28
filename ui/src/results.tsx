@@ -2,7 +2,7 @@
 // reactions, utilisation colours, a probe that follows the pointer, a legend) and the Results page
 // (equilibrium check, reactions, members, the solver report). The engine computes every number.
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Pt, MemberResult, Model, FrameResults, num } from "./api";
+import { Pt, MemberResult, Model, FrameResults, num, clean } from "./api";
 import { results, stale, show, model, cursor, setView, sel, setSel } from "./store";
 import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
@@ -19,7 +19,9 @@ const span = (m: Model) => {
 };
 /** How many times the deflections are drawn larger than they are. */
 export const deformFactor = (m: Model, r: FrameResults) => {
-  const dmax = Math.max(1e-300, ...r.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))));
+  const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))));
+  // Nothing moves (no loads): no exaggeration to speak of (0.1.1 showed "× 2e+299").
+  if (!(dmax > 1e-12 * span(m))) return 0;
   const f = 0.08 * span(m) / dmax;
   // A round number, so the legend reads well.
   const p = 10 ** Math.floor(Math.log10(f)), k = f / p;
@@ -98,11 +100,12 @@ export const ResultsLayer = () => {
   return (
     <Show when={r() && m() && m()!.analysis === "frame"}>
       <g class="results" classList={{ stale: stale() }}>
-        <Show when={show().util}><For each={r()!.members}>{mr => { const g = geo(m()!, mr.id); if (!g) return null; const a = toS(g.a), b = toS(g.b); return <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} class="utilline" style={{ stroke: utilColour(mr.util) }} />; }}</For></Show>
-        <Show when={diag()}><For each={r()!.members}>{mr => { const p = diagramPath(mr); return <><path d={p.d} class="diag" classList={{ [`d-${show().diagram}`]: true }} /><For each={p.peaks}>{([q, v]) => <text x={q[0]} y={q[1]} class="dtxt" text-anchor="middle">{fmt(DIAG[show().diagram][1], v, 3)}</text>}</For></>; }}</For></Show>
-        <Show when={show().deformed}><For each={r()!.members}>{mr => <path d={deformed(mr)} class="defl" />}</For></Show>
+        {/* Everything below reads the view (toS) inside JSX or a memo, so it follows pan and zoom (0.1.1 bug: drawn once). */}
+        <Show when={show().util}><For each={r()!.members}>{mr => <Show when={geo(m()!, mr.id)}>{g => <line x1={toS(g().a)[0]} y1={toS(g().a)[1]} x2={toS(g().b)[0]} y2={toS(g().b)[1]} class="utilline" style={{ stroke: utilColour(mr.util) }} />}</Show>}</For></Show>
+        <Show when={diag()}><For each={r()!.members}>{mr => { const p = createMemo(() => diagramPath(mr)); return <><path d={p().d} class="diag" data-id={mr.id} classList={{ [`d-${show().diagram}`]: true }} /><For each={p().peaks}>{([q, v]) => <text x={q[0]} y={q[1]} class="dtxt" text-anchor="middle">{fmt(DIAG[show().diagram][1], clean(v, diag()!.big), 3)}</text>}</For></>; }}</For></Show>
+        <Show when={show().deformed && f() > 0}><For each={r()!.members}>{mr => <path d={deformed(mr)} class="defl" />}</For></Show>
         <Show when={show().reactions}>{reactionGlyphs()}</Show>
-        <Show when={probe()}>{p => { const g = geo(m()!, p().mr.id)!, s = toS(along(g, p().mr.x[p().i])); return <circle cx={s[0]} cy={s[1]} r={4.5} class="probept" />; }}</Show>
+        <Show when={probe()}>{p => { const at = () => toS(along(geo(m()!, p().mr.id)!, p().mr.x[p().i])); return <circle cx={at()[0]} cy={at()[1]} r={4.5} class="probept" />; }}</Show>
       </g>
     </Show>
   );
@@ -114,15 +117,15 @@ export const ResultsLegend = () => {
   const diagInfo = createMemo(() => {
     const k = show().diagram, rr = r(); if (k === "none" || !rr) return null;
     const vals = rr.members.flatMap(mr => mr[k]);
-    return { name: DIAG[k][0], q: DIAG[k][1], max: Math.max(...vals), min: Math.min(...vals) };
+    return { name: DIAG[k][0], q: DIAG[k][1], max: Math.max(...vals), min: Math.min(...vals), big: Math.max(...vals.map(Math.abs)) };
   });
   const dmax = () => Math.max(0, ...(r()?.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))) ?? [0]));
   return (
     <Show when={r() && m()?.analysis === "frame"}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
-        <Show when={diagInfo()}>{d => <div><b>{d().name}</b><span>max {fmt(d().q, d().max)} · min {fmt(d().q, d().min)}</span><small>{show().diagram === "m" ? "Drawn on the tension side." : "Positive drawn on the member's left side (looking from start to end); tension positive."}</small></div>}</Show>
-        <Show when={show().deformed}><div><b>Deflected shape</b><span>largest {fmt("len", dmax())} · drawn × {num(deformFactor(m()!, r()!), 3)}</span>
+        <Show when={diagInfo()}>{d => <div><b>{d().name}</b><span>max {fmt(d().q, clean(d().max, d().big))} · min {fmt(d().q, clean(d().min, d().big))}</span><small>{show().diagram === "m" ? "Drawn on the tension side." : "Positive drawn on the member's left side (looking from start to end); tension positive."}</small></div>}</Show>
+        <Show when={show().deformed}><div><b>Deflected shape</b><span>{deformFactor(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deformFactor(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={show().util}><div><b>Utilisation</b><span class="ukey"><i style={{ background: "var(--green)" }} />below 50 %<i style={{ background: "var(--amber)" }} />50–100 %<i style={{ background: "var(--crit)" }} />over 100 % (yields)</span></div></Show>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
@@ -131,17 +134,23 @@ export const ResultsLegend = () => {
   );
 };
 
+/** The largest size of a result over the whole model, for telling rounding noise from values. */
+const big = (k: "n" | "v" | "m" | "d") => {
+  const r = results(); if (!r) return 0;
+  return Math.max(0, ...r.members.flatMap(mr => k === "d" ? mr.d.map(d => Math.hypot(d[0], d[1])) : mr[k].map(Math.abs)));
+};
+
 /** The probe readout over the canvas. */
 export const ResultsProbe = () => (
   <Show when={probe() && model()}>{_ => { const p = probe()!, mr = p.mr, i = p.i, d = mr.d[i]; return (
     <div class="probe"><b>Member {model()!.members.findIndex(x => x.id === mr.id) + 1} at {fmt("len", mr.x[i])}</b>
-      <span>N {fmt("force", mr.n[i])}</span><span>V {fmt("force", mr.v[i])}</span><span>M {fmt("moment", mr.m[i])}</span><span>δ {fmt("len", Math.hypot(d[0], d[1]))}</span></div>); }}</Show>
+      <span>N {fmt("force", clean(mr.n[i], big("n")))}</span><span>V {fmt("force", clean(mr.v[i], big("v")))}</span><span>M {fmt("moment", clean(mr.m[i], big("m")))}</span><span>δ {fmt("len", clean(Math.hypot(d[0], d[1]), big("d")))}</span></div>); }}</Show>
 );
 
 const Eq = (p: { r: FrameResults }) => {
-  const rows: [string, number, number, "force" | "moment"][] = [["Σ Fx", p.r.applied[0], p.r.reacted[0], "force"], ["Σ Fy", p.r.applied[1], p.r.reacted[1], "force"], ["Σ M about the origin", p.r.applied[2], p.r.reacted[2], "moment"]];
+  const rows: [string, number, number, "force" | "moment", number][] = [["Σ Fx", p.r.applied[0], p.r.reacted[0], "force", p.r.scale[0]], ["Σ Fy", p.r.applied[1], p.r.reacted[1], "force", p.r.scale[0]], ["Σ M about the origin", p.r.applied[2], p.r.reacted[2], "moment", p.r.scale[1]]];
   return <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
-    <For each={rows}>{([l, a, b, q]) => <tr><td>{l}</td><td class="r">{fmt(q, a)}</td><td class="r">{fmt(q, b)}</td><td class="r">{fmt(q, a + b)}</td></tr>}</For></tbody></table>;
+    <For each={rows}>{([l, a, b, q, sc]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(a, sc))}</td><td class="r">{fmt(q, clean(b, sc))}</td><td class="r">{fmt(q, clean(a + b, sc))}</td></tr>}</For></tbody></table>;
 };
 
 /** View › Results: the tables behind the pictures. */
@@ -151,7 +160,7 @@ export const ResultsPage = () => {
   return (
     <div class="page">
       <h1>Results <Help k="results" /></h1>
-      <Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>{m().analysis === "frame" ? "Solve the model to see its results" : "Solving parts arrives in 0.1.2"}</b><p class="muted">Deflections, reactions, the equilibrium check and the forces in every member.</p><Show when={m().analysis === "frame"}><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></Show></div>}>{rr => <>
+      <Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>{m().analysis === "frame" ? "Solve the model to see its results" : "Solving parts arrives in 0.1.3"}</b><p class="muted">Deflections, reactions, the equilibrium check and the forces in every member.</p><Show when={m().analysis === "frame"}><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></Show></div>}>{rr => <>
         <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
         <Show when={rr().warnings.length}><For each={rr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
         <h2>Equilibrium check <Help k="equilibrium" /></h2>
@@ -159,13 +168,13 @@ export const ResultsPage = () => {
         <Eq r={rr()} />
         <h2>Reactions</h2>
         <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy ({unit("force")})</th><th class="r">M ({unit("moment")})</th></tr></thead><tbody>
-          <For each={rr().reactions}>{x => <tr><td>{nodeName(x.node)}</td><td class="r">{fmt("force", x.fx).split(" ")[0]}</td><td class="r">{fmt("force", x.fy).split(" ")[0]}</td><td class="r">{fmt("moment", x.m).split(" ")[0]}</td></tr>}</For></tbody></table>
+          <For each={rr().reactions}>{x => <tr><td>{nodeName(x.node)}</td><td class="r">{fmt("force", clean(x.fx, rr().scale[0])).split(" ")[0]}</td><td class="r">{fmt("force", clean(x.fy, rr().scale[0])).split(" ")[0]}</td><td class="r">{fmt("moment", clean(x.m, rr().scale[1])).split(" ")[0]}</td></tr>}</For></tbody></table>
         <h2>Members</h2>
-        <table class="tbl"><thead><tr><th>Member</th><th class="r">Length ({unit("len")})</th><th class="r">N max / min ({unit("force")})</th><th class="r">|V| max ({unit("force")})</th><th class="r">|M| max ({unit("moment")})</th><th class="r">Deflection max ({unit("len")})</th><th class="r">Stress ({unit("stress")})</th><th class="r">Utilisation</th></tr></thead><tbody>
+        <table class="tbl"><thead><tr><th>Member</th><th class="r">Length ({unit("coord")})</th><th class="r">N max / min ({unit("force")})</th><th class="r">|V| max ({unit("force")})</th><th class="r">|M| max ({unit("moment")})</th><th class="r">Deflection max ({unit("len")})</th><th class="r">Stress ({unit("stress")})</th><th class="r">Utilisation</th></tr></thead><tbody>
           <For each={rr().members}>{(mr, i) => <tr class="link" classList={{ on: sel().includes(mr.id) }} onClick={() => { setSel([mr.id]); setView("model"); }}>
-            <td>Member {i() + 1} · {m().members.find(x => x.id === mr.id)?.kind}</td><td class="r">{fmt("len", mr.length).split(" ")[0]}</td>
-            <td class="r">{fmt("force", Math.max(...mr.n)).split(" ")[0]} / {fmt("force", Math.min(...mr.n)).split(" ")[0]}</td>
-            <td class="r">{fmt("force", Math.max(...mr.v.map(Math.abs))).split(" ")[0]}</td><td class="r">{fmt("moment", Math.max(...mr.m.map(Math.abs))).split(" ")[0]}</td>
+            <td>Member {i() + 1} · {m().members.find(x => x.id === mr.id)?.kind}</td><td class="r">{fmt("coord", mr.length).split(" ")[0]}</td>
+            <td class="r">{fmt("force", clean(Math.max(...mr.n), big("n"))).split(" ")[0]} / {fmt("force", clean(Math.min(...mr.n), big("n"))).split(" ")[0]}</td>
+            <td class="r">{fmt("force", clean(Math.max(...mr.v.map(Math.abs)), big("v"))).split(" ")[0]}</td><td class="r">{fmt("moment", clean(Math.max(...mr.m.map(Math.abs)), big("m"))).split(" ")[0]}</td>
             <td class="r">{fmt("len", Math.max(...mr.d.map(d => Math.hypot(d[0], d[1])))).split(" ")[0]}</td><td class="r">{fmt("stress", mr.stress).split(" ")[0]}</td>
             <td class="r"><span class="upill" style={{ background: utilColour(mr.util) }}>{mr.util ? `${num(mr.util * 100, 3)} %` : "—"}</span></td></tr>}</For></tbody></table>
         <p class="muted small">Stress is |N|/A + |M|/Z, the largest along the member; utilisation is that over the yield strength. Buckling of members in compression is not checked in 0.1.</p>

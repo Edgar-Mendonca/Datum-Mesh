@@ -1,7 +1,7 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num } from "./api";
+import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum } from "./api";
 import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView } from "./store";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
@@ -77,8 +77,8 @@ export const Tree = () => {
           <Show when={frame()}><Group t="Sections" n={mm().sections.length} help="sections" add={() => D.sections()}><For each={mm().sections}>{x => <button class="ti" onClick={() => D.sections(x.id)}><span>{x.name}</span></button>}</For></Group></Show>
           <Group t="Supports" n={mm().supports.length} help="supports"><For each={mm().supports}>{s => <Leaf id={s.id} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Group>
           <Group t="Loads" n={mm().loads.length} help="loads"><For each={mm().loads}>{l => <Leaf id={l.id} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></Group>
-          <Show when={!frame()}><Group t="Mesh" n={0} help="mesh"><p class="muted tnote">Meshing arrives in 0.1.2.</p></Group></Show>
-          <Group t="Results" n={results() ? 1 : 0} help="results"><Show when={frame()} fallback={<p class="muted tnote">Solving parts arrives in 0.1.2.</p>}>
+          <Show when={!frame()}><Group t="Mesh" n={0} help="mesh"><p class="muted tnote">Meshing arrives in 0.1.3.</p></Group></Show>
+          <Group t="Results" n={results() ? 1 : 0} help="results"><Show when={frame()} fallback={<p class="muted tnote">Solving parts arrives in 0.1.3.</p>}>
             <Show when={results()} fallback={<p class="muted tnote">Not solved yet: press F5.</p>}><button class="ti" onClick={() => setView("results")}><span>{stale() ? "Out of date" : "Solved"}</span><small>{results()!.stats.equations} equations</small></button></Show></Show></Group>
         </>}</Show>
       </div>
@@ -87,12 +87,19 @@ export const Tree = () => {
 };
 
 // ---------- the inspector ----------
+/** A change handler for a number input: understands "−" and "," and puts the old text back when
+ * the value cannot be read or is refused (0.1.1 bug: negative corners could not be edited). */
+export const numIn = (f: (v: number) => unknown, shown: () => string | number) => (e: Event & { currentTarget: HTMLInputElement }) => {
+  const v = parseNum(e.currentTarget.value);
+  if (v === null || f(v) === false) e.currentTarget.value = String(shown());
+};
+
 /** A number shown in display units and stored in SI. */
 export const NumField = (p: { label: string; q: Q; v: number; set: (v: number) => void; hint?: string; min?: number }) => (
   <div class="iprow"><label>{p.label}<span class="unit">{unit(p.q)}</span></label>
     <input class="mono" value={num(toU(p.q, p.v), 6).replace("−", "-")} onChange={e => {
-      const v = +e.currentTarget.value.replace("−", "-").replace(",", ".");
-      if (!isFinite(v) || (p.min !== undefined && v < p.min)) { e.currentTarget.value = num(toU(p.q, p.v), 6).replace("−", "-"); return; }
+      const v = parseNum(e.currentTarget.value);
+      if (v === null || (p.min !== undefined && v < p.min)) { e.currentTarget.value = num(toU(p.q, p.v), 6).replace("−", "-"); return; }
       p.set(fromU(p.q, v));
     }} />{p.hint && <span class="hint">{p.hint}</span>}</div>
 );
@@ -145,12 +152,12 @@ const ShapeInsp = (p: { s: Shape; m: Model }) => {
         <table class="ptbl"><thead><tr><th>#</th><th>x ({unit("coord")})</th><th>y</th><th title="The angle the edge after this corner turns through as an arc; 0 = straight">Arc °</th><th /></tr></thead><tbody>
           <For each={pg().pts}>{(pt, i) => <tr>
             <td>{i() + 1}</td>
-            <td><input class="mono" value={num(toU("coord", pt[0]), 6)} onChange={e => { const v = +e.currentTarget.value; if (isFinite(v)) put({ ...pg(), pts: pg().pts.map((q, k) => k === i() ? [fromU("coord", v), q[1]] : q) }); }} /></td>
-            <td><input class="mono" value={num(toU("coord", pt[1]), 6)} onChange={e => { const v = +e.currentTarget.value; if (isFinite(v)) put({ ...pg(), pts: pg().pts.map((q, k) => k === i() ? [q[0], fromU("coord", v)] : q) }); }} /></td>
-            <td><input class="mono" value={num(4 * Math.atan(pg().bulge[i()] ?? 0) * 180 / Math.PI)} onChange={e => { const v = +e.currentTarget.value; if (isFinite(v) && Math.abs(v) <= 180) put({ ...pg(), bulge: pg().bulge.map((b, k) => k === i() ? Math.tan(v * Math.PI / 720) : b) }); }} /></td>
-            <td><button class="x" title="Remove this corner" disabled={pg().pts.length <= 3} onClick={() => put({ kind: "poly", pts: pg().pts.filter((_, k) => k !== i()), bulge: pg().bulge.filter((_, k) => k !== i()) })}>×</button></td>
+            <td><input class="mono" value={num(toU("coord", pt[0]), 6).replace("−", "-")} onChange={numIn(v => put({ ...pg(), pts: pg().pts.map((q, k) => k === i() ? [fromU("coord", v), q[1]] : q) }), () => num(toU("coord", pt[0]), 6).replace("−", "-"))} /></td>
+            <td><input class="mono" value={num(toU("coord", pt[1]), 6).replace("−", "-")} onChange={numIn(v => put({ ...pg(), pts: pg().pts.map((q, k) => k === i() ? [q[0], fromU("coord", v)] : q) }), () => num(toU("coord", pt[1]), 6).replace("−", "-"))} /></td>
+            <td><input class="mono" value={num(4 * Math.atan(pg().bulge[i()] ?? 0) * 180 / Math.PI).replace("−", "-")} onChange={numIn(v => Math.abs(v) <= 180 && put({ ...pg(), bulge: pg().bulge.map((b, k) => k === i() ? Math.tan(v * Math.PI / 720) : b) }), () => num(4 * Math.atan(pg().bulge[i()] ?? 0) * 180 / Math.PI).replace("−", "-"))} /></td>
+            <td><button class="x" title="Remove this corner" disabled={pg().pts.length <= 3} onClick={() => act({ RemoveCorner: { shape: p.s.id, corner: i() } })}>×</button><button class="x" title="Add a corner in the middle of the next edge" onClick={() => act({ InsertCorner: { shape: p.s.id, edge: i() } })}>+</button></td>
           </tr>}</For></tbody></table>
-        <p class="ibtns"><button class="btn sm" onClick={() => { const pts = pg().pts, a = pts[pts.length - 1], b = pts[0]; put({ kind: "poly", pts: [...pts, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]], bulge: [...pg().bulge.slice(0, -1), 0, pg().bulge[pts.length - 1] ?? 0] }); }}>Add a corner</button></p>
+        <p class="muted small">+ adds a corner halfway along the next edge (on the arc, for an arc); supports and loads stay on their edges.</p>
       </>; }}</Show>
       <table class="vmini"><tbody><tr><td>Area</td><td class="r">{fmt("area", Math.abs(g().kind === "circle" ? Math.PI * (g() as any).r ** 2 : area(outline(g(), 1e-4))))}</td></tr><tr><td>Edges</td><td class="r">{edgeCount(g())}</td></tr></tbody></table>
     </>

@@ -52,6 +52,11 @@ pub struct FrameResults {
     /// they balance when the solution is right.
     pub applied: [f64; 3],
     pub reacted: [f64; 3],
+    /// The size of the loads (forces summed without signs; moments about the origin likewise).
+    pub scale: [f64; 2],
+    /// The equilibrium check: the largest of |ΣFx|, |ΣFy| over the force scale and |ΣM| over
+    /// the moment scale, loads and reactions together. 0 when there are no loads.
+    pub imbalance: f64,
     pub stats: Stats,
     pub warnings: Vec<String>,
 }
@@ -59,8 +64,12 @@ pub struct FrameResults {
 impl FrameResults {
     /// The largest imbalance between loads and reactions, relative to the loads.
     pub fn imbalance(&self) -> f64 {
-        let scale = self.applied[0].abs().max(self.applied[1].abs()).max(1e-30);
-        ((self.applied[0] + self.reacted[0]).abs().max((self.applied[1] + self.reacted[1]).abs())) / scale
+        self.imbalance
+    }
+    fn check_balance(&mut self) {
+        let f = if self.scale[0] > 0.0 { (self.applied[0] + self.reacted[0]).abs().max((self.applied[1] + self.reacted[1]).abs()) / self.scale[0] } else { 0.0 };
+        let mo = if self.scale[1] > 0.0 { (self.applied[2] + self.reacted[2]).abs() / self.scale[1] } else { 0.0 };
+        self.imbalance = f.max(mo);
     }
 }
 
@@ -270,9 +279,25 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
             held[3 * i + 2] = true;
         }
         if !has_member[i] {
+            if sys.f[3 * i].abs() + sys.f[3 * i + 1].abs() + sys.f[3 * i + 2].abs() > 0.0 {
+                warnings.push(format!("Node {} has a load on it but no member reaches it; the load was left out.", i + 1));
+                let (x, y) = (m.nodes[i].x, m.nodes[i].y);
+                applied[0] -= sys.f[3 * i];
+                applied[1] -= sys.f[3 * i + 1];
+                applied[2] -= sys.f[3 * i + 2] + x * sys.f[3 * i + 1] - y * sys.f[3 * i];
+                sys.f[3 * i..3 * i + 3].iter_mut().for_each(|f| *f = 0.0);
+            }
             held[3 * i] = true;
             held[3 * i + 1] = true;
         }
+    }
+    // The size of the loads, for judging the equilibrium check: forces added up without their
+    // signs, and moments about the origin likewise (so loads that cancel still give a scale).
+    let reach = m.nodes.iter().map(|n| n.x.hypot(n.y)).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
+    let fscale: f64 = (0..nn).map(|i| sys.f[3 * i].abs() + sys.f[3 * i + 1].abs()).sum();
+    let scale = [fscale, fscale * reach + (0..nn).map(|i| sys.f[3 * i + 2].abs()).sum::<f64>()];
+    if scale[0] == 0.0 && scale[1] == 0.0 {
+        warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
     }
     let (u, stats) = sys.solve(&held, &vec![0.0; 3 * nn])?;
     // Reactions: K u − f at the held unknowns, and the spring forces.
@@ -305,7 +330,9 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     if umax > 0.1 * span {
         warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span * 100.0));
     }
-    Ok(FrameResults { disp, reactions, members, applied, reacted, stats, warnings })
+    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings };
+    r.check_balance();
+    Ok(r)
 }
 
 fn load_name(k: &LoadKind) -> &'static str {
@@ -439,6 +466,59 @@ mod tests {
         load(&mut t, Target::Node { id: n2 }, LoadKind::Force { fx: 1e3, fy: 0.0 });
         assert!(solve(&t.m).is_err());
         assert!(solve(&base(200e9).m).unwrap_err().contains("no members"));
+    }
+
+    #[test]
+    fn loads_that_cancel_still_balance_and_the_moment_is_checked() {
+        // 0.1.1 review: a moment alone gave "reactions miss the loads by 6.8e19 %".
+        let mut d = base(200e9);
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        sup(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        sup(&mut d, 4.0, 0.0, SupportKind::RollerX);
+        let n = d.m.nodes[1].id;
+        load(&mut d, Target::Node { id: n }, LoadKind::Moment { m: 10e3 });
+        let r = solve(&d.m).unwrap();
+        assert!(r.imbalance() < 1e-9, "{}", r.imbalance());
+        // The reactions form a couple: ±10/4 kN.
+        assert!(r.reactions.iter().all(|x| (x.fy.abs() - 2.5e3).abs() < 1e-6));
+        // A model with no loads says so.
+        let mut e = base(200e9);
+        e.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        sup(&mut e, 0.0, 0.0, SupportKind::Fixed);
+        let r = solve(&e.m).unwrap();
+        assert!(r.warnings.iter().any(|w| w.contains("no loads")) && r.imbalance() == 0.0);
+    }
+
+    #[test]
+    fn a_load_on_a_loose_node_is_named_not_dropped_silently() {
+        let mut d = base(200e9);
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        sup(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        d.apply(Op::Add { item: Item::Node(crate::model::Node { id: 0, x: 8.0, y: 0.0 }) }).unwrap();
+        let loose = d.m.nodes.iter().find(|n| n.x == 8.0).unwrap().id;
+        load(&mut d, Target::Node { id: loose }, LoadKind::Force { fx: 0.0, fy: -1e3 });
+        let tip = d.m.nodes.iter().find(|n| n.x == 4.0).unwrap().id;
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1e3 });
+        let r = solve(&d.m).unwrap();
+        assert!(r.warnings.iter().any(|w| w.contains("no member reaches")), "{:?}", r.warnings);
+        assert!(r.imbalance() < 1e-9, "{}", r.imbalance());
+    }
+
+    #[test]
+    fn finely_divided_members_are_not_mechanisms() {
+        // 0.1.1 review: a cantilever in 500 pieces was called a mechanism.
+        let mut d = base(200e9);
+        let n = 1000;
+        let ops = (0..n).map(|i| Op::AddMember { from: [10.0 * i as f64 / n as f64, 0.0], to: [10.0 * (i + 1) as f64 / n as f64, 0.0], kind: MemberKind::Beam, section: None, material: None }).collect();
+        d.apply(Op::Batch(ops)).unwrap();
+        sup(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = d.m.nodes.iter().find(|x| x.x == 10.0).unwrap().id;
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1e3 });
+        let r = solve(&d.m).unwrap();
+        let i = 0.1 * 0.2f64.powi(3) / 12.0;
+        let want = 1e3 * 1000.0 / (3.0 * 200e9 * i);
+        let ti = d.m.nodes.iter().position(|x| x.id == tip).unwrap();
+        assert!((-r.disp[ti][1] - want).abs() < 1e-6 * want, "{} vs {want}", -r.disp[ti][1]);
     }
 
     #[test]

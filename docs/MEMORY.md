@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.1.1 (2026-10-28) |
+| **Current version** | 0.1.2 (2026-10-28) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -54,7 +54,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 52 UI checks of the built window with a mocked bridge |
+| `tests_ui/run.cjs` | 65 UI checks of the built window with a mocked bridge |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -93,6 +93,15 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.1 | Distributed loads in global x or y are per length of the member, not projected | The simplest rule to explain; stated in the help and the Inspector |
 | 0.1.1 | Moments drawn on the tension side; N and V on the member's local +y | Common practice for moments; one fixed rule for the others, stated in the legend |
 | 0.1.1 | After an edit results stay drawn but faded and marked out of date; Solve is F5 (no automatic re-solve) | Clear about what the picture shows; solving is instant for frames, but meshed parts will not be |
+| 0.1.2 | A fixes release after a review of 0.1.1 (the user's request): 13 findings, each with a test; meshing moves to 0.1.3, heat/materials/report to 0.1.4, polish to 0.1.5 | The user: "make 0.1.2 a fixes release for 1–13" |
+| 0.1.2 | Every edit joins geometry: added or moved nodes merge into a node already there and split members they land on; added or moved members are split at nodes along them (distributed loads split linearly); `Model::check` refuses coincident nodes; repair merges them in old files | A member drawn to the middle of another was not connected (misleading "mechanism" error, or a column carrying nothing); arrow-key moves could stack nodes |
+| 0.1.2 | Corners are added and removed by engine ops (`InsertCorner`, `RemoveCorner`) that renumber edge targets; a split edge's loads cover both halves (a total edge force is shared); a corner in an arc splits the arc | The window's own corner editing moved loads to the wrong edge |
+| 0.1.2 | The equilibrium check is judged against the size of the loads (forces summed without signs; moments about the origin likewise), forces and moments both; computed in the engine (`imbalance`) | Dividing by the net force gave 6.8e19 % for a moment alone |
+| 0.1.2 | Mechanism probe limit 1e15 plus two steps of iterative refinement in every solve | A cantilever in 500 pieces was called a mechanism (probe ≈ 3n⁴); at 1 000 pieces rounding cost 6e-5, refinement recovers 1e-9 |
+| 0.1.2 | Results drawing reads the view inside JSX or memos only | Diagrams and utilisation lines were computed once and stayed behind after pan or zoom |
+| 0.1.2 | Display values below 1e-9 of their scale are shown as 0 (`clean`); typed numbers go through `parseNum` ("−", "1,5", "1,200", empty refused) | Noise like 1.5e-14 kN·m; negative corners could not be typed; empty became 0 |
+| 0.1.2 | Switching units picks a round grid step in the new units (`niceGrid`); member lengths use the drawing's unit | 0.5 m showed as 1.6404 ft |
+| 0.1.2 | Open, New, an example or a recent file ask to save unsaved changes first | Work was lost without a question |
 | 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
 
 ## 3. Roadmap
@@ -104,9 +113,10 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | plan | Read the hub, Plan, Sim and Atlas; PLAN-0.1, MEMORY, CLAUDE, icon | ✅ |
 | 0.1.0 | Shell, updater, Home, File page, the canvas that saves and opens; model, edits, sections, examples, hardening tests; CI and release | ✅ |
 | 0.1.1 | Frames and trusses end to end: beam and truss elements, sparse assembly and Cholesky (faer), member loads, self-weight, reactions, equilibrium check, diagrams, member stresses; benchmarks 1–3; Help › Verification | ✅ |
-| 0.1.2 | Meshing (spade CDT + refinement) and T6/T3 plane stress and strain; benchmarks 4–6 and patch tests; contours, probe, deformed shape | 🔜 |
-| 0.1.3 | Heat conduction (benchmark 7), materials library from Atlas, results report, verification report, convention build | ⬜ |
-| 0.1.4 | Fixes from a clean Windows PC, speed on large meshes, README and screenshots | ⬜ |
+| 0.1.2 | Fixes release: the 13 findings of the 0.1.1 review (see Decisions) | ✅ |
+| 0.1.3 | Meshing (spade CDT + refinement) and T6/T3 plane stress and strain; benchmarks 4–6 and patch tests; contours, probe, deformed shape (work in progress in `git stash`: mesh.rs, plane.rs) | 🔜 |
+| 0.1.4 | Heat conduction (benchmark 7), materials library from Atlas, results report, convention build | ⬜ |
+| 0.1.5 | Fixes from a clean Windows PC, speed on large meshes, README and screenshots | ⬜ |
 | 0.2 | Axisymmetric, 3D frames, modal, buckling, DXF import, thermal stress, Send to Calc and Plot | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
@@ -128,9 +138,17 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - Window: Solve (F5), results over the canvas, legend bar, probe, View › Results, Help › Verification, results in the printed report. A support symbol that kept its old position after a fit (props read outside a reactive scope) was fixed and found by screenshot.
 - Checked: clippy, 21 engine tests, 52 UI checks, cargo deny, screenshots.
 
-## 5. Known limits (0.1.1)
+### 2026-10-28: Session 1, continued (review and the 0.1.2 fixes release)
+- Released 0.1.1. The user asked to stop and analyse the app. Two passes: an independent code review by a separate agent (it confirmed the solver maths numerically and found 15 issues in the checks, editing and window layers) and my own use of the real app under Xvfb (found the misplaced diagram after a refit, the "× 2e+299" no-load scale, rounding noise, the metric grid in US units, the broken empty card).
+- The user chose a fixes release for findings 1–13. Engine: joining and merging on every edit, corner ops, equilibrium scale and moment check, loose-node and no-load warnings, mechanism limit and iterative refinement (27 tests). Window: reactive results drawing, save prompt, no-load legend, `parseNum`, `clean`, `niceGrid`, the empty card (65 UI checks, 13 new). Rechecked in the real app.
+- The unreleased 0.1.3 meshing work (mesh.rs with spade, plane.rs with T3/T6) is parked in `git stash` ("WIP 0.1.2: mesh.rs, plane.rs"); its plane tests passed except a roller-on-a-slope case that hit the refinement vertex limit.
+- Not fixed (low, from the review): save is not atomic (temp file + rename), undo to the saved state still marks the model changed, the autosave interval needs a restart, load arrows do not follow a drag, drag snaps the offset not the position, the print title block says mm for frames and its equilibrium table has no moment row, a few damaged scalars (negative `next`, unknown `analysis`) still refuse the whole file.
 
-- Parts do not solve yet (0.1.2).
+## 5. Known limits (0.1.2)
+
+- Parts do not solve yet (0.1.3).
+- Crossing members (an X) are not joined where they cross; only nodes on members join.
+- The low findings listed in the last session-log entry.
 - No member end releases (hinges inside a frame), no buckling check of members in compression.
 - No copy and paste of geometry; members do not split where they cross.
 - Overlapping solid shapes join only when meshed (0.1.2); the canvas draws them overlapping.

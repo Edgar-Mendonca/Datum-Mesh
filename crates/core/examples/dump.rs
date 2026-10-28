@@ -8,6 +8,13 @@ fn main() {
         let m = examples::get(id).expect("example");
         json!({ "m": m, "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] })
     };
+    // A fixed beam with no loads (0.1.1 drew a garbage deflected shape × 2e+299).
+    let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
+    d.apply(datum_core::doc::Op::AddMember { from: [0.0, 0.0], to: [6.0, 0.0], kind: datum_core::model::MemberKind::Beam, section: None, material: None }).unwrap();
+    let id = d.m.nodes[0].id;
+    d.apply(datum_core::doc::Op::Add { item: datum_core::doc::Item::Support(datum_core::model::Support { id: 0, at: datum_core::model::Target::Node { id }, kind: datum_core::model::SupportKind::Fixed }) }).unwrap();
+    let noload = d.m;
+    let out_m = |m: &datum_core::model::Model| json!({ "m": m, "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] });
     let fix = json!({
         "examples_list": examples::list(),
         "frame": out("blank-frame"),
@@ -19,6 +26,8 @@ fn main() {
         "portal_results": frame::solve(&examples::get("portal").unwrap()).unwrap(),
         "truss_results": frame::solve(&examples::get("truss").unwrap()).unwrap(),
         "verification": bench::run(),
+        "noload": out_m(&noload),
+        "noload_results": frame::solve(&noload).unwrap(),
     });
     println!("{}", serde_json::to_string(&fix).unwrap());
 }

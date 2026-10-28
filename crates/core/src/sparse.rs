@@ -93,14 +93,16 @@ impl System {
         let nonzeros = a.compute_nnz();
         let llt = a.sp_cholesky(Side::Lower).map_err(|_| mechanism())?;
         // Column 0 is the load; column 1 a probe load scaled by the diagonal, whose answer is about 1
-        // in a sound model and enormous when rounding hid a zero pivot (a mechanism).
+        // in a compact model, larger in long chains of members, and enormous when rounding hid a zero
+        // pivot (a mechanism).
         let mut b = Mat::<f64>::zeros(m, 2);
         for i in 0..m {
             b[(i, 0)] = rhs[i];
             b[(i, 1)] = diag[i];
         }
         let x = llt.solve(&b);
-        if (0..m).any(|i| !(x[(i, 1)].abs() < 1e11)) {
+        // A member split into n pieces answers about 3n⁴ (2.4e14 at 3 000); a singular matrix far more.
+        if (0..m).any(|i| !(x[(i, 1)].abs() < 1e15)) {
             return Err(mechanism());
         }
         for i in 0..self.n {
@@ -110,6 +112,23 @@ impl System {
         }
         if !u.iter().all(|v| v.is_finite()) {
             return Err(mechanism());
+        }
+        // Iterative refinement with the same factors: long chains of members lose digits to
+        // rounding (a cantilever in 1 000 pieces, 6e-5), and two steps win them back.
+        for _ in 0..2 {
+            let ku = self.mul(&u);
+            let mut r = Mat::<f64>::zeros(m, 1);
+            for i in 0..self.n {
+                if map[i] != usize::MAX {
+                    r[(map[i], 0)] = self.f[i] - ku[i];
+                }
+            }
+            let dx = llt.solve(&r);
+            for i in 0..self.n {
+                if map[i] != usize::MAX {
+                    u[i] += dx[(map[i], 0)];
+                }
+            }
         }
         // Residual on the free unknowns.
         let ku = self.mul(&u);

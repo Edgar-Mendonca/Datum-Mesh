@@ -88,9 +88,9 @@ const App = () => {
         <div class="content">
           <Show when={out()}>
             <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /><ResultsLegend /></div><Inspector /></div>}>
-              <Match when={view() === "mesh"}><Planned t="Mesh" v="0.1.2" what="The part split into triangles, with the number of elements and nodes and the quality of every triangle (smallest angle, aspect ratio)." /></Match>
+              <Match when={view() === "mesh"}><Planned t="Mesh" v="0.1.3" what="The part split into triangles, with the number of elements and nodes and the quality of every triangle (smallest angle, aspect ratio)." /></Match>
               <Match when={view() === "results"}><ResultsPage /></Match>
-              <Match when={view() === "report"}><Planned t="Report" v="0.1.3" what="A printable report: the model, the mesh, materials, loads and supports, result pictures with legends, tables of maxima and reactions, and the equilibrium check." /></Match>
+              <Match when={view() === "report"}><Planned t="Report" v="0.1.4" what="A printable report: the model, the mesh, materials, loads and supports, result pictures with legends, tables of maxima and reactions, and the equilibrium check." /></Match>
             </Switch>
           </Show>
         </div>

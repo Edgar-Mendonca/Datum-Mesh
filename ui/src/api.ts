@@ -43,6 +43,19 @@ export interface Options {
   contours: "rainbow" | "viridis"; paper: string; landscape: boolean; company: string;
 }
 
+/** Rounding noise to zero: values smaller than a billionth of the scale they belong to. */
+export const clean = (v: number, scale: number) => (Math.abs(v) <= 1e-9 * Math.abs(scale) ? 0 : v);
+
+/** A number typed by a person: "−" and "," are understood ("1,5" is 1.5, "1,200" is 1200); empty or
+ * not a number gives null. */
+export const parseNum = (s: string): number | null => {
+  let t = s.trim().replace(/[−–]/g, "-").replace(/\s/g, "");
+  if (!t) return null;
+  if (t.includes(",")) t = t.includes(".") || /^-?\d{1,3}(,\d{3})+$/.test(t) ? t.replace(/,/g, "") : t.replace(",", ".");
+  const v = Number(t);
+  return Number.isFinite(v) ? v : null;
+};
+
 /** Numbers for people: up to 4 significant digits, no trailing zeros. */
 export const num = (v: number, sig = 4) => {
   if (!isFinite(v)) return v > 0 ? "∞" : v < 0 ? "−∞" : "—";
@@ -56,5 +69,5 @@ export const num = (v: number, sig = 4) => {
 export interface MemberResult { id: number; length: number; x: number[]; n: number[]; v: number[]; m: number[]; d: Pt[]; stress: number; util: number; ends: number[] }
 export interface Reaction { node: number; fx: number; fy: number; m: number }
 export interface SolveStats { equations: number; nonzeros: number; residual: number; ms: number }
-export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; stats: SolveStats; warnings: string[] }
+export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
 export interface Check { bench: number; name: string; quantity: string; q: string; reference: number; result: number; error: number; tolerance: number; source: string; pass: boolean }

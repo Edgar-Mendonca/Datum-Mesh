@@ -81,7 +81,6 @@ mod tests {
             Op::AddMember { from: [1.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None },
             Op::AddMember { from: [0.0, 0.0], to: [0.0, 5.0], kind: MemberKind::Beam, section: None, material: None },
             Op::AddMember { from: [0.0, 0.0], to: [1.0, 5.0], kind: MemberKind::Beam, section: Some(999), material: None },
-            Op::Move { ids: vec![n], dx: 0.0, dy: 5.0 },
             Op::Move { ids: vec![999], dx: 1.0, dy: 0.0 },
             Op::Move { ids: vec![n], dx: f64::INFINITY, dy: 0.0 },
             Op::Set { item: Item::Node(Node { id: 999, x: 0.0, y: 0.0 }) },

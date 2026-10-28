@@ -33,6 +33,8 @@ Not in 0.1: 3D, nonlinear, CFD, DXF import (0.2), modal and buckling (0.2). See 
 
 Cut order if time runs short: heat conduction, the linear-triangle option, sections beyond rectangle/circle/tube/I. **Never cut** the benchmarks, the equilibrium check or the report.
 
+**Revised after 0.1.1 (the user's decision):** 0.1.2 became a fixes release for the 13 findings of a review of 0.1.1. The rest moves one number: meshing and plane stress/strain 0.1.3, heat, materials, report and the convention build 0.1.4, polish 0.1.5.
+
 ## 4. Risks
 
 | Risk | What we do |

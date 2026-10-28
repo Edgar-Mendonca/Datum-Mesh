@@ -113,7 +113,7 @@ export const Ribbon = () => {
         <G l="Units" h="units"><S><B i="units" l="SI: mm, kN, MPa" on={m()?.units === "SI"} run={() => C.units("SI")} /><B i="units" l="US: in, kip, ksi" on={m()?.units === "US"} run={() => C.units("US")} /></S></G>
         <G l="Select" h="select"><T big i="select" l="Select" t="select" /><S><B i="all" l="Select All" run={C.selectAll} /><B i="del" l="Delete" run={C.del} off={!sel().length} /></S></G>
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
-        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.2" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show></G>
+        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.3" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show></G>
       </Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
@@ -129,9 +129,9 @@ export const Ribbon = () => {
         <G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G>
       </Show>
       <Show when={tab() === "mesh"}>
-        <G l="Mesh" h="mesh"><Planned big i="mesh" l="Mesh" v="0.1.2" /><S><Planned i="mesh" l="Element Size" v="0.1.2" /><Planned i="mesh" l="Refine Near" v="0.1.2" /></S></G>
-        <G l="Elements" h="elements"><S><Planned i="tri6" l="Quadratic (6-node)" v="0.1.2" /><Planned i="tri3" l="Linear (3-node)" v="0.1.2" /></S></G>
-        <G l="Quality" h="mesh"><S><Planned i="check" l="Mesh Quality" v="0.1.2" /><Planned i="table" l="Statistics" v="0.1.2" /></S></G>
+        <G l="Mesh" h="mesh"><Planned big i="mesh" l="Mesh" v="0.1.3" /><S><Planned i="mesh" l="Element Size" v="0.1.3" /><Planned i="mesh" l="Refine Near" v="0.1.3" /></S></G>
+        <G l="Elements" h="elements"><S><Planned i="tri6" l="Quadratic (6-node)" v="0.1.3" /><Planned i="tri3" l="Linear (3-node)" v="0.1.3" /></S></G>
+        <G l="Quality" h="mesh"><S><Planned i="check" l="Mesh Quality" v="0.1.3" /><Planned i="table" l="Statistics" v="0.1.3" /></S></G>
       </Show>
       <Show when={tab() === "loads"}>
         <Show when={!heat()}>
@@ -148,18 +148,18 @@ export const Ribbon = () => {
         <G l="Load Cases" h="loads"><S><Planned i="table" l="Load Cases" v="0.2" /><Planned i="table" l="Combinations" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "solve"}>
-        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.2" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show>
+        <G l="Solve" h="solve"><Show when={frame()} fallback={<Planned big i="solve" l="Solve" v="0.1.3" />}><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></Show>
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
-        <G l="Studies" h="solve"><S><Planned i="mesh" l="Mesh Convergence" v="0.1.3" /><Planned i="solve" l="Natural Frequencies" v="0.2" /><Planned i="solve" l="Buckling" v="0.2" /></S></G>
+        <G l="Studies" h="solve"><S><Planned i="mesh" l="Mesh Convergence" v="0.1.4" /><Planned i="solve" l="Natural Frequencies" v="0.2" /><Planned i="solve" l="Buckling" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
-        <Show when={frame()} fallback={<G l="Contours" h="results"><Planned big i="contour" l="Von Mises" v="0.1.2" /><S><Planned i="contour" l="Displacement" v="0.1.2" /><Planned i="contour" l="Principal Stresses" v="0.1.2" /><Planned i="contour" l="Safety Factor" v="0.1.2" /></S></G>}>
+        <Show when={frame()} fallback={<G l="Contours" h="results"><Planned big i="contour" l="Von Mises" v="0.1.3" /><S><Planned i="contour" l="Displacement" v="0.1.3" /><Planned i="contour" l="Principal Stresses" v="0.1.3" /><Planned i="contour" l="Safety Factor" v="0.1.3" /></S></G>}>
           <G l="Shape" h="results"><B big i="deform" l="Deflected Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!results()} /></G>
           <G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
             <S><B i="diagram" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="diagram" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
           <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G>
         </Show>
-        <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><Planned i="report" l="Results Report" v="0.1.3" /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>
+        <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><Planned i="report" l="Results Report" v="0.1.4" /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "view"}>
         <G l="Zoom" h="zoom"><B big i="fit" l="Fit" run={C.fit} /><S><B i="zin" l="Zoom In" run={C.zoomIn} /><B i="zout" l="Zoom Out" run={C.zoomOut} /></S></G>

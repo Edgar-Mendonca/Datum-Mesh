@@ -495,9 +495,20 @@ impl Model {
         if self.materials.is_empty() {
             return Err("A model needs at least one material.".into());
         }
+        let mut cells: std::collections::HashMap<(i64, i64), Vec<(f64, f64)>> = std::collections::HashMap::new();
+        let c = crate::doc::SAME * 4.0;
         for n in &self.nodes {
             fin(n.x, "A node's x")?;
             fin(n.y, "A node's y")?;
+            let k = ((n.x / c).floor() as i64, (n.y / c).floor() as i64);
+            for dx in -1..=1 {
+                for dy in -1..=1 {
+                    if cells.get(&(k.0 + dx, k.1 + dy)).is_some_and(|v| v.iter().any(|p| (p.0 - n.x).hypot(p.1 - n.y) < crate::doc::SAME)) {
+                        return Err("Two nodes would be at the same place.".into());
+                    }
+                }
+            }
+            cells.entry(k).or_default().push((n.x, n.y));
         }
         for mt in &self.materials {
             pos(mt.e, &format!("{}: Young's modulus", mt.name))?;
@@ -711,6 +722,13 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     m.supports.iter_mut().for_each(|x| fix(&mut x.id));
     m.loads.iter_mut().for_each(|x| fix(&mut x.id));
     m.next = next;
+    // Nodes with bad coordinates go, and so does what hangs on them; nodes at one place become one.
+    m.nodes.retain(|n| n.x.is_finite() && n.y.is_finite());
+    let before = m.nodes.len();
+    crate::doc::merge_all(m);
+    if m.nodes.len() < before {
+        warn.push(format!("{} nodes that sat on others were joined to them.", before - m.nodes.len()));
+    }
     let mut fresh = || {
         let id = m.next;
         m.next += 1;
@@ -746,8 +764,6 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     }
     m.sections.retain(|s| crate::sections::props(&s.shape).is_ok());
     let mat0 = m.materials[0].id;
-    // Nodes with bad coordinates go, and so does what hangs on them.
-    m.nodes.retain(|n| n.x.is_finite() && n.y.is_finite());
     if m.sections.is_empty() && !m.members.is_empty() {
         let id = fresh();
         m.sections.push(Section { id, name: "Rectangle 100 × 200".into(), shape: SectionShape::Rect { b: 0.1, h: 0.2 } });

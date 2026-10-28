@@ -131,12 +131,12 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
     Ok(out(&a))
 }
 
-/// Solve the open model. Frames and trusses solve here in 0.1.1; parts follow in 0.1.2.
+/// Solve the open model. Frames and trusses solve here in 0.1.1; parts follow in 0.1.3.
 #[tauri::command]
 async fn solve(st: State<'_, St>) -> R<frame::FrameResults> {
     let m = st.lock().doc.m.clone();
     if m.analysis.is_plane() {
-        return Err("Meshing and solving parts arrive in 0.1.2. Frames and trusses solve now.".into());
+        return Err("Meshing and solving parts arrive in 0.1.3. Frames and trusses solve now.".into());
     }
     tauri::async_runtime::spawn_blocking(move || frame::solve(&m)).await.map_err(|e| e.to_string())?
 }

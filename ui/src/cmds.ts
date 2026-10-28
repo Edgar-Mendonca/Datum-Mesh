@@ -5,13 +5,15 @@ import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, 
 import { fit, zoomBy, cancelDraft } from "./canvas";
 import { defaultLoad } from "./panels";
 import * as D from "./dialogs";
+import { niceGrid } from "./units";
 
 export const C = {
   // ---------- file ----------
   save: async (asNew = false) => { const o = await call<Out | null>("save", { asNew }); if (o) { setOut(o); toast("Saved.", true); } },
-  open: () => loadOut("open", { path: null }).then(o => { if (o) setTimeout(fit, 60); }),
-  openPath: (path: string) => loadOut("open", { path }).then(o => { if (o) setTimeout(fit, 60); }),
-  newModel: (example: string | null, analysis: Analysis = "frame") => loadOut("new_model", { example, analysis }).then(o => { if (o) setTimeout(fit, 60); }),
+  // Each of these replaces the open model, so unsaved changes are offered for saving first (0.1.1 bug: they were lost).
+  open: () => D.keepChanges(() => loadOut("open", { path: null }).then(o => { if (o) setTimeout(fit, 60); })),
+  openPath: (path: string) => D.keepChanges(() => loadOut("open", { path }).then(o => { if (o) setTimeout(fit, 60); })),
+  newModel: (example: string | null, analysis: Analysis = "frame") => D.keepChanges(() => loadOut("new_model", { example, analysis }).then(o => { if (o) setTimeout(fit, 60); })),
   print: () => setBackstage("print"),
   undo: async () => { const o = await call<Out>("history", { redo: false }); if (o) { setOut(o); if (results()) setStale(true); } },
   redo: async () => { const o = await call<Out>("history", { redo: true }); if (o) { setOut(o); if (results()) setStale(true); } },
@@ -20,7 +22,7 @@ export const C = {
   solve: async () => {
     if (solving()) return;
     const m = model(); if (!m) return;
-    if (m.analysis !== "frame") return C.planned("Meshing and solving parts", "0.1.2");
+    if (m.analysis !== "frame") return C.planned("Meshing and solving parts", "0.1.3");
     setSolving(true);
     try {
       const r = await invoke<FrameResults>("solve"), first = !results();
@@ -47,17 +49,15 @@ export const C = {
     if (o?.created.length) { setSel(o.created); setEdgeSel(null); }
   },
   analysis: (a: Analysis) => { const m = model(); if (m) act({ SetSettings: { s: { analysis: a, units: m.units, grid: m.grid, thickness: m.thickness, mesh: m.mesh } } }); },
-  units: (u: "SI" | "US") => { const m = model(); if (m) act({ SetSettings: { s: { analysis: m.analysis, units: u, grid: m.grid, thickness: m.thickness, mesh: m.mesh } } }); },
+  // The grid becomes a round step in the new units (0.1.1: 0.5 m showed as 1.6404 ft).
+  units: (u: "SI" | "US") => { const m = model(); if (m && m.units !== u) act({ SetSettings: { s: { analysis: m.analysis, units: u, grid: niceGrid(m.grid, u, m.analysis === "frame"), thickness: m.thickness, mesh: m.mesh } } }); },
   view: (v: "model" | "results") => setView(v),
   zoomIn: () => zoomBy(1.25), zoomOut: () => zoomBy(1 / 1.25), fit,
   planned: (what: string, v: string) => toast(`${what} arrives in ${v}. File › Roadmap shows what comes when.`),
 };
 
-/** The largest imbalance between the loads and the reactions, relative to the loads. */
-export const imbalanceOf = (r: FrameResults) => {
-  const s = Math.max(Math.abs(r.applied[0]), Math.abs(r.applied[1]), 1e-30);
-  return Math.max(Math.abs(r.applied[0] + r.reacted[0]), Math.abs(r.applied[1] + r.reacted[1])) / s;
-};
+/** The equilibrium check from the engine: the largest force or moment imbalance, relative to the size of the loads. */
+export const imbalanceOf = (r: FrameResults) => r.imbalance;
 
 export const ALL_CMDS: [string, () => void, string?][] = [
   ["Solve", () => C.solve(), "F5"], ["Results table", () => setView("results")], ["Verification", () => D.verification()],

@@ -34,3 +34,10 @@ export const fromU = (q: Q, v: number) => { const [f, , o] = table()[q]; return 
 export const unit = (q: Q) => table()[q][1];
 /** A value with its unit, for labels. */
 export const fmt = (q: Q, v: number, sig = 4) => `${num(toU(q, v), sig)}${unit(q) ? " " + unit(q) : ""}`;
+
+/** A grid step (m) turned into the nearest round step (1, 2 or 5 × 10ⁿ) in the units shown for `units`. */
+export const niceGrid = (grid: number, units: "SI" | "US", frame: boolean) => {
+  const f = units === "US" ? (frame ? FT : IN) : (frame ? 1 : 1000);
+  const v = grid * f, p = 10 ** Math.floor(Math.log10(v)), k = v / p;
+  return (k < 1.5 ? 1 : k < 3.5 ? 2 : k < 7.5 ? 5 : 10) * p / f;
+};

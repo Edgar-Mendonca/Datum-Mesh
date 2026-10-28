@@ -4,13 +4,14 @@ import { For, Show, createSignal, createResource } from "solid-js";
 import { Out, Material, Section, SectionShape, Props, Check, num } from "./api";
 import { openDialog, closeDialog, act, call, out, setOut, model, setSel } from "./store";
 import { C } from "./cmds";
+import { numIn } from "./panels";
 import { Dialog, Icon } from "./ui";
 import { Q, toU, fromU, unit, fmt } from "./units";
 
 /** A number field inside a dialog: display units in, SI out. */
 const F = (p: { l: string; q: Q; v: number; set: (v: number) => void }) => (
   <><label>{p.l}<span class="unit"> {unit(p.q)}</span></label>
-    <input class="mono" value={num(toU(p.q, p.v), 6).replace("−", "-")} onChange={e => { const v = +e.currentTarget.value.replace(",", "."); if (isFinite(v)) p.set(fromU(p.q, v)); }} /></>
+    <input class="mono" value={num(toU(p.q, p.v), 6).replace("−", "-")} onChange={numIn(v => p.set(fromU(p.q, v)), () => num(toU(p.q, p.v), 6).replace("−", "-"))} /></>
 );
 
 /** Geometry › Materials: the model's materials and their values. */
@@ -26,11 +27,11 @@ export const materials = (focus?: number) => openDialog(() => {
       <div class="mgr">
         <div class="mlist"><For each={list()}>{x => <button classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)}>{x.name}</button>}</For>
           <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={list().length < 2}>Delete</button></p>
-          <p class="muted small">The materials library from Datum Atlas, with sources, arrives in 0.1.3.</p></div>
+          <p class="muted small">The materials library from Datum Atlas, with sources, arrives in 0.1.4.</p></div>
         <Show when={m()}>{mm => <div class="form">
           <label>Name</label><input value={mm().name} onChange={e => put({ name: e.currentTarget.value })} />
           <F l="Young's modulus E" q="modulus" v={mm().e} set={e => put({ e })} />
-          <label>Poisson's ratio ν</label><input class="mono" value={mm().nu} onChange={e => { const v = +e.currentTarget.value; if (isFinite(v)) put({ nu: v }); }} />
+          <label>Poisson's ratio ν</label><input class="mono" value={mm().nu} onChange={numIn(v => put({ nu: v }), () => mm().nu)} />
           <F l="Density" q="density" v={mm().rho} set={rho => put({ rho })} />
           <F l="Yield strength" q="stress" v={mm().fy} set={fy => put({ fy })} />
           <F l="Conductivity" q="cond" v={mm().k} set={k => put({ k })} />
@@ -84,9 +85,20 @@ export const sections = (focus?: number) => openDialog(() => {
 export const nodeAt = () => openDialog(() => {
   const [x, setX] = createSignal(0), [y, setY] = createSignal(0);
   return <Dialog title="Add a node" okText="Add" ok={async () => { const o = await act({ Add: { item: { Node: { id: 0, x: fromU("coord", x()), y: fromU("coord", y()) } } } }); if (!o) return false; setSel(o.created); }}>
-    <div class="form"><label>x ({unit("coord")})</label><input class="mono" value={x()} onInput={e => setX(+e.currentTarget.value)} /><label>y ({unit("coord")})</label><input class="mono" value={y()} onInput={e => setY(+e.currentTarget.value)} /></div>
+    <div class="form"><label>x ({unit("coord")})</label><input class="mono" value={x()} onChange={numIn(setX, x)} /><label>y ({unit("coord")})</label><input class="mono" value={y()} onChange={numIn(setY, y)} /></div>
   </Dialog>;
 });
+
+/** Before the open model is replaced: save it, drop the changes, or stay. */
+export const keepChanges = (then: () => unknown) => {
+  if (!out()?.dirty) { then(); return; }
+  openDialog(() => (
+    <Dialog title="Save changes?" okText="Save" cancel="Cancel" ok={async () => { await C.save(); if (out()?.dirty) return false; setTimeout(then); }}
+      extra={<button class="btn" onClick={() => { closeDialog(); setTimeout(then); }}>Don't save</button>}>
+      <p>“{out()?.m.name}” has changes that are not saved.</p>
+    </Dialog>
+  ));
+};
 
 export const confirmClose = (quit: () => void) => openDialog(() => (
   <Dialog title="Save changes?" okText="Save" cancel="Cancel" ok={async () => { await C.save(); if (!out()?.dirty) quit(); }}
@@ -120,7 +132,7 @@ export const gettingStarted = () => openDialog(() => (
       <ol>
         <li>File › Home › <b>Blank part</b>. Draw the outline with Rectangle, Circle or Polygon; cut holes with the hole tools.</li>
         <li>Click an edge, then put a support or a load on it from the Loads tab.</li>
-        <li>Meshing and solving parts arrive in 0.1.2: stress contours, the deformed shape and a probe.</li>
+        <li>Meshing and solving parts arrive in 0.1.3: stress contours, the deformed shape and a probe.</li>
       </ol>
       <h4>Good to know</h4>
       <ul>
@@ -176,7 +188,7 @@ export const verification = () => openDialog(() => {
           <p classList={{ okline: r().every(x => x.pass), badline: !r().every(x => x.pass) }}><Icon n={r().every(x => x.pass) ? "check" : "info"} /> {r().filter(x => x.pass).length} of {r().length} checks pass.</p>
           <table class="tbl"><thead><tr><th>#</th><th>Benchmark</th><th>Quantity</th><th class="r">Datum Mesh</th><th class="r">Reference</th><th class="r">Error</th><th>Source</th><th /></tr></thead><tbody>
             <For each={r()}>{x => <tr><td>{x.bench}</td><td>{x.name}</td><td>{x.quantity}</td><td class="r">{val(x.q, x.result)}</td><td class="r">{val(x.q, x.reference)}</td><td class="r">{x.error < 1e-12 ? "< 1e-12" : x.error.toExponential(1)}</td><td>{x.source}</td><td>{x.pass ? "✓ pass" : "✗ fail"}</td></tr>}</For></tbody></table>
-          <p class="muted small">Coming: plates with a hole, a thick cylinder and NAFEMS LE1 with mesh convergence (0.1.2); heat conduction (0.1.3).</p>
+          <p class="muted small">Coming: plates with a hole, a thick cylinder and NAFEMS LE1 with mesh convergence (0.1.3); heat conduction (0.1.4).</p>
         </>}</Show>
       </div>
     </Dialog>

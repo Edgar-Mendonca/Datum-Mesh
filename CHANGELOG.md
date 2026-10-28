@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.1.2 — 2026-10-28
+
+A fixes release: thirteen problems found by reviewing and using 0.1.1, each now covered by a test.
+
+**Results you can trust on screen**
+- The moment, shear and axial diagrams and the utilisation colours now follow when you pan or zoom; before, they could stay behind, away from their members.
+- The equilibrium check compares against the size of the loads, so loads that cancel out (a moment on its own, a balanced pair of forces) no longer report a huge imbalance, and the moments are now checked as well as the forces.
+- A model with no loads says so, instead of drawing a meaningless deflected shape.
+- A load on a node that no member reaches is named in a warning instead of being dropped silently.
+- Rounding noise such as 1.5e-14 kN·m is shown as 0.
+- Members divided into many short pieces (a beam in 1 000 parts) are no longer mistaken for a mechanism, and they solve to full accuracy.
+
+**Drawing**
+- A member drawn to the middle of another now joins it there: the member is split, and loads along it are split with it. Before, the two crossed without touching.
+- A node dragged, moved with the arrow keys or typed onto another node joins it, instead of leaving two separate nodes at the same place.
+- Adding or removing a corner of a part keeps every support and load on the edge it was on; a corner added in an arc keeps the arc's shape.
+
+**Typing and units**
+- Negative numbers can be typed into the corner table, "1,5" is read as 1.5 and "1,200" as 1200, and clearing a field no longer sets it to 0.
+- Switching to US units gives the grid a round step in feet or inches; member lengths in the tables use the same unit as the drawing.
+
+**Your work**
+- Opening a model, an example or a recent file asks whether to save the changes to the one that is open.
+
+**And** the blank model shows its "draw a frame" card again.
+
 ## 0.1.1 — 2026-10-28
 
 Frames and trusses solve: press Solve (F5) and see the deflected shape, the moment, shear and axial diagrams, the reactions and the equilibrium check.

@@ -31,10 +31,11 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
         invoke: async (c, a) => {
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
+          if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
           if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin }[a.example] ?? f.frame; return window.__cur; }
-          if (c === "apply") return { ...window.__cur, dirty: true, undo: true, created: [999] };
+          if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.truss) return f.truss_results; throw "Meshing and solving parts arrive in 0.1.2."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; throw "Meshing and solving parts arrive in 0.1.3."; }
           if (c in m) return m[c];
           return null;
         },
@@ -48,7 +49,13 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const lastOp = async () => (await ops()).slice(-1)[0];
   const canvasBox = async () => p.$eval(".canvas", el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
   const center = sel => p.$eval(sel, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
-  const open = async id => { await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150); const n = fix.examples_list.find(e => e.id === id).name; await p.click(`.home .tile:has(b:text-is("${n}"))`); await p.waitForTimeout(400); };
+  const open = async id => {
+    await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
+    const n = fix.examples_list.find(e => e.id === id).name; await p.click(`.home .tile:has(b:text-is("${n}"))`); await p.waitForTimeout(250);
+    // Unsaved changes are offered for saving first (0.1.2): drop them.
+    if (await p.$('.dlg header:has-text("Save changes?")')) { await p.click('.dlg button:has-text("Don\'t save")'); await p.waitForTimeout(300); }
+    await p.waitForTimeout(150);
+  };
 
   // 1. File page: every worked example, crimson sidebar.
   const tiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent));
@@ -203,7 +210,69 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("Help › Verification lists every benchmark, all passing", (await p.textContent(".dlg")).includes(`${fix.verification.length} of ${fix.verification.length} checks pass`));
   await p.keyboard.press("Escape");
   await open("bracket"); await p.keyboard.press("F5"); await p.waitForTimeout(200);
-  check("solving a part says when that arrives", (await p.textContent("#toast")).includes("0.1.2"));
+  check("solving a part says when that arrives", (await p.textContent("#toast")).includes("0.1.3"));
+
+  // 11c. 0.1.2 fixes from the 0.1.1 review.
+  // (1) Diagrams follow pan and zoom: the moment diagram of a member starts at that member's end.
+  await open("portal"); await p.keyboard.press("F5"); await p.waitForTimeout(300);
+  const startsAtMember = async () => p.evaluate(id => {
+    const d = document.querySelector(`.diag[data-id="${id}"]`).getAttribute("d").match(/^M([-\d.e]+) ([-\d.e]+)/), l = document.querySelector(`.mem[data-id="${id}"] line`);
+    return Math.hypot(+d[1] - +l.getAttribute("x1"), +d[2] - +l.getAttribute("y1")) < 0.5;
+  }, pf.members[0].id);
+  const cv = await canvasBox();
+  await p.mouse.move(cv.x + cv.w / 2, cv.y + cv.h / 2); await p.mouse.wheel(0, -300); await p.waitForTimeout(150);
+  check("the moment diagram follows a zoom (0.1.1 bug)", await startsAtMember());
+  await p.mouse.down({ button: "middle" }); await p.mouse.move(cv.x + cv.w / 2 + 80, cv.y + cv.h / 2 + 40, { steps: 4 }); await p.mouse.up({ button: "middle" }); await p.waitForTimeout(150);
+  check("the moment diagram follows a pan (0.1.1 bug)", await startsAtMember());
+  // (11) No rounding noise in the probe.
+  const mid = await p.$eval(`.mem[data-id="${pf.members[1].id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width * 0.3, r.top + r.height * 0.7]; });
+  await p.mouse.move(mid[0], mid[1]); await p.waitForTimeout(150);
+  const probeText = (await p.$$(".probe")).length ? await p.textContent(".probe") : "";
+  check("the probe shows no rounding noise", probeText.length > 0 && !/e-1\d/.test(probeText), probeText);
+  // (2) Unsaved changes are offered for saving before an example replaces them.
+  await p.click(".tree .ti:has-text('Member 1')"); await p.click('.tabs > button:text-is("Home")'); await p.click('.ribbon button[title="Delete"]'); await p.waitForTimeout(150);
+  await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
+  await p.click(`.home .tile:has(b:text-is("Roof truss"))`); await p.waitForTimeout(250);
+  check("opening an example asks to save the changes first (0.1.1 bug)", !!(await p.$('.dlg header:has-text("Save changes?")')));
+  const before = await p.evaluate(() => window.__calls.filter(c => c[0] === "new_model").length);
+  await p.click('.dlg button:has-text("Cancel")'); await p.waitForTimeout(150);
+  check("Cancel keeps the model", (await p.evaluate(() => window.__calls.filter(c => c[0] === "new_model").length)) === before);
+  await open("blank-frame");
+  // (13) The empty canvas card is styled and centred.
+  const emp = await p.$eval(".canvas .empty", el => { const r = el.getBoundingClientRect(), c = el.parentElement.getBoundingClientRect(); return { cx: r.left + r.width / 2 - (c.left + c.width / 2), w: r.width, bg: getComputedStyle(el).position }; });
+  check("the empty canvas shows its card in the middle (0.1.1 bug)", emp.bg === "absolute" && Math.abs(emp.cx) < 5 && emp.w > 200, JSON.stringify(emp));
+  // (12) Switching to US units makes the grid a round number of feet.
+  await p.click('.tabs > button:text-is("Home")'); await p.click('.ribbon button[title="US: in, kip, ksi"]'); await p.waitForTimeout(150);
+  const us = (await ops()).reverse().find(o => o.SetSettings);
+  check("US units give a 2 ft grid for a 0.5 m one", !!us && us.SetSettings.s.units === "US" && Math.abs(us.SetSettings.s.grid - 0.6096) < 1e-12, JSON.stringify(us));
+  // (6) A model with no loads: no garbage deflected shape, the legend says so.
+  await p.evaluate(f => { window.__next = f.noload; window.__solveKey = "noload_results"; }, fix);
+  await open("blank-frame");
+  await p.keyboard.press("F5"); await p.waitForTimeout(300);
+  check("a model with no loads draws no deflected shape and says why (0.1.1 bug)", (await p.$$(".defl")).length === 0 && (await p.textContent(".legend")).includes("nothing moves") && (await p.textContent("#toast")).includes("no loads"), await p.textContent(".legend"));
+  await p.evaluate(() => { window.__solveKey = null; });
+  // (10) Negative corner coordinates can be typed; (9) + adds a corner through the engine.
+  await open("bracket");
+  await p.click(".tree .ti:has-text('Shape 1')"); await p.waitForTimeout(150);
+  await p.fill(".ptbl tbody tr:nth-child(1) td:nth-child(2) input", "−5"); await p.keyboard.press("Enter"); await p.waitForTimeout(150);
+  const setx = (await ops()).reverse().find(o => o.Set && o.Set.item.Shape);
+  check("a corner can be moved to a negative coordinate typed with “−” (0.1.1 bug)", !!setx && Math.abs(setx.Set.item.Shape.geom.pts[0][0] + 0.005) < 1e-12, JSON.stringify(setx?.Set.item.Shape.geom.pts[0]));
+  await p.click(".ptbl tbody tr:nth-child(2) button[title^='Add a corner']"); await p.waitForTimeout(150);
+  const ins = (await ops()).reverse().find(o => o.InsertCorner);
+  check("+ in the corner table inserts a corner through the engine (keeps loads on their edges)", !!ins && ins.InsertCorner.edge === 1, JSON.stringify(ins));
+
+  // (10) Number fields: "1,5" is 1.5, "1,200" is 1200, an empty field changes nothing.
+  await open("portal");
+  await p.click(".tree .ti:has-text('Node 2')"); await p.waitForTimeout(100);
+  const xField = ".insp .iprow:nth-of-type(1) input";
+  const lastNode = async () => (await ops()).reverse().find(o => o.Set && o.Set.item.Node);
+  await p.fill(xField, "1,5"); await p.keyboard.press("Enter"); await p.waitForTimeout(100);
+  check("“1,5” is read as 1.5", (await lastNode())?.Set.item.Node.x === 1.5, JSON.stringify(await lastNode()));
+  await p.fill(xField, "1,200"); await p.keyboard.press("Enter"); await p.waitForTimeout(100);
+  check("“1,200” is read as 1200", (await lastNode())?.Set.item.Node.x === 1200, JSON.stringify(await lastNode()));
+  const nOps = (await ops()).length;
+  await p.fill(xField, ""); await p.keyboard.press("Enter"); await p.waitForTimeout(100);
+  check("an emptied field changes nothing and shows the value again (0.1.1: it became 0)", (await ops()).length === nOps && (await p.inputValue(xField)) !== "");
 
   // 12. Dialogs, views and File pages open without errors; dark theme.
   await p.click('.tabs > button:text-is("Home")');

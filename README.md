@@ -37,8 +37,8 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 
 | Release | What arrives |
 | --- | --- |
-| 0.1.2 | Parts meshed (6-node triangles) and solved: stress and displacement contours, deformed shape, probe; plate with a hole, thick cylinder and NAFEMS LE1 benchmarks |
-| 0.1.3 | Heat conduction, the materials library from Datum Atlas, the full results report |
+| 0.1.3 | Parts meshed (6-node triangles) and solved: stress and displacement contours, deformed shape, probe; plate with a hole, thick cylinder and NAFEMS LE1 benchmarks |
+| 0.1.4 | Heat conduction, the materials library from Datum Atlas, the full results report |
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.
 

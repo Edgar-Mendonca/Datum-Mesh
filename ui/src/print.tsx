@@ -94,7 +94,7 @@ const Report = (p: { m: Model }) => {
     <table class="tbl"><tbody><For each={m.supports} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td></tr>}</For></tbody></table>
     <h4>Loads</h4>
     <table class="tbl"><tbody><For each={m.loads} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td><td>{loadValue(x.kind)}</td></tr>}</For></tbody></table>
-    <Show when={results() && !stale() && m.analysis === "frame"} fallback={<p class="muted">{m.analysis === "frame" ? "Solve the model (F5) to add its results, reactions and the equilibrium check to this page." : "Results of parts join this page in 0.1.2."}</p>}>{_ => { const r = results()!; return <>
+    <Show when={results() && !stale() && m.analysis === "frame"} fallback={<p class="muted">{m.analysis === "frame" ? "Solve the model (F5) to add its results, reactions and the equilibrium check to this page." : "Results of parts join this page in 0.1.3."}</p>}>{_ => { const r = results()!; return <>
       <h4>Equilibrium check</h4>
       <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
         <tr><td>Σ Fx</td><td class="r">{fmt("force", r.applied[0])}</td><td class="r">{fmt("force", r.reacted[0])}</td><td class="r">{fmt("force", r.applied[0] + r.reacted[0])}</td></tr>
