@@ -198,7 +198,7 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean }) => {
       const sh = p.m.shapes.find(s => s.id === at.shape); if (!sh) return null;
       const pts = edgePts(sh.geom, at.edge, 4 / scale()).map(toS), sign = orient(sh.geom) * (sh.hole ? -1 : 1);
       const out: string[] = [];
-      let acc = 0, mid: Pt = pts[0], anchor = "middle";
+      let acc = 0, mid: Pt = pts[0], anchor: "start" | "middle" | "end" = "middle";
       const total = pts.slice(1).reduce((s, q, i) => s + Math.hypot(q[0] - pts[i][0], q[1] - pts[i][1]), 0);
       const step = Math.max(16, Math.min(40, total / 6));
       for (let i = 0; i + 1 < pts.length; i++) {
