@@ -3,13 +3,14 @@
 // (equilibrium check, reactions, members, the solver report). The engine computes every number.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Pt, MemberResult, Model, FrameResults, num, clean } from "./api";
-import { frameRes as results, partRes, stale, show, model, cursor, setView, sel, setSel } from "./store";
+import { frameRes as results, partRes, stale, show, model, cursor, setView, sel, setSel, modeOn } from "./store";
 import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
 import { C, imbalanceOf } from "./cmds";
 import { Help } from "./help";
 import { Icon } from "./ui";
 import { PartResultsPage } from "./parts";
+import { ModesTable } from "./modes";
 
 const DIAG: Record<string, [string, "force" | "moment"]> = { n: ["Axial force", "force"], v: ["Shear force", "force"], m: ["Bending moment", "moment"] };
 
@@ -99,7 +100,7 @@ export const ResultsLayer = () => {
     });
   };
   return (
-    <Show when={r() && m() && m()!.analysis === "frame"}>
+    <Show when={r() && m() && m()!.analysis === "frame" && !modeOn()}>
       <g class="results" classList={{ stale: stale() }}>
         {/* Everything below reads the view (toS) inside JSX or a memo, so it follows pan and zoom (0.1.1 bug: drawn once). */}
         <Show when={show().util}><For each={r()!.members}>{mr => <Show when={geo(m()!, mr.id)}>{g => <line x1={toS(g().a)[0]} y1={toS(g().a)[1]} x2={toS(g().b)[0]} y2={toS(g().b)[1]} class="utilline" style={{ stroke: utilColour(mr.util) }} />}</Show>}</For></Show>
@@ -122,7 +123,7 @@ export const ResultsLegend = () => {
   });
   const dmax = () => Math.max(0, ...(r()?.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))) ?? [0]));
   return (
-    <Show when={r() && m()?.analysis === "frame"}>
+    <Show when={r() && m()?.analysis === "frame" && !modeOn()}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
         <Show when={diagInfo()}>{d => <div><b>{d().name}</b><span>max {fmt(d().q, clean(d().max, d().big))} · min {fmt(d().q, clean(d().min, d().big))}</span><small>{show().diagram === "m" ? "Drawn on the tension side." : "Positive drawn on the member's left side (looking from start to end); tension positive."}</small></div>}</Show>
@@ -161,6 +162,7 @@ export const ResultsPage = () => {
   return (
     <div class="page">
       <h1>Results <Help k="results" /></h1>
+      <ModesTable />
       <Show when={partRes()}>{pr => <>
         <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
         <Show when={pr().warnings.length}><For each={pr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>

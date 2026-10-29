@@ -109,6 +109,14 @@ export const unwire = (v: any): any => {
 };
 /** The drawing triangles of a mesh: 6-node triangles split in four, so curved fields read smoothly. */
 export const drawTris = (ms: Mesh): [number, number, number][] => ms.tris.flatMap(t => (t.length === 6 ? [[t[0], t[3], t[5]], [t[3], t[1], t[4]], [t[5], t[4], t[2]], [t[3], t[4], t[5]]] : [[t[0], t[1], t[2]]]) as [number, number, number][]);
+// ---------- natural frequencies (0.2.2) ----------
+export interface FrameMode { f: number; disp: [number, number, number][]; members: { id: number; d: Pt[] }[] }
+export interface PartMode { f: number; disp: Pt[] }
+export type ModeResults = { kind: "frame"; modes: FrameMode[]; equations: number; iterations: number; ms: number }
+  | { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; modes: PartMode[]; equations: number; iterations: number; ms: number };
+/** Modes as the shell sends them, made whole. */
+export const modesFromWire = (raw: any): ModeResults => { const r = unwire(raw); if (r.kind === "plane") r.draw = drawTris(r.mesh); return r; };
+
 /** Results as the shell sends them, made whole: arrays unpacked, drawing triangles added. */
 export const fromWire = (raw: any): Results => {
   const r = unwire(raw);

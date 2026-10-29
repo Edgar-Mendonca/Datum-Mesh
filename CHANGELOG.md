@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.2 — 2026-10-29
+
+Natural frequencies: how frames and parts vibrate on their own.
+
+**Natural frequencies**
+- Solve › **Natural Frequencies**: the six lowest frequencies and their mode shapes, for frames and trusses and for parts in plane stress, plane strain or axisymmetric.
+- Pick a mode under the canvas to see it move; a frame bends along each member, a part deforms and is coloured by how far it moves. Back to the static results with one click.
+- Masses come from each material's density (consistent masses: beams, truss bars and triangles); the supports hold the model as for a static solve. A model free to float away, or without density, says so.
+- The frequencies, periods and ω are listed on the Results page and in the printed report.
+
+**Trust**
+- Help › Verification: 47 checks, all passing. New: the first three frequencies of a cantilever and of a simply supported beam against beam theory (within 0.05 %), and a plate strip's bending (0.16 % below beam theory, as shear and rotary inertia make it) and stretching frequencies.
+- The solver is checked against the exact frequencies of a chain of masses and springs, to one part in a billion.
+
+**Fixed**
+- A part's fill no longer covers its mode shape (found in the app).
+
 ## 0.2.1 — 2026-10-29
 
 Axisymmetric solids: pressure vessels, shafts, discs and nozzles solved from their half-section.

@@ -6,9 +6,10 @@ import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
 import { Model, Pt, num } from "./api";
-import { out, opts, call, toast, model, frameRes as results, partRes, stale, setBackstage } from "./store";
+import { out, opts, call, toast, model, frameRes as results, partRes, stale, setBackstage, modes, modesStale } from "./store";
 import { fieldDef, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
 import { Help } from "./help";
+import { ModesTable } from "./modes";
 import { Pick, Check } from "./ui";
 import { svgPath, outline } from "./geom";
 import { fmt, unit } from "./units";
@@ -97,6 +98,7 @@ const Report = (p: { m: Model }) => {
     <h4>Loads</h4>
     <table class="tbl"><tbody><For each={m.loads} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td><td>{loadValue(x.kind)}</td></tr>}</For></tbody></table>
     <Show when={m.analysis !== "frame"}><PartReport m={m} /></Show>
+    <Show when={modes() && !modesStale()}><ModesTable /></Show>
     <Show when={results() && !stale() && m.analysis === "frame"} fallback={<Show when={m.analysis === "frame"}><p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p></Show>}>{_ => { const r = results()!; return <>
       <h4>Equilibrium check</h4>
       <EqTable applied={r.applied} reacted={r.reacted} scale={r.scale} />

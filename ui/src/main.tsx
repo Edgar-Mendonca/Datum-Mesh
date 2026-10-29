@@ -10,7 +10,7 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles.css";
 import { invoke, listen, Out, Options, num } from "./api";
-import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed } from "./store";
+import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed, modes, modeOn } from "./store";
 import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
@@ -18,6 +18,7 @@ import { Canvas, fit, scale } from "./canvas";
 import { Tree, Inspector, ANALYSES } from "./panels";
 import { ResultsPage, ResultsLegend } from "./results";
 import { PartLegend, MeshBar } from "./parts";
+import { ModesBar, ModeAnimator } from "./modes";
 import { ReportPage } from "./print";
 import { Menu, Toast, Icon } from "./ui";
 import { fmt } from "./units";
@@ -91,7 +92,7 @@ const App = () => {
         <nav class="side"><For each={SIDE}>{x => x === "-" ? <hr /> : <button classList={{ on: view() === x[0] }} onClick={() => setView(x[0])} title={x[2]}><Icon n={x[1]} /><span>{x[2]}</span></button>}</For></nav>
         <div class="content">
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /><Show when={view() === "mesh"} fallback={<><ResultsLegend /><PartLegend /></>}><Show when={model()?.analysis !== "frame"} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
+            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Canvas /><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /></>}><ModesBar /></Show>}><Show when={model()?.analysis !== "frame"} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
               <Match when={view() === "results"}><ResultsPage /></Match>
               <Match when={view() === "report"}><ReportPage /></Match>
             </Switch>
@@ -101,7 +102,7 @@ const App = () => {
       <Status />
       <Show when={backstage()}><Backstage /></Show>
       <For each={dialogs()}>{d => d()}</For>
-      <Menu /><Toast />
+      <Menu /><Toast /><ModeAnimator />
     </div>
   );
 };

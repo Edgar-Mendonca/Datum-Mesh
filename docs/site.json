@@ -29,6 +29,7 @@
     "An equilibrium check after every solve (a heat balance for heat models): the reactions are added up against the loads",
     "Thermal stress: temperatures solved on the same mesh, then the stress they cause; uniform temperature changes in frames and parts",
     "Axisymmetric solids: pressure vessels, shafts and discs from their half-section, with hoop stress",
+    "Natural frequencies and mode shapes of frames and parts, moving on screen",
     "Help › Verification: 27 benchmark checks with known answers solved in front of you, with mesh convergence for the plate with a hole, the thick cylinder and NAFEMS LE1",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
@@ -45,17 +46,9 @@
   ],
   "roadmap": [
     {
-      "v": "0.2.2",
-      "title": "Natural frequencies",
-      "when": "Next",
-      "items": [
-        "Mode shapes and frequencies of frames and parts"
-      ]
-    },
-    {
       "v": "0.2.3",
       "title": "Buckling of frames",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Critical load factors and buckled shapes, verified against Euler columns"
       ]

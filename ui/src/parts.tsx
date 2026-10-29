@@ -5,7 +5,8 @@
 // results tables and the mesh statistics. The engine computes every value; this only draws them.
 import { For, Show, createMemo, createEffect } from "solid-js";
 import { Pt, Mesh, PartResults, PlaneResults, HeatResults, Field, Model, num, clean } from "./api";
-import { model, partRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel } from "./store";
+import { model, partRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel, modes, modeSel, modeOn, phase, modesStale } from "./store";
+import { modeAmp } from "./modes";
 import { toS, scale, pan } from "./canvas";
 import { Q, fmt, unit } from "./units";
 import { itemName } from "./panels";
@@ -216,7 +217,22 @@ const picture = createMemo(() => {
 });
 const meshPicture = createMemo(() => { const ms = meshed() ?? partRes()?.mesh; return ms ? buildMeshPicture(ms) : null; });
 /** Results drawn now: parts solved, in the model or results view (the Mesh view shows the mesh). */
-const showResults = () => !!partRes() && view() !== "mesh";
+const showResults = () => !!partRes() && view() !== "mesh" && !modeOn();
+/** A part's mode drawn at a step of its swing (16 steps, built when first needed). */
+const modeCache = new Map<string, Picture>();
+createEffect(() => { modes(); opts().contours; show().scale; modeCache.clear(); });
+const modePic = () => {
+  const r = modes(); if (!r || r.kind !== "plane" || !modeOn() || view() === "mesh") return null;
+  const k = modeSel(), step = Math.round(phase() * 8), key = `${k}:${step}`;
+  let pic = modeCache.get(key);
+  if (!pic) {
+    const md = r.modes[k], v = md.disp.map(d => Math.hypot(d[0], d[1]));
+    const pseudo = { kind: "plane", mesh: r.mesh, draw: r.draw, disp: md.disp, fields: [{ key: "umag", v, min: 0, max: Math.max(...v), at_min: [0, 0], at_max: [0, 0] }], elem: [] } as unknown as PartResults;
+    pic = buildPicture(pseudo, fieldDef("umag"), false, modeAmp() * step / 8, palette(opts().contours));
+    modeCache.set(key, pic);
+  }
+  return pic;
+};
 
 /** The canvas under the drawing: contours, or the mesh in the Mesh view. */
 export const PartLayer = (p: { size: [number, number] }) => {
@@ -236,10 +252,12 @@ export const PartLayer = (p: { size: [number, number] }) => {
       ctx.strokeStyle = css("--ink"); ctx.lineWidth = 1.4 / s; ctx.stroke(mp.outline);
       return;
     }
+    const mp = modePic();
+    if (mp) { paint(ctx, mp, s, px, py, dpr, show().mesh); return; }
     const pic = picture(); if (!pic || !showResults()) return;
     paint(ctx, pic, s, px, py, dpr, show().mesh);
   });
-  return <canvas ref={cv} class="contours" classList={{ stale: stale() && view() !== "mesh", on: view() === "mesh" ? !!meshPicture() : showResults() }} style={{ width: `${p.size[0]}px`, height: `${p.size[1]}px` }} />;
+  return <canvas ref={cv} class="contours" classList={{ stale: modeOn() ? modesStale() : stale() && view() !== "mesh", on: view() === "mesh" ? !!meshPicture() : showResults() || !!modePic() }} style={{ width: `${p.size[0]}px`, height: `${p.size[1]}px` }} />;
 };
 
 /** Where the largest and smallest values are, marked on the drawing. */
@@ -309,7 +327,7 @@ export const PartLegend = () => {
   const r = () => partRes();
   const d = () => curField();
   return (
-    <Show when={r() && view() !== "mesh"}>
+    <Show when={r() && view() !== "mesh" && !modeOn()}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={() => import("./cmds").then(c => c.C.solve())}>Solve again (F5)</button></div></Show>
         <div class="lrow">

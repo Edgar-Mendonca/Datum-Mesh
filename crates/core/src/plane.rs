@@ -184,6 +184,45 @@ pub(crate) const G3: [(f64, f64); 3] = [(0.112_701_665_379_258_3, 5.0 / 18.0), (
 
 /// Mesh and solve a plane stress or plane strain model.
 pub fn solve(m: &Model) -> Result<PlaneResults, String> {
+    check_part(m)?;
+    let ms = mesh::mesh(m)?;
+    solve_mesh(m, ms)
+}
+
+/// The natural frequencies and mode shapes of a part (0.2.2), with consistent masses from each
+/// material's density.
+pub fn modes(m: &Model, count: usize) -> Result<PartModes, String> {
+    check_part(m)?;
+    let ms = mesh::mesh(m)?;
+    match run(m, ms, Some(count))? {
+        Out::Modes(r) => Ok(*r),
+        Out::Static(_) => unreachable!(),
+    }
+}
+
+/// One natural mode of a part: frequency and the movement of every node (largest 1).
+#[derive(Clone, Debug, Serialize)]
+pub struct PartMode {
+    pub f: f64,
+    pub disp: Vec<[f64; 2]>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct PartModes {
+    pub mesh: Mesh,
+    #[serde(skip_serializing)]
+    pub draw: Vec<[u32; 3]>,
+    pub modes: Vec<PartMode>,
+    pub equations: usize,
+    pub iterations: usize,
+    pub ms: f64,
+}
+
+enum Out {
+    Static(Box<PlaneResults>),
+    Modes(Box<PartModes>),
+}
+
+fn check_part(m: &Model) -> Result<(), String> {
     if !matches!(m.analysis, Analysis::Stress | Analysis::Strain | Analysis::Axi) {
         return Err("This solves plane stress, plane strain and axisymmetric models.".into());
     }
@@ -194,11 +233,48 @@ pub fn solve(m: &Model) -> Result<PlaneResults, String> {
             }
         }
     }
-    let ms = mesh::mesh(m)?;
-    solve_mesh(m, ms)
+    Ok(())
 }
 
 pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
+    match run(m, ms, None)? {
+        Out::Static(r) => Ok(*r),
+        Out::Modes(_) => unreachable!(),
+    }
+}
+
+/// The consistent mass ∫ ρ Nᵀ N over each element, for both directions (6-point rule: exact for
+/// 6-node triangles' mass).
+fn mass(m: &Model, ms: &Mesh, area_w: &dyn Fn([f64; 2]) -> f64) -> Vec<(usize, usize, f64)> {
+    let rho: std::collections::HashMap<u32, f64> = m.materials.iter().map(|x| (x.id, x.rho)).collect();
+    let mut out = vec![];
+    for (k, tri) in ms.tris.iter().enumerate() {
+        let r = rho.get(&ms.mat[k]).copied().unwrap_or(0.0);
+        let xy: Vec<[f64; 2]> = tri.iter().map(|&i| ms.nodes[i as usize]).collect();
+        let nd = xy.len();
+        let mut me = vec![0.0; nd * nd];
+        for &(xi, eta, w) in gauss(2) {
+            let (_, n, det) = bmat(&xy, ms.order, xi, eta, false);
+            let pt = [n.iter().zip(&xy).map(|(ni, p)| ni * p[0]).sum::<f64>(), 0.0];
+            let f = w * det * area_w(pt) * r;
+            for i in 0..nd {
+                for j in 0..nd {
+                    me[i * nd + j] += n[i] * n[j] * f;
+                }
+            }
+        }
+        for i in 0..nd {
+            for j in 0..nd {
+                for c in 0..2 {
+                    out.push((2 * tri[i] as usize + c, 2 * tri[j] as usize + c, me[i * nd + j]));
+                }
+            }
+        }
+    }
+    out
+}
+
+fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> {
     let axi = m.analysis == Analysis::Axi;
     let t = if m.analysis == Analysis::Strain { 1.0 } else { m.thickness };
     // What an area or a length of the drawing stands for: the thickness in plane stress, a metre
@@ -459,6 +535,15 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
         sys.add(2 * n, 2 * n, kx);
         sys.add(2 * n + 1, 2 * n + 1, ky);
     }
+    if let Some(count) = modes_wanted {
+        let t0 = std::time::Instant::now();
+        let mm = mass(m, &ms, &area_w);
+        let (found, iterations) = crate::modal::lowest(&sys, &mm, &held, count)?;
+        let equations = held.iter().filter(|h| !**h).count();
+        let modes = found.into_iter().map(|md| PartMode { f: md.f, disp: (0..nn).map(|i| [md.shape[2 * i], md.shape[2 * i + 1]]).collect() }).collect();
+        let draw = draw_tris(&ms);
+        return Ok(Out::Modes(Box::new(PartModes { mesh: ms, draw, modes, equations, iterations, ms: t0.elapsed().as_secs_f64() * 1e3 })));
+    }
     let (u, stats) = sys.solve(&held, &vec![0.0; 2 * nn])?;
     if stats.residual > 1e-8 {
         // Rollers on curved or sloping edges are stiff springs, so a part they hold only nearly
@@ -596,7 +681,7 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     } else {
         imbalance(applied.sum, reacted.sum, applied.scale)
     };
-    Ok(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })
+    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })))
 }
 
 /// Temperatures for thermal stress: the nodal temperatures when the model has fixed temperatures

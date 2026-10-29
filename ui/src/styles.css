@@ -891,3 +891,7 @@ tr.behind td { background: var(--err-bg); }
 .verif .tbl td.r, .verif .tbl th.r { white-space: nowrap; }
 .axi { stroke: var(--blue); stroke-width: 1.4; stroke-dasharray: 10 4 2 4; pointer-events: none; }
 .axilbl { font: 500 11px var(--sans); fill: var(--blue); pointer-events: none; }
+.modeline { fill: none; stroke: var(--blue); stroke-width: 2.4; stroke-linejoin: round; pointer-events: none; }
+.modelist { display: inline-flex; flex-wrap: wrap; gap: 4px; font-family: var(--sans) !important; }
+.modelist button { border: 1px solid var(--line); padding: 2px 8px; font: 500 11.5px var(--mono); }
+.modelist button.on { background: var(--sel); border-color: var(--blue); }

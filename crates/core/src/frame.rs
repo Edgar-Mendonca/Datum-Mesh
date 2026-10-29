@@ -73,7 +73,7 @@ impl FrameResults {
     }
 }
 
-struct Elem {
+pub(crate) struct Elem {
     id: u32,
     kind: MemberKind,
     a: usize,
@@ -90,6 +90,8 @@ struct Elem {
     p: [f64; 4],
     /// Free thermal strain αΔT from a uniform temperature change.
     at: f64,
+    /// Mass per length ρA (kg/m), for natural frequencies.
+    rho_a: f64,
 }
 
 /// The 6×6 stiffness in local axes (dofs u_a, v_a, θ_a, u_b, v_b, θ_b).
@@ -144,8 +146,20 @@ fn equivalent(e: &Elem) -> [f64; 6] {
     [fa, va, ma, fb, vb, mb]
 }
 
-/// Solve a frame or truss model.
-pub fn solve(m: &Model) -> Result<FrameResults, String> {
+/// The frame's equations before solving: stiffness and loads, which unknowns are held, the
+/// elements and which nodes have beams or members.
+pub(crate) struct Assembly {
+    pub sys: System,
+    pub held: Vec<bool>,
+    pub(crate) elems: Vec<Elem>,
+    pub free_rot: Vec<bool>,
+    pub has_member: Vec<bool>,
+    pub has_beam: Vec<bool>,
+    pub applied: [f64; 3],
+    pub warnings: Vec<String>,
+}
+
+pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
     m.check()?;
     if m.members.is_empty() {
         return Err("There are no members to solve. Draw beams or truss bars first (Geometry › Beam).".into());
@@ -165,7 +179,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
         let sec = m.section(mb.section).ok_or("A member's section is missing.")?;
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a };
         // Self-weight: ρ A g per length, resolved into the member's axes.
         let w = [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1]];
         let (wx, wy) = (e.c * w[0] + e.s * w[1], -e.s * w[0] + e.c * w[1]);
@@ -296,6 +310,13 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
             held[3 * i + 1] = true;
         }
     }
+    Ok(Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, warnings })
+}
+
+/// Solve a frame or truss model.
+pub fn solve(m: &Model) -> Result<FrameResults, String> {
+    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings } = assemble(m)?;
+    let nn = m.nodes.len();
     // The size of the loads, for judging the equilibrium check: forces added up without their
     // signs, and moments about the origin likewise (so loads that cancel still give a scale).
     let reach = m.nodes.iter().map(|n| n.x.hypot(n.y)).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
@@ -338,6 +359,125 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings };
     r.check_balance();
     Ok(r)
+}
+
+/// The consistent mass matrix in local axes (u_a, v_a, θ_a, u_b, v_b, θ_b): cubic bending for a
+/// beam, linear for a truss bar (no rotary inertia).
+fn m_local(e: &Elem) -> [[f64; 6]; 6] {
+    let (l, m) = (e.l, e.rho_a * e.l);
+    let mut k = [[0.0; 6]; 6];
+    let lin = [[2.0, 1.0], [1.0, 2.0]];
+    for (i, a) in [0, 3].iter().enumerate() {
+        for (j, b) in [0, 3].iter().enumerate() {
+            k[*a][*b] = m / 6.0 * lin[i][j];
+        }
+    }
+    if e.kind == MemberKind::Beam {
+        let t = [[156.0, 22.0 * l, 54.0, -13.0 * l], [22.0 * l, 4.0 * l * l, 13.0 * l, -3.0 * l * l], [54.0, 13.0 * l, 156.0, -22.0 * l], [-13.0 * l, -3.0 * l * l, -22.0 * l, 4.0 * l * l]];
+        let idx = [1, 2, 4, 5];
+        for i in 0..4 {
+            for j in 0..4 {
+                k[idx[i]][idx[j]] = m / 420.0 * t[i][j];
+            }
+        }
+    } else {
+        for (i, a) in [1, 4].iter().enumerate() {
+            for (j, b) in [1, 4].iter().enumerate() {
+                k[*a][*b] = m / 6.0 * lin[i][j];
+            }
+        }
+    }
+    k
+}
+
+/// One natural mode of a frame: its frequency, node movements and the shape along each member.
+#[derive(Clone, Debug, Serialize)]
+pub struct FrameMode {
+    /// Hz.
+    pub f: f64,
+    /// ux, uy, θ at every node, scaled so the largest movement is 1.
+    pub disp: Vec<[f64; 3]>,
+    /// The mode's shape at the stations of each member (global x, y movements).
+    pub members: Vec<MemberShape>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct MemberShape {
+    pub id: u32,
+    pub d: Vec<[f64; 2]>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct FrameModes {
+    pub modes: Vec<FrameMode>,
+    /// Unknowns solved for, and subspace iterations taken.
+    pub equations: usize,
+    pub iterations: usize,
+    pub ms: f64,
+    pub warnings: Vec<String>,
+}
+
+/// The lowest natural frequencies of a frame, with consistent masses (members' density × area).
+pub fn modes(m: &Model, count: usize) -> Result<FrameModes, String> {
+    let t0 = std::time::Instant::now();
+    let Assembly { sys, held, elems, free_rot, has_beam, .. } = assemble(m)?;
+    let mut mass = vec![];
+    for e in &elems {
+        let me = m_local(e);
+        let rot = |i: usize, j: usize| -> f64 {
+            if i / 3 != j / 3 {
+                return 0.0;
+            }
+            match (i % 3, j % 3) {
+                (0, 0) | (1, 1) => e.c,
+                (0, 1) => e.s,
+                (1, 0) => -e.s,
+                (2, 2) => 1.0,
+                _ => 0.0,
+            }
+        };
+        let dof = |i: usize| if i < 3 { 3 * e.a + i } else { 3 * e.b + i - 3 };
+        for i in 0..6 {
+            for j in 0..6 {
+                let v: f64 = (0..6).map(|p| (0..6).map(|q| rot(p, i) * me[p][q] * rot(q, j)).sum::<f64>()).sum();
+                if v != 0.0 {
+                    mass.push((dof(i), dof(j), v));
+                }
+            }
+        }
+    }
+    let (found, iterations) = crate::modal::lowest(&sys, &mass, &held, count)?;
+    let nn = m.nodes.len();
+    let equations = held.iter().filter(|h| !**h).count();
+    let modes = found
+        .into_iter()
+        .map(|md| {
+            let u = md.shape;
+            let disp = (0..nn).map(|i| [u[3 * i], u[3 * i + 1], if free_rot[i] || !has_beam[i] { 0.0 } else { u[3 * i + 2] }]).collect();
+            let members = elems.iter().map(|e| MemberShape { id: e.id, d: shape_along(e, &u) }).collect();
+            FrameMode { f: md.f, disp, members }
+        })
+        .collect();
+    Ok(FrameModes { modes, equations, iterations, ms: t0.elapsed().as_secs_f64() * 1e3, warnings: vec![] })
+}
+
+/// A mode's shape along a member from its end movements: cubic (Hermite) across a beam, straight
+/// across a truss bar, straight along both.
+fn shape_along(e: &Elem, u: &[f64]) -> Vec<[f64; 2]> {
+    let la = rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]);
+    let lb = rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]);
+    (0..STATIONS)
+        .map(|k| {
+            let s = k as f64 / (STATIONS - 1) as f64;
+            let ux = la[0] * (1.0 - s) + lb[0] * s;
+            let vy = if e.kind == MemberKind::Beam {
+                let (h1, h2, h3, h4) = (1.0 - 3.0 * s * s + 2.0 * s.powi(3), e.l * (s - 2.0 * s * s + s.powi(3)), 3.0 * s * s - 2.0 * s.powi(3), e.l * (-s * s + s.powi(3)));
+                h1 * la[1] + h2 * la[2] + h3 * lb[1] + h4 * lb[2]
+            } else {
+                la[1] * (1.0 - s) + lb[1] * s
+            };
+            let g = unrot(e, [ux, vy, 0.0]);
+            [g[0], g[1]]
+        })
+        .collect()
 }
 
 fn load_name(k: &LoadKind) -> &'static str {

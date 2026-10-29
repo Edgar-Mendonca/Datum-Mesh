@@ -487,6 +487,53 @@ fn axisymmetric() -> Vec<Check> {
     out
 }
 
+/// Benchmark 11 (0.2.2): natural frequencies of beams, against Euler–Bernoulli theory:
+/// f = (βL)² / 2πL² · √(EI/ρA).
+fn frequencies() -> Vec<Check> {
+    let mut out = vec![];
+    let (l, e, rho) = (2.0, 200e9, 7850.0);
+    let (b, h) = (0.05, 0.1f64);
+    let (a, i) = (b * h, b * h.powi(3) / 12.0);
+    let base = (e * i / (rho * a)).sqrt() / (std::f64::consts::TAU * l * l);
+    let beam = |ends: [Option<SupportKind>; 2], pieces: usize| {
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        d.m.materials[0].rho = rho;
+        for k in 0..pieces {
+            member(&mut d, [l * k as f64 / pieces as f64, 0.0], [l * (k + 1) as f64 / pieces as f64, 0.0], MemberKind::Beam);
+        }
+        for (x, s) in [(0.0, &ends[0]), (l, &ends[1])] {
+            if let Some(s) = s {
+                support(&mut d, x, 0.0, s.clone());
+            }
+        }
+        frame::modes(&d.m, 3).expect("modes")
+    };
+    let src = "Euler–Bernoulli beam vibration (Blevins, Formulas for Natural Frequency and Mode Shape, table 8-1)";
+    let fm = beam([Some(SupportKind::Fixed), None], 10);
+    for (k, bl) in [1.875_104_068_711_961, 4.694_091_132_974_175, 7.854_757_438_237_613].iter().enumerate() {
+        out.push(check(11, "Cantilever, 10 beam elements", ["First natural frequency (βL = 1.8751)", "Second (βL = 4.6941)", "Third (βL = 7.8548)"][k], "hz", bl * bl * base, fm.modes[k].f, 1e-3, src));
+    }
+    let fm = beam([Some(SupportKind::Pinned), Some(SupportKind::RollerX)], 10);
+    for k in 0..3 {
+        let n = (k + 1) as f64;
+        out.push(check(11, "Simply supported beam, 10 beam elements", ["First natural frequency (βL = π)", "Second (βL = 2π)", "Third (βL = 3π)"][k], "hz", (n * std::f64::consts::PI).powi(2) * base, fm.modes[k].f, 1e-3, src));
+    }
+    // A slender strip 1 m × 50 mm, plane stress, ν = 0, fixed along one end: its first bending
+    // frequency against beam theory (shear and rotary inertia lower it by about 0.3 % at L/h = 20),
+    // and its first stretching mode against the bar's f = √(E/ρ) / 4L.
+    let (sl, sh) = (1.0, 0.05f64);
+    let (mut d, ids) = part(Analysis::Stress, e, 0.0, vec![(Geom::rect(0.0, 0.0, sl, sh), false)]);
+    d.m.materials[0].rho = rho;
+    edge_support(&mut d, ids[0], 3, SupportKind::Fixed);
+    d.m.mesh.size = sh / 4.0;
+    let pm = plane::modes(&d.m, 6).expect("modes");
+    let bend = 1.875_104_068_711_961f64.powi(2) / (std::f64::consts::TAU * sl * sl) * (e * sh * sh / (12.0 * rho)).sqrt();
+    out.push(check(11, "Plate strip as a cantilever, plane stress, ν = 0", "First bending frequency (beam theory)", "hz", bend, pm.modes[0].f, 1e-2, "Euler–Bernoulli beam vibration; the plate adds shear and rotary inertia (about −0.3 %)"));
+    let axial = pm.modes.iter().find(|md| { let (sx, sy) = md.disp.iter().fold((0.0, 0.0), |a, u| (a.0 + u[0] * u[0], a.1 + u[1] * u[1])); sx > 10.0 * sy }).map(|md| md.f).unwrap_or(f64::NAN);
+    out.push(check(11, "Plate strip as a cantilever, plane stress, ν = 0", "First stretching frequency √(E/ρ) / 4L", "hz", (e / rho).sqrt() / (4.0 * sl), axial, 1e-3, "Longitudinal vibration of a bar fixed at one end"));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -499,6 +546,7 @@ pub fn run() -> Vec<Check> {
     v.extend(patch_tests());
     v.extend(thermal());
     v.extend(axisymmetric());
+    v.extend(frequencies());
     v
 }
 
@@ -516,7 +564,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=10 {
+        for b in 1..=11 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

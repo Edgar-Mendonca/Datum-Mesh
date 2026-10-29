@@ -144,6 +144,13 @@ fn small<T: Serialize>(r: &T) -> serde_json::Value {
     datum_core::wire::encode(serde_json::to_value(r).unwrap_or_default())
 }
 
+/// The lowest natural frequencies and mode shapes of the open model (0.2.2).
+#[tauri::command]
+async fn modes(st: State<'_, St>, count: usize) -> R<serde_json::Value> {
+    let m = st.lock().doc.m.clone();
+    tauri::async_runtime::spawn_blocking(move || datum_core::modes(&m, count).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+}
+
 /// Mesh the open part without solving it (the Mesh view and its statistics).
 #[tauri::command]
 async fn mesh(st: State<'_, St>) -> R<serde_json::Value> {
@@ -439,7 +446,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            state, apply, history, examples_list, new_model, section_props, solve, mesh, materials_library, verification, open, save, save_file,
+            state, apply, history, examples_list, new_model, section_props, solve, modes, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

@@ -1,6 +1,6 @@
 // Window state: the open model, the selection, the drawing tool, menus, dialogs and messages.
 import { createSignal, batch, JSX } from "solid-js";
-import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, Mesh } from "./api";
+import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, Mesh, ModeResults } from "./api";
 
 export const [out, setOutRaw] = createSignal<Out | null>(null);
 export const model = (): Model | undefined => out()?.m;
@@ -64,13 +64,21 @@ export const [stale, setStale] = createSignal(false);
 export type Show = { deformed: boolean; diagram: "none" | "n" | "v" | "m"; reactions: boolean; util: boolean; scale: number; field: string; elem: boolean; mesh: boolean; quality: boolean };
 export const [show, setShow] = createSignal<Show>({ deformed: true, diagram: "m", reactions: true, util: false, scale: 1, field: "vm", elem: false, mesh: false, quality: true });
 export const [solving, setSolving] = createSignal(false);
+/** Natural frequencies (0.2.2): the modes found, the one shown, whether they are on the drawing
+ * (instead of the static results), whether they move, and the phase of the movement (−1 to 1). */
+export const [modes, setModes] = createSignal<ModeResults | null>(null);
+export const [modesStale, setModesStale] = createSignal(false);
+export const [modeSel, setModeSel] = createSignal(0);
+export const [modeOn, setModeOn] = createSignal(false);
+export const [animate, setAnimate] = createSignal(true);
+export const [phase, setPhase] = createSignal(1);
 /** The part's mesh without results (Mesh view), and whether the model changed since. */
 export const [meshed, setMeshed] = createSignal<Mesh | null>(null);
 export const [meshStale, setMeshStale] = createSignal(false);
 
 // ---------- editing ----------
 export const act = async (op: object, quiet = false): Promise<Out | null> => {
-  try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); return o; }
+  try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
   catch (e) { if (!quiet) toast(String(e)); return null; }
 };
 export const call = async <T = any>(cmd: string, args?: object): Promise<T | undefined> => {
@@ -78,7 +86,7 @@ export const call = async <T = any>(cmd: string, args?: object): Promise<T | und
 };
 export const loadOut = async (cmd: string, args?: object) => {
   const o = await call<Out | null>(cmd, args);
-  if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setOut(o); setBackstage(null); setView("model"); });
+  if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setModes(null); setModeOn(false); setModesStale(false); setOut(o); setBackstage(null); setView("model"); });
   return o;
 };
 

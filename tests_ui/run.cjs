@@ -47,6 +47,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
+          if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
           if (c === "materials_library") return f.library;
           if (c in m) return m[c];
           return null;
@@ -287,6 +288,24 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button[title^="A uniform change of temperature"]'); await p.waitForTimeout(150);
   const wl = (await ops()).reverse().find(o => o.Add && o.Add.item.Load && o.Add.item.Load.kind.kind === "warming");
   check("Temperature Change adds a uniform warming of the whole part", !!wl && wl.Add.item.Load.at.on === "body", JSON.stringify(wl));
+  // Natural frequencies (0.2.2): a frame and a part.
+  await open("portal");
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest natural frequencies and their mode shapes"]'); await p.waitForTimeout(400);
+  const pmo = unpack(fix.portal_modes);
+  check("Natural Frequencies lists the modes under the canvas", (await p.$$(".legend .modelist button")).length === pmo.modes.length && (await p.textContent(".legend")).includes("Hz"));
+  check("a frame's mode is drawn along every member", (await p.$$(".modeline")).length === fix.portal.m.members.length);
+  check("the static diagrams are hidden while a mode is shown", (await p.$$(".diag")).length === 0);
+  await p.click(".legend .modelist button:nth-child(2)"); await p.waitForTimeout(100);
+  check("another mode can be picked", await p.$eval(".legend .modelist button:nth-child(2)", el => el.classList.contains("on")));
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  check("the Results page lists the natural frequencies", (await p.textContent(".page")).includes("Natural frequencies") && (await p.$$(".page .tbl tbody tr")).length >= pmo.modes.length);
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await p.click(".legend button:has-text('Back to the static results')"); await p.waitForTimeout(100);
+  check("Back to the static results hides the modes", (await p.$$(".modeline")).length === 0);
+  await open("bracket");
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest natural frequencies and their mode shapes"]'); await p.waitForTimeout(500);
+  check("a part's mode is drawn on the contour canvas", await p.$eval("canvas.contours", el => el.classList.contains("on")) && (await p.textContent(".legend")).includes("Natural frequencies"));
+  check("the part's fill is cleared under its mode (0.2.2 real-app bug)", await p.$eval(".dsvg", el => el.classList.contains("under")));
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

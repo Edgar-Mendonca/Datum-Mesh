@@ -4,13 +4,14 @@
 // model: the canvas only draws it and sends edits.
 import { For, Show, JSX, createSignal, createMemo, onMount, onCleanup, batch } from "solid-js";
 import { Pt, Geom, Model, Target, Support, Load, Shape, Member } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act, opts, setCursor, openMenu, Item, toast, partRes, view, meshed } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act, opts, setCursor, openMenu, Item, toast, partRes, view, meshed, modeOn, modes } from "./store";
 import { C } from "./cmds";
 import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient, area } from "./geom";
 import { fmt } from "./units";
 import { defaultLoad, defaultSupport } from "./panels";
 import { ResultsLayer, ResultsProbe } from "./results";
 import { PartLayer, PartMarkers, PartProbe } from "./parts";
+import { FrameModeLayer } from "./modes";
 
 export const [scale, setScale] = createSignal(60); // px per metre
 export const [pan, setPan] = createSignal<Pt>([80, 500]); // screen position of the world origin
@@ -460,7 +461,7 @@ export const Canvas = () => {
   const labels = createMemo(() => (m() ? labelled(m()!) : new Set<number>()));
   const empty = () => { const mm = m(); return !!mm && !mm.nodes.length && !mm.shapes.length; };
   /** Contours or the mesh are drawn under the outlines: shapes are not filled then. */
-  const under = () => !frame() && (view() === "mesh" ? true : !!partRes());
+  const under = () => !frame() && (view() === "mesh" ? true : !!partRes() || (modeOn() && modes()?.kind === "plane"));
   const refines = () => (m()?.mesh.refine ?? []);
 
   return (
@@ -484,6 +485,7 @@ export const Canvas = () => {
           <Show when={mb.kind === "truss"}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * 0.06} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * 0.06} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /></Show>
         </g>}</Show>}</For>
         <ResultsLayer />
+        <FrameModeLayer />
         <PartMarkers />
         <For each={supportsAtNodes()}>{s => <Show when={supAt(s)}>{p => <SupportGlyph s={s} at={S(p())} on={selSet().has(s.id)} />}</Show>}</For>
         <For each={m()?.nodes ?? []}>{n => { const p = () => S(np().get(n.id) ?? [n.x, n.y]); return <rect x={p()[0] - 3.5} y={p()[1] - 3.5} width={7} height={7} class="node" classList={{ sel: selSet().has(n.id), hover: hoverIs("node", n.id) }} data-id={n.id} />; }}</For>

@@ -1,7 +1,7 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
-import { Out, Analysis, Mesh, invoke, fromWire, unwire } from "./api";
-import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale } from "./store";
+import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num } from "./api";
+import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
 import { defaultLoad } from "./panels";
@@ -27,7 +27,7 @@ export const C = {
     try {
       const r = fromWire(await invoke("solve")), first = !results();
       batch(() => {
-        setResults(r); setStale(false); setTab("results");
+        setResults(r); setStale(false); setTab("results"); setModeOn(false);
         if (r.kind !== "frame") { fieldAfterSolve(r.kind === "heat" ? "heat" : m.analysis); setMeshed(null); setMeshStale(false); if (view() === "mesh") setView("model"); }
       });
       // The legend bar takes room under the canvas the first time: fit the model again.
@@ -37,6 +37,17 @@ export const C = {
       const bal = r.kind === "heat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : "Reactions balance the loads.";
       toast(r.warnings.length ? r.warnings.join(" ") : `Solved: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
     } catch (e) { setResults(null); toast(String(e)); }
+    finally { setSolving(false); }
+  },
+  /** The lowest natural frequencies and their mode shapes (0.2.2). */
+  modes: async (count = 6) => {
+    const m = model(); if (!m || solving()) return;
+    setSolving(true);
+    try {
+      const r = modesFromWire(await invoke("modes", { count }));
+      batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
+      toast(`${r.modes.length} natural frequencies: the lowest is ${num(r.modes[0].f, 4)} Hz.`, true);
+    } catch (e) { toast(String(e)); }
     finally { setSolving(false); }
   },
   /** Mesh the part without solving, and show it (the Mesh view). */
@@ -85,7 +96,7 @@ export const C = {
 export const imbalanceOf = (r: { imbalance: number }) => r.imbalance;
 
 export const ALL_CMDS: [string, () => void, string?][] = [
-  ["Solve", () => C.solve(), "F5"], ["Mesh the part", () => C.mesh()], ["Refine the mesh near an edge or point", () => C.tool("refine")], ["Quadratic elements (6-node)", () => C.meshSettings({ order: 2 })], ["Linear elements (3-node)", () => C.meshSettings({ order: 1 })], ["Automatic element size", () => C.meshSettings({ size: 0 })],
+  ["Solve", () => C.solve(), "F5"], ["Natural frequencies and mode shapes", () => C.modes()], ["Mesh the part", () => C.mesh()], ["Refine the mesh near an edge or point", () => C.tool("refine")], ["Quadratic elements (6-node)", () => C.meshSettings({ order: 2 })], ["Linear elements (3-node)", () => C.meshSettings({ order: 1 })], ["Automatic element size", () => C.meshSettings({ size: 0 })],
   ["Von Mises stress", () => C.show({ field: "vm" })], ["Displacement", () => C.show({ field: "umag" })], ["Safety factor", () => C.show({ field: "sf" })], ["Temperature", () => C.show({ field: "t" })], ["Heat flux", () => C.show({ field: "qmag" })], ["Mesh lines on results", () => C.show({ mesh: !show().mesh })], ["Materials library", () => D.library()], ["Results table", () => setView("results")], ["Verification", () => D.verification()],
   ["Deflected shape", () => C.show({ deformed: !show().deformed })], ["Bending moment diagram", () => C.show({ diagram: "m" })], ["Shear force diagram", () => C.show({ diagram: "v" })], ["Axial force diagram", () => C.show({ diagram: "n" })],
   ["Reactions", () => C.show({ reactions: !show().reactions })], ["Utilisation colours", () => C.show({ util: !show().util })],

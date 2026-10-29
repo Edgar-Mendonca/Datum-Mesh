@@ -44,6 +44,8 @@ fn main() {
         "fin_results": sent(&datum_core::solve(&examples::get("fin").unwrap()).unwrap()),
         "bracket_mesh": sent(&mesh::mesh(&examples::get("bracket").unwrap()).unwrap()),
         "library": materials::library(),
+        "portal_modes": sent(&datum_core::modes(&examples::get("portal").unwrap(), 6).unwrap()),
+        "bracket_modes": sent(&datum_core::modes(&examples::get("bracket").unwrap(), 6).unwrap()),
         "verification": bench::run(),
         "noload": out_m(&noload),
         "offgrid": out_m(&offgrid),

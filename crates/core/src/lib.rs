@@ -11,6 +11,7 @@ pub mod frame;
 mod hardening;
 pub mod heat;
 pub mod materials;
+pub mod modal;
 pub mod mesh;
 pub mod model;
 pub mod plane;
@@ -27,6 +28,24 @@ pub enum Results {
     Frame(frame::FrameResults),
     Plane(plane::PlaneResults),
     Heat(heat::HeatResults),
+}
+
+/// Natural frequencies of a frame or a part (0.2.2), tagged by kind for the window.
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Modes {
+    Frame(frame::FrameModes),
+    Plane(plane::PartModes),
+}
+
+/// The lowest `count` natural frequencies and mode shapes of the model.
+pub fn modes(m: &model::Model, count: usize) -> Result<Modes, String> {
+    let count = count.clamp(1, 30);
+    match m.analysis {
+        model::Analysis::Frame => frame::modes(m, count).map(Modes::Frame),
+        model::Analysis::Heat => Err("Natural frequencies are for frames and for parts in stress (plane stress, plane strain or axisymmetric), not heat conduction.".into()),
+        _ => plane::modes(m, count).map(Modes::Plane),
+    }
 }
 
 /// Solve the model as its analysis says: frames, plane stress or strain, or heat conduction.
@@ -53,6 +72,19 @@ mod tests {
             assert!(imb < 1e-6, "{}: imbalance {imb:e}", e.id);
             assert!(warnings.is_empty(), "{}: {warnings:?}", e.id);
         }
+    }
+
+    #[test]
+    fn every_example_vibrates_with_rising_frequencies() {
+        for e in crate::examples::list().into_iter().filter(|e| !e.id.starts_with("blank") && e.analysis != crate::model::Analysis::Heat) {
+            let m = crate::examples::get(e.id).unwrap();
+            let r = crate::modes(&m, 4).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+            let f: Vec<f64> = match &r { crate::Modes::Frame(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Plane(x) => x.modes.iter().map(|m| m.f).collect() };
+            assert_eq!(f.len(), 4, "{}", e.id);
+            assert!(f[0] > 0.0 && f.windows(2).all(|w| w[1] >= w[0] * (1.0 - 1e-9)), "{}: {f:?}", e.id);
+        }
+        // A heat model has no frequencies, and says why.
+        assert!(crate::modes(&crate::examples::get("fin").unwrap(), 3).unwrap_err().contains("heat"));
     }
 
     #[test]
