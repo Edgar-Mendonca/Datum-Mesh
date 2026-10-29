@@ -26,7 +26,7 @@ export type SupportKind =
 export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number } | { kind: "moment"; m: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "local" }
-  | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean } | { kind: "gravity"; gx: number; gy: number }
+  | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number }
   | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number };
 export interface Load { id: number; at: Target; kind: LoadKind }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[] }
@@ -84,3 +84,34 @@ export interface HeatResults { kind: "heat"; mesh: Mesh; draw: [number, number, 
 export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults;
 export type PartResults = PlaneResults | HeatResults;
 export interface LibMaterial { id: string; name: string; family: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
+
+// ---------- results on the wire ----------
+/** Long arrays arrive packed as base64 (`crates/core/src/wire.rs`): `{$f32 | $u32, w}`; this
+ * turns them back into arrays (rows of `w` when w > 1), everything else as it came. */
+export const unwire = (v: any): any => {
+  if (Array.isArray(v)) return v.map(unwire);
+  if (v && typeof v === "object") {
+    const s = v.$f32 ?? v.$u32;
+    if (typeof s === "string") {
+      const bin = atob(s), bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const nums = Array.from(v.$f32 !== undefined ? new Float32Array(bytes.buffer) : new Uint32Array(bytes.buffer));
+      if (v.w === 1) return nums;
+      const out: number[][] = [];
+      for (let i = 0; i < nums.length; i += v.w) out.push(nums.slice(i, i + v.w));
+      return out;
+    }
+    const o: any = {};
+    for (const k in v) o[k] = unwire(v[k]);
+    return o;
+  }
+  return v;
+};
+/** The drawing triangles of a mesh: 6-node triangles split in four, so curved fields read smoothly. */
+export const drawTris = (ms: Mesh): [number, number, number][] => ms.tris.flatMap(t => (t.length === 6 ? [[t[0], t[3], t[5]], [t[3], t[1], t[4]], [t[5], t[4], t[2]], [t[3], t[4], t[5]]] : [[t[0], t[1], t[2]]]) as [number, number, number][]);
+/** Results as the shell sends them, made whole: arrays unpacked, drawing triangles added. */
+export const fromWire = (raw: any): Results => {
+  const r = unwire(raw);
+  if (r.kind !== "frame") r.draw = drawTris(r.mesh);
+  return r;
+};

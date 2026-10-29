@@ -38,6 +38,9 @@ pub enum Op {
     AddMember { from: [f64; 2], to: [f64; 2], kind: MemberKind, section: Option<u32>, material: Option<u32> },
     /// Move nodes and shapes; a member moves its two nodes.
     Move { ids: Vec<u32>, dx: f64, dy: f64 },
+    /// Put a node where any two of these members cross, joining them there (members split at it,
+    /// with their loads). Crossing members are otherwise left apart, as X-bracing usually is.
+    JoinCrossings { ids: Vec<u32> },
     /// Delete items, with what hangs on them (a node's members, an edge's loads, …). A material or
     /// section still in use is not deleted.
     Delete { ids: Vec<u32> },
@@ -56,6 +59,9 @@ pub struct Doc {
     pub m: Model,
     pub path: Option<String>,
     pub dirty: bool,
+    /// The model as last saved (or opened): the document is changed when it differs from this,
+    /// so undoing back to it clears the mark. None: never saved (a recovered model).
+    saved: Option<Model>,
     undo: Vec<Model>,
     redo: Vec<Model>,
 }
@@ -66,7 +72,20 @@ pub const SAME: f64 = 1e-7;
 
 impl Doc {
     pub fn new(m: Model) -> Doc {
-        Doc { m, ..Default::default() }
+        Doc { saved: Some(m.clone()), m, ..Default::default() }
+    }
+    /// The model was just saved: unchanged from here.
+    pub fn mark_saved(&mut self) {
+        self.saved = Some(self.m.clone());
+        self.dirty = false;
+    }
+    /// A model that has never been saved anywhere (recovered work): changed whatever is undone.
+    pub fn mark_unsaved(&mut self) {
+        self.saved = None;
+        self.dirty = true;
+    }
+    fn update_dirty(&mut self) {
+        self.dirty = self.saved.as_ref() != Some(&self.m);
     }
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
@@ -102,7 +121,7 @@ impl Doc {
             self.undo.remove(0);
         }
         self.redo.clear();
-        self.dirty = true;
+        self.update_dirty();
         Ok(created)
     }
 
@@ -110,7 +129,7 @@ impl Doc {
         match self.undo.pop() {
             Some(m) => {
                 self.redo.push(std::mem::replace(&mut self.m, m));
-                self.dirty = true;
+                self.update_dirty();
                 true
             }
             None => false,
@@ -121,7 +140,7 @@ impl Doc {
         match self.redo.pop() {
             Some(m) => {
                 self.undo.push(std::mem::replace(&mut self.m, m));
-                self.dirty = true;
+                self.update_dirty();
                 true
             }
             None => false,
@@ -228,6 +247,37 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let id = fresh(m);
             m.members.push(Member { id, a, b, kind, section, material });
             created.push(id);
+        }
+        Op::JoinCrossings { ids } => {
+            // New nodes at the crossings; `apply` then splits every member a new node lies on.
+            let pos: std::collections::HashMap<u32, [f64; 2]> = m.nodes.iter().map(|n| (n.id, [n.x, n.y])).collect();
+            let segs: Vec<(u32, [f64; 2], [f64; 2])> = m.members.iter().filter(|b| ids.contains(&b.id)).filter_map(|b| Some((b.id, *pos.get(&b.a)?, *pos.get(&b.b)?))).collect();
+            let mut pts: Vec<[f64; 2]> = vec![];
+            for i in 0..segs.len() {
+                for j in i + 1..segs.len() {
+                    let ((_, a, b), (_, c, d)) = (segs[i], segs[j]);
+                    let (r, q) = ([b[0] - a[0], b[1] - a[1]], [d[0] - c[0], d[1] - c[1]]);
+                    let den = r[0] * q[1] - r[1] * q[0];
+                    if den.abs() <= 1e-12 * (r[0].hypot(r[1]) * q[0].hypot(q[1])) {
+                        continue; // parallel
+                    }
+                    let t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den;
+                    let u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
+                    let p = [a[0] + r[0] * t, a[1] + r[1] * t];
+                    let inner = |s: f64, l: f64| s * l > SAME && (1.0 - s) * l > SAME;
+                    if inner(t, r[0].hypot(r[1])) && inner(u, q[0].hypot(q[1])) && !pts.iter().any(|x| (x[0] - p[0]).hypot(x[1] - p[1]) < SAME) {
+                        pts.push(p);
+                    }
+                }
+            }
+            if pts.is_empty() {
+                return Err("None of these members cross each other between their ends.".into());
+            }
+            for p in pts {
+                let id = fresh(m);
+                m.nodes.push(Node { id, x: p[0], y: p[1] });
+                created.push(id);
+            }
         }
         Op::Move { ids, dx, dy } => {
             if !(dx.is_finite() && dy.is_finite()) {
@@ -391,6 +441,9 @@ fn renumber(m: &mut Model, shape: u32, f: impl Fn(u32) -> Vec<u32>) {
             // A total edge force is shared between the halves.
             if let LoadKind::Traction { fx, fy, total: true } = kind {
                 kind = LoadKind::Traction { fx: fx / n as f64, fy: fy / n as f64, total: true };
+            }
+            if let LoadKind::Bearing { fx, fy } = kind {
+                kind = LoadKind::Bearing { fx: fx / n as f64, fy: fy / n as f64 };
             }
             let id = if k == 0 { x.id } else { fresh(m) };
             loads.push(crate::model::Load { id, at, kind });
@@ -616,6 +669,56 @@ mod tests {
         assert!(d.m.members.is_empty() && d.m.loads.is_empty());
         assert!(d.undo());
         assert_eq!(d.m.members.len(), 2);
+    }
+
+    #[test]
+    fn undoing_back_to_the_saved_model_is_unchanged() {
+        // 0.1.1 review: undo to the saved state still marked the model changed.
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        assert!(!d.dirty);
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        assert!(d.dirty);
+        d.undo();
+        assert!(!d.dirty, "back to the opened model");
+        d.redo();
+        d.mark_saved();
+        d.apply(Op::Move { ids: vec![d.m.nodes[0].id], dx: 0.5, dy: 0.0 }).unwrap();
+        assert!(d.dirty);
+        d.undo();
+        assert!(!d.dirty, "back to the saved model");
+        d.undo();
+        assert!(d.dirty, "before the save");
+        d.mark_unsaved();
+        d.redo();
+        assert!(d.dirty, "recovered work stays changed");
+    }
+
+    #[test]
+    fn crossing_members_join_only_when_asked() {
+        // An X: two diagonals of a 4 × 3 panel, with a load along one of them.
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 3.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 3.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        assert_eq!((d.m.nodes.len(), d.m.members.len()), (4, 2), "drawn apart, as X-bracing usually is");
+        let first = d.m.members[0].id;
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Member { id: first }, kind: LoadKind::Dist { w1: -1e3, w2: -3e3, dir: crate::model::Dir::Y } }) }).unwrap();
+        let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).collect();
+        let made = d.apply(Op::JoinCrossings { ids }).unwrap();
+        assert_eq!(made.len(), 1);
+        assert_eq!((d.m.nodes.len(), d.m.members.len()), (5, 4));
+        let c = d.m.nodes.iter().find(|n| n.id == made[0]).unwrap();
+        assert!((c.x - 2.0).abs() < 1e-12 && (c.y - 1.5).abs() < 1e-12);
+        // The load is split at the crossing, linearly: −1 → −2 → −3 kN/m.
+        let mut ws: Vec<(f64, f64)> = d.m.loads.iter().filter_map(|l| if let LoadKind::Dist { w1, w2, .. } = l.kind { Some((w1, w2)) } else { None }).collect();
+        ws.sort_by(|a, b| b.0.total_cmp(&a.0));
+        assert_eq!(ws.len(), 2);
+        assert!((ws[0].0 + 1e3).abs() < 1e-9 && (ws[0].1 + 2e3).abs() < 1e-9 && (ws[1].1 + 3e3).abs() < 1e-9, "{ws:?}");
+        // Members that only touch at an end, or are parallel, do not cross.
+        let mut e = Doc::new(Model::new(Analysis::Frame));
+        e.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        e.apply(Op::AddMember { from: [0.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        let ids: Vec<u32> = e.m.members.iter().map(|b| b.id).collect();
+        assert!(e.apply(Op::JoinCrossings { ids }).unwrap_err().contains("cross"));
     }
 
     #[test]

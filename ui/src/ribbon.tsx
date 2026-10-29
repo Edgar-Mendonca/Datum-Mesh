@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view } from "./store";
+import { toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
@@ -113,6 +113,8 @@ const exampleMenu = async (e: MouseEvent) => {
   openMenu({ x: r.left, y: r.bottom + 2 }, list.map(x => ({ label: x.name, run: () => C.newModel(x.id) })));
 };
 
+/** Join the selected members where they cross (crossing members are otherwise left apart). */
+const joinCrossings = () => { const m = model()!, s = new Set(sel()), ids = m.members.filter(b => s.has(b.id)).map(b => b.id); if (ids.length < 2) return toast("Select two or more members that cross."); act({ JoinCrossings: { ids } }).then(o => o && toast(`Joined at ${o.created.length} ${o.created.length === 1 ? "crossing" : "crossings"}.`, true)); };
 /** Format: the selected shapes or members, all at once. */
 const formatShapes = (f: (s: any) => object) => { const m = model()!, s = new Set(sel()); act({ Batch: m.shapes.filter(x => s.has(x.id)).map(x => ({ Set: { item: { Shape: { ...x, ...f(x) } } } })) }); };
 const formatMembers = (f: (s: any) => object) => { const m = model()!, s = new Set(sel()); act({ Batch: m.members.filter(x => s.has(x.id)).map(x => ({ Set: { item: { Member: { ...x, ...f(x) } } } })) }); };
@@ -156,7 +158,7 @@ export const Ribbon = () => {
           <G l="Supports" h="supports"><T big i="fixed" l="Fixed" t="sup:fixed" /><T big i="pinned" l="Pinned" t="sup:pinned" />
             <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /></>}><T i="roller" l="Roller (along x)" t="sup:rollerx" /><T i="roller" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
           <G l="Loads" h="loads"><T big i="force" l="Force" t="load:force" />
-            <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
+            <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
               <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /></S></Show></G>
         </Show>
         <Show when={heat()}>
@@ -196,7 +198,7 @@ export const Ribbon = () => {
       <Show when={tab() === "format"}>
         <Show when={fmtKind() === "shape"}><G l="Shape" h="shapes"><B big i="hrect" l="Make a Hole" run={() => formatShapes(() => ({ hole: true }))} /><B big i="rect" l="Make Solid" run={() => formatShapes(() => ({ hole: false }))} />
           <S><B i="material" l="Material ▾" dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => formatShapes(() => ({ material: x.id })) })))} /></S></G></Show>
-        <Show when={fmtKind() === "member"}><G l="Member" h="members"><B big i="beam" l="Beam" run={() => formatMembers(() => ({ kind: "beam" }))} /><B big i="truss" l="Truss Bar" run={() => formatMembers(() => ({ kind: "truss" }))} />
+        <Show when={fmtKind() === "member"}><G l="Member" h="members"><B big i="beam" l="Beam" run={() => formatMembers(() => ({ kind: "beam" }))} /><B big i="truss" l="Truss Bar" run={() => formatMembers(() => ({ kind: "truss" }))} /><B big i="node" l="Join Where They Cross" run={() => joinCrossings()} title="Put a node where the selected members cross, joining them there" />
           <S><B i="section" l="Section ▾" dd={e => openMenu(e, (m()?.sections ?? []).map(x => ({ label: x.name, run: () => formatMembers(() => ({ section: x.id })) })))} /><B i="material" l="Material ▾" dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => formatMembers(() => ({ material: x.id })) })))} /></S></G></Show>
       </Show>
       <Show when={tab() === "help"}>

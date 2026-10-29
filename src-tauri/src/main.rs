@@ -5,7 +5,7 @@ mod update;
 
 use datum_core::doc::{Doc, Op};
 use datum_core::model::{self, Analysis, Model, SectionShape};
-use datum_core::{bench, examples, materials, mesh, sections, Results};
+use datum_core::{bench, examples, materials, mesh, sections};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -134,19 +134,24 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
 /// Solve the open model: frames and trusses, plane stress or strain, or heat conduction. Parts are
 /// meshed first. Runs off the window's thread.
 #[tauri::command]
-async fn solve(st: State<'_, St>) -> R<Results> {
+async fn solve(st: State<'_, St>) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::solve(&m)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || datum_core::solve(&m).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+}
+
+/// Results with their long arrays packed small for the window (`datum_core::wire`).
+fn small<T: Serialize>(r: &T) -> serde_json::Value {
+    datum_core::wire::encode(serde_json::to_value(r).unwrap_or_default())
 }
 
 /// Mesh the open part without solving it (the Mesh view and its statistics).
 #[tauri::command]
-async fn mesh(st: State<'_, St>) -> R<mesh::Mesh> {
+async fn mesh(st: State<'_, St>) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
     if !m.analysis.is_plane() {
         return Err("Frames and trusses are not meshed: each member is one element.".into());
     }
-    tauri::async_runtime::spawn_blocking(move || mesh::mesh(&m)).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || mesh::mesh(&m).map(|r| small(&r))).await.map_err(|e| e.to_string())?
 }
 
 /// The materials library (from Datum Atlas, with sources).
@@ -201,9 +206,9 @@ async fn save(app: AppHandle, st: State<'_, St>, as_new: bool) -> R<Option<Out>>
         },
     };
     let mut a = st.lock();
-    std::fs::write(&path, model::to_json(&a.doc.m)).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
+    write_safely(&path, model::to_json(&a.doc.m).as_bytes()).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
     a.doc.path = Some(path.display().to_string());
-    a.doc.dirty = false;
+    a.doc.mark_saved();
     remember(&app, &path);
     clear_recovery(&app);
     Ok(Some(out(&a)))
@@ -218,8 +223,26 @@ async fn save_file(app: AppHandle, name: String, data: String) -> R<Option<Strin
         Some((_, b64)) => base64_decode(b64)?,
         None => data.into_bytes(),
     };
-    std::fs::write(&path, bytes).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
+    write_safely(&path, &bytes).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
     Ok(Some(path.display().to_string()))
+}
+
+/// Write a file so a crash or a full disk never leaves it half written: write a temporary file
+/// beside it, flush it to disk, then rename it over the old one (0.1.1 review).
+fn write_safely(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let tmp = path.with_extension(format!("{}.saving", path.extension().and_then(|e| e.to_str()).unwrap_or("tmp")));
+    let res = (|| {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(bytes)?;
+        f.sync_all()?;
+        drop(f);
+        std::fs::rename(&tmp, path)
+    })();
+    if res.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    res
 }
 
 fn base64_decode(s: &str) -> R<Vec<u8>> {
@@ -258,7 +281,7 @@ fn options(st: State<St>) -> Options {
 #[tauri::command]
 fn set_options(app: AppHandle, st: State<St>, opts: Options) -> Out {
     if let Some(f) = options_file(&app) {
-        let _ = std::fs::write(f, serde_json::to_string(&opts).unwrap_or_default());
+        let _ = write_safely(&f, serde_json::to_string(&opts).unwrap_or_default().as_bytes());
     }
     let mut a = st.lock();
     a.opts = opts;
@@ -288,8 +311,8 @@ fn autosave(app: AppHandle, st: State<St>) {
     let a = st.lock();
     if let (true, Some((file, meta))) = (a.doc.dirty, recovery_files(&app)) {
         let info = Recovery { name: a.doc.m.name.clone(), path: a.doc.path.clone(), saved: chrono::Local::now().format("%d-%b-%y %H:%M").to_string() };
-        let _ = std::fs::write(file, model::to_json(&a.doc.m));
-        let _ = std::fs::write(meta, serde_json::to_string(&info).unwrap_or_default());
+        let _ = write_safely(&file, model::to_json(&a.doc.m).as_bytes());
+        let _ = write_safely(&meta, serde_json::to_string(&info).unwrap_or_default().as_bytes());
     }
 }
 
@@ -313,7 +336,7 @@ fn recover(app: AppHandle, st: State<St>, keep: bool) -> R<Option<Out>> {
     let mut a = st.lock();
     a.doc = Doc::new(m);
     a.doc.path = info.and_then(|i| i.path);
-    a.doc.dirty = true;
+    a.doc.mark_unsaved();
     let mut o = out(&a);
     o.warnings = warnings;
     Ok(Some(o))
@@ -330,7 +353,7 @@ fn remember(app: &AppHandle, path: &Path) {
     v.insert(0, p);
     v.truncate(12);
     if let Some(f) = options_file(app).map(|f| f.with_file_name("recent.json")) {
-        let _ = std::fs::write(f, serde_json::to_string(&v).unwrap_or_default());
+        let _ = write_safely(&f, serde_json::to_string(&v).unwrap_or_default().as_bytes());
     }
 }
 
@@ -421,4 +444,21 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("Datum Mesh failed to start");
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn saving_replaces_the_file_whole_and_leaves_nothing_behind() {
+        let dir = std::env::temp_dir().join(format!("datum-mesh-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("model.dmesh");
+        super::write_safely(&f, b"first, and longer than the second").unwrap();
+        super::write_safely(&f, b"second").unwrap();
+        assert_eq!(std::fs::read(&f).unwrap(), b"second");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "no temporary file left");
+        // A folder that does not exist: an error, and nothing written.
+        assert!(super::write_safely(&dir.join("no/such/model.dmesh"), b"x").is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

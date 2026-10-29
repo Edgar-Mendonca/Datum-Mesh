@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.1.3 (2026-10-28) |
+| **Current version** | 0.1.4 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -27,7 +27,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | File | What it does |
 | --- | --- |
 | `crates/core/src/model.rs` | The model: analysis kind, nodes, members, sections, materials, shapes (polygons with bulge arcs, circles, holes), supports and loads with targets (node, member, edge, point, body), mesh settings; `check` (every invariant); `.dmesh` read item by item with migration and `repair` (damaged files open as far as possible, with warnings) and write |
-| `crates/core/src/doc.rs` | Edit operations (Add, Set, AddMember by points, Move, Delete with cascade, SetSettings, SetMeta, Batch) on a copy, kept only if `check` passes; snapshot undo/redo |
+| `crates/core/src/doc.rs` | Edit operations (Add, Set, AddMember by points, Move, Delete with cascade, InsertCorner, RemoveCorner, JoinCrossings, SetSettings, SetMeta, Batch) on a copy, kept only if `check` passes; snapshot undo/redo; changed = differs from the saved snapshot |
 | `crates/core/src/sections.rs` | Section properties (A, I, c) for rectangle, round bar, tube, box, I, channel, angle and custom |
 | `crates/core/src/sparse.rs` | The shared linear solver: triplets, supports by elimination, prescribed values, faer sparse Cholesky, a probe solve that catches mechanisms, residual |
 | `crates/core/src/mesh.rs` | Meshing parts: outlines (arcs split by the local size) into a spade constrained Delaunay triangulation inside a frame round the part, refined for angle and size; local sizes from refined edges and points grow into the global size (a size field: too-large triangles get a point at their centre, then refinement again); triangles kept where there is material (centroid test); 6-node triangles with midside nodes on true arcs; boundary edges tagged with their shape edge; quality |
@@ -35,6 +35,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/heat.rs` | Steady heat conduction: T3/T6, fixed temperatures, flux, convection, generation; heat flux recovered at nodes and per element; heat flows at every support and load and the heat balance |
 | `crates/core/src/materials.rs`, `crates/core/data/materials.json`, `tools/materials.py` | The materials library: 54 metals and plastics from Datum Atlas with sources (E, ρ, k, α the middle of the range, yield the low end, ν typical for the family); the script rebuilds the JSON from an Atlas checkout |
 | `crates/core/src/lib.rs` | `Results` (frame, plane or heat, tagged by `kind`) and `solve()` for any analysis; tests that every example solves, balances and agrees with hand checks |
+| `crates/core/src/wire.rs` | Results packed for the window: long numeric arrays as base64 (f32 values, u32 indices), everything else unchanged; the window's `unwire` (`ui/src/api.ts`) unpacks them |
 | `crates/core/examples/bigpart.rs` | A 25 000-element bracket's results as JSON, for timing the window by hand (not a test) |
 | `crates/core/src/frame.rs` | Frames and trusses: beam and truss stiffness, linear member loads as consistent nodal loads, self-weight, springs, reactions, equilibrium sums, exact N, V, M and deflection along each member (41 stations), stress and utilisation |
 | `crates/core/src/bench.rs` | The verification benchmarks as data (`run()` → rows with result, reference, error, source); the test fails on any row over its tolerance |
@@ -42,7 +43,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/examples.rs` | The worked examples, built in code: blank frame and part, portal frame, roof truss, lifting lug, L-bracket, flange plate, heat sink |
 | `crates/core/src/hardening.rs` | FAMILY §11: failed edits change nothing, random edits keep the model valid and round-trip, damaged files, speed gate |
 | `crates/core/examples/dump.rs` | Writes `tests_ui/fixture.json` (the engine's real examples) for the UI tests |
-| `src-tauri/src/main.rs` | Commands: state, apply, history, examples, new model, section properties, open/save, save file, options, recovery, recent, startup file, open_url, version, updates |
+| `src-tauri/src/main.rs` | Files written safely (temporary file, sync, rename). Commands: state, apply, history, examples, new model, section properties, open/save, save file, options, recovery, recent, startup file, open_url, version, updates |
 | `src-tauri/src/update.rs` | The updater (Plan's, `REPO` = Datum-Mesh) |
 | `ui/src/main.tsx` | Window layout, sidebar (Model, Mesh, Results, Report), status bar (tool hint, cursor, counts, drawing scale), keys, start-up and recovery |
 | `ui/src/store.ts` | Window state: the model (`out().m`), selection, picked edge, canvas tool, menus, dialogs |
@@ -61,7 +62,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 86 UI checks of the built window with a mocked bridge |
+| `tests_ui/run.cjs` | 93 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -119,6 +120,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.3 | The safety factor's colours run red (low) to blue, capped at 10; nodes with no yield strength are grey | A factor of 10⁶ in a lightly loaded corner would otherwise squash the scale |
 | 0.1.3 | Moments in the equilibrium check of parts are judged against forces × the model's reach (as frames) | A bore pressure centred on the origin has no moment of its own: the flange showed a 110 % "imbalance" of rounding noise |
 | 0.1.3 | `Model::check` looks members' nodes up in a map | Each edit of a 10 000-member frame took 52 ms (a linear search per member); now 14 ms |
+| 0.1.4 | Long result arrays go to the window as base64 f32/u32 (`wire.rs`); drawing triangles are rebuilt in the window | 22 MB of JSON for 25 000 elements; now 6.2 MB. Seven significant digits are more than any display shows; equilibrium sums stay in full precision |
+| 0.1.4 | A pin load (`Bearing`): pressure p₀ max(0, −n·F̂) on the edge, scaled so the push along F̂ is the whole force | The lug's pin was an even traction all round the hole, pulling on the far side too |
+| 0.1.4 | Crossing members join only on request (Format › Join Where They Cross, `Op::JoinCrossings`) | Automatic joining would connect X-bracing that passes without a joint |
+| 0.1.4 | The document is "changed" when it differs from the saved snapshot; saving writes a temp file then renames | 0.1.1 review: undo to the saved state stayed changed; a crash mid-save could corrupt the file |
+| 0.1.4 | A drag snaps the grabbed point (node, member start, first corner) to the grid, not the offset | 0.1.1 review: items off the grid stayed off it |
+| 0.1.4 | Each top-level setting is read on its own; one that cannot be read falls back to its default with a warning | 0.1.1 review: an unknown analysis or a negative counter refused the whole file |
 | 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
 
 ## 3. Roadmap
@@ -132,7 +139,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.1 | Frames and trusses end to end: beam and truss elements, sparse assembly and Cholesky (faer), member loads, self-weight, reactions, equilibrium check, diagrams, member stresses; benchmarks 1–3; Help › Verification | ✅ |
 | 0.1.2 | Fixes release: the 13 findings of the 0.1.1 review (see Decisions) | ✅ |
 | 0.1.3 | Meshing (spade CDT + refinement, graded local sizes), T6/T3 plane stress and strain, steady heat conduction; contours, probe, deformed shape, mesh view; materials library from Atlas; results report; benchmarks 4–8 with convergence (27 checks) | ✅ |
-| 0.1.4 | Fixes from a clean Windows PC, smaller result transfers on very large meshes (25 000 elements send 22 MB of JSON), more screenshots | 🔜 |
+| 0.1.4 | Polish: packed result transfer (22 → 6.2 MB), pin load, Join Where They Cross, the 0.1.1 review's low findings (safe save, undo clears changed, autosave interval, arrows follow drags, drag snaps position, print units and moment row, damaged settings) | ✅ |
+| 0.1.5 | Fixes from first use on a clean Windows PC; a user guide in the app's help | 🔜 |
 | 0.2 | Axisymmetric, 3D frames, modal, buckling, DXF import, thermal stress, Send to Calc and Plot | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
@@ -167,15 +175,20 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - Found in the real app: the edge-force thickness bug (2.9 MPa instead of 287 MPa in the L-bracket) and 25 s to draw a 25 000-element result (Path2D.closePath); both fixed, the first with an engine test and a hand check.
 - Checked: clippy, 42 engine tests, 86 UI checks, cargo deny, real app (bracket, heat sink, mesh view, results, report, a 25 000-element bracket: 103 000 equations in 1.5 s in a debug build).
 
-## 5. Known limits (0.1.3)
+### 2026-10-29: Session 1, continued (0.1.4: polish)
+- The user: "next is 0.1.4 proceed". Scope chosen from the open lists: result transfer size, the 0.1.1 review's low findings, and two known limits (the lug's pin, crossing members).
+- Engine: `wire.rs` (packed results, round-trip test), `Bearing` load with a test and a lug hand check, `JoinCrossings` with a test (split loads), saved snapshot for the changed mark (test), settings read one by one (hardening test). 48 engine tests, plus a shell test for safe saving.
+- Window: unpacking, pin load tool and drawing, Join Where They Cross, drags land on the grid and arrows follow them, autosave interval re-armed, print title block units and equilibrium with moments, min/max labels kept apart. 93 UI checks.
+- Checked: clippy, tests, UI checks, cargo deny, real app (lug with its pin load solved). Timing: a 25 000-element result now arrives as 6.2 MB.
+- Not checked: a clean Windows PC (no Windows machine here; CI builds and tests on Windows).
 
-- Results of very large parts are sent to the window as JSON (22 MB for 25 000 6-node elements); fine, but slow over 100 000 elements.
-- The pin of the lifting lug is modelled as a force spread evenly round the whole hole, not a bearing pressure on half of it.
+## 5. Known limits (0.1.4)
+
+- Not yet tried on a clean Windows PC by a person (0.1.5).
 - Stresses at the corner where a fixed edge meets a free edge, or at a sharp inside corner, keep rising with mesh refinement (a singularity); the help says so, the app does not mark them.
 - No thermal stress (0.2); heat and stress are separate models.
 - NAFEMS LE1's error is flat between the first two meshes (0.24 %) before falling to 0.09 %.
-- Crossing members (an X) are not joined where they cross; only nodes on members join.
-- The low findings listed in the last session-log entry.
+- A pin load on an edge split in two (a corner added in it) is shared half and half, each half bearing on its own; on a circle hole it is one edge, so this rarely matters.
 - No member end releases (hinges inside a frame), no buckling check of members in compression.
-- No copy and paste of geometry; members do not split where they cross.
+- No copy and paste of geometry.
 - Overlapping solid shapes join only when meshed (0.1.2); the canvas draws them overlapping.

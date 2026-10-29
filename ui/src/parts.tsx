@@ -247,7 +247,9 @@ export const PartMarkers = () => {
     };
     return [["max", at(imax), f.v[imax]], ["min", at(imin), f.v[imin]]] as [string, Pt, number][];
   });
-  return <For each={marks()}>{([k, p, v]) => { const s = () => toS(p); return <g class={`mm ${k}`}><path d={`M${s()[0]} ${s()[1]}l-5 -9h10z`} /><text x={s()[0] + 8} y={s()[1] - 8}>{k} {fmt(curField().q, v, 4)}</text></g>; }}</For>;
+  // When the two marks are close, the smallest's label goes to the left so they do not overlap.
+  const close = () => { const ms = marks(); if (ms.length < 2) return false; const a = toS(ms[0][1]), b = toS(ms[1][1]); return Math.abs(a[0] - b[0]) < 170 && Math.abs(a[1] - b[1]) < 18; };
+  return <For each={marks()}>{([k, p, v]) => { const s = () => toS(p), left = () => k === "min" && close(); return <g class={`mm ${k}`}><path d={`M${s()[0]} ${s()[1]}l-5 -9h10z`} /><text x={s()[0] + (left() ? -8 : 8)} y={s()[1] - 8} text-anchor={left() ? "end" : "start"}>{k} {fmt(curField().q, v, 4)}</text></g>; }}</For>;
 };
 
 /** Values under the pointer, from the drawing triangle it is over. */

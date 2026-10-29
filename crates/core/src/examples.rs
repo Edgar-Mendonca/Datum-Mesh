@@ -124,12 +124,12 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             debug_assert!(d.m.members.iter().all(|m| m.section == s));
         }
         "lug" => {
-            d.m.notes = "A 20 mm steel plate, 120 mm wide with a rounded top and a 40 mm pin hole; the base is welded on and the pin pulls 60 kN upwards.".into();
+            d.m.notes = "A 20 mm steel plate, 120 mm wide with a rounded top and a 40 mm pin hole; the base is welded on and a pin bears on the top of the hole, pulling 60 kN upwards.".into();
             d.m.thickness = 20.0 * mm;
             d.m.grid = 5.0 * mm;
             let s = d.apply(shape(poly(&[[0.0, 0.0], [120.0, 0.0], [120.0, 120.0], [0.0, 120.0]], &[(2, 1.0)]), false))?[0];
             let h = d.apply(shape(circle(60.0, 120.0, 20.0), true))?[0];
-            d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Traction { fx: 0.0, fy: 60e3, total: true })]))?;
+            d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Bearing { fx: 0.0, fy: 60e3 })]))?;
         }
         "bracket" => {
             d.m.notes = "A 10 mm steel L-bracket, legs 100 mm long and 20 mm thick, with a 10 mm fillet in the inside corner. The top is bolted to a wall; 1.5 kN pulls down on the free end.".into();

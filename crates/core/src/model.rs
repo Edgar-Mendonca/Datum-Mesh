@@ -305,6 +305,10 @@ pub enum LoadKind {
     Pressure { p: f64 },
     /// Edges: a force spread along the edge; `total` = (fx, fy) is the whole force (N), else per length (N/m).
     Traction { fx: f64, fy: f64, total: bool },
+    /// Edges (usually a hole): a pin bearing on it with the whole force (fx, fy) (N). The pin
+    /// presses only where it pushes into the part, with a pressure that peaks in line with the
+    /// force and falls as the cosine away from it (0.1.4).
+    Bearing { fx: f64, fy: f64 },
     /// Body: gravity (m/s²), self-weight from the density.
     Gravity { gx: f64, gy: f64 },
     /// Edges: heat flux into the body (W/m²).
@@ -594,7 +598,7 @@ impl Model {
                 (LoadKind::Moment { m }, Target::Node { .. }) => m.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
                 (LoadKind::Pressure { p }, Target::Edge { .. }) => p.is_finite(),
-                (LoadKind::Traction { fx, fy, .. }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
+                (LoadKind::Traction { fx, fy, .. } | LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
                 (LoadKind::Gravity { gx, gy }, Target::Body) => gx.is_finite() && gy.is_finite(),
                 (LoadKind::Flux { q }, Target::Edge { .. }) => q.is_finite(),
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
@@ -643,17 +647,14 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
             o.remove("mesh");
             warn.push("The mesh settings were damaged; the defaults are used.".into());
         }
-        // Scalars of the wrong type fall back to their defaults.
-        let d = serde_json::to_value(Model::default()).unwrap_or_default();
-        for (k, dv) in d.as_object().cloned().unwrap_or_default() {
-            if lists.contains(&k.as_str()) || k == "mesh" {
-                continue;
-            }
-            if let Some(x) = o.get(&k) {
-                if std::mem::discriminant(x) != std::mem::discriminant(&dv) && !(x.is_number() && dv.is_number()) {
-                    warn.push(format!("The setting \"{k}\" was damaged; the default is used."));
-                    o.remove(&k);
-                }
+        // Settings that cannot be read (the wrong type, a negative id counter, an unknown kind of
+        // analysis) fall back to their defaults, one by one (0.1.1 review: they refused the file).
+        let keys: Vec<String> = o.keys().filter(|k| !lists.contains(&k.as_str()) && k.as_str() != "mesh").cloned().collect();
+        for k in keys {
+            let one = serde_json::json!({ k.clone(): o[&k].clone() });
+            if serde_json::from_value::<Model>(one).is_err() {
+                warn.push(format!("The setting \"{k}\" was damaged; the default is used."));
+                o.remove(&k);
             }
         }
     }

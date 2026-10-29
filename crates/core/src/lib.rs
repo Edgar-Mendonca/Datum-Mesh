@@ -16,6 +16,7 @@ pub mod model;
 pub mod plane;
 pub mod sections;
 pub mod sparse;
+pub mod wire;
 
 use serde::Serialize;
 
@@ -65,6 +66,10 @@ mod tests {
         let Ok(crate::Results::Plane(r)) = crate::solve(&crate::examples::get("lug").unwrap()) else { panic!() };
         let fy: f64 = r.reactions.iter().map(|x| x.fy).sum();
         assert!((fy + 60e3).abs() < 1e-6 * 60e3, "{fy}");
+        // Through the hole's centre the net section is (120 − 40) × 20 mm: 37.5 MPa on average;
+        // the pin's bearing raises the peak well above that, but not to yield (355 MPa).
+        let vm = r.field("vm").max;
+        assert!(vm > 37.5e6 && vm < 355e6, "lug peak {vm:e}");
         // Heat sink: every temperature between the air (25 °C) and the base (80 °C).
         let Ok(crate::Results::Heat(h)) = crate::solve(&crate::examples::get("fin").unwrap()) else { panic!() };
         let t = h.field("t");

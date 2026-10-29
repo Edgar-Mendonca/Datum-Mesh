@@ -67,7 +67,7 @@ const Sheet = (p: { pg: Page; n: number; pages: number; w: number; h: number }) 
 const TitleBlock = (p: { m: Model }) => (
   <table class="tblock"><tbody><tr>
     <td><small>Model</small><b>{p.m.name}</b></td><td><small>Analysis</small>{ANALYSES.find(a => a[0] === p.m.analysis)?.[1]}</td>
-    <td><small>Units</small>{p.m.units === "SI" ? "mm, kN, MPa" : "in, kip, ksi"}</td><td><small>Company</small>{opts().company || "—"}</td><td><small>Date</small>{new Date().toLocaleDateString()}</td><td><small>Datum Mesh</small>{version()}</td>
+    <td><small>Units</small>{p.m.analysis === "frame" ? `${unit("coord")} (drawing), ${unit("len")}, ${unit("force")}, ${unit("moment")}, ${unit("stress")}` : p.m.analysis === "heat" ? `${unit("coord")}, ${unit("temp")}, ${unit("flux")}` : `${unit("coord")}, ${unit("force")}, ${unit("stress")}`}</td><td><small>Company</small>{opts().company || "—"}</td><td><small>Date</small>{new Date().toLocaleDateString()}</td><td><small>Datum Mesh</small>{version()}</td>
   </tr></tbody></table>
 );
 const [version, setVersion] = createSignal("");
@@ -99,9 +99,8 @@ const Report = (p: { m: Model }) => {
     <Show when={m.analysis !== "frame"}><PartReport m={m} /></Show>
     <Show when={results() && !stale() && m.analysis === "frame"} fallback={<Show when={m.analysis === "frame"}><p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p></Show>}>{_ => { const r = results()!; return <>
       <h4>Equilibrium check</h4>
-      <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
-        <tr><td>Σ Fx</td><td class="r">{fmt("force", r.applied[0])}</td><td class="r">{fmt("force", r.reacted[0])}</td><td class="r">{fmt("force", r.applied[0] + r.reacted[0])}</td></tr>
-        <tr><td>Σ Fy</td><td class="r">{fmt("force", r.applied[1])}</td><td class="r">{fmt("force", r.reacted[1])}</td><td class="r">{fmt("force", r.applied[1] + r.reacted[1])}</td></tr></tbody></table>
+      <EqTable applied={r.applied} reacted={r.reacted} scale={r.scale} />
+      <p class={r.imbalance > 1e-6 ? "badline" : "okline"}>{r.imbalance > 1e-6 ? `The reactions miss the loads by ${num(r.imbalance * 100, 2)} %.` : `The reactions balance the loads (difference ${num(r.imbalance * 100, 2)} %).`}</p>
       <h4>Reactions</h4>
       <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx</th><th class="r">Fy</th><th class="r">M</th></tr></thead><tbody>
         <For each={r.reactions}>{x => <tr><td>Node {m.nodes.findIndex(n => n.id === x.node) + 1}</td><td class="r">{fmt("force", x.fx)}</td><td class="r">{fmt("force", x.fy)}</td><td class="r">{fmt("moment", x.m)}</td></tr>}</For></tbody></table>
@@ -157,7 +156,7 @@ export const ReportPage = () => {
 
 const loadValue = (k: any): string => ({
   force: () => `Fx ${fmt("force", k.fx)}, Fy ${fmt("force", k.fy)}`, moment: () => fmt("moment", k.m), dist: () => `${fmt("dist", k.w1)} to ${fmt("dist", k.w2)} (${k.dir === "local" ? "across" : `global ${k.dir}`})`,
-  pressure: () => fmt("stress", k.p), traction: () => `Fx ${fmt(k.total ? "force" : "dist", k.fx)}, Fy ${fmt(k.total ? "force" : "dist", k.fy)}${k.total ? " in total" : ""}`,
+  pressure: () => fmt("stress", k.p), bearing: () => `pin, Fx ${fmt("force", k.fx)}, Fy ${fmt("force", k.fy)}`, traction: () => `Fx ${fmt(k.total ? "force" : "dist", k.fx)}, Fy ${fmt(k.total ? "force" : "dist", k.fy)}${k.total ? " in total" : ""}`,
   gravity: () => `gx ${fmt("accel", k.gx)}, gy ${fmt("accel", k.gy)}`, flux: () => fmt("flux", k.q), convection: () => `h ${fmt("film", k.h)}, fluid ${fmt("temp", k.t_inf)}`, heat: () => fmt("heatgen", k.q),
 } as Record<string, () => string>)[k.kind]?.() ?? "";
 

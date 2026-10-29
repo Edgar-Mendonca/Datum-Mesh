@@ -19,6 +19,7 @@ pub struct Flow {
 #[derive(Clone, Debug, Serialize)]
 pub struct HeatResults {
     pub mesh: Mesh,
+    #[serde(skip_serializing)]
     pub draw: Vec<[u32; 3]>,
     /// t (K), qx, qy, qmag (W/m²).
     pub fields: Vec<Field>,

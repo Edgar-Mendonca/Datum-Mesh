@@ -57,6 +57,14 @@ const niceStep = (px: number) => {
 // ---------- what the pointer is over ----------
 type Hit = { kind: "node"; id: number } | { kind: "member"; id: number } | { kind: "edge"; shape: number; edge: number } | { kind: "shape"; id: number } | { kind: "support"; id: number } | { kind: "load"; id: number } | null;
 
+/** The point of an item that a drag puts on the grid: a node, a member's start, a shape's first corner or centre. */
+const anchorOf = (h: Hit): Pt | null => {
+  const m = model(); if (!m || !h) return null;
+  if (h.kind === "node") { const n = m.nodes.find(x => x.id === h.id); return n ? [n.x, n.y] : null; }
+  if (h.kind === "member") { const b = m.members.find(x => x.id === h.id), n = b && m.nodes.find(x => x.id === b.a); return n ? [n.x, n.y] : null; }
+  if (h.kind === "shape") { const s = m.shapes.find(x => x.id === h.id); return s ? (s.geom.kind === "circle" ? s.geom.c : s.geom.pts[0]) : null; }
+  return null;
+};
 const nodePos = (m: Model) => new Map(m.nodes.map(n => [n.id, [n.x, n.y] as Pt]));
 
 const hitTest = (p: Pt): Hit => {
@@ -170,8 +178,9 @@ const labelled = (m: Model) => {
   return out;
 };
 
-const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean }) => {
-  const l = () => p.l, np = () => nodePos(p.m);
+/** A load on the drawing. `np` and `shape` give positions as drawn, so arrows follow a drag. */
+const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean; np: Map<number, Pt>; shape: (id: number) => Shape | undefined }) => {
+  const l = () => p.l, np = () => p.np;
   const body = (): JSX.Element => {
     const k = l().kind, at = l().at;
     if ((k.kind === "force") && (at.on === "node" || at.on === "point")) {
@@ -202,7 +211,7 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean }) => {
       return <><path d={out.join("") + tops.map((q, i) => `${i ? "L" : "M"}${q[0]} ${q[1]}`).join("")} class="la thin" /><text x={mid[0]} y={mid[1] - 6} class="ltxt" text-anchor="middle">{k.w1 === k.w2 ? fmt("dist", Math.abs(k.w1), 3) : `${fmt("dist", k.w1, 3)} → ${fmt("dist", k.w2, 3)}`}</text></>;
     }
     if (at.on === "edge") {
-      const sh = p.m.shapes.find(s => s.id === at.shape); if (!sh) return null;
+      const sh = p.shape(at.shape); if (!sh) return null;
       const pts = edgePts(sh.geom, at.edge, 4 / scale()).map(toS), sign = orient(sh.geom) * (sh.hole ? -1 : 1);
       const out: string[] = [];
       let acc = 0, mid: Pt = pts[0], anchor: "start" | "middle" | "end" = "middle";
@@ -215,13 +224,14 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean }) => {
           const x = a[0] + (b[0] - a[0]) * s / L, y = a[1] + (b[1] - a[1]) * s / L;
           if (k.kind === "pressure") out.push(k.p >= 0 ? arrowPath([x, y], [-nx, -ny], 22) : arrowPath([x + nx * 22, y + ny * 22], [nx, ny], 22));
           else if (k.kind === "traction") out.push(arrowPath([x + nx * 10, y + ny * 10], [k.fx, -k.fy], 22));
+          else if (k.kind === "bearing") { const c = -(nx * k.fx - ny * k.fy) / (Math.hypot(k.fx, k.fy) || 1); if (c > 0.05) out.push(arrowPath([x, y], [-nx, -ny], 6 + 18 * c)); }
           else if (k.kind === "flux") out.push(arrowPath([x, y], [-nx * Math.sign(k.q || 1), -ny * Math.sign(k.q || 1)], 18));
           else if (k.kind === "convection") out.push(`M${x + nx * 6 - ny * 5} ${y + ny * 6 + nx * 5}q${nx * 4 + ny * 2.5} ${ny * 4 - nx * 2.5} ${ny * 5} ${-nx * 5}t${ny * 5} ${-nx * 5}`);
         }
         if (acc <= total / 2 && acc + L >= total / 2) { const s = (total / 2 - acc) / L; mid = [a[0] + (b[0] - a[0]) * s + nx * 34, a[1] + (b[1] - a[1]) * s + ny * 34 + 4]; anchor = nx > 0.5 ? "start" : nx < -0.5 ? "end" : "middle"; }
         acc += L;
       }
-      const label = k.kind === "pressure" ? fmt("stress", k.p, 3) : k.kind === "traction" ? `${fmt(k.total ? "force" : "dist", Math.hypot(k.fx, k.fy), 3)}${k.total ? " total" : ""}` : k.kind === "flux" ? fmt("flux", k.q, 3) : k.kind === "convection" ? `h ${fmt("film", k.h, 3)}, ${fmt("temp", k.t_inf, 3)}` : "";
+      const label = k.kind === "bearing" ? `pin ${fmt("force", Math.hypot(k.fx, k.fy), 3)}` : k.kind === "pressure" ? fmt("stress", k.p, 3) : k.kind === "traction" ? `${fmt(k.total ? "force" : "dist", Math.hypot(k.fx, k.fy), 3)}${k.total ? " total" : ""}` : k.kind === "flux" ? fmt("flux", k.q, 3) : k.kind === "convection" ? `h ${fmt("film", k.h, 3)}, ${fmt("temp", k.t_inf, 3)}` : "";
       return <><path d={out.join("")} class="la thin" classList={{ heat: k.kind === "flux" || k.kind === "convection" }} /><Show when={p.label || p.on}><text x={mid[0]} y={mid[1]} class="ltxt" text-anchor={anchor}>{label}</text></Show></>;
     }
     return null;
@@ -249,6 +259,12 @@ export const Canvas = () => {
     return nodeMoves ? [p[0] + d[0], p[1] + d[1]] : p;
   };
   const np = createMemo(() => { const mm = m(); return mm ? new Map(mm.nodes.map(n => [n.id, moved(n.id, [n.x, n.y])])) : new Map<number, Pt>(); });
+  /** A shape as drawn: moved with the drag when it is selected (edge supports and loads follow it). */
+  const shapeAt = (id: number): Shape | undefined => {
+    const sh = m()?.shapes.find(x => x.id === id), d = drag(); if (!sh || !d || !selSet().has(id)) return sh;
+    const g = sh.geom, mv = (q: Pt): Pt => [q[0] + d[0], q[1] + d[1]];
+    return { ...sh, geom: g.kind === "circle" ? { ...g, c: mv(g.c) } : { ...g, pts: g.pts.map(mv) } };
+  };
 
   // Grid lines and rulers.
   const gridLines = createMemo(() => {
@@ -299,7 +315,13 @@ export const Canvas = () => {
     if (downAt) {
       if (Math.hypot(e.clientX - downAt.c[0], e.clientY - downAt.c[1]) > 3) downAt.moved = true;
       if (marquee()) { setMarquee([marquee()![0], w]); return; }
-      if (drag() && downAt.moved) { setDrag([snapV(w[0] - downAt.w[0]), snapV(w[1] - downAt.w[1])]); return; }
+      if (drag() && downAt.moved) {
+        // The grabbed point lands on the grid (0.1.1 review: the offset was snapped, so items
+        // off the grid stayed off it).
+        const a = anchorOf(downAt.hit) ?? downAt.w;
+        setDrag([snapV(a[0] + w[0] - downAt.w[0]) - a[0], snapV(a[1] + w[1] - downAt.w[1]) - a[1]]);
+        return;
+      }
     }
     setHover(t === "select" || t.startsWith("sup:") || t.startsWith("load:") ? hitTest(w) : null);
     setPtr(t === "select" ? null : snapPt(w));
@@ -449,7 +471,7 @@ export const Canvas = () => {
         <Show when={edgeHover()}>{e => <path d={edgePath(e())} class="edgehl" />}</Show>
         <Show when={edgeSel()}>{e => <path d={edgePath(e())} class="edgesel" />}</Show>
         <For each={refines()}>{r => <Show when={r.at.on === "edge" || r.at.on === "point"}>{r.at.on === "edge" ? <path d={edgePath(r.at as any)} class="refl" /> : <circle cx={S([(r.at as any).x, (r.at as any).y])[0]} cy={S([(r.at as any).x, (r.at as any).y])[1]} r={9} class="refl" />}</Show>}</For>
-        <For each={supportsOnEdges()}>{s => { const sh = () => m()!.shapes.find(x => x.id === (s.at as any).shape); return <Show when={sh()}><EdgeSupport s={s} sh={sh()!} on={selSet().has(s.id)} /></Show>; }}</For>
+        <For each={supportsOnEdges()}>{s => { const sh = () => shapeAt((s.at as any).shape); return <Show when={sh()}><EdgeSupport s={s} sh={sh()!} on={selSet().has(s.id)} /></Show>; }}</For>
         {/* frames */}
         <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id) }} data-id={mb.id}>
           <line x1={e()[0][0]} y1={e()[0][1]} x2={e()[1][0]} y2={e()[1][1]} />
@@ -459,7 +481,7 @@ export const Canvas = () => {
         <PartMarkers />
         <For each={supportsAtNodes()}>{s => <Show when={supAt(s)}>{p => <SupportGlyph s={s} at={S(p())} on={selSet().has(s.id)} />}</Show>}</For>
         <For each={m()?.nodes ?? []}>{n => { const p = () => S(np().get(n.id) ?? [n.x, n.y]); return <rect x={p()[0] - 3.5} y={p()[1] - 3.5} width={7} height={7} class="node" classList={{ sel: selSet().has(n.id), hover: hoverIs("node", n.id) }} data-id={n.id} />; }}</For>
-        <For each={(m()?.loads ?? []).filter(l => l.at.on !== "body")}>{l => <LoadGlyph l={l} m={m()!} on={selSet().has(l.id)} label={labels().has(l.id)} />}</For>
+        <For each={(m()?.loads ?? []).filter(l => l.at.on !== "body")}>{l => <LoadGlyph l={l} m={m()!} on={selSet().has(l.id)} label={labels().has(l.id)} np={np()} shape={shapeAt} />}</For>
         {/* drawing in progress */}
         <path d={draftPath()} class="draft" />
         <For each={draft()}>{p => <circle cx={S(p)[0]} cy={S(p)[1]} r={3} class="draftpt" />}</For>

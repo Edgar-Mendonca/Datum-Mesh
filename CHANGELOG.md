@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.1.4 — 2026-10-29
+
+Polish: large parts open faster, a pin load for lugs and clevises, members joined where they cross when you ask, and the small problems left over from the 0.1.1 review.
+
+**Loads and drawing**
+- **Pin load**: a pin or bolt pulling on the part through a hole. It presses only on the side of the hole it pushes into, most in line with the force, and the part carries exactly the force you give. The lifting lug example now uses it.
+- **Join Where They Cross** (Format tab): select members that cross and join them with a node at each crossing; loads along them are split there. Crossing members are otherwise left apart, as X-bracing usually is.
+- Dragging lands what you grab on the grid, even if it started off the grid.
+- Load arrows and edge loads move with their node or shape while you drag it.
+
+**Speed**
+- Results of large parts reach the window about three times smaller: a 25 000-element part sends 6 MB instead of 22 MB. Values keep seven significant digits; the sums behind the equilibrium check keep full precision.
+
+**Your work**
+- Saving writes a temporary file and then swaps it in, so a crash or a full disk never leaves a half-written model.
+- Undoing back to the saved model clears the "changed" mark.
+- A new autosave interval in Options applies at once, without restarting.
+- A damaged file whose settings cannot be read (an unknown kind of analysis, a negative id counter, a negative thickness) now opens with the default settings and says which were reset, instead of refusing to open.
+
+**Print**
+- The title block gives the units the model actually uses (frames: m for the drawing, mm, kN, kN·m and MPa).
+- A frame's printed equilibrium check now includes the moments, and says whether the reactions balance the loads.
+
+**And** the largest and smallest values' labels no longer overlap when they are close together.
+
 ## 0.1.3 — 2026-10-28
 
 Parts are meshed and solved: plane stress, plane strain and steady heat conduction, with stress and temperature contours, a probe, the deformed shape, a materials library and a printed results report. Help › Verification now covers every benchmark in the plan.

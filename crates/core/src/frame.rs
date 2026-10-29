@@ -339,6 +339,7 @@ fn load_name(k: &LoadKind) -> &'static str {
     match k {
         LoadKind::Pressure { .. } => "pressure",
         LoadKind::Traction { .. } => "edge",
+        LoadKind::Bearing { .. } => "pin",
         LoadKind::Flux { .. } => "heat flux",
         LoadKind::Convection { .. } => "convection",
         LoadKind::Heat { .. } => "heat generation",

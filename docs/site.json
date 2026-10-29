@@ -30,6 +30,7 @@
     "Help › Verification: 27 benchmark checks with known answers solved in front of you, with mesh convergence for the plate with a hole, the thick cylinder and NAFEMS LE1",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
+    "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
     "Six worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink"
@@ -42,13 +43,12 @@
   ],
   "roadmap": [
     {
-      "v": "0.1.4",
-      "title": "Polish",
+      "v": "0.1.5",
+      "title": "First use",
       "when": "Next",
       "items": [
         "Fixes from first use on a clean Windows PC",
-        "Speed and smaller result transfers on very large meshes",
-        "Screenshots and a fuller README"
+        "A user guide in the app's help"
       ]
     },
     {

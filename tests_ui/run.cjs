@@ -4,6 +4,16 @@
 const { chromium } = require("playwright");
 const fs = require("fs"), http = require("http"), path = require("path");
 const root = path.join(__dirname, "../ui/dist"), fix = JSON.parse(fs.readFileSync(path.join(__dirname, "fixture.json")));
+// Results in the fixture are packed as the shell sends them; unpacked here for the checks' counts.
+const unpack = v => {
+  if (Array.isArray(v)) return v.map(unpack);
+  if (v && typeof v === "object") {
+    const s = v.$f32 ?? v.$u32;
+    if (typeof s === "string") { const b = Buffer.from(s, "base64"), n = Array.from(v.$f32 !== undefined ? new Float32Array(b.buffer, b.byteOffset, b.length / 4) : new Uint32Array(b.buffer, b.byteOffset, b.length / 4)); if (v.w === 1) return n; const o = []; for (let i = 0; i < n.length; i += v.w) o.push(n.slice(i, i + v.w)); return o; }
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unpack(x)]));
+  }
+  return v;
+};
 const types = { ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".woff": "font/woff", ".html": "text/html" };
 const srv = http.createServer((q, r) => {
   const f = path.join(root, q.url === "/" ? "index.html" : decodeURIComponent(q.url.split("?")[0]));
@@ -191,7 +201,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   // 11b. Solving a frame: deflected shape, moment diagram, reactions, legend, probe, tables (0.1.1).
   await open("portal");
   await p.keyboard.press("F5"); await p.waitForTimeout(300);
-  const pr2 = fix.portal_results;
+  const pr2 = unpack(fix.portal_results);
   check("F5 solves and the status bar says so", (await p.textContent(".status")).includes(`Solved · ${pr2.stats.equations} equations`), await p.textContent(".status"));
   check("the deflected shape is drawn for every member", (await p.$$(".defl")).length === pr2.members.length);
   check("the moment diagram is drawn for every member", (await p.$$(".diag.d-m")).length === pr2.members.length);
@@ -215,7 +225,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
 
   // 11d. Parts (0.1.3): contours, legend, markers, probe, tables, mesh view, report, heat, library.
   await open("bracket"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
-  const br = fix.bracket_results;
+  const br = unpack(fix.bracket_results);
   check("F5 solves a part and says how many elements", (await p.textContent("#toast")).includes(`${br.mesh.tris.length.toLocaleString()} elements`), await p.textContent("#toast"));
   check("the contours are drawn on the canvas", await p.$eval("canvas.contours", el => el.classList.contains("on") && el.width > 0));
   const painted = await p.$eval("canvas.contours", el => { const d = el.getContext("2d").getImageData(0, 0, el.width, el.height).data; let n = 0; for (let i = 3; i < d.length; i += 4 * 97) if (d[i] > 0) n++; return n; });
@@ -240,6 +250,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
   check("the Results page of a part shows equilibrium, reactions and extremes", (await p.textContent(".page")).includes("Largest and smallest values") && (await p.textContent(".page")).includes("balance the loads") && (await p.textContent(".page")).includes("Fixed"), (await p.textContent(".page")).slice(0, 200));
   await p.click('.side button[title="Mesh"]'); await p.waitForTimeout(200);
+  check("results arrive packed small and are unpacked by the window", typeof fix.bracket_results.mesh.nodes.$f32 === "string" && typeof fix.bracket_results.mesh.tris.$u32 === "string");
   check("the Mesh view shows the elements and their quality", (await p.textContent(".legend")).includes(`${br.mesh.tris.length.toLocaleString()} 6-node triangles`) && (await p.textContent(".legend")).includes("smallest angle"));
   await p.click('.side button[title="Report"]'); await p.waitForTimeout(400);
   check("the Report view has the mesh, a contour picture with its scale, and the equilibrium check", (await p.textContent(".page")).includes("Mesh") && (await p.$$(".page .rpic img")).length >= 1 && (await p.$$(".page .rpic .cbar")).length >= 1 && (await p.textContent(".page")).includes("Equilibrium check"));
@@ -253,6 +264,19 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   await p.click('.ribbon button[title="Linear (3-node)"]'); await p.waitForTimeout(100);
   check("Linear (3-node) sets the element order", (await ops()).reverse().find(o => o.SetSettings)?.SetSettings.s.mesh.order === 1);
+  // Join Where They Cross (0.1.4): an explicit command on the selected members.
+  await open("portal");
+  await p.click(".tree .ti:has-text('Member 1')"); await p.click(".tree .ti:has-text('Member 3')", { modifiers: ["Control"] }); await p.waitForTimeout(100);
+  await p.click('.tabs .ctxgrp button:text-is("Format")'); await p.click('.ribbon button[title^="Put a node where the selected members cross"]'); await p.waitForTimeout(150);
+  const jc = (await ops()).reverse().find(o => o.JoinCrossings);
+  check("Format › Join Where They Cross sends the selected members to the engine", !!jc && jc.JoinCrossings.ids.length === 2, JSON.stringify(jc));
+  // Pin load (0.1.4): on the lug's hole, drawn as arrows on the side it presses.
+  await open("lug");
+  const pin = fix.lug.m.loads.find(l => l.kind.kind === "bearing");
+  check("the lifting lug is loaded by a pin bearing in its hole", !!pin && (await p.textContent(".canvas")).includes("pin 60 kN"));
+  check("the pin load's arrows press on one side of the hole only", await p.$eval(`.load[data-id="${pin.id}"] path`, el => (el.getAttribute("d").match(/M/g) || []).length) < 3 * 40);
+  await p.click(`.tree .ti:has-text('Pin load')`); await p.waitForTimeout(150);
+  check("the Inspector edits a pin load's force", (await p.textContent(".insp")).includes("Pin load") && (await p.$$(".insp .iprow input")).length === 2);
   // Heat sink: temperature contours and the heat balance.
   await open("fin"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
   check("a heat model shows temperatures in °C and the heat balance", (await p.$eval(".legend .fpick", el => el.value)) === "t" && (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".legend")).includes("Heat balance"));
@@ -309,6 +333,22 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("F5"); await p.waitForTimeout(300);
   check("a model with no loads draws no deflected shape and says why (0.1.1 bug)", (await p.$$(".defl")).length === 0 && (await p.textContent(".legend")).includes("nothing moves") && (await p.textContent("#toast")).includes("no loads"), await p.textContent(".legend"));
   await p.evaluate(() => { window.__solveKey = null; });
+  // 0.1.4: a drag lands the grabbed node on the grid; load arrows follow the drag.
+  await p.evaluate(f => { window.__next = f.offgrid; }, fix);
+  await open("blank-frame");
+  const og = fix.offgrid.m, g0 = og.nodes.find(n => Math.abs(n.x - 0.3) < 1e-9), g1 = og.nodes.find(n => Math.abs(n.x - 4) < 1e-9);
+  const nodeAt = async id => p.$eval(`rect.node[data-id="${id}"]`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+  const a0 = await nodeAt(g0.id), pxPerM = ((await nodeAt(g1.id))[0] - a0[0]) / 3.7;
+  await p.mouse.move(a0[0], a0[1]); await p.mouse.down(); await p.mouse.move(a0[0] + pxPerM * 0.62, a0[1], { steps: 5 }); await p.mouse.up(); await p.waitForTimeout(150);
+  const gm = (await ops()).reverse().find(o => o.Move);
+  check("dragging a node off the grid lands it on the grid (0.1.1 review)", !!gm && Math.abs(((0.3 + gm.Move.dx) / 0.5) - Math.round((0.3 + gm.Move.dx) / 0.5)) < 1e-9 && gm.Move.dx > 0, JSON.stringify(gm));
+  const ld = fix.offgrid.m.loads[0];
+  const arrowX = async () => p.$eval(`.load[data-id="${ld.id}"] path`, el => el.getBoundingClientRect().left);
+  const b1 = await nodeAt(g1.id), x0 = await arrowX();
+  await p.mouse.move(b1[0], b1[1]); await p.mouse.down(); await p.mouse.move(b1[0] - pxPerM * 1.1, b1[1], { steps: 5 }); await p.waitForTimeout(100);
+  const x1 = await arrowX(), nodeDuring = (await nodeAt(g1.id))[0];
+  await p.mouse.up(); await p.waitForTimeout(100);
+  check("a load's arrow follows its node while it is dragged (0.1.1 review)", x0 - x1 > 40, `${x0} → ${x1}; node ${b1[0]} → ${nodeDuring}`);
   // (10) Negative corner coordinates can be typed; (9) + adds a corner through the engine.
   await open("bracket");
   await p.click(".tree .ti:has-text('Shape 1')"); await p.waitForTimeout(150);

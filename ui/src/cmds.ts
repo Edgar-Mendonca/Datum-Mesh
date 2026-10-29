@@ -1,6 +1,6 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
-import { Out, Analysis, Results, Mesh, invoke } from "./api";
+import { Out, Analysis, Mesh, invoke, fromWire, unwire } from "./api";
 import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
@@ -25,7 +25,7 @@ export const C = {
     const m = model(); if (!m) return;
     setSolving(true);
     try {
-      const r = await invoke<Results>("solve"), first = !results();
+      const r = fromWire(await invoke("solve")), first = !results();
       batch(() => {
         setResults(r); setStale(false); setTab("results");
         if (r.kind !== "frame") { fieldAfterSolve(r.kind === "heat" ? "heat" : m.analysis); setMeshed(null); setMeshStale(false); if (view() === "mesh") setView("model"); }
@@ -46,7 +46,7 @@ export const C = {
     if (solving()) return;
     setSolving(true);
     try {
-      const ms = await invoke<Mesh>("mesh"), first = !meshed() && view() !== "mesh";
+      const ms: Mesh = unwire(await invoke("mesh")), first = !meshed() && view() !== "mesh";
       batch(() => { setMeshed(ms); setMeshStale(false); setView("mesh"); });
       if (first) setTimeout(fit, 40);
       toast(`Meshed: ${ms.tris.length.toLocaleString()} ${ms.order === 2 ? "6-node" : "3-node"} triangles, ${ms.nodes.length.toLocaleString()} nodes; smallest angle ${Math.round(ms.quality.min_angle)}°.`, true);
@@ -95,7 +95,7 @@ export const ALL_CMDS: [string, () => void, string?][] = [
   ["Draw a rectangle", () => C.tool("rect")], ["Draw a circle", () => C.tool("circle")], ["Draw a polygon", () => C.tool("poly")], ["Cut a rectangular hole", () => C.tool("hrect")], ["Cut a round hole", () => C.tool("hcircle")],
   ["Sections", () => D.sections()], ["Materials", () => D.materials()],
   ["Fixed support", () => C.tool("sup:fixed")], ["Pinned support", () => C.tool("sup:pinned")], ["Roller support", () => C.tool(model()?.analysis === "frame" ? "sup:rollerx" : "sup:roller")], ["Spring support", () => C.tool("sup:spring")], ["Symmetry", () => C.tool("sup:symmetry")],
-  ["Force", () => C.tool("load:force")], ["Moment", () => C.tool("load:moment")], ["Distributed load", () => C.tool("load:dist")], ["Pressure", () => C.tool("load:pressure")], ["Edge force", () => C.tool("load:traction")], ["Gravity (self-weight)", () => C.body("gravity")],
+  ["Force", () => C.tool("load:force")], ["Moment", () => C.tool("load:moment")], ["Distributed load", () => C.tool("load:dist")], ["Pressure", () => C.tool("load:pressure")], ["Edge force", () => C.tool("load:traction")], ["Pin load (bearing in a hole)", () => C.tool("load:bearing")], ["Gravity (self-weight)", () => C.body("gravity")],
   ["Fixed temperature", () => C.tool("sup:temperature")], ["Heat flux", () => C.tool("load:flux")], ["Convection", () => C.tool("load:convection")], ["Heat generation", () => C.body("heat")],
   ["Frame or truss model", () => C.analysis("frame")], ["Plane stress model", () => C.analysis("stress")], ["Plane strain model", () => C.analysis("strain")], ["Heat conduction model", () => C.analysis("heat")],
   ["SI units", () => C.units("SI")], ["US units", () => C.units("US")],

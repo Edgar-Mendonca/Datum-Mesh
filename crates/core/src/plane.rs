@@ -31,6 +31,7 @@ pub struct Field {
 pub struct PlaneResults {
     pub mesh: Mesh,
     /// Triangles for drawing: 6-node triangles split into four, so contours follow the curved field.
+    #[serde(skip_serializing)]
     pub draw: Vec<[u32; 3]>,
     /// Nodal displacements (m).
     pub disp: Vec<[f64; 2]>,
@@ -254,6 +255,39 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                                 // length of edge for the whole thickness, or the whole force.
                                 let tt = if matches!(l.kind, LoadKind::Pressure { .. }) { t } else { 1.0 };
                                 sys.f[2 * node as usize + c] += ni * tr[c] * w * jl * tt;
+                            }
+                        }
+                    }
+                }
+            }
+            (LoadKind::Bearing { fx, fy }, Target::Edge { shape, edge }) => {
+                // The pin presses where the edge's outward normal points against the force:
+                // p = p₀ max(0, −n·F̂), pushing into the part; p₀ makes the push along F̂ equal |F|.
+                let f = fx.hypot(*fy);
+                if f == 0.0 {
+                    continue;
+                }
+                let dir = [fx / f, fy / f];
+                let es: Vec<&mesh::BEdge> = ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge).collect();
+                let cos = |tg: [f64; 2]| { let jl = tg[0].hypot(tg[1]); (-(tg[1] / jl * dir[0] - tg[0] / jl * dir[1])).max(0.0) };
+                let along: f64 = es.iter().map(|e| G3.iter().map(|&(s, w)| { let (_, tg, _) = edge_geo(&ms.nodes, e, s); let c = cos(tg); c * c * w * tg[0].hypot(tg[1]) }).sum::<f64>()).sum();
+                if along <= 0.0 {
+                    warnings.push("A pin load pushes away from its edge everywhere (the edge faces the other way): it was left out. Put it on the far side of the hole, or reverse the force.".into());
+                    continue;
+                }
+                let p0 = f / along;
+                for e in &es {
+                    for &(s, w) in &G3 {
+                        let (_, tg, n) = edge_geo(&ms.nodes, e, s);
+                        let jl = tg[0].hypot(tg[1]);
+                        let out = [tg[1] / jl, -tg[0] / jl];
+                        let p = p0 * cos(tg);
+                        for (q, ni) in n.iter().enumerate() {
+                            let node = e.n[q];
+                            if node != u32::MAX {
+                                for c in 0..2 {
+                                    sys.f[2 * node as usize + c] -= ni * p * out[c] * w * jl;
+                                }
                             }
                         }
                     }
@@ -567,6 +601,30 @@ mod tests {
         assert!((r.applied[0] - 1e3).abs() < 1e-9 * 1e3, "{}", r.applied[0]);
         // And the stress follows: σx = F / (h t) = 1 MPa.
         assert!((r.field("sx").max - 1e6).abs() < 1e-6 * 1e6);
+    }
+
+    #[test]
+    fn a_pin_bears_on_the_near_half_of_its_hole_with_the_whole_force() {
+        // A plate with a round hole, fixed along its bottom; a pin pulls 10 kN upwards. The pin
+        // presses on the upper half of the hole only, and the part carries exactly 10 kN.
+        let mut d = Doc::new(Model::new(Analysis::Stress));
+        d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.1, 0.1), ..Shape::default() }) }).unwrap();
+        let hole = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c: [0.05, 0.06], r: 0.015 }, ..Shape::default() }) }).unwrap()[0];
+        let s = d.m.shapes[0].id;
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 0 }, kind: SupportKind::Fixed }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: hole, edge: 0 }, kind: LoadKind::Bearing { fx: 0.0, fy: 1e4 } }) }).unwrap();
+        d.m.mesh.size = 0.005;
+        let r = solve(&d.m).unwrap();
+        assert!((r.applied[1] - 1e4).abs() < 1e-9 * 1e4 && r.applied[0].abs() < 1e-6 * 1e4, "{:?}", r.applied);
+        assert!(r.imbalance < 1e-9);
+        // Below the hole's centre nothing pushes: the lower half's nodes carry no load. Check
+        // through the displacement: the plate above the hole moves up, toward the pull.
+        let top = r.mesh.nodes.iter().enumerate().filter(|(_, p)| (p[1] - 0.1).abs() < 1e-12).map(|(i, _)| r.disp[i][1]).fold(f64::MIN, f64::max);
+        assert!(top > 0.0);
+        // A pin pushing the other way on the same hole loads the lower half instead: same size.
+        d.m.loads[0].kind = LoadKind::Bearing { fx: 0.0, fy: -1e4 };
+        let r2 = solve(&d.m).unwrap();
+        assert!((r2.applied[1] + 1e4).abs() < 1e-9 * 1e4);
     }
 
     #[test]

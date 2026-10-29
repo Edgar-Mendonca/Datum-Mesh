@@ -50,6 +50,9 @@ const Status = () => {
 };
 
 const App = () => {
+  // Recovery saves every few minutes; a new interval in Options applies at once (0.1.1 review: it needed a restart).
+  let timer = 0;
+  createEffect(on(() => opts().autosave, every => { clearInterval(timer); if (every > 0) timer = window.setInterval(() => invoke("autosave").catch(() => {}), every * 60000); }));
   // Opening the Mesh view of a part that has no mesh yet meshes it.
   createEffect(on(view, v => { const m = model(); if (v === "mesh" && m && m.analysis !== "frame" && !meshed() && !partRes()) C.mesh(); }));
   onMount(async () => {
@@ -61,7 +64,6 @@ const App = () => {
       const rec = await invoke<{ name: string; saved: string } | null>("recovery");
       if (rec) D.recoverDialog(rec.name, rec.saved, () => { setBackstage(null); setTimeout(fit, 60); });
       checkUpdate(true);
-      setInterval(() => { if (opts().autosave > 0) invoke("autosave").catch(() => {}); }, Math.max(1, opts().autosave) * 60000);
       listen("close-requested", () => D.confirmClose(() => invoke("quit")));
     } catch (e) { toast(String(e)); }
   });

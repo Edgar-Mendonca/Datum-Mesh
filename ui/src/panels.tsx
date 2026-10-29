@@ -24,6 +24,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "dist": return { kind: "dist", w1: -5e3, w2: -5e3, dir: "y" };
     case "pressure": return { kind: "pressure", p: 1e6 };
     case "traction": return { kind: "traction", fx: 0, fy: -1e3, total: true };
+    case "bearing": return { kind: "bearing", fx: 0, fy: 1e3 };
     case "gravity": return { kind: "gravity", gx: 0, gy: -9.81 };
     case "flux": return { kind: "flux", q: 1000 };
     case "convection": return { kind: "convection", h: 25, t_inf: 293.15 };
@@ -33,7 +34,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation" };
 
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
@@ -225,6 +226,10 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
       <label class="chk"><input type="checkbox" checked={f("traction").total} onChange={e => put({ ...f("traction"), total: e.currentTarget.checked })} />The whole force (not per length)</label>
       <NumField label="Fx" q={f("traction").total ? "force" : "dist"} v={f("traction").fx} set={fx => put({ ...f("traction"), fx })} />
       <NumField label="Fy" q={f("traction").total ? "force" : "dist"} v={f("traction").fy} set={fy => put({ ...f("traction"), fy })} />
+    </Show>
+    <Show when={k().kind === "bearing"}>
+      <NumField label="Fx" q="force" v={f("bearing").fx} set={fx => put({ ...f("bearing"), fx })} />
+      <NumField label="Fy" q="force" v={f("bearing").fy} set={fy => put({ ...f("bearing"), fy })} hint="The pin's whole force on the part. It presses on the side of the hole it pushes into, most in line with the force." />
     </Show>
     <Show when={k().kind === "gravity"}><NumField label="gx" q="accel" v={f("gravity").gx} set={gx => put({ ...f("gravity"), gx })} /><NumField label="gy" q="accel" v={f("gravity").gy} set={gy => put({ ...f("gravity"), gy })} hint="Self-weight from each material's density." /></Show>
     <Show when={k().kind === "flux"}><NumField label="Heat flux" q="flux" v={f("flux").q} set={q => put({ kind: "flux", q })} hint="Positive flows into the part." /></Show>

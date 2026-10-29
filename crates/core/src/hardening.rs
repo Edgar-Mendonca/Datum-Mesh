@@ -60,7 +60,8 @@ mod tests {
             5 => Op::Add { item: Item::Support(Support { id: 0, at: target(r, m), kind: [SupportKind::Fixed, SupportKind::Pinned, SupportKind::RollerX, SupportKind::Roller, SupportKind::Spring { kx: r.f(-1.0, 1e6), ky: 0.0, kr: 0.0 }, SupportKind::Temperature { t: 300.0 }][r.below(6)].clone() }) },
             6 => Op::Add { item: Item::Load(Load { id: 0, at: target(r, m), kind: [LoadKind::Force { fx: 1.0, fy: -2.0 }, LoadKind::Moment { m: 3.0 }, LoadKind::Dist { w1: 1.0, w2: 2.0, dir: Dir::Local }, LoadKind::Pressure { p: 1e5 }, LoadKind::Gravity { gx: 0.0, gy: -9.81 }, LoadKind::Convection { h: r.f(-5.0, 50.0), t_inf: 290.0 }][r.below(6)].clone() }) },
             7 => Op::Move { ids: vec![r.id(m), r.id(m)], dx: r.f(-1.0, 1.0).round(), dy: 0.5 },
-            8 | 9 => Op::Delete { ids: vec![r.id(m)] },
+            8 => Op::Delete { ids: vec![r.id(m)] },
+            9 => if r.below(2) == 0 { Op::Delete { ids: vec![r.id(m)] } } else { Op::JoinCrossings { ids: m.members.iter().map(|b| b.id).collect() } },
             10 => {
                 let mut n = m.nodes.first().cloned().unwrap_or(Node { id: 1, x: 0.0, y: 0.0 });
                 n.x = if r.below(4) == 0 { f64::NAN } else { r.f(-3.0, 3.0) };
@@ -167,6 +168,13 @@ mod tests {
         let (m, _) = model::from_json(r#"{"nodes":[{"id":5,"x":0,"y":0},{"id":5,"x":1,"y":0}],"next":1}"#).unwrap();
         m.check().unwrap();
         assert_eq!(m.nodes.len(), 2);
+        // Settings with values that cannot be read open with their defaults (0.1.1 review: a
+        // negative counter or an unknown analysis refused the whole file).
+        let (m, warn) = model::from_json(r#"{"analysis":"cfd","next":-4,"units":"SI","nodes":[{"id":3,"x":0,"y":0}],"thickness":-1,"grid":0}"#).unwrap_or_else(|e| panic!("{e}"));
+        m.check().unwrap();
+        assert_eq!(m.analysis, Analysis::Frame);
+        assert!(m.next > 3 && m.nodes.len() == 1);
+        assert!(warn.iter().any(|w| w.contains("analysis")) && warn.iter().any(|w| w.contains("next")), "{warn:?}");
         // A file from a newer version says so.
         assert!(model::from_json(r#"{"format": 7}"#).unwrap_err().contains("newer"));
     }
@@ -176,12 +184,12 @@ mod tests {
         // Random frames with random supports and loads: the solver never panics; when it answers,
         // the reactions balance the loads and every member's curve meets its nodes.
         let mut solved = 0;
-        for seed in 1..=60u64 {
+        for seed in 1..=120u64 {
             let mut r = Rng(seed.wrapping_mul(0x2545_F491_4F6C_DD1D));
             let mut d = Doc::new(Model::new(Analysis::Frame));
             for _ in 0..(3 + r.below(10)) {
                 let op = random_op(&mut r, &d.m);
-                if matches!(op, Op::AddMember { .. } | Op::Add { item: Item::Support(_) | Item::Load(_) } | Op::Delete { .. }) {
+                if matches!(op, Op::AddMember { .. } | Op::Add { item: Item::Support(_) | Item::Load(_) } | Op::Delete { .. } | Op::JoinCrossings { .. }) {
                     let _ = d.apply(op);
                 }
             }
@@ -203,7 +211,7 @@ mod tests {
                 assert!((da[0] - res.disp[ia][0]).abs() < tol && (da[1] - res.disp[ia][1]).abs() < tol && (db[0] - res.disp[ib][0]).abs() < tol && (db[1] - res.disp[ib][1]).abs() < tol, "seed {seed}: member ends do not meet their nodes");
             }
         }
-        assert!(solved >= 10, "only {solved} random frames solved");
+        assert!(solved >= 12, "only {solved} random frames solved");
     }
 
     #[test]
@@ -242,11 +250,12 @@ mod tests {
             }
             for _ in 0..1 + r.below(3) {
                 let at = Target::Edge { shape: s, edge: r.below(edges as usize) as u32 };
-                let kind = match (analysis, r.below(3)) {
+                let kind = match (analysis, r.below(4)) {
                     (Analysis::Heat, 0) => LoadKind::Flux { q: r.f(-1e4, 1e4) },
                     (Analysis::Heat, _) => LoadKind::Convection { h: r.f(0.0, 100.0), t_inf: 293.0 },
                     (_, 0) => LoadKind::Pressure { p: r.f(-1e7, 1e7) },
                     (_, 1) => LoadKind::Traction { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), total: true },
+                    (_, 3) => LoadKind::Bearing { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4) },
                     _ => LoadKind::Traction { fx: r.f(-1e5, 1e5), fy: 0.0, total: false },
                 };
                 let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });

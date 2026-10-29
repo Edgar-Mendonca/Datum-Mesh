@@ -32,14 +32,14 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 - **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 27 benchmark checks with known answers solved in front of you, from beam theory to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
 - **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out.
-- **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; supports and loads on edges and points.
+- **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; supports and loads on edges and points, including a pin load that bears on one side of a hole.
 - **Units**: SI (mm, kN, MPa) or US (in, kip, ksi); files keep SI.
 - **Worked examples**: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink.
 - **Print to PDF**: the model with a title block and a report with the mesh, contour pictures, the largest values, reactions and the equilibrium check; a `?` card beside every tool, light and dark themes, recovery of unsaved work, updates from inside the app.
 
 | Release | What arrives |
 | --- | --- |
-| 0.1.4 | Polish: fixes from first use on a clean Windows PC, speed on very large meshes |
+| 0.1.5 | Fixes from first use on a clean Windows PC, a user guide in the app |
 | 0.2 | Axisymmetric solids, 3D frames, natural frequencies and buckling, DXF import, thermal stress |
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.
