@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.5 — 2026-10-29
+
+- Windows now lists the publisher as Datum.
+
 ## 0.2.4 — 2026-10-29
 
 3D frames: frames and trusses in space, drawn on planes and seen in 3D.

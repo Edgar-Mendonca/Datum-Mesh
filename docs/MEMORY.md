@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.2.4 (2026-10-29) |
+| **Current version** | 0.2.5 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -137,6 +137,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.2.5 | The Windows publisher is "Datum" (`bundle.publisher`), as for the whole family (FAMILY §9); the copyright stays "© 2026 Edgar Mendonca" | One publisher name across the family's installers |
 | 0.2.4 | 3D frames are a separate analysis (`Space`) with y up and z as depth; the plane model gains z, roll, fz, mx, my, gz and six-way springs as serde defaults | Old files open unchanged; a plane frame is the 3D frame with z = 0 (benchmark 13 checks the portal to 1e-13) |
 | 0.2.4 | Member axes: local y = z × x (the plane frame's local y), or global y for a member along z; roll turns y and z about x | Plane frames keep their signs and moments in 3D; beams along z have their depth upright |
 | 0.2.4 | Members are drawn on working planes (Front, Side, Plan at a depth) by the existing canvas through a projected model, and seen in a separate three.js view | Reuses every 2D tool (snap, draw, move, supports, loads); no 3D drawing tool to learn; the 3D view only views, picks and places |
@@ -224,6 +225,9 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 
 ### 2026-10-29: Session 1, continued (0.2.4 3D frames)
 - Released 0.2.3. Engine: `Analysis::Space`, z on nodes, roll on members, 3D loads and springs (serde defaults), section Iy, J (Roark, Bredt, open thin-walled), doc ops in 3D (node finding, splitting, crossings by closest points) and `Op::Repeat`; space.rs; benchmark 13; the platform example; random 3D frames balance. Window: the plane bar and working planes, the three.js view, 3D fields in the Inspector and dialogs, Repeat, the 3D Results page and report. Found by the UI checks: Repeat sent no member kind for the joins. Found in the app: the 3D example tiles reused the plane frame picture.
+
+### 2026-10-29: Session 1, continued (0.2.5 publisher)
+- Released 0.2.4. Windows publisher set to "Datum" in tauri.conf.json (the only place it was written; docs/FAMILY.md only links to the hub). Patch release 0.2.5.
 
 ## 5. Known limits (0.2.4)
 
