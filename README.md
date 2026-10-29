@@ -23,6 +23,8 @@
 
 ![Datum Mesh: an L-bracket solved, with von Mises stress contours, the deformed shape and the largest stress at the fillet](docs/images/bracket-solved.png)
 
+**Purpose:** To show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.
+
 Draw a frame of beams and truss bars, or the outline of a part with its holes; put on the supports and loads; solve, and see the deflections, stresses and temperatures. Datum Mesh is for mechanical, structural, process and aerospace engineers, students and lecturers. It is free and open source (MIT), Windows first, installs in seconds and updates itself. More on the family site: [edgar-mendonca.github.io/Datum/apps/mesh](https://edgar-mendonca.github.io/Datum/apps/mesh).
 
 ## What it does

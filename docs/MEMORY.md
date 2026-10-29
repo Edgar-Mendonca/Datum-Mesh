@@ -14,6 +14,16 @@
 | **Brief** | `Edgar-Mendonca/Datum` › `briefs/DATUM-MESH.md` (hub session 13): every decision made up front |
 | **Reference repos** | `Edgar-Mendonca/Datum` (FAMILY, MEMORY, brain), `Edgar-Mendonca/Datum-Plan` (reference code), `Edgar-Mendonca/Datum-Sim` (Plan's skeleton for a canvas app; solver crate layout and verification records), `Edgar-Mendonca/Datum-Atlas` (materials data and sources) |
 
+## Purpose (agreed 2026-10-29)
+
+To show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.
+
+- **For:** mechanical, aerospace and process engineers checking parts (brackets, lugs, vessels, shafts, heat sinks); students and lecturers learning FEA; small firms without a commercial licence.
+- **Different because:** trust you can see (benchmarks solved in the app, the equilibrium check, saying what was not verified); free and open (MIT, no licence server); simple (draw, load, solve, read); honest about its limits.
+- **Frames stay in Datum Mesh** (2D and 3D frames and trusses, with frequencies and buckling): they carry the parts engineers check and teach FEA well. They do **not** grow into building design: no design-code checks or code load combinations.
+- **Not:** a design-code checker, a CAD program, or a whole commercial suite on day one.
+- **Leads to:** 3D parts (0.3: extruded and revolved, then any shape from CAD), beyond linear (0.4: yielding, large deflection, contact, through open solvers run as separate programs), heat and flow (0.5), validated 1.0 (validation report, user guide, signed installer).
+
 ---
 
 ## 1. Architecture
@@ -137,6 +147,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.2.5 | Datum Mesh's purpose written down (top of this file); frames stay in the app but stop short of building design (no code checks or code combinations) | Keeps one clear purpose: analysis of parts and structures, verified, not code design |
 | 0.2.5 | The Windows publisher is "Datum" (`bundle.publisher`), as for the whole family (FAMILY §9); the copyright stays "© 2026 Edgar Mendonca" | One publisher name across the family's installers |
 | 0.2.4 | 3D frames are a separate analysis (`Space`) with y up and z as depth; the plane model gains z, roll, fz, mx, my, gz and six-way springs as serde defaults | Old files open unchanged; a plane frame is the 3D frame with z = 0 (benchmark 13 checks the portal to 1e-13) |
 | 0.2.4 | Member axes: local y = z × x (the plane frame's local y), or global y for a member along z; roll turns y and z about x | Plane frames keep their signs and moments in 3D; beams along z have their depth upright |

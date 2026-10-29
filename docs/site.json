@@ -6,6 +6,7 @@
   "tagline": "Finite-element analysis on the desktop: stresses, deflections and temperatures in parts and frames.",
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
+    "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
     "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
   ],
