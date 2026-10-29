@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.2.3 (2026-10-29) |
+| **Current version** | 0.2.4 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -37,6 +37,9 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/lib.rs` | `Results` (frame, plane or heat, tagged by `kind`) and `solve()` for any analysis; tests that every example solves, balances and agrees with hand checks |
 | `crates/core/src/wire.rs` | Results packed for the window: long numeric arrays as base64 (f32 values, u32 indices), everything else unchanged; the window's `unwire` (`ui/src/api.ts`) unpacks them |
 | `crates/core/examples/bigpart.rs` | A 25 000-element bracket's results as JSON, for timing the window by hand (not a test) |
+| `crates/core/src/space.rs` | 3D frames: local axes (`axes`), the 12×12 beam (axial, torsion, bending both ways) and truss bars, member loads in any direction, supports and springs in six directions, results along members (N, Vy, Vz, T, My, Mz, 3D deflection), six-way equilibrium |
+| `ui/src/plane3.ts` | Working planes of a 3D frame: the projected model the canvas edits (`planeModel`), faint members off the plane, depths, and `lift` turning canvas edits into 3D |
+| `ui/src/view3d.tsx` | The three.js 3D view: members, nodes, supports, loads, the deflected shape coloured by a result, picking and placing, the probe, the plane bar and the 3D legend |
 | `crates/core/src/modal.rs` | Natural frequencies and buckling (`subspace` shared, `Kind`): subspace iteration on one sparse Cholesky of K, Rayleigh–Ritz with a small dense Cholesky and Jacobi eigen solve; mode shapes scaled to a largest movement of 1 |
 | `ui/src/modes.tsx` | Modes on the drawing (frames along members; parts through the contour canvas, 16 cached swing steps), the mode list, the animation, the frequency table |
 | `crates/core/src/frame.rs` | Frames and trusses: beam and truss stiffness, linear member loads as consistent nodal loads, self-weight, springs, reactions, equilibrium sums, exact N, V, M and deflection along each member (41 stations), stress and utilisation |
@@ -64,7 +67,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 115 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
+| `tests_ui/run.cjs` | 127 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -134,6 +137,10 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.2.4 | 3D frames are a separate analysis (`Space`) with y up and z as depth; the plane model gains z, roll, fz, mx, my, gz and six-way springs as serde defaults | Old files open unchanged; a plane frame is the 3D frame with z = 0 (benchmark 13 checks the portal to 1e-13) |
+| 0.2.4 | Member axes: local y = z × x (the plane frame's local y), or global y for a member along z; roll turns y and z about x | Plane frames keep their signs and moments in 3D; beams along z have their depth upright |
+| 0.2.4 | Members are drawn on working planes (Front, Side, Plan at a depth) by the existing canvas through a projected model, and seen in a separate three.js view | Reuses every 2D tool (snap, draw, move, supports, loads); no 3D drawing tool to learn; the 3D view only views, picks and places |
+| 0.2.4 | three.js 0.185.1 (MIT) for the 3D view, pinned exactly | The 3D solids of 0.3 will use the same view |
 | 0.2.3 | Buckling solves B φ = μ K φ for the largest μ = 1/λ, so K (positive) stays the matrix factorised and the small problem stays well posed when B has both signs | Members in tension make K_G indefinite; λ ≤ 0 (buckling with the loads reversed) is dropped |
 | 0.2.3 | Beams are cut into 8 pieces (`frame::SPLIT`) for modes and buckling, not for the static solve | One cubic element is exact statically but 21 % high for a pinned column's buckling; 8 pieces give 3e-5 to 5e-4 |
 | 0.2.3 | Truss bars are checked on their own as pinned struts rather than cut | A pin-jointed bar has no bending unknowns; π²EI/L² is its exact answer |
@@ -158,7 +165,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.1 | Axisymmetric solids (hoop strain, 2πr weights, axis held radially, axial equilibrium, axisymmetric heat for thermal stress), pressure vessel example, benchmark 10 (39 checks), area-aware automatic size | ✅ |
 | 0.2.2 | Natural frequencies of frames and parts (modal.rs subspace iteration, consistent masses), mode list and animation, benchmark 11 (47 checks) | ✅ |
 | 0.2.3 | Buckling of frames (geometric stiffness, beams cut in 8, modal::buckling on the pencil B φ = μ K φ), truss bars as struts, benchmark 12 (54 checks) | ✅ |
-| 0.2.4 | 3D frames | ⬜ |
+| 0.2.4 | 3D frames (space.rs 12-unknown beams and truss bars, sections Iy and J, doc ops in 3D and Repeat), working planes (plane3.ts), three.js 3D view (view3d.tsx), benchmark 13 (69 checks) | ✅ |
 | 0.3.x | 3D solids by extrude and revolve: static, viewer (three.js), revolve and symmetry, heat and frequencies | ⬜ |
 | later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
@@ -215,7 +222,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 ### 2026-10-29: Session 1, continued (0.2.3 buckling of frames)
 - Released 0.2.2. modal.rs generalised (`subspace` for vibration and buckling); frame.rs gains `kg_local`, `scatter`, `split` and `buckling`; the assembly cuts beams into pieces on request and keeps every inner node's position. Benchmark 12: Euler columns held four ways, the second mode, a warmed fixed column and a truss bar as a strut. Window: Solve › Buckling, the load factors under the canvas, the buckled shapes, the load factor and bar tables on the Results page and in print. Found in the app: bars were listed by internal id; now named Member n as in the tree.
 
-## 5. Known limits (0.2.3)
+### 2026-10-29: Session 1, continued (0.2.4 3D frames)
+- Released 0.2.3. Engine: `Analysis::Space`, z on nodes, roll on members, 3D loads and springs (serde defaults), section Iy, J (Roark, Bredt, open thin-walled), doc ops in 3D (node finding, splitting, crossings by closest points) and `Op::Repeat`; space.rs; benchmark 13; the platform example; random 3D frames balance. Window: the plane bar and working planes, the three.js view, 3D fields in the Inspector and dialogs, Repeat, the 3D Results page and report. Found by the UI checks: Repeat sent no member kind for the joins. Found in the app: the 3D example tiles reused the plane frame picture.
+
+## 5. Known limits (0.2.4)
+
+- 3D frames: no natural frequencies or buckling yet; utilisation leaves out the shear stress of twisting; an angle bends about its leg axes (the product of inertia is left out); a channel's shear centre is not modelled.
 
 - Buckling: frames and trusses only, in their own plane; linear (eigenvalue) buckling of a perfect frame; no lateral-torsional buckling or design-code checks.
 

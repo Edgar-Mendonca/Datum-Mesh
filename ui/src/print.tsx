@@ -5,8 +5,8 @@
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
-import { Model, Pt, num } from "./api";
-import { out, opts, call, toast, model, frameRes as results, partRes, stale, setBackstage, modes, modesStale } from "./store";
+import { Model, Pt, num, isFrame } from "./api";
+import { out, opts, call, toast, model, frameRes as results, partRes, spaceRes, stale, setBackstage, modes, modesStale } from "./store";
 import { fieldDef, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
 import { Help } from "./help";
 import { ModesTable } from "./modes";
@@ -30,7 +30,11 @@ const codes = (t: string, page: number, pages: number) => t.replace(/&\[Page\]/g
 type Page = "drawing" | "report";
 
 /** The model drawn to fit a box, with supports and loads marked. */
-export const ModelDrawing = (p: { m: Model; w: number; h: number }) => {
+/** A 3D frame drawn as seen from the corner (+x, +y, +z): isometric, y up on the page. */
+const iso = (m: Model): Model => m.analysis !== "space" ? m : { ...m, nodes: m.nodes.map(n => { const z = n.z ?? 0; return { ...n, x: (n.x - z) / Math.SQRT2, y: (2 * n.y - n.x - z) / Math.sqrt(6), z: 0 }; }) };
+
+export const ModelDrawing = (q: { m: Model; w: number; h: number }) => {
+  const p = { ...q, m: iso(q.m) };
   const pts: Pt[] = [...p.m.nodes.map(n => [n.x, n.y] as Pt), ...p.m.shapes.flatMap(s => s.geom.kind === "circle" ? [[s.geom.c[0] - s.geom.r, s.geom.c[1] - s.geom.r], [s.geom.c[0] + s.geom.r, s.geom.c[1] + s.geom.r]] as Pt[] : outline(s.geom, Infinity))];
   if (!pts.length) return <p>The model is empty.</p>;
   const x0 = Math.min(...pts.map(q => q[0])), x1 = Math.max(...pts.map(q => q[0])), y0 = Math.min(...pts.map(q => q[1])), y1 = Math.max(...pts.map(q => q[1]));
@@ -68,7 +72,7 @@ const Sheet = (p: { pg: Page; n: number; pages: number; w: number; h: number }) 
 const TitleBlock = (p: { m: Model }) => (
   <table class="tblock"><tbody><tr>
     <td><small>Model</small><b>{p.m.name}</b></td><td><small>Analysis</small>{ANALYSES.find(a => a[0] === p.m.analysis)?.[1]}</td>
-    <td><small>Units</small>{p.m.analysis === "frame" ? `${unit("coord")} (drawing), ${unit("len")}, ${unit("force")}, ${unit("moment")}, ${unit("stress")}` : p.m.analysis === "heat" ? `${unit("coord")}, ${unit("temp")}, ${unit("flux")}` : `${unit("coord")}, ${unit("force")}, ${unit("stress")}`}</td><td><small>Company</small>{opts().company || "—"}</td><td><small>Date</small>{new Date().toLocaleDateString()}</td><td><small>Datum Mesh</small>{version()}</td>
+    <td><small>Units</small>{isFrame(p.m.analysis) ? `${unit("coord")} (drawing), ${unit("len")}, ${unit("force")}, ${unit("moment")}, ${unit("stress")}` : p.m.analysis === "heat" ? `${unit("coord")}, ${unit("temp")}, ${unit("flux")}` : `${unit("coord")}, ${unit("force")}, ${unit("stress")}`}</td><td><small>Company</small>{opts().company || "—"}</td><td><small>Date</small>{new Date().toLocaleDateString()}</td><td><small>Datum Mesh</small>{version()}</td>
   </tr></tbody></table>
 );
 const [version, setVersion] = createSignal("");
@@ -87,17 +91,30 @@ const Report = (p: { m: Model }) => {
     <h4>Model</h4>
     <table class="tbl"><tbody>
       <tr><td>Analysis</td><td>{ANALYSES.find(a => a[0] === m.analysis)?.[1]}{m.analysis === "stress" ? ` · thickness ${fmt("len", m.thickness)}` : ""}</td></tr>
-      <Show when={m.analysis === "frame"} fallback={<tr><td>Geometry</td><td>{m.shapes.filter(s => !s.hole).length} shapes, {m.shapes.filter(s => s.hole).length} holes</td></tr>}><tr><td>Geometry</td><td>{m.nodes.length} nodes, {m.members.length} members</td></tr></Show>
+      <Show when={isFrame(m.analysis)} fallback={<tr><td>Geometry</td><td>{m.shapes.filter(s => !s.hole).length} shapes, {m.shapes.filter(s => s.hole).length} holes</td></tr>}><tr><td>Geometry</td><td>{m.nodes.length} nodes, {m.members.length} members{m.analysis === "space" ? " in 3D (drawn isometric on the first page)" : ""}</td></tr></Show>
     </tbody></table>
     <h4>Materials</h4>
     <table class="tbl"><thead><tr><th>Name</th><th>E ({unit("modulus")})</th><th>ν</th><th>Density ({unit("density")})</th><th>Yield ({unit("stress")})</th><th>Source</th></tr></thead><tbody>
       <For each={m.materials}>{x => <tr><td>{x.name}</td><td class="r">{fmt("modulus", x.e).split(" ")[0]}</td><td class="r">{num(x.nu)}</td><td class="r">{fmt("density", x.rho).split(" ")[0]}</td><td class="r">{fmt("stress", x.fy).split(" ")[0]}</td><td>{x.source}</td></tr>}</For></tbody></table>
-    <Show when={m.analysis === "frame"}><h4>Sections</h4><table class="tbl"><tbody><For each={m.sections}>{x => <tr><td>{x.name}</td><td>{x.shape.kind}</td><td>{m.members.filter(b => b.section === x.id).length} members</td></tr>}</For></tbody></table></Show>
+    <Show when={isFrame(m.analysis)}><h4>Sections</h4><table class="tbl"><tbody><For each={m.sections}>{x => <tr><td>{x.name}</td><td>{x.shape.kind}</td><td>{m.members.filter(b => b.section === x.id).length} members</td></tr>}</For></tbody></table></Show>
     <h4>Supports</h4>
     <table class="tbl"><tbody><For each={m.supports} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td></tr>}</For></tbody></table>
     <h4>Loads</h4>
     <table class="tbl"><tbody><For each={m.loads} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td><td>{loadValue(x.kind)}</td></tr>}</For></tbody></table>
-    <Show when={m.analysis !== "frame"}><PartReport m={m} /></Show>
+    <Show when={!isFrame(m.analysis)}><PartReport m={m} /></Show>
+    <Show when={m.analysis === "space"}><Show when={spaceRes() && !stale()} fallback={<p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p>}>{_ => { const r = spaceRes()!; const name = (id: number) => `Node ${m.nodes.findIndex(n => n.id === id) + 1}`; return <>
+      <h4>Equilibrium check</h4>
+      <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
+        <For each={["Fx", "Fy", "Fz", "Mx", "My", "Mz"]}>{(l, k) => <tr><td>Σ {l}</td><td class="r">{fmt(k() < 3 ? "force" : "moment", r.applied[k()])}</td><td class="r">{fmt(k() < 3 ? "force" : "moment", r.reacted[k()])}</td><td class="r">{fmt(k() < 3 ? "force" : "moment", r.applied[k()] + r.reacted[k()])}</td></tr>}</For></tbody></table>
+      <p class={r.imbalance > 1e-6 ? "badline" : "okline"}>{r.imbalance > 1e-6 ? `The reactions miss the loads by ${num(r.imbalance * 100, 2)} %.` : `The reactions balance the loads (difference ${num(r.imbalance * 100, 2)} %).`}</p>
+      <h4>Reactions</h4>
+      <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx</th><th class="r">Fy</th><th class="r">Fz</th><th class="r">Mx</th><th class="r">My</th><th class="r">Mz</th></tr></thead><tbody>
+        <For each={r.reactions}>{x => <tr><td>{name(x.node)}</td><For each={x.f}>{(v, k) => <td class="r">{fmt(k() < 3 ? "force" : "moment", v)}</td>}</For></tr>}</For></tbody></table>
+      <h4>Members</h4>
+      <table class="tbl"><thead><tr><th>Member</th><th class="r">N max / min</th><th class="r">|T|</th><th class="r">|Mz| · |My|</th><th class="r">Deflection</th><th class="r">Stress</th><th class="r">Utilisation</th></tr></thead><tbody>
+        <For each={r.members}>{(x, i) => <tr><td>{i() + 1}</td><td class="r">{fmt("force", Math.max(...x.n))} / {fmt("force", Math.min(...x.n))}</td><td class="r">{fmt("moment", Math.max(...x.t.map(Math.abs)))}</td><td class="r">{fmt("moment", Math.max(...x.mz.map(Math.abs)))} · {fmt("moment", Math.max(...x.my.map(Math.abs)))}</td><td class="r">{fmt("len", Math.max(...x.d.map(d => Math.hypot(d[0], d[1], d[2]))))}</td><td class="r">{fmt("stress", x.stress)}</td><td class="r">{x.util ? `${num(x.util * 100, 3)} %` : "—"}</td></tr>}</For></tbody></table>
+      <p class="muted">Solved by Datum Mesh {version()}: {r.stats.equations} equations, residual {r.stats.residual.toExponential(1)}. 3D beam elements (axial, torsion, bending about both axes) and truss bars.</p>
+    </>; }}</Show></Show>
     <Show when={modes() && !modesStale()}><ModesTable /></Show>
     <Show when={results() && !stale() && m.analysis === "frame"} fallback={<Show when={m.analysis === "frame"}><p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p></Show>}>{_ => { const r = results()!; return <>
       <h4>Equilibrium check</h4>
@@ -151,7 +168,7 @@ export const ReportPage = () => {
   onMount(async () => { if (!version()) setVersion(await call<string>("version") ?? ""); });
   return <div class="page">
     <h1>Report <Help k="report" /></h1>
-    <p class="muted">What prints with the model drawing: the model, materials, supports and loads{model()?.analysis === "frame" ? ", and once solved the reactions, member forces and the equilibrium check" : ", and once solved the mesh, result pictures with their scales, the largest values, reactions and the equilibrium check"}. <button class="btn pri sm" onClick={() => setBackstage("print")}>Print or save as PDF</button></p>
+    <p class="muted">What prints with the model drawing: the model, materials, supports and loads{isFrame(model()?.analysis) ? ", and once solved the reactions, member forces and the equilibrium check" : ", and once solved the mesh, result pictures with their scales, the largest values, reactions and the equilibrium check"}. <button class="btn pri sm" onClick={() => setBackstage("print")}>Print or save as PDF</button></p>
     <div class="rsheet"><Show when={model()}>{m => <Report m={m()} />}</Show></div>
   </div>;
 };

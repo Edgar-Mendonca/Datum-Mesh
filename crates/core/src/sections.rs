@@ -8,10 +8,16 @@ use serde::Serialize;
 pub struct Props {
     /// Area (m²).
     pub a: f64,
-    /// Second moment of area for in-plane bending (m⁴).
+    /// Second moment of area for in-plane bending (m⁴): about the section's strong axis, bending
+    /// along its depth h.
     pub i: f64,
     /// Distance from the neutral axis to the extreme fibre (m).
     pub c: f64,
+    /// 3D frames (0.2.4): the second moment about the other axis (bending across the width b),
+    /// its extreme fibre, and the torsion constant J (m⁴).
+    pub iy: f64,
+    pub cy: f64,
+    pub j: f64,
 }
 
 impl Props {
@@ -19,6 +25,17 @@ impl Props {
     pub fn z(&self) -> f64 {
         self.i / self.c
     }
+    /// Elastic section modulus about the other axis (m³).
+    pub fn zy(&self) -> f64 {
+        self.iy / self.cy
+    }
+}
+
+/// Torsion constant of a solid rectangle (Roark, table 10.7 case 4): J = a b³ (1/3 − 0.21 (b/a)
+/// (1 − b⁴/12a⁴)), a the longer side; within 0.5 % of the series solution.
+fn rect_j(b: f64, h: f64) -> f64 {
+    let (a, b) = (b.max(h), b.min(h));
+    a * b.powi(3) * (1.0 / 3.0 - 0.21 * b / a * (1.0 - b.powi(4) / (12.0 * a.powi(4))))
 }
 
 /// The properties of a section shape, or why the dimensions do not make a section.
@@ -31,35 +48,51 @@ pub fn props(s: &SectionShape) -> Result<Props, String> {
         Box { b, h, t } => vec![*b, *h, *t],
         I { h, b, tw, tf } | Channel { h, b, tw, tf } => vec![*h, *b, *tw, *tf],
         Angle { h, b, t } => vec![*h, *b, *t],
-        Custom { a, i, c } => vec![*a, *i, *c],
+        Custom { a, i, c, .. } => vec![*a, *i, *c],
     };
     if dims.iter().any(|v| !(v.is_finite() && *v > 0.0)) {
         return Err("every dimension must be greater than zero".into());
     }
     let pi = std::f64::consts::PI;
     let p = match *s {
-        Rect { b, h } => Props { a: b * h, i: b * h.powi(3) / 12.0, c: h / 2.0 },
-        Circle { d } => Props { a: pi * d * d / 4.0, i: pi * d.powi(4) / 64.0, c: d / 2.0 },
+        Rect { b, h } => Props { a: b * h, i: b * h.powi(3) / 12.0, c: h / 2.0, iy: h * b.powi(3) / 12.0, cy: b / 2.0, j: rect_j(b, h) },
+        Circle { d } => {
+            let i = pi * d.powi(4) / 64.0;
+            Props { a: pi * d * d / 4.0, i, c: d / 2.0, iy: i, cy: d / 2.0, j: 2.0 * i }
+        }
         Tube { d, t } => {
             if 2.0 * t >= d {
                 return Err("the wall must be thinner than half the diameter".into());
             }
             let di = d - 2.0 * t;
-            Props { a: pi * (d * d - di * di) / 4.0, i: pi * (d.powi(4) - di.powi(4)) / 64.0, c: d / 2.0 }
+            let i = pi * (d.powi(4) - di.powi(4)) / 64.0;
+            Props { a: pi * (d * d - di * di) / 4.0, i, c: d / 2.0, iy: i, cy: d / 2.0, j: 2.0 * i }
         }
         Box { b, h, t } => {
             if 2.0 * t >= b || 2.0 * t >= h {
                 return Err("the wall must be thinner than half the width and depth".into());
             }
             let (bi, hi) = (b - 2.0 * t, h - 2.0 * t);
-            Props { a: b * h - bi * hi, i: (b * h.powi(3) - bi * hi.powi(3)) / 12.0, c: h / 2.0 }
+            // Thin-walled closed section (Bredt): J = 4 A_m² t / perimeter of the mid-line.
+            let j = 2.0 * t * (b - t).powi(2) * (h - t).powi(2) / (b + h - 2.0 * t);
+            Props { a: b * h - bi * hi, i: (b * h.powi(3) - bi * hi.powi(3)) / 12.0, c: h / 2.0, iy: (h * b.powi(3) - hi * bi.powi(3)) / 12.0, cy: b / 2.0, j }
         }
         I { h, b, tw, tf } | Channel { h, b, tw, tf } => {
             if 2.0 * tf >= h || tw >= b {
                 return Err("the flanges and web do not fit the depth and width".into());
             }
             let hw = h - 2.0 * tf;
-            Props { a: 2.0 * b * tf + hw * tw, i: (b * h.powi(3) - (b - tw) * hw.powi(3)) / 12.0, c: h / 2.0 }
+            let a = 2.0 * b * tf + hw * tw;
+            // Open thin-walled section: J = Σ b t³ / 3.
+            let j = (2.0 * b * tf.powi(3) + hw * tw.powi(3)) / 3.0;
+            // About the axis along the depth: the I is symmetric; the channel's web is at one side.
+            let (iy, cy) = if matches!(s, I { .. }) {
+                (2.0 * tf * b.powi(3) / 12.0 + hw * tw.powi(3) / 12.0, b / 2.0)
+            } else {
+                let x = (2.0 * b * tf * b / 2.0 + hw * tw * tw / 2.0) / a;
+                (2.0 * (tf * b.powi(3) / 12.0 + b * tf * (b / 2.0 - x).powi(2)) + hw * tw.powi(3) / 12.0 + hw * tw * (tw / 2.0 - x).powi(2), x.max(b - x))
+            };
+            Props { a, i: (b * h.powi(3) - (b - tw) * hw.powi(3)) / 12.0, c: h / 2.0, iy, cy, j }
         }
         Angle { h, b, t } => {
             if t >= h || t >= b {
@@ -70,10 +103,19 @@ pub fn props(s: &SectionShape) -> Result<Props, String> {
             let (a2, y2, i2) = ((b - t) * t, t / 2.0, (b - t) * t.powi(3) / 12.0);
             let a = a1 + a2;
             let y = (a1 * y1 + a2 * y2) / a;
-            Props { a, i: i1 + a1 * (y1 - y).powi(2) + i2 + a2 * (y2 - y).powi(2), c: y.max(h - y) }
+            // About the axis parallel to h (the legs' own axes; the product of inertia is left out).
+            let (x1, x2) = (t / 2.0, t + (b - t) / 2.0);
+            let x = (a1 * x1 + a2 * x2) / a;
+            let iy = h * t.powi(3) / 12.0 + a1 * (x1 - x).powi(2) + t * (b - t).powi(3) / 12.0 + a2 * (x2 - x).powi(2);
+            Props { a, i: i1 + a1 * (y1 - y).powi(2) + i2 + a2 * (y2 - y).powi(2), c: y.max(h - y), iy, cy: x.max(b - x), j: (h + b - t) * t.powi(3) / 3.0 }
         }
-        Custom { a, i, c } => Props { a, i, c },
+        Custom { a, i, c, iy, j } => Props { a, i, c, iy: if iy > 0.0 { iy } else { i }, cy: c, j: if j > 0.0 { j } else { 2.0 * i } },
     };
+    if let Custom { iy, j, .. } = *s {
+        if !(iy.is_finite() && iy >= 0.0 && j.is_finite() && j >= 0.0) {
+            return Err("the second moment and torsion constant must be zero or more".into());
+        }
+    }
     Ok(p)
 }
 
@@ -111,10 +153,36 @@ mod tests {
     }
 
     #[test]
+    fn the_other_axis_and_torsion() {
+        // Rectangle 100 × 200: Iy = 0.2·0.1³/12; J for b/a = 1/2 is 0.2287·a·b³ (Roark's series
+        // value 0.229), within 0.5 %.
+        let r = props(&Rect { b: 0.1, h: 0.2 }).unwrap();
+        assert!(close(r.iy, 0.2 * 0.1f64.powi(3) / 12.0) && close(r.cy, 0.05));
+        assert!((r.j / (0.229 * 0.2 * 0.1f64.powi(3)) - 1.0).abs() < 5e-3, "{}", r.j);
+        // A square: J = 0.1406 a⁴ (Timoshenko).
+        let q = props(&Rect { b: 0.1, h: 0.1 }).unwrap();
+        assert!((q.j / (0.1406 * 1e-4) - 1.0).abs() < 5e-3, "{}", q.j);
+        // Round bars and tubes: J = 2I = Ip, and the same I both ways.
+        let t = props(&Tube { d: 0.1, t: 0.005 }).unwrap();
+        assert!(close(t.j, 2.0 * t.i) && close(t.iy, t.i));
+        // A square box of thin wall: J = b³ t for the mid-line b (Bredt).
+        let bx = props(&Box { b: 0.2, h: 0.2, t: 0.002 }).unwrap();
+        assert!((bx.j / (0.198f64.powi(3) * 0.002) - 1.0).abs() < 1e-9);
+        // An I: Iy from the two flanges and the web; J = Σ b t³/3.
+        let i = props(&I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }).unwrap();
+        assert!(close(i.iy, 2.0 * 0.0107 * 0.15f64.powi(3) / 12.0 + (0.3 - 0.0214) * 0.0071f64.powi(3) / 12.0));
+        assert!(close(i.j, (2.0 * 0.15 * 0.0107f64.powi(3) + (0.3 - 0.0214) * 0.0071f64.powi(3)) / 3.0));
+        // Custom without the 3D values: a round bar's.
+        let c = props(&Custom { a: 1e-3, i: 2e-6, c: 0.05, iy: 0.0, j: 0.0 }).unwrap();
+        assert!(c.iy == 2e-6 && c.j == 4e-6);
+    }
+
+    #[test]
     fn impossible_sections_are_refused() {
         assert!(props(&Rect { b: 0.0, h: 0.2 }).is_err());
         assert!(props(&Tube { d: 0.1, t: 0.05 }).is_err());
         assert!(props(&I { h: 0.1, b: 0.1, tw: 0.2, tf: 0.01 }).is_err());
-        assert!(props(&Custom { a: 1.0, i: f64::NAN, c: 1.0 }).is_err());
+        assert!(props(&Custom { a: 1.0, i: f64::NAN, c: 1.0, iy: 0.0, j: 0.0 }).is_err());
+        assert!(props(&Custom { a: 1.0, i: 1.0, c: 1.0, iy: -1.0, j: 0.0 }).is_err());
     }
 }

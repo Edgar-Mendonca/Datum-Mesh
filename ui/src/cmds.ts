@@ -1,6 +1,6 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
-import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num } from "./api";
+import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame } from "./api";
 import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
@@ -28,12 +28,12 @@ export const C = {
       const r = fromWire(await invoke("solve")), first = !results();
       batch(() => {
         setResults(r); setStale(false); setTab("results"); setModeOn(false);
-        if (r.kind !== "frame") { fieldAfterSolve(r.kind === "heat" ? "heat" : m.analysis); setMeshed(null); setMeshStale(false); if (view() === "mesh") setView("model"); }
+        if (r.kind === "plane" || r.kind === "heat") { fieldAfterSolve(r.kind === "heat" ? "heat" : m.analysis); setMeshed(null); setMeshStale(false); if (view() === "mesh") setView("model"); }
       });
       // The legend bar takes room under the canvas the first time: fit the model again.
       if (first) setTimeout(fit, 40);
       const bad = r.imbalance > 1e-6, ms = r.stats.ms < 1 ? "under 1 ms" : r.stats.ms < 2000 ? `${Math.round(r.stats.ms)} ms` : `${(r.stats.ms / 1000).toFixed(1)} s`;
-      const what = r.kind === "frame" ? `${r.stats.equations} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
+      const what = r.kind === "frame" || r.kind === "space" ? `${r.stats.equations} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
       const bal = r.kind === "heat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : "Reactions balance the loads.";
       toast(r.warnings.length ? r.warnings.join(" ") : `Solved: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
     } catch (e) { setResults(null); toast(String(e)); }
@@ -68,7 +68,7 @@ export const C = {
   /** Mesh the part without solving, and show it (the Mesh view). */
   mesh: async () => {
     const m = model(); if (!m) return;
-    if (m.analysis === "frame") return toast("Frames and trusses are not meshed: each member is one element. Meshing is for parts (plane stress, plane strain, heat).");
+    if (isFrame(m.analysis)) return toast("Frames and trusses are not meshed: each member is one element. Meshing is for parts (plane stress, plane strain, heat).");
     if (solving()) return;
     setSolving(true);
     try {
@@ -95,12 +95,12 @@ export const C = {
     const m = model(); if (!m) return;
     const have = m.loads.find(l => l.kind.kind === kind);
     if (have) { setSel([have.id]); return toast(`${{ gravity: "Gravity", heat: "Heat generation", warming: "A temperature change" }[kind]} is already on: change it in the Inspector.`); }
-    const o = await act({ Add: { item: { Load: { id: 0, at: { on: "body" }, kind: defaultLoad(kind, m.analysis === "frame") } } } });
+    const o = await act({ Add: { item: { Load: { id: 0, at: { on: "body" }, kind: defaultLoad(kind, isFrame(m.analysis)) } } } });
     if (o?.created.length) { setSel(o.created); setEdgeSel(null); }
   },
   analysis: (a: Analysis) => { const m = model(); if (m) act({ SetSettings: { s: { analysis: a, units: m.units, grid: m.grid, thickness: m.thickness, mesh: m.mesh } } }); },
   // The grid becomes a round step in the new units (0.1.1: 0.5 m showed as 1.6404 ft).
-  units: (u: "SI" | "US") => { const m = model(); if (m && m.units !== u) act({ SetSettings: { s: { analysis: m.analysis, units: u, grid: niceGrid(m.grid, u, m.analysis === "frame"), thickness: m.thickness, mesh: m.mesh } } }); },
+  units: (u: "SI" | "US") => { const m = model(); if (m && m.units !== u) act({ SetSettings: { s: { analysis: m.analysis, units: u, grid: niceGrid(m.grid, u, isFrame(m.analysis)), thickness: m.thickness, mesh: m.mesh } } }); },
   view: (v: "model" | "results" | "mesh" | "report") => setView(v),
   zoomIn: () => zoomBy(1.25), zoomOut: () => zoomBy(1 / 1.25), fit,
   toastSize: () => toast("Type the element size in the Inspector, under Mesh (click empty canvas to show the model's settings). 0 means automatic."),
@@ -120,10 +120,10 @@ export const ALL_CMDS: [string, () => void, string?][] = [
   ["Draw a node", () => C.tool("node")], ["Draw beams", () => C.tool("beam")], ["Draw truss bars", () => C.tool("truss")], ["Add a node at coordinates", () => D.nodeAt()],
   ["Draw a rectangle", () => C.tool("rect")], ["Draw a circle", () => C.tool("circle")], ["Draw a polygon", () => C.tool("poly")], ["Cut a rectangular hole", () => C.tool("hrect")], ["Cut a round hole", () => C.tool("hcircle")],
   ["Sections", () => D.sections()], ["Materials", () => D.materials()],
-  ["Fixed support", () => C.tool("sup:fixed")], ["Pinned support", () => C.tool("sup:pinned")], ["Roller support", () => C.tool(model()?.analysis === "frame" ? "sup:rollerx" : "sup:roller")], ["Spring support", () => C.tool("sup:spring")], ["Symmetry", () => C.tool("sup:symmetry")],
+  ["Fixed support", () => C.tool("sup:fixed")], ["Pinned support", () => C.tool("sup:pinned")], ["Roller support", () => C.tool(isFrame(model()?.analysis) ? "sup:rollerx" : "sup:roller")], ["Spring support", () => C.tool("sup:spring")], ["Symmetry", () => C.tool("sup:symmetry")],
   ["Force", () => C.tool("load:force")], ["Moment", () => C.tool("load:moment")], ["Distributed load", () => C.tool("load:dist")], ["Pressure", () => C.tool("load:pressure")], ["Edge force", () => C.tool("load:traction")], ["Pin load (bearing in a hole)", () => C.tool("load:bearing")], ["Gravity (self-weight)", () => C.body("gravity")],
   ["Fixed temperature", () => C.tool("sup:temperature")], ["Heat flux", () => C.tool("load:flux")], ["Convection", () => C.tool("load:convection")], ["Heat generation", () => C.body("heat")], ["Temperature change (thermal stress)", () => C.body("warming")],
-  ["Frame or truss model", () => C.analysis("frame")], ["Plane stress model", () => C.analysis("stress")], ["Plane strain model", () => C.analysis("strain")], ["Heat conduction model", () => C.analysis("heat")], ["Axisymmetric model (turned about the y axis)", () => C.analysis("axi")],
+  ["Frame or truss model", () => C.analysis("frame")], ["3D frame model", () => C.analysis("space")], ["Repeat members along the depth (3D frames)", () => D.repeat()], ["3D view", () => import("./plane3").then(p => p.setPlane("3d"))], ["Front plane (x-y)", () => import("./plane3").then(p => p.setPlane("xy"))], ["Side plane (z-y)", () => import("./plane3").then(p => p.setPlane("zy"))], ["Plan (x-z)", () => import("./plane3").then(p => p.setPlane("xz"))], ["Plane stress model", () => C.analysis("stress")], ["Plane strain model", () => C.analysis("strain")], ["Heat conduction model", () => C.analysis("heat")], ["Axisymmetric model (turned about the y axis)", () => C.analysis("axi")],
   ["SI units", () => C.units("SI")], ["US units", () => C.units("US")],
   ["Zoom in", C.zoomIn], ["Zoom out", C.zoomOut], ["Fit to window", fit, "F"], ["Options", () => setBackstage("options")], ["Check for updates", () => setBackstage("about")], ["Roadmap", () => setBackstage("roadmap")],
   ["Keyboard shortcuts", () => D.shortcuts(), "F1"], ["Getting started", () => D.gettingStarted()], ["Glossary", () => D.glossary()],

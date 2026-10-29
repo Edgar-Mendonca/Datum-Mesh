@@ -3,8 +3,8 @@
 // and loads. World coordinates are metres with y up; the screen has y down. The engine owns the
 // model: the canvas only draws it and sends edits.
 import { For, Show, JSX, createSignal, createMemo, onMount, onCleanup, batch } from "solid-js";
-import { Pt, Geom, Model, Target, Support, Load, Shape, Member } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act, opts, setCursor, openMenu, Item, toast, partRes, view, meshed, modeOn, modes } from "./store";
+import { Pt, Geom, Model, Target, Support, Load, Shape, Member, isFrame } from "./api";
+import { model as model0, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act as act0, opts, setCursor, openMenu, Item, toast, partRes, view, meshed, modeOn, modes } from "./store";
 import { C } from "./cmds";
 import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient, area } from "./geom";
 import { fmt } from "./units";
@@ -12,6 +12,10 @@ import { defaultLoad, defaultSupport } from "./panels";
 import { ResultsLayer, ResultsProbe } from "./results";
 import { PartLayer, PartMarkers, PartProbe } from "./parts";
 import { FrameModeLayer } from "./modes";
+import { planeModel as model, ghosts, lift, onPlane, plane, unproj, space, fit3d } from "./plane3";
+
+/** Edits from the canvas, turned into 3D when drawing on a plane of a 3D frame. */
+const act = (op: object) => act0(lift(op));
 
 export const [scale, setScale] = createSignal(60); // px per metre
 export const [pan, setPan] = createSignal<Pt>([80, 500]); // screen position of the world origin
@@ -20,13 +24,14 @@ const RULER = 22;
 
 export const toS = (p: Pt): Pt => [pan()[0] + p[0] * scale(), pan()[1] - p[1] * scale()];
 const toW = (cx: number, cy: number): Pt => { const r = box!.getBoundingClientRect(); return [(cx - r.left - pan()[0]) / scale(), -(cy - r.top - pan()[1]) / scale()]; };
-const grid = () => model()?.grid ?? 0.5;
+const grid = () => model0()?.grid ?? 0.5;
 const snapV = (v: number) => (opts().snap ? Math.round(v / grid()) * grid() : v);
 
 export const fit = () => {
+  if (space() && plane() === "3d") return fit3d.run?.();
   const m = model(); if (!m || !box) return;
   const r = box.getBoundingClientRect();
-  const b = boundsOf(m) ?? (m.analysis === "frame" ? [0, 0, 12, 6] : [0, 0, 0.2, 0.1]);
+  const b = boundsOf(m) ?? (isFrame(m.analysis) ? [0, 0, 12, 6] : [0, 0, 0.2, 0.1]);
   const w = Math.max(b[2] - b[0], 1e-6), h = Math.max(b[3] - b[1], 1e-6);
   const s = Math.min((r.width - RULER - 120) / w, (r.height - RULER - 120) / h);
   batch(() => { setScale(s); setPan([RULER + (r.width - RULER - w * s) / 2 - b[0] * s, RULER + (r.height - RULER + h * s) / 2 + b[1] * s]); });
@@ -253,10 +258,10 @@ export const Canvas = () => {
     const ro = new ResizeObserver(() => { const r = box!.getBoundingClientRect(); setSize([r.width, r.height]); });
     ro.observe(box!);
     setTimeout(fit, 30);
-    onCleanup(() => ro.disconnect());
+    onCleanup(() => { ro.disconnect(); box = undefined; });
   });
   const m = () => model();
-  const frame = () => (m()?.analysis ?? "frame") === "frame";
+  const frame = () => isFrame(m()?.analysis);
   const S = (p: Pt) => toS(p);
   const moved = (id: number, p: Pt): Pt => {
     const d = drag(); if (!d) return p;
@@ -444,7 +449,7 @@ export const Canvas = () => {
   };
   const draftLabel = () => {
     const dr = draft(), p = ptr(), t = tool(); if (!p) return "";
-    if (!dr.length) return `${fmt("coord", p[0])}, ${fmt("coord", p[1])}`;
+    if (!dr.length) return onPlane() ? unproj(p[0], p[1]).map(v => fmt("coord", v).split(" ")[0]).join(", ") : `${fmt("coord", p[0])}, ${fmt("coord", p[1])}`;
     const d = [p[0] - dr[dr.length - 1][0], p[1] - dr[dr.length - 1][1]];
     if (t === "rect" || t === "hrect") return `${fmt("coord", Math.abs(p[0] - dr[0][0]))} × ${fmt("coord", Math.abs(p[1] - dr[0][1]))}`;
     if (t === "circle" || t === "hcircle") return `r ${fmt("coord", Math.hypot(d[0], d[1]))}`;
@@ -459,7 +464,7 @@ export const Canvas = () => {
   const supAt = (s: Support): Pt | null => s.at.on === "node" ? (np().get(s.at.id) ?? null) : s.at.on === "point" ? [s.at.x, s.at.y] : null;
   const gravity = () => (m()?.loads ?? []).filter(l => l.kind.kind === "gravity" || l.kind.kind === "heat" || l.kind.kind === "warming");
   const labels = createMemo(() => (m() ? labelled(m()!) : new Set<number>()));
-  const empty = () => { const mm = m(); return !!mm && !mm.nodes.length && !mm.shapes.length; };
+  const empty = () => { const mm = m(); return !!mm && !mm.nodes.length && !mm.shapes.length && !ghosts().length; };
   /** Contours or the mesh are drawn under the outlines: shapes are not filled then. */
   const under = () => !frame() && (view() === "mesh" ? true : !!partRes() || (modeOn() && modes()?.kind === "plane"));
   const refines = () => (m()?.mesh.refine ?? []);
@@ -479,7 +484,8 @@ export const Canvas = () => {
         <Show when={edgeSel()}>{e => <path d={edgePath(e())} class="edgesel" />}</Show>
         <For each={refines()}>{r => <Show when={r.at.on === "edge" || r.at.on === "point"}>{r.at.on === "edge" ? <path d={edgePath(r.at as any)} class="refl" /> : <circle cx={S([(r.at as any).x, (r.at as any).y])[0]} cy={S([(r.at as any).x, (r.at as any).y])[1]} r={9} class="refl" />}</Show>}</For>
         <For each={supportsOnEdges()}>{s => { const sh = () => shapeAt((s.at as any).shape); return <Show when={sh()}><EdgeSupport s={s} sh={sh()!} on={selSet().has(s.id)} /></Show>; }}</For>
-        {/* frames */}
+        {/* frames: members off the working plane first, faint */}
+        <For each={ghosts()}>{g => <line x1={S(g[0])[0]} y1={S(g[0])[1]} x2={S(g[1])[0]} y2={S(g[1])[1]} class="ghost" />}</For>
         <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id) }} data-id={mb.id}>
           <line x1={e()[0][0]} y1={e()[0][1]} x2={e()[1][0]} y2={e()[1][1]} />
           <Show when={mb.kind === "truss"}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * 0.06} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * 0.06} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /></Show>
@@ -499,14 +505,14 @@ export const Canvas = () => {
         <Show when={opts().rulers}>
           <rect x={0} y={0} width={size()[0]} height={RULER} class="ruler" /><rect x={0} y={0} width={RULER} height={size()[1]} class="ruler" />
           <For each={rulerTicks().xs}>{([sx, x]) => <><path d={`M${sx} ${RULER - 6}V${RULER}`} class="rtick" /><text x={sx + 3} y={RULER - 9} class="rtxt">{fmt("coord", x, 5).replace(/ .*/, "")}</text></>}</For>
-          <For each={rulerTicks().ys}>{([sy, y]) => <><path d={`M${RULER - 6} ${sy}H${RULER}`} class="rtick" /><text x={RULER - 9} y={sy - 3} class="rtxt" transform={`rotate(-90 ${RULER - 9} ${sy - 3})`}>{fmt("coord", y, 5).replace(/ .*/, "")}</text></>}</For>
+          <For each={rulerTicks().ys}>{([sy, y]) => <><path d={`M${RULER - 6} ${sy}H${RULER}`} class="rtick" /><text x={RULER - 9} y={sy - 3} class="rtxt" transform={`rotate(-90 ${RULER - 9} ${sy - 3})`}>{fmt("coord", onPlane() && plane() === "xz" ? -y : y, 5).replace(/ .*/, "").replace(/^-0$/, "0")}</text></>}</For>
           <rect x={0} y={0} width={RULER} height={RULER} class="ruler corner" /><text x={3} y={14} class="rtxt unitlbl">{fmt("coord", 0).split(" ")[1]}</text>
         </Show>
       </svg>
       <Show when={gravity().length}><div class="gbadge"><For each={gravity()}>{l => <button classList={{ on: selSet().has(l.id) }} onClick={() => setSel([l.id])}>{l.kind.kind === "gravity" ? `g = ${fmt("accel", Math.hypot((l.kind as any).gx, (l.kind as any).gy), 3)}` : l.kind.kind === "warming" ? `ΔT = ${fmt("dtemp", (l.kind as any).dt, 3)}` : `q = ${fmt("heatgen", (l.kind as any).q, 3)}`}</button>}</For></div></Show>
       <Show when={empty() && tool() === "select"}>
         <div class="empty"><b>{frame() ? "Draw a frame or truss" : "Draw a part"}</b>
-          <span>{frame() ? "Pick Beam or Truss in Geometry, then click two points for each member. Supports and loads are on the Loads tab." : "Pick Rectangle, Circle or Polygon in Geometry and draw the outline; holes cut out of it. Supports and loads go on its edges."}</span>
+          <span>{onPlane() ? "Nothing on this plane yet. Pick Beam or Truss in Geometry and click two points for each member; change the depth above to draw elsewhere." : frame() ? "Pick Beam or Truss in Geometry, then click two points for each member. Supports and loads are on the Loads tab." : "Pick Rectangle, Circle or Polygon in Geometry and draw the outline; holes cut out of it. Supports and loads go on its edges."}</span>
           <button class="btn pri" onClick={() => setTool(frame() ? "beam" : "rect")}>{frame() ? "Draw members" : "Draw a rectangle"}</button></div>
       </Show>
       <ResultsProbe />

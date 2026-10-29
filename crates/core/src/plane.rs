@@ -285,7 +285,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
     let nn = ms.nodes.len();
     let mut sys = System::new(2 * nn);
     let mut warnings = vec![];
-    let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy]) } else { None }).fold([0.0, 0.0], |a, b| [a[0] + b[0], a[1] + b[1]]);
+    let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy, .. }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy]) } else { None }).fold([0.0, 0.0], |a, b| [a[0] + b[0], a[1] + b[1]]);
     let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
     let ord = ms.order;
     // Thermal stress (0.2.0): the change of temperature at every node from the stress-free one,
@@ -415,7 +415,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
                     }
                 }
             }
-            (LoadKind::Force { fx, fy }, Target::Point { x, y }) => {
+            (LoadKind::Force { fx, fy, .. }, Target::Point { x, y }) => {
                 if let Some(n) = point_node(*x, *y) {
                     sys.f[2 * n] += fx;
                     sys.f[2 * n + 1] += fy;

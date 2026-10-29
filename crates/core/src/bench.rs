@@ -49,7 +49,7 @@ fn add(d: &mut Doc, op: Op) {
     d.apply(op).expect("benchmark model");
 }
 fn member(d: &mut Doc, a: [f64; 2], b: [f64; 2], kind: MemberKind) {
-    add(d, Op::AddMember { from: a, to: b, kind, section: None, material: None });
+    add(d, Op::AddMember { from: a, to: b, kind, section: None, material: None, z: [0.0; 2] });
 }
 fn support(d: &mut Doc, x: f64, y: f64, kind: SupportKind) {
     let id = node(d, x, y);
@@ -70,7 +70,7 @@ fn cantilever() -> Vec<Check> {
     }
     support(&mut d, 0.0, 0.0, SupportKind::Fixed);
     let tip = node(&d, l, 0.0);
-    load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -p });
+    load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
     let r = frame::solve(&d.m).expect("solves");
     let ti = d.m.nodes.iter().position(|n| n.id == tip).unwrap();
     let root = r.members.iter().find(|m| m.x.len() > 1 && d.m.members.iter().any(|mb| mb.id == m.id && (mb.a == node(&d, 0.0, 0.0) || mb.b == node(&d, 0.0, 0.0)))).unwrap();
@@ -131,7 +131,7 @@ fn trusses() -> Vec<Check> {
     support(&mut d, 0.0, 0.0, SupportKind::Pinned);
     support(&mut d, 4.0, 0.0, SupportKind::RollerX);
     let c = node(&d, 2.0, 3.0);
-    load(&mut d, Target::Node { id: c }, LoadKind::Force { fx: 0.0, fy: -10e3 });
+    load(&mut d, Target::Node { id: c }, LoadKind::Force { fx: 0.0, fy: -10e3, fz: 0.0 });
     let r = frame::solve(&d.m).expect("solves");
     let axial = |d: &Doc, r: &frame::FrameResults, a: [f64; 2], b: [f64; 2]| {
         let (na, nb) = (node(d, a[0], a[1]), node(d, b[0], b[1]));
@@ -553,13 +553,13 @@ fn buckling() -> Vec<Check> {
             add(&mut d, Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt: warm } }) });
         } else {
             let top = node(&d, 0.0, l);
-            load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p });
+            load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
         }
         frame::buckling(&d.m, 2).expect("buckling")
     };
     let src = "Euler buckling loads (Timoshenko & Gere, Theory of Elastic Stability, §2.1–2.5)";
     // Sliding but not turning at the top: stiff springs across and in rotation, none along.
-    let slide = SupportKind::Spring { kx: 1e15, ky: 0.0, kr: 1e15 };
+    let slide = SupportKind::Spring { kx: 1e15, ky: 0.0, kr: 1e15, kz: 0.0, krx: 0.0, kry: 0.0 };
     let cases = [
         ("Column pinned at both ends, one member", "Load factor π²EI/L² / P", SupportKind::Pinned, Some(SupportKind::RollerY), 1.0),
         ("Column fixed at the foot, free at the top (flagpole)", "Load factor π²EI/4L² / P", SupportKind::Fixed, None, 0.25),
@@ -582,6 +582,114 @@ fn buckling() -> Vec<Check> {
     out
 }
 
+/// A 3D frame model with one material (E, ν = 0.3, no weight) and one section.
+fn space_frame(e: f64, shape: SectionShape) -> Doc {
+    let mut d = frame(e, shape);
+    d.m.analysis = Analysis::Space;
+    d
+}
+fn member3(d: &mut Doc, a: [f64; 3], b: [f64; 3], kind: MemberKind) {
+    add(d, Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind, section: None, material: None, z: [a[2], b[2]] });
+}
+fn node3(d: &Doc, p: [f64; 3]) -> u32 {
+    d.m.nodes.iter().find(|n| crate::model::dist3(n.at(), p) < 1e-9).map(|n| n.id).expect("node")
+}
+fn support3(d: &mut Doc, p: [f64; 3], kind: SupportKind) {
+    let id = node3(d, p);
+    add(d, Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind }) });
+}
+
+/// Benchmark 13 (0.2.4): 3D frames and trusses against hand answers.
+fn space() -> Vec<Check> {
+    let mut out = vec![];
+    let (l, p, e) = (2.0, 1e3, 200e9);
+    let (b, h) = (0.05, 0.1);
+    let pr = crate::sections::props(&SectionShape::Rect { b, h }).unwrap();
+    let g = e / (2.0 * (1.0 + Material::steel(1).nu));
+    let src = "Beam theory: tip deflection PL³/3EI, twist TL/GJ";
+    // A cantilever along x, loaded at the tip one way at a time.
+    let cant = |roll: f64, tip: LoadKind| {
+        let mut d = space_frame(e, SectionShape::Rect { b, h });
+        member3(&mut d, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+        d.m.members[0].roll = roll;
+        support3(&mut d, [0.0; 3], SupportKind::Fixed);
+        let id = node3(&d, [l, 0.0, 0.0]);
+        load(&mut d, Target::Node { id }, tip);
+        crate::space::solve(&d.m).expect("space")
+    };
+    let r = cant(0.0, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+    out.push(check(13, "3D cantilever along x", "Tip deflection in y, PL³/3EI (strong axis)", "len", -p * l.powi(3) / (3.0 * e * pr.i), r.disp[1][1], 1e-9, src));
+    let r = cant(0.0, LoadKind::Force { fx: 0.0, fy: 0.0, fz: p });
+    out.push(check(13, "3D cantilever along x", "Tip deflection in z, PL³/3EIy (weak axis)", "len", p * l.powi(3) / (3.0 * e * pr.iy), r.disp[1][2], 1e-9, src));
+    out.push(check(13, "3D cantilever along x", "Root moment about y, PL", "moment", p * l, r.members[0].my[0].abs(), 1e-9, src));
+    let r = cant(0.0, LoadKind::Moment { m: 0.0, mx: p, my: 0.0 });
+    out.push(check(13, "3D cantilever along x", "Tip twist under a torque, TL/GJ", "rad", p * l / (g * pr.j), r.disp[1][3], 1e-9, src));
+    let r = cant(std::f64::consts::FRAC_PI_2, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+    out.push(check(13, "3D cantilever along x, section rolled 90°", "Tip deflection in y, PL³/3EIy (now the weak axis)", "len", -p * l.powi(3) / (3.0 * e * pr.iy), r.disp[1][1], 1e-9, src));
+    // The same cantilever under a uniform load along z: tip qL⁴/8EIy, root moment qL²/2; and a
+    // load rising from zero along y: tip 11qL⁴/120EI.
+    let mut d = space_frame(e, SectionShape::Rect { b, h });
+    member3(&mut d, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+    support3(&mut d, [0.0; 3], SupportKind::Fixed);
+    let mid = d.m.members[0].id;
+    load(&mut d, Target::Member { id: mid }, LoadKind::Dist { w1: p, w2: p, dir: Dir::Z });
+    load(&mut d, Target::Member { id: mid }, LoadKind::Dist { w1: 0.0, w2: -p, dir: Dir::Y });
+    let r = crate::space::solve(&d.m).expect("space");
+    out.push(check(13, "3D cantilever along x, member loads", "Tip deflection in z under uniform q, qL⁴/8EIy", "len", p * l.powi(4) / (8.0 * e * pr.iy), r.disp[1][2], 1e-9, src));
+    out.push(check(13, "3D cantilever along x, member loads", "Root moment about y, qL²/2", "moment", p * l * l / 2.0, r.members[0].my[0].abs(), 1e-9, src));
+    out.push(check(13, "3D cantilever along x, member loads", "Tip deflection in y under a load rising to q, 11qL⁴/120EI", "len", -11.0 * p * l.powi(4) / (120.0 * e * pr.i), r.disp[1][1], 1e-9, "Beam theory (Roark, table 8.1 case 2)"));
+    let tipd = r.members[0].d.last().unwrap();
+    out.push(check(13, "3D cantilever along x, member loads", "Deflection drawn at the tip meets the node, in z", "len", r.disp[1][2], tipd[2], 1e-9, "The diagram's own integration"));
+    // A cantilever running along z (into the depth): its depth stands upright.
+    let mut d = space_frame(e, SectionShape::Rect { b, h });
+    member3(&mut d, [0.0; 3], [0.0, 0.0, l], MemberKind::Beam);
+    support3(&mut d, [0.0; 3], SupportKind::Fixed);
+    let id = node3(&d, [0.0, 0.0, l]);
+    load(&mut d, Target::Node { id }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+    let r = crate::space::solve(&d.m).expect("space");
+    out.push(check(13, "3D cantilever along z", "Tip deflection in y, PL³/3EI (depth upright)", "len", -p * l.powi(3) / (3.0 * e * pr.i), r.disp[1][1], 1e-9, src));
+    // An L-shaped cantilever in plan: a along x from the fixed end, then b along z, with P down at
+    // the free end. δ = Pa³/3EI + Pb³/3EI + Pb²a/GJ (the first arm twists under P·b).
+    let (a, bb) = (2.0, 1.0);
+    let mut d = space_frame(e, SectionShape::Rect { b, h });
+    member3(&mut d, [0.0; 3], [a, 0.0, 0.0], MemberKind::Beam);
+    member3(&mut d, [a, 0.0, 0.0], [a, 0.0, bb], MemberKind::Beam);
+    support3(&mut d, [0.0; 3], SupportKind::Fixed);
+    let id = node3(&d, [a, 0.0, bb]);
+    load(&mut d, Target::Node { id }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+    let r = crate::space::solve(&d.m).expect("space");
+    let tip = d.m.nodes.iter().position(|n| n.id == id).unwrap();
+    let delta = p * a.powi(3) / (3.0 * e * pr.i) + p * bb.powi(3) / (3.0 * e * pr.i) + p * bb * bb * a / (g * pr.j);
+    out.push(check(13, "L-shaped cantilever bent in plan", "Tip deflection Pa³/3EI + Pb³/3EI + Pb²a/GJ", "len", -delta, r.disp[tip][1], 1e-9, "Bending and torsion of a bent cantilever (Roark, ch. 8)"));
+    out.push(check(13, "L-shaped cantilever bent in plan", "Torque in the first arm, P·b", "moment", p * bb, r.members[0].t[0].abs(), 1e-9, "Statics"));
+    // A tripod of truss bars: apex at height hh above three feet on a circle of radius rr, P down
+    // on the apex: each leg carries P L / 3h in compression.
+    let (hh, rr) = (3.0, 2.0);
+    let mut d = space_frame(e, SectionShape::Tube { d: 0.06, t: 0.004 });
+    let feet: Vec<[f64; 3]> = (0..3).map(|k| { let t = std::f64::consts::TAU * k as f64 / 3.0 + 0.3; [rr * t.cos(), 0.0, rr * t.sin()] }).collect();
+    for f in &feet {
+        member3(&mut d, *f, [0.0, hh, 0.0], MemberKind::Truss);
+        support3(&mut d, *f, SupportKind::Pinned);
+    }
+    let id = node3(&d, [0.0, hh, 0.0]);
+    load(&mut d, Target::Node { id }, LoadKind::Force { fx: 0.0, fy: -10e3, fz: 0.0 });
+    let r = crate::space::solve(&d.m).expect("space");
+    let leg = (hh * hh + rr * rr).sqrt();
+    out.push(check(13, "Tripod of truss bars", "Force in each leg, −P L / 3h", "force", -10e3 * leg / (3.0 * hh), r.members.iter().map(|m| m.n[0]).fold(0.0, |a: f64, v| if v.abs() > a.abs() { v } else { a }), 1e-9, "Statics of a symmetric tripod"));
+    // The plane portal frame, solved as a 3D frame, gives the plane solver's answers.
+    let mut pm = crate::examples::get("portal").unwrap();
+    let r2 = frame::solve(&pm).unwrap();
+    pm.analysis = Analysis::Space;
+    let r3 = crate::space::solve(&pm).unwrap();
+    let du = r2.disp.iter().zip(&r3.disp).map(|(a, b)| (a[0] - b[0]).abs().max((a[1] - b[1]).abs()).max((a[2] - b[5]).abs())).fold(0.0, f64::max);
+    let umax = r2.disp.iter().map(|a| a[0].abs().max(a[1].abs())).fold(0.0, f64::max);
+    out.push(check(13, "Portal frame example, solved in 3D", "Largest difference from the plane solve, over the largest movement", "ratio", 1.0, 1.0 + du / umax, 1e-9, "The plane frame is a special case of the 3D frame"));
+    let dm = r2.members.iter().zip(&r3.members).map(|(a, b)| a.m.iter().zip(&b.mz).map(|(x, y)| (x - y).abs()).fold(0.0, f64::max)).fold(0.0, f64::max);
+    let mmax = r2.members.iter().flat_map(|a| a.m.iter()).fold(0.0f64, |a, v| a.max(v.abs()));
+    out.push(check(13, "Portal frame example, solved in 3D", "Largest difference in bending moment, over the largest moment", "ratio", 1.0, 1.0 + dm / mmax, 1e-9, "The plane frame is a special case of the 3D frame"));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -596,6 +704,7 @@ pub fn run() -> Vec<Check> {
     v.extend(axisymmetric());
     v.extend(frequencies());
     v.extend(buckling());
+    v.extend(space());
     v
 }
 
@@ -613,7 +722,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=12 {
+        for b in 1..=13 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

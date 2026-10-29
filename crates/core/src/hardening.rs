@@ -43,8 +43,8 @@ mod tests {
             _ => Target::Body,
         };
         match r.below(12) {
-            0..=2 => Op::AddMember { from: p(r), to: p(r), kind: if r.below(2) == 0 { MemberKind::Beam } else { MemberKind::Truss }, section: None, material: None },
-            3 => Op::Add { item: Item::Node(Node { id: 0, x: p(r)[0], y: p(r)[1] }) },
+            0..=2 => Op::AddMember { from: p(r), to: p(r), kind: if r.below(2) == 0 { MemberKind::Beam } else { MemberKind::Truss }, section: None, material: None, z: [0.0; 2] },
+            3 => Op::Add { item: Item::Node(Node { id: 0, x: p(r)[0], y: p(r)[1], z: 0.0 }) },
             4 => {
                 let c = p(r);
                 let g = match r.below(3) {
@@ -57,13 +57,13 @@ mod tests {
                 };
                 Op::Add { item: Item::Shape(Shape { material: 1, hole: r.below(3) == 0, geom: g, ..Shape::default() }) }
             }
-            5 => Op::Add { item: Item::Support(Support { id: 0, at: target(r, m), kind: [SupportKind::Fixed, SupportKind::Pinned, SupportKind::RollerX, SupportKind::Roller, SupportKind::Spring { kx: r.f(-1.0, 1e6), ky: 0.0, kr: 0.0 }, SupportKind::Temperature { t: 300.0 }][r.below(6)].clone() }) },
-            6 => Op::Add { item: Item::Load(Load { id: 0, at: target(r, m), kind: [LoadKind::Force { fx: 1.0, fy: -2.0 }, LoadKind::Moment { m: 3.0 }, LoadKind::Dist { w1: 1.0, w2: 2.0, dir: Dir::Local }, LoadKind::Pressure { p: 1e5 }, LoadKind::Gravity { gx: 0.0, gy: -9.81 }, LoadKind::Convection { h: r.f(-5.0, 50.0), t_inf: 290.0 }][r.below(6)].clone() }) },
-            7 => Op::Move { ids: vec![r.id(m), r.id(m)], dx: r.f(-1.0, 1.0).round(), dy: 0.5 },
+            5 => Op::Add { item: Item::Support(Support { id: 0, at: target(r, m), kind: [SupportKind::Fixed, SupportKind::Pinned, SupportKind::RollerX, SupportKind::Roller, SupportKind::Spring { kx: r.f(-1.0, 1e6), ky: 0.0, kr: 0.0, kz: 0.0, krx: 0.0, kry: 0.0 }, SupportKind::Temperature { t: 300.0 }][r.below(6)].clone() }) },
+            6 => Op::Add { item: Item::Load(Load { id: 0, at: target(r, m), kind: [LoadKind::Force { fx: 1.0, fy: -2.0, fz: 0.0 }, LoadKind::Moment { m: 3.0, mx: 0.0, my: 0.0 }, LoadKind::Dist { w1: 1.0, w2: 2.0, dir: Dir::Local }, LoadKind::Pressure { p: 1e5 }, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }, LoadKind::Convection { h: r.f(-5.0, 50.0), t_inf: 290.0 }][r.below(6)].clone() }) },
+            7 => Op::Move { ids: vec![r.id(m), r.id(m)], dx: r.f(-1.0, 1.0).round(), dy: 0.5, dz: 0.0 },
             8 => Op::Delete { ids: vec![r.id(m)] },
             9 => if r.below(2) == 0 { Op::Delete { ids: vec![r.id(m)] } } else { Op::JoinCrossings { ids: m.members.iter().map(|b| b.id).collect() } },
             10 => {
-                let mut n = m.nodes.first().cloned().unwrap_or(Node { id: 1, x: 0.0, y: 0.0 });
+                let mut n = m.nodes.first().cloned().unwrap_or(Node { id: 1, x: 0.0, y: 0.0, z: 0.0 });
                 n.x = if r.below(4) == 0 { f64::NAN } else { r.f(-3.0, 3.0) };
                 Op::Set { item: Item::Node(n) }
             }
@@ -77,21 +77,21 @@ mod tests {
         let before = d.m.clone();
         let n = d.m.nodes[0].id;
         let bad = vec![
-            Op::Add { item: Item::Node(Node { id: 0, x: 0.0, y: 0.0 }) },
-            Op::Add { item: Item::Node(Node { id: 0, x: f64::NAN, y: 0.0 }) },
-            Op::AddMember { from: [1.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None },
-            Op::AddMember { from: [0.0, 0.0], to: [0.0, 5.0], kind: MemberKind::Beam, section: None, material: None },
-            Op::AddMember { from: [0.0, 0.0], to: [1.0, 5.0], kind: MemberKind::Beam, section: Some(999), material: None },
-            Op::Move { ids: vec![999], dx: 1.0, dy: 0.0 },
-            Op::Move { ids: vec![n], dx: f64::INFINITY, dy: 0.0 },
-            Op::Set { item: Item::Node(Node { id: 999, x: 0.0, y: 0.0 }) },
+            Op::Add { item: Item::Node(Node { id: 0, x: 0.0, y: 0.0, z: 0.0 }) },
+            Op::Add { item: Item::Node(Node { id: 0, x: f64::NAN, y: 0.0, z: 0.0 }) },
+            Op::AddMember { from: [1.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] },
+            Op::AddMember { from: [0.0, 0.0], to: [0.0, 5.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] },
+            Op::AddMember { from: [0.0, 0.0], to: [1.0, 5.0], kind: MemberKind::Beam, section: Some(999), material: None, z: [0.0; 2] },
+            Op::Move { ids: vec![999], dx: 1.0, dy: 0.0, dz: 0.0 },
+            Op::Move { ids: vec![n], dx: f64::INFINITY, dy: 0.0, dz: 0.0 },
+            Op::Set { item: Item::Node(Node { id: 999, x: 0.0, y: 0.0, z: 0.0 }) },
             Op::Delete { ids: vec![1] },
             Op::Add { item: Item::Support(Support { id: 0, at: Target::Member { id: d.m.members[0].id }, kind: SupportKind::Fixed }) },
             Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: n }, kind: LoadKind::Pressure { p: 1.0 } }) },
             Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::Poly { pts: vec![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]], bulge: vec![0.0; 3] }, ..Shape::default() }) },
             Op::SetMeta { name: "  ".into(), notes: String::new() },
             // A batch that fails half way must undo its first half too.
-            Op::Batch(vec![Op::AddMember { from: [20.0, 0.0], to: [21.0, 0.0], kind: MemberKind::Beam, section: None, material: None }, Op::Delete { ids: vec![2] }]),
+            Op::Batch(vec![Op::AddMember { from: [20.0, 0.0], to: [21.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }, Op::Delete { ids: vec![2] }]),
         ];
         for op in bad {
             let desc = format!("{op:?}");
@@ -220,6 +220,71 @@ mod tests {
     }
 
     #[test]
+    fn random_space_frames_solve_or_say_why_and_balance() {
+        // Random 3D frames on a small grid: random beams and bars, supports, forces, moments and
+        // member loads in any direction, sections rolled. Solving never panics; when it answers,
+        // the six sums balance and each member's drawn curve meets its nodes.
+        let mut solved = 0;
+        for seed in 1..=150u64 {
+            let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0x5EED);
+            let mut d = Doc::new(Model::new(Analysis::Space));
+            // Grown from a fixed node, each member starting at a node already there (mostly beams;
+            // a truss bar now and then, which may leave a loose end: those say why).
+            let p = |r: &mut Rng| [r.below(3) as f64, r.below(3) as f64, r.below(3) as f64];
+            let root = p(&mut r);
+            for k in 0..(2 + r.below(8)) {
+                let a = if k == 0 || d.m.nodes.is_empty() { root } else { d.m.nodes[r.below(d.m.nodes.len())].at() };
+                let b = p(&mut r);
+                let kind = if r.below(5) == 0 { MemberKind::Truss } else { MemberKind::Beam };
+                let _ = d.apply(Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind, section: None, material: None, z: [a[2], b[2]] });
+            }
+            if let Some(n) = d.m.nodes.iter().find(|n| n.at() == root).map(|n| n.id) {
+                let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: SupportKind::Fixed }) });
+            }
+            if d.m.members.is_empty() {
+                continue;
+            }
+            let mut ms = d.m.members.clone();
+            for mb in ms.iter_mut() {
+                mb.roll = r.f(-3.0, 3.0);
+                let _ = d.apply(Op::Set { item: Item::Member(mb.clone()) });
+            }
+            for _ in 0..(1 + r.below(3)) {
+                let n = d.m.nodes[r.below(d.m.nodes.len())].id;
+                let kind = [SupportKind::Fixed, SupportKind::Fixed, SupportKind::Pinned, SupportKind::RollerX, SupportKind::Spring { kx: 1e6, ky: 1e6, kr: 1e5, kz: 1e6, krx: 1e5, kry: 1e5 }][r.below(5)].clone();
+                let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind }) });
+            }
+            for _ in 0..(1 + r.below(4)) {
+                let kind = match r.below(4) {
+                    0 => LoadKind::Force { fx: r.f(-1e3, 1e3), fy: r.f(-1e3, 1e3), fz: r.f(-1e3, 1e3) },
+                    1 => LoadKind::Moment { m: r.f(-1e3, 1e3), mx: r.f(-1e3, 1e3), my: r.f(-1e3, 1e3) },
+                    2 => LoadKind::Dist { w1: r.f(-1e3, 1e3), w2: r.f(-1e3, 1e3), dir: [Dir::X, Dir::Y, Dir::Z, Dir::Local][r.below(4)] },
+                    _ => LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: r.f(-2.0, 2.0) },
+                };
+                let at = match kind {
+                    LoadKind::Dist { .. } => Target::Member { id: d.m.members[r.below(d.m.members.len())].id },
+                    LoadKind::Gravity { .. } => Target::Body,
+                    _ => Target::Node { id: d.m.nodes[r.below(d.m.nodes.len())].id },
+                };
+                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+            }
+            let Ok(res) = crate::space::solve(&d.m) else { continue };
+            solved += 1;
+            assert!(res.imbalance < 1e-6, "seed {seed}: imbalance {:e}, {:?} vs {:?}", res.imbalance, res.applied, res.reacted);
+            for (mr, mb) in res.members.iter().zip(&d.m.members) {
+                let ia = d.m.nodes.iter().position(|n| n.id == mb.a).unwrap();
+                let ib = d.m.nodes.iter().position(|n| n.id == mb.b).unwrap();
+                let (da, db) = (mr.d[0], *mr.d.last().unwrap());
+                let tol = 1e-9 + 1e-6 * res.disp.iter().map(|x| x[0].abs().max(x[1].abs()).max(x[2].abs())).fold(0.0, f64::max);
+                for k in 0..3 {
+                    assert!((da[k] - res.disp[ia][k]).abs() < tol && (db[k] - res.disp[ib][k]).abs() < tol, "seed {seed}: member ends do not meet their nodes");
+                }
+            }
+        }
+        assert!(solved >= 50, "only {solved} random 3D frames solved");
+    }
+
+    #[test]
     fn random_parts_mesh_and_solve_or_say_why_and_balance() {
         // Random plates with random holes, arcs, supports and loads, as stress, strain and heat
         // models: meshing and solving never panic; when they answer, loads and reactions (or heat
@@ -266,7 +331,7 @@ mod tests {
                 let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
             }
             if r.below(3) == 0 {
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Point { x: r.f(-w, w) / 2.0, y: r.f(-h, h) / 2.0 }, kind: LoadKind::Force { fx: 1e3, fy: -1e3 } }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Point { x: r.f(-w, w) / 2.0, y: r.f(-h, h) / 2.0 }, kind: LoadKind::Force { fx: 1e3, fy: -1e3, fz: 0.0 } }) });
             }
             if analysis != Analysis::Heat && r.below(3) == 0 {
                 // Thermal stress: a uniform change, or fixed temperatures solved first.
@@ -280,7 +345,7 @@ mod tests {
                 // which must be refused with a reason.
                 let x0 = d.m.bounds().unwrap()[0];
                 let ids: Vec<u32> = d.m.shapes.iter().map(|s| s.id).collect();
-                let _ = d.apply(Op::Move { ids, dx: -x0 + if r.below(2) == 0 { 0.0 } else { w * 0.1 }, dy: 0.0 });
+                let _ = d.apply(Op::Move { ids, dx: -x0 + if r.below(2) == 0 { 0.0 } else { w * 0.1 }, dy: 0.0, dz: 0.0 });
             }
             d.m.mesh.size = w.max(h) / r.f(4.0, 30.0);
             d.m.mesh.order = 1 + r.below(2) as u8;
@@ -289,7 +354,7 @@ mod tests {
             let (imb, mesh) = match &res {
                 crate::Results::Plane(p) => (p.imbalance, &p.mesh),
                 crate::Results::Heat(p) => (p.imbalance, &p.mesh),
-                crate::Results::Frame(_) => unreachable!(),
+                crate::Results::Frame(_) | crate::Results::Space(_) => unreachable!(),
             };
             let barely = match &res { crate::Results::Plane(p) => p.warnings.iter().any(|w| w.contains("barely hold")), _ => false };
             if analysis == Analysis::Axi {
@@ -330,15 +395,15 @@ mod tests {
         for i in 0..=60 {
             for j in 0..=60 {
                 let (x, y) = (i as f64, j as f64);
-                if i < 60 { ops.push(Op::AddMember { from: [x, y], to: [x + 1.0, y], kind: MemberKind::Beam, section: None, material: None }); }
-                if j < 60 { ops.push(Op::AddMember { from: [x, y], to: [x, y + 1.0], kind: MemberKind::Beam, section: None, material: None }); }
+                if i < 60 { ops.push(Op::AddMember { from: [x, y], to: [x + 1.0, y], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }); }
+                if j < 60 { ops.push(Op::AddMember { from: [x, y], to: [x, y + 1.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }); }
             }
         }
         d.apply(Op::Batch(ops)).unwrap();
         let bottom: Vec<u32> = d.m.nodes.iter().filter(|n| n.y == 0.0).map(|n| n.id).collect();
         let top = d.m.nodes.iter().find(|n| n.y == 60.0 && n.x == 60.0).unwrap().id;
         let mut ops: Vec<Op> = bottom.iter().map(|id| Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: *id }, kind: SupportKind::Fixed }) }).collect();
-        ops.push(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0 } }) });
+        ops.push(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 } }) });
         d.apply(Op::Batch(ops)).unwrap();
         let t = std::time::Instant::now();
         let r = crate::frame::solve(&d.m).unwrap();
@@ -356,8 +421,8 @@ mod tests {
         for i in 0..70 {
             for j in 0..70 {
                 let (x, y) = (i as f64, j as f64);
-                ops.push(Op::AddMember { from: [x, y], to: [x + 1.0, y], kind: MemberKind::Beam, section: None, material: None });
-                ops.push(Op::AddMember { from: [x, y], to: [x, y + 1.0], kind: MemberKind::Beam, section: None, material: None });
+                ops.push(Op::AddMember { from: [x, y], to: [x + 1.0, y], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] });
+                ops.push(Op::AddMember { from: [x, y], to: [x, y + 1.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] });
             }
         }
         // Nodes are found by position, so build in one batch (the slow part is the search).
@@ -368,7 +433,7 @@ mod tests {
         assert_eq!(back.members.len(), d.m.members.len());
         for k in 0..200 {
             let id = d.m.nodes[k].id;
-            d.apply(Op::Move { ids: vec![id], dx: 0.0, dy: 0.25 }).unwrap();
+            d.apply(Op::Move { ids: vec![id], dx: 0.0, dy: 0.25, dz: 0.0 }).unwrap();
         }
         for _ in 0..50 {
             d.undo();

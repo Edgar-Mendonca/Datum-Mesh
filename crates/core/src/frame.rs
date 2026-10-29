@@ -250,8 +250,14 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     let idx: std::collections::HashMap<u32, usize> = m.nodes.iter().enumerate().map(|(i, n)| (n.id, i)).collect();
     let nn = m.nodes.len();
     let mut warnings = vec![];
+    if m.nodes.iter().any(|n| n.z != 0.0) {
+        return Err("Some nodes are out of the plane (their z is not zero): solve this model as a 3D frame (Home › 3D Frame).".into());
+    }
+    if m.loads.iter().any(|l| matches!(l.kind, LoadKind::Force { fz, .. } if fz != 0.0) || matches!(l.kind, LoadKind::Moment { mx, my, .. } if mx != 0.0 || my != 0.0) || matches!(l.kind, LoadKind::Gravity { gz, .. } if gz != 0.0)) {
+        warnings.push("Loads along z, and moments about x or y, act out of the plane and were left out: solve as a 3D frame.".into());
+    }
     // Gravity for self-weight.
-    let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy]) } else { None }).fold([0.0, 0.0], |a, b| [a[0] + b[0], a[1] + b[1]]);
+    let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy, .. }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy]) } else { None }).fold([0.0, 0.0], |a, b| [a[0] + b[0], a[1] + b[1]]);
     let warming: f64 = m.loads.iter().filter_map(|l| if let (LoadKind::Warming { dt }, Target::Body) = (&l.kind, &l.at) { Some(*dt) } else { None }).sum();
     let mut elems = Vec::with_capacity(m.members.len());
     for mb in &m.members {
@@ -277,6 +283,10 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
                 Dir::X => (1.0, 0.0),
                 Dir::Y => (0.0, 1.0),
                 Dir::Local => (-e.s, e.c),
+                Dir::Z => {
+                    warnings.push("A member load along z acts out of the plane and was left out: solve as a 3D frame.".into());
+                    continue;
+                }
             };
             let (ax, ay) = (e.c * gx + e.s * gy, -e.s * gx + e.c * gy);
             e.p[0] += w1 * ax;
@@ -321,8 +331,8 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     }
     for l in &m.loads {
         match (&l.kind, &l.at) {
-            (LoadKind::Force { fx, fy }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, 0.0]),
-            (LoadKind::Moment { m: mz }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, *mz]),
+            (LoadKind::Force { fx, fy, .. }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, 0.0]),
+            (LoadKind::Moment { m: mz, mx: 0.0, my: 0.0 }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, *mz]),
             (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
@@ -340,7 +350,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             SupportKind::Pinned => held[3 * i..3 * i + 2].iter_mut().for_each(|h| *h = true),
             SupportKind::RollerX => held[3 * i + 1] = true,
             SupportKind::RollerY => held[3 * i] = true,
-            SupportKind::Spring { kx, ky, kr } => {
+            SupportKind::Spring { kx, ky, kr, .. } => {
                 sys.add(3 * i, 3 * i, *kx);
                 sys.add(3 * i + 1, 3 * i + 1, *ky);
                 sys.add(3 * i + 2, 3 * i + 2, *kr);
@@ -410,7 +420,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
                 r[k] = ku[3 * i + k] - sys.f[3 * i + k];
             }
         }
-        if let Some(SupportKind::Spring { kx, ky, kr }) = sp.map(|s| &s.kind) {
+        if let Some(SupportKind::Spring { kx, ky, kr, .. }) = sp.map(|s| &s.kind) {
             r = [-kx * u[3 * i], -ky * u[3 * i + 1], -kr * u[3 * i + 2]];
         }
         if sp.is_some() {
@@ -724,7 +734,7 @@ mod tests {
         let (l, q) = (4.0, -10e3);
         let mut d = base(200e9);
         for i in 0..4 {
-            d.apply(Op::AddMember { from: [i as f64, 0.0], to: [i as f64 + 1.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+            d.apply(Op::AddMember { from: [i as f64, 0.0], to: [i as f64 + 1.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         }
         sup(&mut d, 0.0, 0.0, SupportKind::Fixed);
         sup(&mut d, l, 0.0, SupportKind::RollerX);
@@ -742,17 +752,17 @@ mod tests {
     #[test]
     fn mechanisms_and_empty_models_say_why() {
         let mut d = base(200e9);
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert!(solve(&d.m).unwrap_err().contains("without resistance"));
         // A square of truss bars with no diagonal folds over.
         let mut t = base(200e9);
         for (a, b) in [([0.0, 0.0], [1.0, 0.0]), ([1.0, 0.0], [1.0, 1.0]), ([1.0, 1.0], [0.0, 1.0]), ([0.0, 1.0], [0.0, 0.0])] {
-            t.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Truss, section: None, material: None }).unwrap();
+            t.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Truss, section: None, material: None, z: [0.0; 2] }).unwrap();
         }
         sup(&mut t, 0.0, 0.0, SupportKind::Pinned);
         sup(&mut t, 1.0, 0.0, SupportKind::RollerX);
         let n2 = t.m.nodes[2].id;
-        load(&mut t, Target::Node { id: n2 }, LoadKind::Force { fx: 1e3, fy: 0.0 });
+        load(&mut t, Target::Node { id: n2 }, LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 });
         assert!(solve(&t.m).is_err());
         assert!(solve(&base(200e9).m).unwrap_err().contains("no members"));
     }
@@ -761,18 +771,18 @@ mod tests {
     fn loads_that_cancel_still_balance_and_the_moment_is_checked() {
         // 0.1.1 review: a moment alone gave "reactions miss the loads by 6.8e19 %".
         let mut d = base(200e9);
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         sup(&mut d, 0.0, 0.0, SupportKind::Pinned);
         sup(&mut d, 4.0, 0.0, SupportKind::RollerX);
         let n = d.m.nodes[1].id;
-        load(&mut d, Target::Node { id: n }, LoadKind::Moment { m: 10e3 });
+        load(&mut d, Target::Node { id: n }, LoadKind::Moment { m: 10e3, mx: 0.0, my: 0.0 });
         let r = solve(&d.m).unwrap();
         assert!(r.imbalance() < 1e-9, "{}", r.imbalance());
         // The reactions form a couple: ±10/4 kN.
         assert!(r.reactions.iter().all(|x| (x.fy.abs() - 2.5e3).abs() < 1e-6));
         // A model with no loads says so.
         let mut e = base(200e9);
-        e.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        e.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         sup(&mut e, 0.0, 0.0, SupportKind::Fixed);
         let r = solve(&e.m).unwrap();
         assert!(r.warnings.iter().any(|w| w.contains("no loads")) && r.imbalance() == 0.0);
@@ -781,13 +791,13 @@ mod tests {
     #[test]
     fn a_load_on_a_loose_node_is_named_not_dropped_silently() {
         let mut d = base(200e9);
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         sup(&mut d, 0.0, 0.0, SupportKind::Fixed);
-        d.apply(Op::Add { item: Item::Node(crate::model::Node { id: 0, x: 8.0, y: 0.0 }) }).unwrap();
+        d.apply(Op::Add { item: Item::Node(crate::model::Node { id: 0, x: 8.0, y: 0.0, z: 0.0 }) }).unwrap();
         let loose = d.m.nodes.iter().find(|n| n.x == 8.0).unwrap().id;
-        load(&mut d, Target::Node { id: loose }, LoadKind::Force { fx: 0.0, fy: -1e3 });
+        load(&mut d, Target::Node { id: loose }, LoadKind::Force { fx: 0.0, fy: -1e3, fz: 0.0 });
         let tip = d.m.nodes.iter().find(|n| n.x == 4.0).unwrap().id;
-        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1e3 });
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1e3, fz: 0.0 });
         let r = solve(&d.m).unwrap();
         assert!(r.warnings.iter().any(|w| w.contains("no member reaches")), "{:?}", r.warnings);
         assert!(r.imbalance() < 1e-9, "{}", r.imbalance());
@@ -798,11 +808,11 @@ mod tests {
         // 0.1.1 review: a cantilever in 500 pieces was called a mechanism.
         let mut d = base(200e9);
         let n = 1000;
-        let ops = (0..n).map(|i| Op::AddMember { from: [10.0 * i as f64 / n as f64, 0.0], to: [10.0 * (i + 1) as f64 / n as f64, 0.0], kind: MemberKind::Beam, section: None, material: None }).collect();
+        let ops = (0..n).map(|i| Op::AddMember { from: [10.0 * i as f64 / n as f64, 0.0], to: [10.0 * (i + 1) as f64 / n as f64, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).collect();
         d.apply(Op::Batch(ops)).unwrap();
         sup(&mut d, 0.0, 0.0, SupportKind::Fixed);
         let tip = d.m.nodes.iter().find(|x| x.x == 10.0).unwrap().id;
-        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1e3 });
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1e3, fz: 0.0 });
         let r = solve(&d.m).unwrap();
         let i = 0.1 * 0.2f64.powi(3) / 12.0;
         let want = 1e3 * 1000.0 / (3.0 * 200e9 * i);
@@ -816,12 +826,12 @@ mod tests {
         // Here: springs instead, and the beam floats on two equal springs under a central load:
         // each spring takes half and the beam moves down rigidly by P/(2k) at its ends.
         let mut d = base(200e9);
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [2.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
-        d.apply(Op::AddMember { from: [2.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
-        sup(&mut d, 0.0, 0.0, SupportKind::Spring { kx: 1e9, ky: 1e6, kr: 0.0 });
-        sup(&mut d, 4.0, 0.0, SupportKind::Spring { kx: 0.0, ky: 1e6, kr: 0.0 });
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [2.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        d.apply(Op::AddMember { from: [2.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        sup(&mut d, 0.0, 0.0, SupportKind::Spring { kx: 1e9, ky: 1e6, kr: 0.0, kz: 0.0, krx: 0.0, kry: 0.0 });
+        sup(&mut d, 4.0, 0.0, SupportKind::Spring { kx: 0.0, ky: 1e6, kr: 0.0, kz: 0.0, krx: 0.0, kry: 0.0 });
         let n1 = d.m.nodes[1].id;
-        load(&mut d, Target::Node { id: n1 }, LoadKind::Force { fx: 0.0, fy: -2e3 });
+        load(&mut d, Target::Node { id: n1 }, LoadKind::Force { fx: 0.0, fy: -2e3, fz: 0.0 });
         let r = solve(&d.m).unwrap();
         assert!((r.disp[0][1] + 1e-3).abs() < 1e-12);
         assert!(r.reactions.iter().all(|x| (x.fy - 1e3).abs() < 1e-6));

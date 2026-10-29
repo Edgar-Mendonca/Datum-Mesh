@@ -2,7 +2,7 @@
 // started, glossary), recovery and closing.
 import { For, Show, createSignal, createResource } from "solid-js";
 import { Out, Material, Section, SectionShape, Props, Check, LibMaterial, num } from "./api";
-import { openDialog, closeDialog, act, call, out, setOut, model, setSel } from "./store";
+import { openDialog, closeDialog, act, call, out, setOut, model, sel, setSel, toast } from "./store";
 import { C } from "./cmds";
 import { numIn } from "./panels";
 import { Dialog, Icon } from "./ui";
@@ -94,9 +94,9 @@ const SHAPES: [SectionShape["kind"], string, [string, string][]][] = [
   ["rect", "Rectangle", [["b", "Width b"], ["h", "Depth h"]]], ["circle", "Round bar", [["d", "Diameter d"]]], ["tube", "Tube", [["d", "Outside diameter d"], ["t", "Wall t"]]],
   ["box", "Box (RHS)", [["b", "Width b"], ["h", "Depth h"], ["t", "Wall t"]]], ["i", "I-section", [["h", "Depth h"], ["b", "Flange width b"], ["tw", "Web tw"], ["tf", "Flange tf"]]],
   ["channel", "Channel", [["h", "Depth h"], ["b", "Flange width b"], ["tw", "Web tw"], ["tf", "Flange tf"]]], ["angle", "Angle", [["h", "Leg in the plane h"], ["b", "Other leg b"], ["t", "Thickness t"]]],
-  ["custom", "Your own values", [["a", "Area A"], ["i", "Second moment I"], ["c", "Extreme fibre c"]]],
+  ["custom", "Your own values", [["a", "Area A"], ["i", "Second moment I"], ["c", "Extreme fibre c"], ["iy", "3D: other axis Iy"], ["j", "3D: torsion J"]]],
 ];
-const sq = (k: string, kind: string): Q => (kind === "custom" ? (k === "a" ? "area" : k === "i" ? "inertia" : "len") : "len");
+const sq = (k: string, kind: string): Q => (kind === "custom" ? (k === "a" ? "area" : k === "i" || k === "iy" || k === "j" ? "inertia" : "len") : "len");
 
 /** Geometry › Sections: the frame sections and their properties. */
 export const sections = (focus?: number) => openDialog(() => {
@@ -119,9 +119,9 @@ export const sections = (focus?: number) => openDialog(() => {
         <Show when={s()}>{ss => <div class="form">
           <label>Name</label><input value={ss().name} onChange={e => put({ name: e.currentTarget.value })} />
           <label>Shape</label><select value={ss().shape.kind} onChange={e => kind(e.currentTarget.value as any)}><For each={SHAPES}>{([k, l]) => <option value={k} selected={k === ss().shape.kind}>{l}</option>}</For></select>
-          <For each={SHAPES.find(x => x[0] === ss().shape.kind)![2]}>{([k, l]) => <F l={l} q={sq(k, ss().shape.kind)} v={(ss().shape as any)[k]} set={v => put({ shape: { ...ss().shape, [k]: v } as SectionShape })} />}</For>
-          <label>Properties</label><div><Show when={props()} fallback={<span class="muted">—</span>}>{p => <span class="mono">A = {fmt("area", p().a)} · I = {fmt("inertia", p().i)} · c = {fmt("len", p().c)}</span>}</Show></div>
-          <span /><p class="muted small">Bending is in the plane of the frame, about the section's axis across h. Angles bend about the axis parallel to b.</p>
+          <For each={SHAPES.find(x => x[0] === ss().shape.kind)![2]}>{([k, l]) => <F l={l} q={sq(k, ss().shape.kind)} v={(ss().shape as any)[k] ?? 0} set={v => put({ shape: { ...ss().shape, [k]: v } as SectionShape })} />}</For>
+          <label>Properties</label><div><Show when={props()} fallback={<span class="muted">—</span>}>{p => <span class="mono">A = {fmt("area", p().a)} · I = {fmt("inertia", p().i)} · c = {fmt("len", p().c)}<Show when={model()?.analysis === "space"}><br />Iy = {fmt("inertia", p().iy)} · J = {fmt("inertia", p().j)}</Show></span>}</Show></div>
+          <span /><p class="muted small">Bending is in the plane of the frame, about the section's axis across h. Angles bend about the axis parallel to b.{model()?.analysis === "space" ? " In 3D, Iy bends across the width b and J resists twisting (open sections, such as I and channel, twist easily). Your own values: Iy and J of 0 are taken as for a round bar." : ""}</p>
         </div>}</Show>
       </div>
     </Dialog>
@@ -130,9 +130,29 @@ export const sections = (focus?: number) => openDialog(() => {
 
 /** Geometry › Node at…: a node at typed coordinates. */
 export const nodeAt = () => openDialog(() => {
-  const [x, setX] = createSignal(0), [y, setY] = createSignal(0);
-  return <Dialog title="Add a node" okText="Add" ok={async () => { const o = await act({ Add: { item: { Node: { id: 0, x: fromU("coord", x()), y: fromU("coord", y()) } } } }); if (!o) return false; setSel(o.created); }}>
-    <div class="form"><label>x ({unit("coord")})</label><input class="mono" value={x()} onChange={numIn(setX, x)} /><label>y ({unit("coord")})</label><input class="mono" value={y()} onChange={numIn(setY, y)} /></div>
+  const [x, setX] = createSignal(0), [y, setY] = createSignal(0), [z, setZ] = createSignal(0);
+  const sp = () => model()?.analysis === "space";
+  return <Dialog title="Add a node" okText="Add" ok={async () => { const o = await act({ Add: { item: { Node: { id: 0, x: fromU("coord", x()), y: fromU("coord", y()), z: sp() ? fromU("coord", z()) : 0 } } } }); if (!o) return false; setSel(o.created); }}>
+    <div class="form"><label>x ({unit("coord")})</label><input class="mono" value={x()} onChange={numIn(setX, x)} /><label>y ({unit("coord")})</label><input class="mono" value={y()} onChange={numIn(setY, y)} />
+      <Show when={sp()}><label>z ({unit("coord")})</label><input class="mono" value={z()} onChange={numIn(setZ, z)} /></Show></div>
+  </Dialog>;
+});
+
+/** Geometry › Repeat (3D frames): copy members along a step and join the copies to the originals. */
+export const repeat = () => openDialog(() => {
+  const m = model()!, chosen = () => { const s = new Set(sel()); const ids = m.members.filter(b => s.has(b.id)).map(b => b.id); return ids.length ? ids : m.members.map(b => b.id); };
+  const step0 = Math.max(m.grid * 8, 1);
+  const [d, setD] = createSignal<[number, number, number]>([0, 0, step0]), [n, setN] = createSignal(1), [link, setLink] = createSignal<string>("beam");
+  const axis = (k: number, l: string) => <><label>{l} ({unit("coord")})</label><input class="mono" value={num(toU("coord", d()[k]), 6).replace("−", "-")} onChange={numIn(v => setD(d().map((q, i) => i === k ? fromU("coord", v) : q) as [number, number, number]), () => num(toU("coord", d()[k]), 6).replace("−", "-"))} /></>;
+  return <Dialog title="Repeat" okText="Repeat" help="space" ok={async () => {
+    const o = await act({ Repeat: { ids: chosen(), step: d(), times: n(), link: link() === "none" ? null : link() } });
+    if (!o) return false;
+    toast(`Made ${o.created.length} items: ${n()} ${n() === 1 ? "copy" : "copies"} of ${chosen().length} members${link() === "none" ? "" : ", joined"}.`, true);
+  }}>
+    <p class="muted small">{sel().length ? `${chosen().length} selected members` : `The whole frame (${chosen().length} members); select members first to repeat only those`}, copied with their supports and loads, each step further on.</p>
+    <div class="form">{axis(0, "Step along x")}{axis(1, "Step along y")}{axis(2, "Step along z")}
+      <label>Copies</label><input class="mono" value={n()} onChange={numIn(v => v >= 1 && v <= 100 && Number.isInteger(v) ? setN(v) : false, n)} />
+      <label>Join each copy</label><select value={link()} onChange={e => setLink(e.currentTarget.value)}><option value="beam" selected={link() === "beam"}>with beams</option><option value="truss" selected={link() === "truss"}>with truss bars</option><option value="none" selected={link() === "none"}>not at all</option></select></div>
   </Dialog>;
 });
 

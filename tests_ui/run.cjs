@@ -33,7 +33,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
     const opts = { autosave: 0, beta: false, theme: "light", openLast: false, units: "SI", snap: true, grid: true, rulers: true, contours: "rainbow", paper: "A4", landscape: true, company: "" };
     window.__cur = f.frame;
     const handlers = {};
-    const m = { verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15 } };
+    const m = { verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15, iy: 6e-6, cy: 0.075, j: 2e-7 } };
     window.__calls = [];
     window.__emit = (e, x) => (handlers[e] ?? []).forEach(h => h({ payload: x }));
     window.__TAURI__ = {
@@ -42,10 +42,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
@@ -327,6 +327,42 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await open("bracket");
   await p.click('.tabs > button:text-is("Solve")');
   check("Buckling is off for parts", await p.$eval('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]', el => el.disabled || el.classList.contains("off")));
+  // 3D frames (0.2.4): the platform in the 3D view, drawing on planes, solving, the Results page.
+  await open("platform");
+  const pm = fix.platform.m, z0 = pm.nodes.filter(n => (n.z ?? 0) === 0).map(n => n.id);
+  check("a 3D frame opens in the 3D view with the plane bar", (await p.$$(".view3d canvas")).length === 1 && (await p.$eval(".planebar .seg button.on", el => el.textContent)) === "3D");
+  await p.click('.tabs > button:text-is("Home")');
+  check("Home shows 3D Frame chosen", await p.$eval('.ribbon button[title^="3D frames and trusses"]', el => el.classList.contains("on")));
+  await p.click('.planebar .seg button:text-is("Front")'); await p.waitForTimeout(250);
+  const onFront = pm.members.filter(b => z0.includes(b.a) && z0.includes(b.b)).length;
+  check("the front plane shows the members on it, the others faint", (await p.$$(".dsvg .mem")).length === onFront && (await p.$$(".dsvg .ghost")).length === pm.members.length - onFront, `${(await p.$$(".dsvg .mem")).length} of ${onFront}`);
+  const dz = await p.$$eval(".planebar select option", os => os.map(o => o.textContent));
+  check("the depth picker offers the depths that have nodes", dz.length === 2 && dz[1].startsWith("4"), dz.join(", "));
+  await p.click('.planebar .seg button:text-is("Side")'); await p.waitForTimeout(200);
+  await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button[title^="Draw beams"]');
+  const sb = await canvasBox();
+  await p.mouse.click(sb.x + sb.w * 0.3, sb.y + sb.h * 0.5); await p.waitForTimeout(80); await p.mouse.click(sb.x + sb.w * 0.6, sb.y + sb.h * 0.5); await p.waitForTimeout(150); await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
+  const am3 = (await ops()).reverse().find(o => o.AddMember);
+  check("a beam drawn on the side plane is sent in 3D: x at the depth, z across", !!am3 && am3.AddMember.from[0] === 0 && am3.AddMember.to[0] === 0 && am3.AddMember.z[0] !== am3.AddMember.z[1] && am3.AddMember.from[1] === am3.AddMember.to[1], JSON.stringify(am3));
+  check("Geometry shows Repeat for 3D frames", (await p.$$('.ribbon button[title^="Copy the selected members along the depth"]')).length === 1);
+  await p.click('.ribbon button[title^="Copy the selected members along the depth"]'); await p.waitForTimeout(150);
+  await p.click('.dlg button:text-is("Repeat")'); await p.waitForTimeout(150);
+  const rp = await lastOp();
+  check("Repeat sends the whole frame one step along z, joined by beams", !!rp.Repeat && rp.Repeat.ids.length === pm.members.length && rp.Repeat.step[2] > 0 && rp.Repeat.times === 1 && rp.Repeat.link === "beam", JSON.stringify(rp));
+  await p.click(`.tree .ti:has-text("Node 3")`); await p.waitForTimeout(100);
+  check("the Inspector shows a node's z in 3D", (await p.$$eval(".insp .iprow label", ls => ls.map(l => l.textContent))).some(t => t.startsWith("z")));
+  await p.evaluate(() => { window.__solveKey = "platform_results"; });
+  await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.planebar .seg button:text-is("3D")'); await p.waitForTimeout(300);
+  check("once solved, the 3D view colours the members and checks equilibrium", (await p.textContent(".legend")).includes("Colour by") && (await p.textContent(".legend")).includes("Equilibrium"));
+  await p.click('.tabs > button:text-is("Results")');
+  check("Results offers colouring by a result in 3D", (await p.$$('.ribbon button:has-text("Moment My")')).length === 1);
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  const pg3 = await p.textContent(".page");
+  check("the 3D Results page sums six ways and lists six reactions per support", pg3.includes("Σ Fz") && pg3.includes("Σ My about the origin") && (await p.$$eval(".page h2 + table thead tr", rs => rs.map(r => r.children.length))).includes(7), pg3.slice(0, 200));
+  check("the 3D Results page lists every member with torque and both moments", (await p.$$(".page .tbl tbody tr.link")).length === pm.members.length && pg3.includes("|Mz| · |My|"));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

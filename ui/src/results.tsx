@@ -2,8 +2,8 @@
 // reactions, utilisation colours, a probe that follows the pointer, a legend) and the Results page
 // (equilibrium check, reactions, members, the solver report). The engine computes every number.
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Pt, MemberResult, Model, FrameResults, num, clean } from "./api";
-import { frameRes as results, partRes, stale, show, model, cursor, setView, sel, setSel, modeOn } from "./store";
+import { Pt, MemberResult, Model, FrameResults, SpaceResults, num, clean, isFrame } from "./api";
+import { frameRes as results, partRes, spaceRes, stale, show, model, cursor, setView, sel, setSel, modeOn } from "./store";
 import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
 import { C, imbalanceOf } from "./cmds";
@@ -168,7 +168,8 @@ export const ResultsPage = () => {
         <Show when={pr().warnings.length}><For each={pr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
         <PartResultsPage r={pr()} />
       </>}</Show>
-      <Show when={r() || !partRes()} fallback={null}><Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>Solve the model to see its results</b><p class="muted">{m().analysis === "frame" ? "Deflections, reactions, the equilibrium check and the forces in every member." : m().analysis === "heat" ? "Temperatures, heat flux, the heat balance and the largest and smallest values." : "Stresses, displacements, reactions, the equilibrium check and the largest and smallest values."}</p><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></div>}>{rr => <>
+      <Show when={spaceRes()}>{sr => <SpaceResultsPage r={sr()} />}</Show>
+      <Show when={(r() || !partRes()) && !spaceRes()} fallback={null}><Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>Solve the model to see its results</b><p class="muted">{isFrame(m().analysis) ? "Deflections, reactions, the equilibrium check and the forces in every member." : m().analysis === "heat" ? "Temperatures, heat flux, the heat balance and the largest and smallest values." : "Stresses, displacements, reactions, the equilibrium check and the largest and smallest values."}</p><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></div>}>{rr => <>
         <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
         <Show when={rr().warnings.length}><For each={rr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
         <h2>Equilibrium check <Help k="equilibrium" /></h2>
@@ -185,7 +186,7 @@ export const ResultsPage = () => {
             <td class="r">{fmt("force", clean(Math.max(...mr.v.map(Math.abs)), big("v"))).split(" ")[0]}</td><td class="r">{fmt("moment", clean(Math.max(...mr.m.map(Math.abs)), big("m"))).split(" ")[0]}</td>
             <td class="r">{fmt("len", Math.max(...mr.d.map(d => Math.hypot(d[0], d[1])))).split(" ")[0]}</td><td class="r">{fmt("stress", mr.stress).split(" ")[0]}</td>
             <td class="r"><span class="upill" style={{ background: utilColour(mr.util) }}>{mr.util ? `${num(mr.util * 100, 3)} %` : "—"}</span></td></tr>}</For></tbody></table>
-        <p class="muted small">Stress is |N|/A + |M|/Z, the largest along the member; utilisation is that over the yield strength. Buckling of members in compression is not checked in 0.1.</p>
+        <p class="muted small">Stress is |N|/A + |M|/Z, the largest along the member; utilisation is that over the yield strength. Buckling of members in compression is not in these numbers: see Solve › Buckling.</p>
         <h2>Solver</h2>
         <table class="tbl"><tbody>
           <tr><td>Equations</td><td class="r">{rr().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{rr().stats.nonzeros.toLocaleString()}</td></tr>
@@ -194,4 +195,42 @@ export const ResultsPage = () => {
       </>}</Show></Show>
     </div>
   );
+};
+
+/** The Results page of a 3D frame (0.2.4): equilibrium in six sums, reactions, members. */
+export const SpaceResultsPage = (p: { r: SpaceResults }) => {
+  const m = () => model()!, r = () => p.r;
+  const nodeName = (id: number) => `Node ${m().nodes.findIndex(n => n.id === id) + 1}`;
+  const top = (k: "n" | "vy" | "vz" | "t" | "my" | "mz") => Math.max(0, ...r().members.flatMap(mr => mr[k].map(Math.abs)));
+  const absMax = (v: number[]) => Math.max(0, ...v.map(Math.abs));
+  const rows: [string, number, "force" | "moment"][] = [["Σ Fx", 0, "force"], ["Σ Fy", 1, "force"], ["Σ Fz", 2, "force"], ["Σ Mx about the origin", 3, "moment"], ["Σ My about the origin", 4, "moment"], ["Σ Mz about the origin", 5, "moment"]];
+  const sc = (k: number) => r().scale[k < 3 ? 0 : 1];
+  const cell = (q: "force" | "moment", v: number, s: number) => fmt(q, clean(v, s)).split(" ")[0];
+  return <>
+    <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+    <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+    <h2>Equilibrium check <Help k="equilibrium" /></h2>
+    <p classList={{ okline: imbalanceOf(r()) <= 1e-6, badline: imbalanceOf(r()) > 1e-6 }}><Icon n={imbalanceOf(r()) > 1e-6 ? "info" : "check"} /> {imbalanceOf(r()) > 1e-6 ? `The reactions miss the loads by ${num(imbalanceOf(r()) * 100, 2)} %.` : `The reactions balance the loads (difference ${num(imbalanceOf(r()) * 100, 2)} % of the load).`}</p>
+    <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
+      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(r().applied[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().reacted[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().applied[k] + r().reacted[k], sc(k)))}</td></tr>}</For></tbody></table>
+    <h2>Reactions</h2>
+    <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th><th class="r">Mx ({unit("moment")})</th><th class="r">My</th><th class="r">Mz</th></tr></thead><tbody>
+      <For each={r().reactions}>{x => <tr><td>{nodeName(x.node)}</td><For each={[0, 1, 2, 3, 4, 5]}>{k => <td class="r">{cell(k < 3 ? "force" : "moment", x.f[k], sc(k))}</td>}</For></tr>}</For></tbody></table>
+    <h2>Members</h2>
+    <table class="tbl"><thead><tr><th>Member</th><th class="r">Length ({unit("coord")})</th><th class="r">N max / min ({unit("force")})</th><th class="r">|Vy| · |Vz|</th><th class="r">|T| ({unit("moment")})</th><th class="r">|Mz| · |My|</th><th class="r">Deflection ({unit("len")})</th><th class="r">Stress ({unit("stress")})</th><th class="r">Utilisation</th></tr></thead><tbody>
+      <For each={r().members}>{(mr, i) => <tr class="link" classList={{ on: sel().includes(mr.id) }} onClick={() => { setSel([mr.id]); setView("model"); }}>
+        <td>Member {i() + 1} · {m().members.find(x => x.id === mr.id)?.kind}</td><td class="r">{fmt("coord", mr.length).split(" ")[0]}</td>
+        <td class="r">{cell("force", Math.max(...mr.n), top("n"))} / {cell("force", Math.min(...mr.n), top("n"))}</td>
+        <td class="r">{cell("force", absMax(mr.vy), top("vy"))} · {cell("force", absMax(mr.vz), top("vz"))}</td>
+        <td class="r">{cell("moment", absMax(mr.t), top("t"))}</td>
+        <td class="r">{cell("moment", absMax(mr.mz), top("mz"))} · {cell("moment", absMax(mr.my), top("my"))}</td>
+        <td class="r">{fmt("len", Math.max(...mr.d.map(d => Math.hypot(d[0], d[1], d[2])))).split(" ")[0]}</td><td class="r">{fmt("stress", mr.stress).split(" ")[0]}</td>
+        <td class="r"><span class="upill" style={{ background: utilColour(mr.util) }}>{mr.util ? `${num(mr.util * 100, 3)} %` : "—"}</span></td></tr>}</For></tbody></table>
+    <p class="muted small">Mz bends about the section's strong axis (across its depth h), My about the other; T twists the member. Stress is |N|/A + |Mz|/Z + |My|/Zy, the largest along the member, and utilisation is that over the yield strength; the shear stress of twisting is not in it. Buckling of 3D frames is not checked yet.</p>
+    <h2>Solver</h2>
+    <table class="tbl"><tbody>
+      <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
+      <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
+      <tr><td>Method</td><td>3D beam elements (axial, torsion, bending about both axes) and truss bars; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+  </>;
 };

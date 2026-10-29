@@ -18,6 +18,7 @@ pub fn list() -> Vec<Example> {
     vec![
         e("blank-frame", "Blank frame", "Nodes and members: beams and trusses in 2D.", Analysis::Frame),
         e("blank-stress", "Blank part", "Plane stress: a thin plate loaded in its plane.", Analysis::Stress),
+        e("blank-space", "Blank 3D frame", "Nodes and members in 3D: beams that bend both ways and twist, and truss bars.", Analysis::Space),
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
@@ -25,6 +26,7 @@ pub fn list() -> Vec<Example> {
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
+        e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
 }
@@ -75,11 +77,55 @@ pub fn get(id: &str) -> Option<Model> {
 fn build(id: &str, d: &mut Doc) -> Result<(), String> {
     let mm = 0.001;
     match id {
+        "platform" => {
+            d.m.notes = "Four fixed columns 3 m high at the corners of a 6 × 4 m plan; edge beams round the top and a middle beam across; one diagonal brace on the back and one on the left side. Floor 8 kN/m on the three cross beams, 4 kN pushing along x at the two left corners, and self-weight.".into();
+            let (w, dp, h) = (6.0, 4.0, 3.0);
+            let mut bars: Vec<([f64; 3], [f64; 3], MemberKind)> = vec![];
+            for [x, z] in [[0.0, 0.0], [w, 0.0], [0.0, dp], [w, dp]] {
+                bars.push(([x, 0.0, z], [x, h, z], MemberKind::Beam));
+            }
+            for z in [0.0, dp] {
+                bars.push(([0.0, h, z], [w / 2.0, h, z], MemberKind::Beam));
+                bars.push(([w / 2.0, h, z], [w, h, z], MemberKind::Beam));
+            }
+            for x in [0.0, w / 2.0, w] {
+                bars.push(([x, h, 0.0], [x, h, dp], MemberKind::Beam));
+            }
+            bars.push(([0.0, 0.0, 0.0], [w / 2.0, h, 0.0], MemberKind::Truss));
+            bars.push(([0.0, 0.0, dp], [0.0, h, 0.0], MemberKind::Truss));
+            for (a, b, kind) in &bars {
+                d.apply(Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind: *kind, section: None, material: None, z: [a[2], b[2]] })?;
+            }
+            // Braces: a 76.1 × 4 tube.
+            let mut brace = d.m.sections[0].clone();
+            brace.id = 0;
+            brace.name = "Tube 76.1 × 4".into();
+            brace.shape = crate::model::SectionShape::Tube { d: 0.0761, t: 0.004 };
+            let bs = d.apply(Op::Add { item: Item::Section(brace) })?[0];
+            let at = |d: &Doc, p: [f64; 3]| d.m.nodes.iter().find(|n| crate::model::dist3(n.at(), p) < 1e-9).map(|n| n.id).unwrap_or(0);
+            let mut ops = vec![];
+            for mb in d.m.members.iter().filter(|m| m.kind == MemberKind::Truss) {
+                ops.push(Op::Set { item: Item::Member(crate::model::Member { section: bs, ..mb.clone() }) });
+            }
+            for [x, z] in [[0.0, 0.0], [w, 0.0], [0.0, dp], [w, dp]] {
+                ops.push(sup(Target::Node { id: at(d, [x, 0.0, z]) }, SupportKind::Fixed));
+            }
+            for x in [0.0, w / 2.0, w] {
+                let (a, b) = (at(d, [x, h, 0.0]), at(d, [x, h, dp]));
+                let id = d.m.members.iter().find(|m| (m.a == a && m.b == b) || (m.a == b && m.b == a)).map(|m| m.id).unwrap_or(0);
+                ops.push(load(Target::Member { id }, LoadKind::Dist { w1: -8e3, w2: -8e3, dir: Dir::Y }));
+            }
+            for z in [0.0, dp] {
+                ops.push(load(Target::Node { id: at(d, [0.0, h, z]) }, LoadKind::Force { fx: 4e3, fy: 0.0, fz: 0.0 }));
+            }
+            ops.push(load(Target::Body, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }));
+            d.apply(Op::Batch(ops))?;
+        }
         "portal" => {
             d.m.notes = "Span 12 m, eaves 5 m, ridge 6.5 m; fixed bases. Wind 2 kN/m on the left column, 6 kN/m down on the rafters.".into();
             let p = [[0.0, 0.0], [0.0, 5.0], [6.0, 6.5], [12.0, 5.0], [12.0, 0.0]];
             for w in p.windows(2) {
-                d.apply(Op::AddMember { from: w[0], to: w[1], kind: MemberKind::Beam, section: None, material: None })?;
+                d.apply(Op::AddMember { from: w[0], to: w[1], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] })?;
             }
             let mut ops = vec![sup(node(d, 0.0, 0.0), SupportKind::Fixed), sup(node(d, 12.0, 0.0), SupportKind::Fixed)];
             ops.push(load(member(d, p[0], p[1]), LoadKind::Dist { w1: 2e3, w2: 2e3, dir: Dir::X }));
@@ -111,7 +157,7 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 ops.push([[span - x, h], [span - x - dx, 0.0]]);
             }
             for [a, b] in ops {
-                d.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Truss, section: None, material: None })?;
+                d.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Truss, section: None, material: None, z: [0.0; 2] })?;
             }
             // Truss bars: a 100 × 100 × 10 angle.
             let s = d.m.sections[0].id;
@@ -120,7 +166,7 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             sec.shape = crate::model::SectionShape::Angle { h: 0.1, b: 0.1, t: 0.01 };
             let mut ops = vec![Op::Set { item: Item::Section(sec) }, sup(node(d, 0.0, 0.0), SupportKind::Pinned), sup(node(d, span, 0.0), SupportKind::RollerX)];
             for i in 1..n {
-                ops.push(load(node(d, i as f64 * dx, h), LoadKind::Force { fx: 0.0, fy: -10e3 }));
+                ops.push(load(node(d, i as f64 * dx, h), LoadKind::Force { fx: 0.0, fy: -10e3, fz: 0.0 }));
             }
             d.apply(Op::Batch(ops))?;
             debug_assert!(d.m.members.iter().all(|m| m.section == s));

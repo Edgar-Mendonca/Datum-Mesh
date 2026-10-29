@@ -8,7 +8,9 @@ import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
 import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
-import { invoke, Example } from "./api";
+import { invoke, Example, isFrame } from "./api";
+import { q3, setQ3, Q3 } from "./view3d";
+import { setPlane } from "./plane3";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
 
@@ -121,13 +123,13 @@ const formatMembers = (f: (s: any) => object) => { const m = model()!, s = new S
 
 export const Ribbon = () => {
   const m = () => model();
-  const frame = () => (m()?.analysis ?? "frame") === "frame", heat = () => m()?.analysis === "heat";
+  const frame = () => isFrame(m()?.analysis), heat = () => m()?.analysis === "heat", sp = () => m()?.analysis === "space";
   return (
     <section class="ribbon" ref={fitRibbon}>
       <Show when={tab() === "home"}>
         <G l="Model" h="analysis"><S><B i="frame" l="Frame or truss" on={m()?.analysis === "frame"} run={() => C.analysis("frame")} /><B i="part" l="Plane stress" on={m()?.analysis === "stress"} run={() => C.analysis("stress")} /></S>
           <S><B i="part" l="Plane strain" on={m()?.analysis === "strain"} run={() => C.analysis("strain")} /><B i="temp" l="Heat conduction" on={m()?.analysis === "heat"} run={() => C.analysis("heat")} /></S>
-          <S><B i="axi" l="Axisymmetric" on={m()?.analysis === "axi"} run={() => C.analysis("axi")} title="Axisymmetric: draw the half-section right of the y axis; it is turned a full circle about it (vessels, shafts, discs)" /></S></G>
+          <S><B i="axi" l="Axisymmetric" on={m()?.analysis === "axi"} run={() => C.analysis("axi")} title="Axisymmetric: draw the half-section right of the y axis; it is turned a full circle about it (vessels, shafts, discs)" /><B i="space" l="3D Frame" on={sp()} run={() => C.analysis("space")} title="3D frames and trusses: members bend both ways and twist; drawn on planes, seen in 3D" /></S></G>
         <G l="Units" h="units"><S><B i="units" l="SI: mm, kN, MPa" on={m()?.units === "SI"} run={() => C.units("SI")} /><B i="units" l="US: in, kip, ksi" on={m()?.units === "US"} run={() => C.units("US")} /></S></G>
         <G l="Select" h="select"><T big i="select" l="Select" t="select" /><S><B i="all" l="Select All" run={C.selectAll} /><B i="del" l="Delete" run={C.del} off={!sel().length} /></S></G>
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
@@ -141,6 +143,7 @@ export const Ribbon = () => {
           <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.2" /></G>
         </>}>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
+          <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
           <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.2" /></G>
         </Show>
@@ -172,7 +175,7 @@ export const Ribbon = () => {
       <Show when={tab() === "solve"}>
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
-        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || m()?.analysis === "heat"} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || m()?.analysis !== "frame"} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
+        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || m()?.analysis === "heat" || sp()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || m()?.analysis !== "frame"} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
         <Show when={frame()} fallback={<>
@@ -183,9 +186,12 @@ export const Ribbon = () => {
           <G l="Inspect" h="results"><S><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!partRes()} /><B i="reactions" l="Report" run={() => C.view("report")} /></S></G>
         </>}>
           <G l="Shape" h="results"><B big i="deform" l="Deflected Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!results()} /></G>
-          <G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
+          <Show when={sp()}>{(() => { const Q = (p: { k: Q3; l: string; big?: boolean }) => <B big={p.big} i={p.k === "util" ? "check" : p.k === "d" ? "deform" : "diagram"} l={p.l} on={q3() === p.k} run={() => { setQ3(q3() === p.k ? "none" : p.k); setPlane("3d"); }} off={!results()} />; return <>
+            <G l="Colour By" h="space"><Q big k="util" l="Utilisation" /><S><Q k="n" l="Axial Force" /><Q k="t" l="Torque" /><Q k="d" l="Deflection" /></S><S><Q k="mz" l="Moment Mz" /><Q k="my" l="Moment My" /><Q k="vy" l="Shear Vy" /></S></G>
+            <G l="Inspect" h="results"><S><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G></>; })()}</Show>
+          <Show when={!sp()}><G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
             <S><B i="diagram" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="diagram" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
-          <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G>
+          <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G></Show>
         </Show>
         <Show when={modes()}>{r => <Show when={r().kind === "buckle"} fallback={<G l="Vibration" h="modes"><B big i="modes" l="Mode Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the natural modes on the drawing instead of the static results" /></G>}><G l="Buckling" h="buckle"><B big i="buckle" l="Buckled Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the buckled shapes on the drawing instead of the static results" /></G></Show>}</Show>
         <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><B i="report" l="Results Report" run={() => C.view("report")} /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>

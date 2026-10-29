@@ -1,7 +1,7 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum } from "./api";
+import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum, isFrame } from "./api";
 import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes } from "./store";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
@@ -9,7 +9,7 @@ import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
 import * as D from "./dialogs";
 
-export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"]];
+export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["space", "3D frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"]];
 
 /** A new support of a kind, with typical values. */
 export const defaultSupport = (k: string): SupportKind => {
@@ -64,7 +64,8 @@ const Leaf = (p: { id: number; label: string; sub?: string }) => (
 
 export const Tree = () => {
   const m = () => model();
-  const frame = () => m()?.analysis === "frame";
+  const frame = () => isFrame(m()?.analysis);
+  const sp = () => m()?.analysis === "space";
   return (
     <aside class="tree">
       <header>Model<Help k="tree" /></header>
@@ -73,7 +74,7 @@ export const Tree = () => {
           <Show when={frame()} fallback={
             <Group t="Shapes" n={mm().shapes.length} help="shapes" add={() => setTool("rect")}><For each={mm().shapes}>{s => <Leaf id={s.id} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Group>}>
             <Group t="Members" n={mm().members.length} help="members" add={() => setTool("beam")}><For each={mm().members}>{(b, i) => <Leaf id={b.id} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Group>
-            <Group t="Nodes" n={mm().nodes.length} help="nodes" add={() => setTool("node")}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}`} />}</For></Group>
+            <Group t="Nodes" n={mm().nodes.length} help="nodes" add={() => setTool("node")}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Group>
           </Show>
           <Group t="Materials" n={mm().materials.length} help="materials" add={() => D.materials()}><For each={mm().materials}>{x => <button class="ti" onClick={() => D.materials(x.id)}><span>{x.name}</span></button>}</For></Group>
           <Show when={frame()}><Group t="Sections" n={mm().sections.length} help="sections" add={() => D.sections()}><For each={mm().sections}>{x => <button class="ti" onClick={() => D.sections(x.id)}><span>{x.name}</span></button>}</For></Group></Show>
@@ -120,20 +121,24 @@ const NodeInsp = (p: { n: Node; m: Model }) => (
   <>
     <NumField label="x" q="coord" v={p.n.x} set={x => set("Node", { ...p.n, x })} />
     <NumField label="y" q="coord" v={p.n.y} set={y => set("Node", { ...p.n, y })} />
+    <Show when={p.m.analysis === "space"}><NumField label="z" q="coord" v={p.n.z ?? 0} set={z => set("Node", { ...p.n, z })} /></Show>
     <Attached m={p.m} at={{ on: "node", id: p.n.id }} />
   </>
 );
 
 const MemberInsp = (p: { b: Member; m: Model }) => {
   const a = () => p.m.nodes.find(n => n.id === p.b.a)!, b = () => p.m.nodes.find(n => n.id === p.b.b)!;
+  const sp = () => p.m.analysis === "space";
+  const len = () => Math.hypot(b().x - a().x, b().y - a().y, (b().z ?? 0) - (a().z ?? 0));
   return (
     <>
       <Row label="Kind"><Choice v={p.b.kind} set={v => set("Member", { ...p.b, kind: v })} opts={[["beam", "Beam (bending and axial)"], ["truss", "Truss bar (axial only)"]]} /></Row>
       <Row label="Section"><Choice v={String(p.b.section)} set={v => set("Member", { ...p.b, section: +v })} opts={p.m.sections.map(s => [String(s.id), s.name])} /></Row>
       <Row label="Material"><Choice v={String(p.b.material)} set={v => set("Member", { ...p.b, material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row>
+      <Show when={sp() && p.b.kind === "beam"}><div class="iprow"><label>Roll<span class="unit">°</span></label><input class="mono" value={num((p.b.roll ?? 0) * 180 / Math.PI)} onChange={numIn(v => set("Member", { ...p.b, roll: v * Math.PI / 180 }), () => num((p.b.roll ?? 0) * 180 / Math.PI))} /><span class="hint">Turns the section about the member. At 0 the depth h stands upright, or lies along z for a column.</span></div></Show>
       <table class="vmini"><tbody>
-        <tr><td>Length</td><td class="r">{fmt("len", Math.hypot(b().x - a().x, b().y - a().y))}</td></tr>
-        <tr><td>Angle</td><td class="r">{num(Math.atan2(b().y - a().y, b().x - a().x) * 180 / Math.PI)}°</td></tr>
+        <tr><td>Length</td><td class="r">{fmt("len", len())}</td></tr>
+        <Show when={!sp()} fallback={<tr><td>Slope</td><td class="r">{num(Math.asin(Math.max(-1, Math.min(1, (b().y - a().y) / len()))) * 180 / Math.PI)}° up</td></tr>}><tr><td>Angle</td><td class="r">{num(Math.atan2(b().y - a().y, b().x - a().x) * 180 / Math.PI)}°</td></tr></Show>
         <tr><td>From · to</td><td class="r">{itemName(p.m, p.b.a)} · {itemName(p.m, p.b.b)}</td></tr>
       </tbody></table>
       <Attached m={p.m} at={{ on: "member", id: p.b.id }} />
@@ -193,7 +198,7 @@ const EdgeInsp = (p: { m: Model; e: { shape: number; edge: number } }) => {
 
 const SupportInsp = (p: { s: Support; m: Model }) => {
   const k = () => p.s.kind;
-  const kinds = (): string[] => p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : p.m.analysis === "frame" ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
+  const kinds = (): string[] => p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : isFrame(p.m.analysis) ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
   const put = (kind: SupportKind) => set("Support", { ...p.s, kind });
   return <>
     <Row label="On"><span>{targetName(p.m, p.s.at)}</span></Row>
@@ -201,10 +206,11 @@ const SupportInsp = (p: { s: Support; m: Model }) => {
     <Show when={k().kind === "spring"}>{_ => { const sp = k() as Extract<SupportKind, { kind: "spring" }>; return <>
       <NumField label="kx" q="spring" v={sp.kx} min={0} set={kx => put({ ...sp, kx })} />
       <NumField label="ky" q="spring" v={sp.ky} min={0} set={ky => put({ ...sp, ky })} />
-      <NumField label="Rotation" q="rspring" v={sp.kr} min={0} set={kr => put({ ...sp, kr })} />
+      <Show when={p.m.analysis === "space"}><NumField label="kz" q="spring" v={sp.kz ?? 0} min={0} set={kz => put({ ...sp, kz })} /><NumField label="Turning about x" q="rspring" v={sp.krx ?? 0} min={0} set={krx => put({ ...sp, krx })} /><NumField label="Turning about y" q="rspring" v={sp.kry ?? 0} min={0} set={kry => put({ ...sp, kry })} /></Show>
+      <NumField label={p.m.analysis === "space" ? "Turning about z" : "Rotation"} q="rspring" v={sp.kr} min={0} set={kr => put({ ...sp, kr })} />
     </>; }}</Show>
     <Show when={k().kind === "temperature"}><NumField label="Temperature" q="temp" v={(k() as any).t} set={t => put({ kind: "temperature", t })} /></Show>
-    <p class="muted small">{({ fixed: "Holds the point still; beams cannot turn there either.", pinned: "Holds the point still but lets it turn.", rollerx: "Free to slide along x; held in y.", rollery: "Free to slide along y; held in x.", roller: "Free to slide along the edge; held across it.", symmetry: "A plane of symmetry: model half the part and hold the cut edge across.", spring: "Springs to the ground in x, y and rotation.", temperature: "Holds the edge at this temperature." } as Record<string, string>)[k().kind]}</p>
+    <p class="muted small">{({ fixed: "Holds the point still; beams cannot turn there either.", pinned: "Holds the point still but lets it turn.", rollerx: "Free to slide along x; held in y.", rollery: "Free to slide along y; held in x.", roller: "Free to slide along the edge; held across it.", symmetry: "A plane of symmetry: model half the part and hold the cut edge across.", spring: p.m.analysis === "space" ? "Springs to the ground along x, y and z and turning about each." : "Springs to the ground in x, y and rotation.", temperature: "Holds the edge at this temperature." } as Record<string, string>)[k().kind]}</p>
   </>;
 };
 
@@ -212,13 +218,15 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
   const k = () => p.l.kind;
   const put = (kind: LoadKind) => set("Load", { ...p.l, kind });
   const f = <K extends LoadKind["kind"]>(_: K) => k() as Extract<LoadKind, { kind: K }>;
+  const sp = () => p.m.analysis === "space";
   return <>
     <Row label="On"><span>{targetName(p.m, p.l.at)}</span></Row>
     <Row label="Kind"><span>{LOAD_NAMES[k().kind]}</span></Row>
-    <Show when={k().kind === "force"}><NumField label="Fx" q="force" v={f("force").fx} set={fx => put({ ...f("force"), fx })} /><NumField label="Fy" q="force" v={f("force").fy} set={fy => put({ ...f("force"), fy })} hint="Up is positive." /></Show>
-    <Show when={k().kind === "moment"}><NumField label="M" q="moment" v={f("moment").m} set={m => put({ kind: "moment", m })} hint="Counter-clockwise is positive." /></Show>
+    <Show when={k().kind === "force"}><NumField label="Fx" q="force" v={f("force").fx} set={fx => put({ ...f("force"), fx })} /><NumField label="Fy" q="force" v={f("force").fy} set={fy => put({ ...f("force"), fy })} hint={sp() ? undefined : "Up is positive."} /><Show when={sp()}><NumField label="Fz" q="force" v={f("force").fz ?? 0} set={fz => put({ ...f("force"), fz })} hint="Up (y) is positive; z points towards the front." /></Show></Show>
+    <Show when={k().kind === "moment"}><Show when={sp()} fallback={<NumField label="M" q="moment" v={f("moment").m} set={m => put({ kind: "moment", m })} hint="Counter-clockwise is positive." />}>
+      <NumField label="Mx" q="moment" v={f("moment").mx ?? 0} set={mx => put({ ...f("moment"), mx })} /><NumField label="My" q="moment" v={f("moment").my ?? 0} set={my => put({ ...f("moment"), my })} /><NumField label="Mz" q="moment" v={f("moment").m} set={m => put({ ...f("moment"), m })} hint="About the global axes, by the right-hand rule." /></Show></Show>
     <Show when={k().kind === "dist"}>
-      <Row label="Direction"><Choice v={f("dist").dir} set={v => put({ ...f("dist"), dir: v as any })} opts={[["y", "Global y (gravity)"], ["x", "Global x (wind)"], ["local", "Across the member"]]} /></Row>
+      <Row label="Direction"><Choice v={f("dist").dir} set={v => put({ ...f("dist"), dir: v as any })} opts={sp() ? [["y", "Global y (gravity)"], ["x", "Global x"], ["z", "Global z"], ["local", "Along the member's local y"]] : [["y", "Global y (gravity)"], ["x", "Global x (wind)"], ["local", "Across the member"]]} /></Row>
       <NumField label="At the start" q="dist" v={f("dist").w1} set={w1 => put({ ...f("dist"), w1 })} />
       <NumField label="At the end" q="dist" v={f("dist").w2} set={w2 => put({ ...f("dist"), w2 })} hint="Equal values make a uniform load. Up (or +x) is positive." />
     </Show>
@@ -232,10 +240,10 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
       <NumField label="Fx" q="force" v={f("bearing").fx} set={fx => put({ ...f("bearing"), fx })} />
       <NumField label="Fy" q="force" v={f("bearing").fy} set={fy => put({ ...f("bearing"), fy })} hint="The pin's whole force on the part. It presses on the side of the hole it pushes into, most in line with the force." />
     </Show>
-    <Show when={k().kind === "gravity"}><NumField label="gx" q="accel" v={f("gravity").gx} set={gx => put({ ...f("gravity"), gx })} /><NumField label="gy" q="accel" v={f("gravity").gy} set={gy => put({ ...f("gravity"), gy })} hint="Self-weight from each material's density." /></Show>
+    <Show when={k().kind === "gravity"}><NumField label="gx" q="accel" v={f("gravity").gx} set={gx => put({ ...f("gravity"), gx })} /><NumField label="gy" q="accel" v={f("gravity").gy} set={gy => put({ ...f("gravity"), gy })} hint="Self-weight from each material's density." /><Show when={sp()}><NumField label="gz" q="accel" v={f("gravity").gz ?? 0} set={gz => put({ ...f("gravity"), gz })} /></Show></Show>
     <Show when={k().kind === "flux"}><NumField label="Heat flux" q="flux" v={f("flux").q} set={q => put({ kind: "flux", q })} hint="Positive flows into the part." /></Show>
     <Show when={k().kind === "convection"}><NumField label="Film coefficient h" q="film" v={f("convection").h} min={0} set={h => put({ ...f("convection"), h })} /><NumField label="Fluid temperature" q="temp" v={f("convection").t_inf} set={t_inf => put({ ...f("convection"), t_inf })} /></Show>
-    <Show when={k().kind === "warming"}><NumField label="Change" q="dtemp" v={f("warming").dt} set={dt => put({ kind: "warming", dt })} hint={p.m.analysis === "frame" ? "Every member grows by αΔT per length; where it cannot, it pushes on its supports." : "A uniform change from the stress-free temperature (Inspector, with nothing selected); added to any temperatures set on edges."} /></Show>
+    <Show when={k().kind === "warming"}><NumField label="Change" q="dtemp" v={f("warming").dt} set={dt => put({ kind: "warming", dt })} hint={isFrame(p.m.analysis) ? "Every member grows by αΔT per length; where it cannot, it pushes on its supports." : "A uniform change from the stress-free temperature (Inspector, with nothing selected); added to any temperatures set on edges."} /></Show>
     <Show when={k().kind === "heat"}><NumField label="Heat generated" q="heatgen" v={f("heat").q} set={q => put({ kind: "heat", q })} /></Show>
   </>;
 };
@@ -249,7 +257,7 @@ const ModelInsp = (p: { m: Model }) => {
     <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
     <Show when={p.m.analysis === "stress" || p.m.analysis === "heat"}><NumField label="Thickness" q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
     <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
-    <Show when={p.m.analysis !== "frame"}>
+    <Show when={!isFrame(p.m.analysis)}>
       <h4>Mesh<Help k="mesh" /></h4>
       <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part, finer for thin parts)." />
       <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>
@@ -257,7 +265,7 @@ const ModelInsp = (p: { m: Model }) => {
     </Show>
     <Row label="Notes"><textarea rows="4" value={p.m.notes} onChange={e => act({ SetMeta: { name: p.m.name, notes: e.currentTarget.value } })} /></Row>
     <table class="vmini"><tbody>
-      <Show when={p.m.analysis === "frame"} fallback={<tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>
+      <Show when={isFrame(p.m.analysis)} fallback={<tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>
         <tr><td>Nodes</td><td class="r">{p.m.nodes.length}</td></tr><tr><td>Members</td><td class="r">{p.m.members.length}</td></tr></Show>
       <tr><td>Supports</td><td class="r">{p.m.supports.length}</td></tr><tr><td>Loads</td><td class="r">{p.m.loads.length}</td></tr>
     </tbody></table>

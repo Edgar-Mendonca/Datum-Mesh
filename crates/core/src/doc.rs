@@ -2,7 +2,7 @@
 //! each one runs on a copy and is kept only if the result passes `Model::check`, so a failed edit
 //! leaves the model exactly as it was (Plan's pattern: ops in, whole-model snapshots for undo).
 
-use crate::model::{Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
+use crate::model::{dist3, Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -37,10 +37,29 @@ pub enum Op {
     Add { item: Item },
     /// Replace the item that has the same id.
     Set { item: Item },
-    /// A member between two points: a node already there is used, else one is made.
-    AddMember { from: [f64; 2], to: [f64; 2], kind: MemberKind, section: Option<u32>, material: Option<u32> },
+    /// A member between two points: a node already there is used, else one is made. `z` is the
+    /// depth of each end (3D frames; zero in the plane).
+    AddMember {
+        from: [f64; 2],
+        to: [f64; 2],
+        kind: MemberKind,
+        section: Option<u32>,
+        material: Option<u32>,
+        #[serde(default)]
+        z: [f64; 2],
+    },
     /// Move nodes and shapes; a member moves its two nodes.
-    Move { ids: Vec<u32>, dx: f64, dy: f64 },
+    Move {
+        ids: Vec<u32>,
+        dx: f64,
+        dy: f64,
+        #[serde(default)]
+        dz: f64,
+    },
+    /// 3D frames (0.2.4): copy these members (with their member loads, and the supports and
+    /// loads on their nodes) `times` times, each `step` further on, and join each copied node to
+    /// the one it came from with a member of `link` kind (none if `link` is None).
+    Repeat { ids: Vec<u32>, step: [f64; 3], times: u32, link: Option<MemberKind> },
     /// Put a node where any two of these members cross, joining them there (members split at it,
     /// with their loads). Crossing members are otherwise left apart, as X-bracing usually is.
     JoinCrossings { ids: Vec<u32> },
@@ -105,9 +124,9 @@ impl Doc {
         prune(&mut m);
         // Nodes that were added or moved merge with a node already there, and split any member
         // they land on; members that were added or moved are split at the nodes along them.
-        let old_n: std::collections::HashMap<u32, (f64, f64)> = self.m.nodes.iter().map(|n| (n.id, (n.x, n.y))).collect();
+        let old_n: std::collections::HashMap<u32, [f64; 3]> = self.m.nodes.iter().map(|n| (n.id, n.at())).collect();
         let old_m: std::collections::HashMap<u32, (u32, u32)> = self.m.members.iter().map(|b| (b.id, (b.a, b.b))).collect();
-        let tn: Vec<u32> = m.nodes.iter().filter(|n| old_n.get(&n.id) != Some(&(n.x, n.y))).map(|n| n.id).collect();
+        let tn: Vec<u32> = m.nodes.iter().filter(|n| old_n.get(&n.id) != Some(&n.at())).map(|n| n.id).collect();
         let tm: Vec<u32> = m.members.iter().filter(|b| old_m.get(&b.id) != Some(&(b.a, b.b)) || tn.contains(&b.a) || tn.contains(&b.b)).map(|b| b.id).collect();
         if !tn.is_empty() || !tm.is_empty() {
             merge_nodes(&mut m, &tn);
@@ -157,13 +176,13 @@ fn fresh(m: &mut Model) -> u32 {
     id
 }
 
-/// The node at (x, y), made if there is none.
-fn node_at(m: &mut Model, p: [f64; 2], created: &mut Vec<u32>) -> u32 {
-    if let Some(n) = m.nodes.iter().find(|n| (n.x - p[0]).hypot(n.y - p[1]) < SAME) {
+/// The node at (x, y, z), made if there is none.
+fn node_at(m: &mut Model, p: [f64; 3], created: &mut Vec<u32>) -> u32 {
+    if let Some(n) = m.nodes.iter().find(|n| dist3(n.at(), p) < SAME) {
         return n.id;
     }
     let id = fresh(m);
-    m.nodes.push(Node { id, x: p[0], y: p[1] });
+    m.nodes.push(Node { id, x: p[0], y: p[1], z: p[2] });
     created.push(id);
     id
 }
@@ -175,10 +194,10 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             created.push(id);
             match item {
                 Item::Node(mut x) => {
-                    if !(x.x.is_finite() && x.y.is_finite()) {
-                        return Err("A node needs numbers for x and y.".into());
+                    if !(x.x.is_finite() && x.y.is_finite() && x.z.is_finite()) {
+                        return Err("A node needs numbers for x, y and z.".into());
                     }
-                    if m.nodes.iter().any(|n| (n.x - x.x).hypot(n.y - x.y) < SAME) {
+                    if m.nodes.iter().any(|n| dist3(n.at(), x.at()) < SAME) {
                         return Err("There is already a node here.".into());
                     }
                     x.id = id;
@@ -236,11 +255,12 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Load(x) => put(&mut m.loads, |y| y.id, x)?,
             }
         }
-        Op::AddMember { from, to, kind, section, material } => {
+        Op::AddMember { from, to, kind, section, material, z } => {
+            let (from, to) = ([from[0], from[1], z[0]], [to[0], to[1], z[1]]);
             if from.iter().chain(to.iter()).any(|v| !v.is_finite()) {
                 return Err("A member needs numbers for its ends.".into());
             }
-            if (from[0] - to[0]).hypot(from[1] - to[1]) < SAME {
+            if dist3(from, to) < SAME {
                 return Err("A member's ends must be at different places.".into());
             }
             let section = section.or(m.sections.first().map(|s| s.id)).ok_or("Add a section first (Geometry › Sections).")?;
@@ -248,27 +268,32 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let a = node_at(m, from, created);
             let b = node_at(m, to, created);
             let id = fresh(m);
-            m.members.push(Member { id, a, b, kind, section, material });
+            m.members.push(Member { id, a, b, kind, section, material, roll: 0.0 });
             created.push(id);
         }
         Op::JoinCrossings { ids } => {
-            // New nodes at the crossings; `apply` then splits every member a new node lies on.
-            let pos: std::collections::HashMap<u32, [f64; 2]> = m.nodes.iter().map(|n| (n.id, [n.x, n.y])).collect();
-            let segs: Vec<(u32, [f64; 2], [f64; 2])> = m.members.iter().filter(|b| ids.contains(&b.id)).filter_map(|b| Some((b.id, *pos.get(&b.a)?, *pos.get(&b.b)?))).collect();
-            let mut pts: Vec<[f64; 2]> = vec![];
+            // New nodes where two members meet (closest points of the two lines closer than SAME);
+            // `apply` then splits every member a new node lies on.
+            let pos: std::collections::HashMap<u32, [f64; 3]> = m.nodes.iter().map(|n| (n.id, n.at())).collect();
+            let segs: Vec<([f64; 3], [f64; 3])> = m.members.iter().filter(|b| ids.contains(&b.id)).filter_map(|b| Some((*pos.get(&b.a)?, *pos.get(&b.b)?))).collect();
+            let mut pts: Vec<[f64; 3]> = vec![];
+            let sub3 = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+            let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+            let at = |a: [f64; 3], r: [f64; 3], t: f64| [a[0] + r[0] * t, a[1] + r[1] * t, a[2] + r[2] * t];
             for i in 0..segs.len() {
                 for j in i + 1..segs.len() {
-                    let ((_, a, b), (_, c, d)) = (segs[i], segs[j]);
-                    let (r, q) = ([b[0] - a[0], b[1] - a[1]], [d[0] - c[0], d[1] - c[1]]);
-                    let den = r[0] * q[1] - r[1] * q[0];
-                    if den.abs() <= 1e-12 * (r[0].hypot(r[1]) * q[0].hypot(q[1])) {
+                    let ((a, b), (c, d)) = (segs[i], segs[j]);
+                    let (r, q, w) = (sub3(b, a), sub3(d, c), sub3(a, c));
+                    let (rr, qq, rq, rw, qw) = (dot(r, r), dot(q, q), dot(r, q), dot(r, w), dot(q, w));
+                    let den = rr * qq - rq * rq;
+                    if den <= 1e-24 * rr * qq {
                         continue; // parallel
                     }
-                    let t = ((c[0] - a[0]) * q[1] - (c[1] - a[1]) * q[0]) / den;
-                    let u = ((c[0] - a[0]) * r[1] - (c[1] - a[1]) * r[0]) / den;
-                    let p = [a[0] + r[0] * t, a[1] + r[1] * t];
+                    let t = (rq * qw - qq * rw) / den;
+                    let u = (rr * qw - rq * rw) / den;
+                    let (p, p2) = (at(a, r, t), at(c, q, u));
                     let inner = |s: f64, l: f64| s * l > SAME && (1.0 - s) * l > SAME;
-                    if inner(t, r[0].hypot(r[1])) && inner(u, q[0].hypot(q[1])) && !pts.iter().any(|x| (x[0] - p[0]).hypot(x[1] - p[1]) < SAME) {
+                    if dist3(p, p2) < SAME && inner(t, rr.sqrt()) && inner(u, qq.sqrt()) && !pts.iter().any(|x| dist3(*x, p) < SAME) {
                         pts.push(p);
                     }
                 }
@@ -278,12 +303,80 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             }
             for p in pts {
                 let id = fresh(m);
-                m.nodes.push(Node { id, x: p[0], y: p[1] });
+                m.nodes.push(Node { id, x: p[0], y: p[1], z: p[2] });
                 created.push(id);
             }
         }
-        Op::Move { ids, dx, dy } => {
-            if !(dx.is_finite() && dy.is_finite()) {
+        Op::Repeat { ids, step, times, link } => {
+            if !step.iter().all(|v| v.is_finite()) || dist3(step, [0.0; 3]) < SAME {
+                return Err("Repeat needs a step that moves the copies.".into());
+            }
+            if !(1..=100).contains(&times) {
+                return Err("Repeat makes 1 to 100 copies.".into());
+            }
+            let src: Vec<Member> = m.members.iter().filter(|b| ids.contains(&b.id)).cloned().collect();
+            if src.is_empty() {
+                return Err("Select the members to repeat.".into());
+            }
+            let pos: std::collections::HashMap<u32, [f64; 3]> = m.nodes.iter().map(|n| (n.id, n.at())).collect();
+            let mut nodes: Vec<u32> = src.iter().flat_map(|b| [b.a, b.b]).collect();
+            nodes.sort_unstable();
+            nodes.dedup();
+            let (sec, mat) = (src[0].section, src[0].material);
+            let mut prev: std::collections::HashMap<u32, u32> = nodes.iter().map(|n| (*n, *n)).collect();
+            for k in 1..=times {
+                let shift = |p: [f64; 3]| [p[0] + step[0] * k as f64, p[1] + step[1] * k as f64, p[2] + step[2] * k as f64];
+                let mut now = std::collections::HashMap::new();
+                for &n in &nodes {
+                    let id = node_at(m, shift(pos[&n]), created);
+                    now.insert(n, id);
+                    // Supports and node loads come along.
+                    let sups: Vec<_> = m.supports.iter().filter(|s| s.at == Target::Node { id: n }).cloned().collect();
+                    for mut s in sups {
+                        s.id = fresh(m);
+                        s.at = Target::Node { id };
+                        created.push(s.id);
+                        m.supports.push(s);
+                    }
+                    let lds: Vec<_> = m.loads.iter().filter(|l| l.at == Target::Node { id: n }).cloned().collect();
+                    for mut l in lds {
+                        l.id = fresh(m);
+                        l.at = Target::Node { id };
+                        created.push(l.id);
+                        m.loads.push(l);
+                    }
+                }
+                for b in &src {
+                    let (a, c) = (now[&b.a], now[&b.b]);
+                    if m.members.iter().any(|x| (x.a == a && x.b == c) || (x.a == c && x.b == a)) {
+                        continue;
+                    }
+                    let id = fresh(m);
+                    m.members.push(Member { id, a, b: c, ..b.clone() });
+                    created.push(id);
+                    let lds: Vec<_> = m.loads.iter().filter(|l| l.at == Target::Member { id: b.id }).cloned().collect();
+                    for mut l in lds {
+                        l.id = fresh(m);
+                        l.at = Target::Member { id };
+                        created.push(l.id);
+                        m.loads.push(l);
+                    }
+                }
+                if let Some(kind) = link {
+                    for &n in &nodes {
+                        let (a, c) = (prev[&n], now[&n]);
+                        if a != c && !m.members.iter().any(|x| (x.a == a && x.b == c) || (x.a == c && x.b == a)) {
+                            let id = fresh(m);
+                            m.members.push(Member { id, a, b: c, kind, section: sec, material: mat, roll: 0.0 });
+                            created.push(id);
+                        }
+                    }
+                }
+                prev = now;
+            }
+        }
+        Op::Move { ids, dx, dy, dz } => {
+            if !(dx.is_finite() && dy.is_finite() && dz.is_finite()) {
                 return Err("Move needs numbers.".into());
             }
             let mut nodes: HashSet<u32> = ids.iter().copied().collect();
@@ -295,6 +388,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             for n in m.nodes.iter_mut().filter(|n| nodes.contains(&n.id)) {
                 n.x += dx;
                 n.y += dy;
+                n.z += dz;
                 found = true;
             }
             for s in m.shapes.iter_mut().filter(|s| ids.contains(&s.id)) {
@@ -516,14 +610,14 @@ fn merge_nodes(m: &mut Model, nodes: &[u32]) {
     for n in &m.nodes {
         grid.add_box(n.id, (n.x, n.y), (n.x, n.y));
     }
-    let pos: std::collections::HashMap<u32, (f64, f64)> = m.nodes.iter().map(|n| (n.id, (n.x, n.y))).collect();
+    let pos: std::collections::HashMap<u32, [f64; 3]> = m.nodes.iter().map(|n| (n.id, n.at())).collect();
     let mut into: std::collections::HashMap<u32, u32> = Default::default();
     for &t in nodes {
-        let Some(&(x, y)) = pos.get(&t) else { continue };
+        let Some(&p0) = pos.get(&t) else { continue };
         if into.contains_key(&t) {
             continue;
         }
-        if let Some(o) = grid.near(x, y).into_iter().find(|o| *o != t && !into.contains_key(o) && pos.get(o).is_some_and(|p| (p.0 - x).hypot(p.1 - y) < SAME)) {
+        if let Some(o) = grid.near(p0[0], p0[1]).into_iter().find(|o| *o != t && !into.contains_key(o) && pos.get(o).is_some_and(|p| dist3(*p, p0) < SAME)) {
             into.insert(t, o);
         }
     }
@@ -553,31 +647,31 @@ fn merge_nodes(m: &mut Model, nodes: &[u32]) {
 /// member in `members` against all nodes. Distributed loads are split with them.
 fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
     let mut queue: Vec<(u32, u32)> = vec![]; // (member, node)
-    let pos: std::collections::HashMap<u32, (f64, f64)> = m.nodes.iter().map(|n| (n.id, (n.x, n.y))).collect();
+    let pos: std::collections::HashMap<u32, [f64; 3]> = m.nodes.iter().map(|n| (n.id, n.at())).collect();
     let on = |b: &Member, n: u32| -> Option<f64> {
         if b.a == n || b.b == n {
             return None;
         }
         let (a, c, p) = (pos.get(&b.a)?, pos.get(&b.b)?, pos.get(&n)?);
-        let (dx, dy) = (c.0 - a.0, c.1 - a.1);
-        let l2 = dx * dx + dy * dy;
-        let t = ((p.0 - a.0) * dx + (p.1 - a.1) * dy) / l2;
+        let d = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let l2 = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+        let t = ((p[0] - a[0]) * d[0] + (p[1] - a[1]) * d[1] + (p[2] - a[2]) * d[2]) / l2;
         let l = l2.sqrt();
         if t * l <= SAME || (1.0 - t) * l <= SAME {
             return None;
         }
-        ((a.0 + t * dx - p.0).hypot(a.1 + t * dy - p.1) < SAME).then_some(t)
+        (dist3([a[0] + t * d[0], a[1] + t * d[1], a[2] + t * d[2]], *p) < SAME).then_some(t)
     };
     if !nodes.is_empty() {
         let mut grid = Grid::new(m);
         for b in &m.members {
             if let (Some(a), Some(c)) = (pos.get(&b.a), pos.get(&b.b)) {
-                grid.add_box(b.id, *a, *c);
+                grid.add_box(b.id, (a[0], a[1]), (c[0], c[1]));
             }
         }
         for &n in nodes {
-            let Some(&(x, y)) = pos.get(&n) else { continue };
-            for id in grid.near(x, y) {
+            let Some(&p) = pos.get(&n) else { continue };
+            for id in grid.near(p[0], p[1]) {
                 if let Some(b) = m.members.iter().find(|b| b.id == id) {
                     if on(b, n).is_some() {
                         queue.push((id, n));
@@ -594,12 +688,12 @@ fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
         for &id in members {
             let Some(b) = m.members.iter().find(|b| b.id == id) else { continue };
             let (Some(a), Some(c)) = (pos.get(&b.a), pos.get(&b.b)) else { continue };
-            // Nodes in the cells along the member.
-            let steps = (((c.0 - a.0).abs().max((c.1 - a.1).abs()) / grid.cell).ceil() as usize).clamp(1, 100_000);
+            // Nodes in the cells along the member (the grid is in x and y; depth is checked by `on`).
+            let steps = (((c[0] - a[0]).abs().max((c[1] - a[1]).abs()) / grid.cell).ceil() as usize).clamp(1, 100_000);
             let mut cand = HashSet::new();
             for k in 0..=steps {
                 let t = k as f64 / steps as f64;
-                let (x, y) = (a.0 + (c.0 - a.0) * t, a.1 + (c.1 - a.1) * t);
+                let (x, y) = (a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t);
                 for dx in [-1.0, 0.0, 1.0] {
                     for dy in [-1.0, 0.0, 1.0] {
                         cand.extend(grid.near(x + dx * grid.cell, y + dy * grid.cell));
@@ -622,7 +716,7 @@ fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
         let b = m.members[i].clone();
         let nid = fresh(m);
         m.members[i].b = n;
-        m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material });
+        m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material, roll: b.roll });
         let mut extra = vec![];
         for l in m.loads.iter_mut() {
             if let (Target::Member { id }, LoadKind::Dist { w1, w2, dir }) = (&l.at, &mut l.kind) {
@@ -664,13 +758,13 @@ mod tests {
     #[test]
     fn members_share_nodes_and_delete_cascades() {
         let mut d = Doc::new(Model::new(Analysis::Frame));
-        let c = d.apply(Op::AddMember { from: [0.0, 0.0], to: [0.0, 3.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        let c = d.apply(Op::AddMember { from: [0.0, 0.0], to: [0.0, 3.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert_eq!(c.len(), 3);
-        let c2 = d.apply(Op::AddMember { from: [0.0, 3.0], to: [4.0, 3.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        let c2 = d.apply(Op::AddMember { from: [0.0, 3.0], to: [4.0, 3.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert_eq!(c2.len(), 2, "the corner node is shared");
         assert_eq!(d.m.nodes.len(), 3);
         let top = c[1];
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 } }) }).unwrap();
         d.apply(Op::Delete { ids: vec![top] }).unwrap();
         assert!(d.m.members.is_empty() && d.m.loads.is_empty());
         assert!(d.undo());
@@ -682,13 +776,13 @@ mod tests {
         // 0.1.1 review: undo to the saved state still marked the model changed.
         let mut d = Doc::new(Model::new(Analysis::Frame));
         assert!(!d.dirty);
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert!(d.dirty);
         d.undo();
         assert!(!d.dirty, "back to the opened model");
         d.redo();
         d.mark_saved();
-        d.apply(Op::Move { ids: vec![d.m.nodes[0].id], dx: 0.5, dy: 0.0 }).unwrap();
+        d.apply(Op::Move { ids: vec![d.m.nodes[0].id], dx: 0.5, dy: 0.0, dz: 0.0 }).unwrap();
         assert!(d.dirty);
         d.undo();
         assert!(!d.dirty, "back to the saved model");
@@ -703,8 +797,8 @@ mod tests {
     fn crossing_members_join_only_when_asked() {
         // An X: two diagonals of a 4 × 3 panel, with a load along one of them.
         let mut d = Doc::new(Model::new(Analysis::Frame));
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 3.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
-        d.apply(Op::AddMember { from: [0.0, 3.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 3.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 3.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert_eq!((d.m.nodes.len(), d.m.members.len()), (4, 2), "drawn apart, as X-bracing usually is");
         let first = d.m.members[0].id;
         d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Member { id: first }, kind: LoadKind::Dist { w1: -1e3, w2: -3e3, dir: crate::model::Dir::Y } }) }).unwrap();
@@ -721,8 +815,8 @@ mod tests {
         assert!((ws[0].0 + 1e3).abs() < 1e-9 && (ws[0].1 + 2e3).abs() < 1e-9 && (ws[1].1 + 3e3).abs() < 1e-9, "{ws:?}");
         // Members that only touch at an end, or are parallel, do not cross.
         let mut e = Doc::new(Model::new(Analysis::Frame));
-        e.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
-        e.apply(Op::AddMember { from: [0.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        e.apply(Op::AddMember { from: [0.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        e.apply(Op::AddMember { from: [0.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         let ids: Vec<u32> = e.m.members.iter().map(|b| b.id).collect();
         assert!(e.apply(Op::JoinCrossings { ids }).unwrap_err().contains("cross"));
     }
@@ -730,7 +824,7 @@ mod tests {
     #[test]
     fn a_support_replaces_the_one_already_there() {
         let mut d = Doc::new(Model::new(Analysis::Frame));
-        let c = d.apply(Op::AddMember { from: [0.0, 0.0], to: [5.0, 0.0], kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        let c = d.apply(Op::AddMember { from: [0.0, 0.0], to: [5.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         for k in [SupportKind::Pinned, SupportKind::Fixed] {
             d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: c[0] }, kind: k }) }).unwrap();
         }
@@ -751,7 +845,7 @@ mod tests {
     }
 
     fn member(d: &mut Doc, a: [f64; 2], b: [f64; 2]) {
-        d.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Beam, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
     }
     fn node_id(d: &Doc, x: f64, y: f64) -> u32 {
         d.m.nodes.iter().find(|n| (n.x - x).abs() < 1e-9 && (n.y - y).abs() < 1e-9).unwrap().id
@@ -775,7 +869,7 @@ mod tests {
         // And a long member drawn across existing nodes is split at each.
         let mut e = Doc::new(Model::new(Analysis::Frame));
         for x in [1.0, 2.0, 3.0] {
-            e.apply(Op::Add { item: Item::Node(Node { id: 0, x, y: 0.0 }) }).unwrap();
+            e.apply(Op::Add { item: Item::Node(Node { id: 0, x, y: 0.0, z: 0.0 }) }).unwrap();
         }
         member(&mut e, [0.0, 0.0], [4.0, 0.0]);
         assert_eq!(e.m.members.len(), 4);
@@ -789,20 +883,20 @@ mod tests {
         member(&mut d, [3.0, 0.0], [3.0, 2.0]);
         // Dragging the column's foot onto the beam's end joins them.
         let foot = node_id(&d, 3.0, 0.0);
-        d.apply(Op::Move { ids: vec![foot], dx: -1.0, dy: 0.0 }).unwrap();
+        d.apply(Op::Move { ids: vec![foot], dx: -1.0, dy: 0.0, dz: 0.0 }).unwrap();
         assert_eq!(d.m.nodes.len(), 3);
         // Setting a node's coordinates in the Inspector onto another node joins them too.
         let top = node_id(&d, 3.0, 2.0);
-        d.apply(Op::Set { item: Item::Node(Node { id: top, x: 0.0, y: 0.0 }) }).unwrap();
+        d.apply(Op::Set { item: Item::Node(Node { id: top, x: 0.0, y: 0.0, z: 0.0 }) }).unwrap();
         assert_eq!(d.m.nodes.len(), 2);
         d.m.check().unwrap();
         // 0.1.1 review: arrow-key moves on a 0.1 grid (0.1 + 0.2 ≠ 0.3) with another node in between.
         let mut e = Doc::new(Model::new(Analysis::Frame));
         for (x, y) in [(0.1, 0.0), (0.3, 0.0), (0.3, 2.0)] {
-            e.apply(Op::Add { item: Item::Node(Node { id: 0, x, y }) }).unwrap();
+            e.apply(Op::Add { item: Item::Node(Node { id: 0, x, y, z: 0.0 }) }).unwrap();
         }
         let a = node_id(&e, 0.1, 0.0);
-        e.apply(Op::Move { ids: vec![a], dx: 0.2, dy: 0.0 }).unwrap();
+        e.apply(Op::Move { ids: vec![a], dx: 0.2, dy: 0.0, dz: 0.0 }).unwrap();
         assert_eq!(e.m.nodes.len(), 2);
     }
 
@@ -843,8 +937,44 @@ mod tests {
     #[test]
     fn used_materials_stay() {
         let mut d = Doc::new(Model::new(Analysis::Frame));
-        d.apply(Op::AddMember { from: [0.0, 0.0], to: [5.0, 0.0], kind: MemberKind::Truss, section: None, material: None }).unwrap();
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [5.0, 0.0], kind: MemberKind::Truss, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert!(d.apply(Op::Delete { ids: vec![1] }).unwrap_err().contains("still used"));
         assert!(d.apply(Op::Delete { ids: vec![2] }).unwrap_err().contains("still used"));
+    }
+
+    #[test]
+    fn repeat_builds_bays_in_3d_and_members_split_only_where_they_meet() {
+        // A portal bay in the x-y plane, repeated twice 4 m along z and joined by beams.
+        let mut d = Doc::new(Model::new(Analysis::Space));
+        for (a, b) in [([0.0, 0.0], [0.0, 3.0]), ([0.0, 3.0], [6.0, 3.0]), ([6.0, 3.0], [6.0, 0.0])] {
+            d.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        }
+        let feet: Vec<u32> = d.m.nodes.iter().filter(|n| n.y == 0.0).map(|n| n.id).collect();
+        for id in feet {
+            d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind: crate::model::SupportKind::Fixed }) }).unwrap();
+        }
+        let ids: Vec<u32> = d.m.members.iter().map(|m| m.id).collect();
+        d.apply(Op::Repeat { ids, step: [0.0, 0.0, 4.0], times: 2, link: Some(MemberKind::Beam) }).unwrap();
+        assert_eq!(d.m.nodes.len(), 12);
+        assert_eq!(d.m.members.len(), 9 + 8, "three bays and the beams joining their four nodes twice");
+        assert_eq!(d.m.supports.len(), 6);
+        assert!(d.m.nodes.iter().any(|n| n.z == 8.0));
+        // A member along z at the same x and y as a node of the first bay does not split it:
+        // only nodes on the member in 3D count.
+        let before = d.m.members.len();
+        d.apply(Op::AddMember { from: [3.0, 3.0], to: [3.0, 3.0], kind: MemberKind::Beam, section: None, material: None, z: [1.0, 3.0] }).unwrap();
+        assert_eq!(d.m.members.len(), before + 1);
+        // Two members crossing in space join where they meet, and not where they only pass.
+        let mut e = Doc::new(Model::new(Analysis::Space));
+        e.apply(Op::AddMember { from: [0.0, 0.0], to: [2.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [1.0, 1.0] }).unwrap();
+        e.apply(Op::AddMember { from: [1.0, 0.0], to: [1.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0, 2.0] }).unwrap();
+        e.apply(Op::AddMember { from: [1.0, 1.0], to: [1.0, 1.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0, 2.0] }).unwrap();
+        let ids: Vec<u32> = e.m.members.iter().map(|m| m.id).collect();
+        e.apply(Op::JoinCrossings { ids }).unwrap();
+        assert_eq!(e.m.members.len(), 5, "the two that meet split; the one passing above does not");
+        // Nothing to repeat, or no step: said why.
+        assert!(d.apply(Op::Repeat { ids: vec![], step: [0.0, 0.0, 1.0], times: 1, link: None }).unwrap_err().contains("Select"));
+        let ids: Vec<u32> = d.m.members.iter().map(|m| m.id).collect();
+        assert!(d.apply(Op::Repeat { ids, step: [0.0; 3], times: 1, link: None }).unwrap_err().contains("step"));
     }
 }

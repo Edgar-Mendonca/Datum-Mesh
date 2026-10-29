@@ -43,6 +43,8 @@ const ExampleArt = (p: { id: string }) => {
     fin: "M14 52H86V44H80V10H76V44H62V10H58V44H44V10H40V44H26V10H22V44H14z",
     vessel: "M50 54V14M58 54V24A20 20 0 0 0 38 4V8A16 16 0 0 1 54 24V54zM44 54H66",
     hotplate: "M14 18H86V44H14zM44 31a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M8 14V48M92 22v4M92 30v4M92 38v4",
+    "blank-space": "M30 48V22L50 12L70 22V48M30 22L50 32L70 22M50 32V58M30 48L50 58L70 48",
+    platform: "M18 22L50 10L82 22L50 34zM18 22V46M50 34V58M82 22V46M50 10V26M18 46L50 34",
   };
   return <svg viewBox="0 0 100 60" class="exart"><path d={pics[p.id] ?? pics["blank-frame"]} {...s} /></svg>;
 };

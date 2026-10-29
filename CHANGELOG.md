@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.2.4 — 2026-10-29
+
+3D frames: frames and trusses in space, drawn on planes and seen in 3D.
+
+**3D frames**
+- Home › **3D Frame**: beams that stretch, twist and bend about both axes of their section, and truss bars, anywhere in space. y is up and z is depth.
+- Members are drawn on a working plane: **Front** (x-y), **Side** (z-y) or **Plan** (x-z), at a depth you pick or type; members off the plane are shown faint. The status bar reads x, y and z.
+- The **3D view** shows the whole frame with its supports and loads: turn it with the left button, pan with the right, zoom with the wheel; Front, Top and Iso buttons. Click nodes and members to select them, or to put supports and loads on them.
+- Geometry › **Repeat** copies the selected members (or the whole frame) a step along any direction, with their supports and loads, and joins the copies with beams or truss bars: draw one frame, repeat it into bays.
+- The Inspector takes z for nodes, Fz and moments about x, y and z, member loads along z, gravity in z, springs in all six directions, and the **roll** of a beam's section about its axis.
+- Sections give the second moment about the other axis and the torsion constant J (thin-walled formulas for boxes, I and channel sections; your own values for custom sections).
+
+**Results in 3D**
+- Once solved, the members are drawn on their deflected shape and coloured by utilisation, axial force, torque, either bending moment, shear or deflection, with a colour scale. Hover a member to read N, Vy, Vz, T, Mz, My and the deflection.
+- The Results page and the printed report have six sums in the equilibrium check, six reactions per support and every member's forces; the report draws the frame isometric.
+
+**Trust**
+- Help › Verification: 69 checks, all passing. New: a 3D cantilever bending each way, twisting and with its section rolled, under point and member loads; one along z; an L-shaped cantilever bent in plan, where bending and twisting add up; a tripod of truss bars; and the portal frame solved in 3D, giving the plane solver's answers to 1 part in 10¹³.
+- Random 3D frames (150 of them) solve with their reactions balancing the loads, or say why they cannot.
+
+**Not yet in 3D**: natural frequencies and buckling (plane frames have both).
+
 ## 0.2.3 — 2026-10-29
 
 Buckling of frames: how far the loads can grow before a frame buckles.

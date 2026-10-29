@@ -1,6 +1,6 @@
 [package]
 name = "datum-core"
-version = "0.2.3"
+version = "0.2.4"
 license = "MIT"
 edition = "2021"
 description = "Datum Mesh engine: the model and its edits, sections, meshing, finite elements, solver, results and benchmarks."

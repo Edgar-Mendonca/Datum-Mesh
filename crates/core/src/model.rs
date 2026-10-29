@@ -26,11 +26,17 @@ pub enum Analysis {
     /// y runs along the axis), turned a full circle about it. Loads and reactions are totals for
     /// the whole circle.
     Axi,
+    /// 3D frames and trusses (0.2.4): members bend about both axes and twist; y is up.
+    Space,
 }
 
 impl Analysis {
     pub fn is_plane(self) -> bool {
-        self != Analysis::Frame
+        !self.is_frame()
+    }
+    /// Frames and trusses, in the plane or in space.
+    pub fn is_frame(self) -> bool {
+        matches!(self, Analysis::Frame | Analysis::Space)
     }
 }
 
@@ -39,6 +45,9 @@ pub struct Node {
     pub id: u32,
     pub x: f64,
     pub y: f64,
+    /// Depth, for 3D frames (0.2.4); zero in the plane.
+    #[serde(default)]
+    pub z: f64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,6 +69,22 @@ pub struct Member {
     pub kind: MemberKind,
     pub section: u32,
     pub material: u32,
+    /// 3D frames: the turn of the section about the member's axis (rad), from its local y axis
+    /// lying as level as it can (0.2.4).
+    #[serde(default)]
+    pub roll: f64,
+}
+
+impl Node {
+    /// Where the node is: (x, y, z).
+    pub fn at(&self) -> [f64; 3] {
+        [self.x, self.y, self.z]
+    }
+}
+
+/// The distance between two points in space.
+pub fn dist3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }
 
 /// A cross-section's shape; its properties come from `sections::props`.
@@ -79,8 +104,18 @@ pub enum SectionShape {
     Channel { h: f64, b: f64, tw: f64, tf: f64 },
     /// Equal or unequal angle, legs h (in the plane) and b, thickness t, bent about the axis parallel to b.
     Angle { h: f64, b: f64, t: f64 },
-    /// Your own values: area, second moment of area and the distance to the extreme fibre.
-    Custom { a: f64, i: f64, c: f64 },
+    /// Your own values: area, second moment of area and the distance to the extreme fibre; for
+    /// 3D frames the second moment about the other axis and the torsion constant (zero: taken as
+    /// for a round bar, iy = i and j = 2i).
+    Custom {
+        a: f64,
+        i: f64,
+        c: f64,
+        #[serde(default)]
+        iy: f64,
+        #[serde(default)]
+        j: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -271,8 +306,19 @@ pub enum SupportKind {
     Roller,
     /// Edges: a plane of symmetry (the normal movement is held).
     Symmetry,
-    /// Springs to ground (N/m, N/m, N·m/rad).
-    Spring { kx: f64, ky: f64, kr: f64 },
+    /// Springs to ground (N/m, N/m, N·m/rad); `kr` turns about z. 3D frames add z and the turns
+    /// about x and y (0.2.4).
+    Spring {
+        kx: f64,
+        ky: f64,
+        kr: f64,
+        #[serde(default)]
+        kz: f64,
+        #[serde(default)]
+        krx: f64,
+        #[serde(default)]
+        kry: f64,
+    },
     /// Heat: a fixed temperature (K).
     Temperature { t: f64 },
 }
@@ -294,15 +340,29 @@ pub enum Dir {
     X,
     /// Perpendicular to the member (its local y).
     Local,
+    /// Global z (3D frames).
+    Z,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum LoadKind {
-    /// Nodes and points: a force (N).
-    Force { fx: f64, fy: f64 },
-    /// Nodes: a moment (N·m, counter-clockwise positive).
-    Moment { m: f64 },
+    /// Nodes and points: a force (N); fz in 3D frames.
+    Force {
+        fx: f64,
+        fy: f64,
+        #[serde(default)]
+        fz: f64,
+    },
+    /// Nodes: a moment (N·m, counter-clockwise positive) about z; in 3D frames also about x and y
+    /// (right-hand rule).
+    Moment {
+        m: f64,
+        #[serde(default)]
+        mx: f64,
+        #[serde(default)]
+        my: f64,
+    },
     /// Members: load per length varying linearly from w1 at end a to w2 at end b (N/m).
     Dist { w1: f64, w2: f64, dir: Dir },
     /// Edges: pressure (Pa), positive pushing into the body.
@@ -317,7 +377,12 @@ pub enum LoadKind {
     /// parts, thermal strain in members (0.2.0).
     Warming { dt: f64 },
     /// Body: gravity (m/s²), self-weight from the density.
-    Gravity { gx: f64, gy: f64 },
+    Gravity {
+        gx: f64,
+        gy: f64,
+        #[serde(default)]
+        gz: f64,
+    },
     /// Edges: heat flux into the body (W/m²).
     Flux { q: f64 },
     /// Edges: convection to a fluid (W/m²·K, K).
@@ -510,20 +575,23 @@ impl Model {
         if self.materials.is_empty() {
             return Err("A model needs at least one material.".into());
         }
-        let mut cells: std::collections::HashMap<(i64, i64), Vec<(f64, f64)>> = std::collections::HashMap::new();
+        let mut cells: std::collections::HashMap<(i64, i64, i64), Vec<[f64; 3]>> = std::collections::HashMap::new();
         let c = crate::doc::SAME * 4.0;
         for n in &self.nodes {
             fin(n.x, "A node's x")?;
             fin(n.y, "A node's y")?;
-            let k = ((n.x / c).floor() as i64, (n.y / c).floor() as i64);
+            fin(n.z, "A node's z")?;
+            let k = ((n.x / c).floor() as i64, (n.y / c).floor() as i64, (n.z / c).floor() as i64);
             for dx in -1..=1 {
                 for dy in -1..=1 {
-                    if cells.get(&(k.0 + dx, k.1 + dy)).is_some_and(|v| v.iter().any(|p| (p.0 - n.x).hypot(p.1 - n.y) < crate::doc::SAME)) {
-                        return Err("Two nodes would be at the same place.".into());
+                    for dz in -1..=1 {
+                        if cells.get(&(k.0 + dx, k.1 + dy, k.2 + dz)).is_some_and(|v| v.iter().any(|p| dist3(*p, n.at()) < crate::doc::SAME)) {
+                            return Err("Two nodes would be at the same place.".into());
+                        }
                     }
                 }
             }
-            cells.entry(k).or_default().push((n.x, n.y));
+            cells.entry(k).or_default().push(n.at());
         }
         for mt in &self.materials {
             pos(mt.e, &format!("{}: Young's modulus", mt.name))?;
@@ -544,7 +612,8 @@ impl Model {
         let at: std::collections::HashMap<u32, &Node> = self.nodes.iter().map(|n| (n.id, n)).collect();
         for mb in &self.members {
             let (Some(a), Some(b)) = (at.get(&mb.a), at.get(&mb.b)) else { return Err("A member ends at a node that does not exist.".into()) };
-            if mb.a == mb.b || (a.x - b.x).hypot(a.y - b.y) <= 0.0 {
+            fin(mb.roll, "A member's roll")?;
+            if mb.a == mb.b || dist3(a.at(), b.at()) <= 0.0 {
                 return Err("A member must join two nodes at different places.".into());
             }
             if !pairs.insert((mb.a.min(mb.b), mb.a.max(mb.b))) {
@@ -588,8 +657,8 @@ impl Model {
         for s in &self.supports {
             self.target_ok(&s.at)?;
             match (&s.kind, &s.at) {
-                (SupportKind::Spring { kx, ky, kr }, _) => {
-                    for v in [kx, ky, kr] {
+                (SupportKind::Spring { kx, ky, kr, kz, krx, kry }, _) => {
+                    for v in [kx, ky, kr, kz, krx, kry] {
                         if !(v.is_finite() && *v >= 0.0) {
                             return Err("Spring stiffnesses must be zero or more.".into());
                         }
@@ -605,12 +674,12 @@ impl Model {
         for l in &self.loads {
             self.target_ok(&l.at)?;
             let ok = match (&l.kind, &l.at) {
-                (LoadKind::Force { fx, fy }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite(),
-                (LoadKind::Moment { m }, Target::Node { .. }) => m.is_finite(),
+                (LoadKind::Force { fx, fy, fz }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
+                (LoadKind::Moment { m, mx, my }, Target::Node { .. }) => m.is_finite() && mx.is_finite() && my.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
                 (LoadKind::Pressure { p }, Target::Edge { .. }) => p.is_finite(),
                 (LoadKind::Traction { fx, fy, .. } | LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
-                (LoadKind::Gravity { gx, gy }, Target::Body) => gx.is_finite() && gy.is_finite(),
+                (LoadKind::Gravity { gx, gy, gz }, Target::Body) => gx.is_finite() && gy.is_finite() && gz.is_finite(),
                 (LoadKind::Flux { q }, Target::Edge { .. }) => q.is_finite(),
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),

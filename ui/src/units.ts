@@ -23,7 +23,7 @@ const US: Record<Q, U> = {
 };
 
 const table = (): Record<Q, U> => {
-  const m = out()?.m, us = m?.units === "US", frame = (m?.analysis ?? "frame") === "frame";
+  const m = out()?.m, us = m?.units === "US", frame = m?.analysis === undefined || m.analysis === "frame" || m.analysis === "space";
   const t = { ...(us ? US : SI) };
   if (frame) t.coord = us ? [FT, "ft"] : [1, "m"];
   return t;

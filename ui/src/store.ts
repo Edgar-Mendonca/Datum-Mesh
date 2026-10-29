@@ -1,6 +1,6 @@
 // Window state: the open model, the selection, the drawing tool, menus, dialogs and messages.
 import { createSignal, batch, JSX } from "solid-js";
-import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, Mesh, ModeResults } from "./api";
+import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, SpaceResults, Mesh, ModeResults } from "./api";
 
 export const [out, setOutRaw] = createSignal<Out | null>(null);
 export const model = (): Model | undefined => out()?.m;
@@ -55,7 +55,8 @@ export const selTargets = (): Target[] => {
 /** The last solve, and whether the model has changed since. */
 export const [results, setResults] = createSignal<Results | null>(null);
 export const frameRes = (): FrameResults | null => { const r = results(); return r?.kind === "frame" ? r : null; };
-export const partRes = (): PartResults | null => { const r = results(); return r && r.kind !== "frame" ? r : null; };
+export const partRes = (): PartResults | null => { const r = results(); return r && (r.kind === "plane" || r.kind === "heat") ? r : null; };
+export const spaceRes = (): SpaceResults | null => { const r = results(); return r?.kind === "space" ? r : null; };
 export const [stale, setStale] = createSignal(false);
 /**
  * What the results show. Frames: deflected shape, a diagram, reactions, utilisation. Parts: the

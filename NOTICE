@@ -1,7 +1,8 @@
 Datum Mesh
 Copyright (c) 2026 Edgar Mendonca. MIT licence.
 
-The window bundles SolidJS (MIT) and the IBM Plex fonts (SIL Open Font Licence 1.1). The desktop
+The window bundles SolidJS (MIT), three.js (MIT, https://github.com/mrdoob/three.js; the 3D view of
+3D frames, with its orbit controls and wide lines) and the IBM Plex fonts (SIL Open Font Licence 1.1). The desktop
 shell uses Tauri (MIT or Apache-2.0) and the Rust crates listed in Cargo.lock, each under MIT,
 Apache-2.0, BSD, ISC, Zlib, MPL-2.0 or Unicode licences (checked by cargo deny, deny.toml). The sparse Cholesky solver is faer (MIT,
 https://github.com/sarah-quinones/faer-rs). Parts are meshed with spade (MIT or Apache-2.0,
