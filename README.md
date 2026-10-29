@@ -33,8 +33,8 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 - **Parts, meshed and solved**: plane stress, plane strain, axisymmetric solids (vessels, shafts), steady heat conduction and thermal stress on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
 - **Natural frequencies** and mode shapes of frames and parts, moving on screen.
 - **Buckling of frames**: load factors and buckled shapes, with every squeezed truss bar checked as a strut.
-- **3D frames and trusses**: drawn on front, side and plan planes, repeated into bays, seen in a 3D view and coloured by their results.
-- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 69 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
+- **3D frames and trusses**: drawn on front, side and plan planes, repeated into bays, seen in a 3D view and coloured by their results, with natural frequencies and buckling.
+- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 76 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
 - **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out.
 - **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; supports and loads on edges and points, including a pin load that bears on one side of a hole.

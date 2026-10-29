@@ -32,14 +32,15 @@
     "Axisymmetric solids: pressure vessels, shafts and discs from their half-section, with hoop stress",
     "Natural frequencies and mode shapes of frames and parts, moving on screen",
     "Buckling of frames: load factors and buckled shapes, with every squeezed truss bar checked as a strut",
-    "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen and coloured by results in a 3D view",
-    "Help › Verification: 69 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to NAFEMS LE1, with mesh convergence",
+    "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
+    "Help › Verification: 76 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to NAFEMS LE1, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Nine worked examples: a portal frame, a roof truss, a steel platform in 3D, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink, a pressure vessel and a heated plate"
+    "Nine worked examples: a portal frame, a roof truss, a steel platform in 3D, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink, a pressure vessel and a heated plate",
+    "Small and quick: a 3 MB installer, a window that starts light, and solve times recorded with every release"
   ],
   "screenshots": [
     "docs/images/bracket-solved.png",

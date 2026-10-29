@@ -45,6 +45,12 @@ jobs:
           mkdir -p out
           cp target/release/bundle/nsis/*-setup.exe "out/DatumMesh-$V-setup.exe"
           cd out && sha256sum "DatumMesh-$V-setup.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -la
+      - name: Size budget of the installer (5 MB, docs/MEMORY.md)
+        shell: bash
+        run: |
+          N=$(wc -c < "out/DatumMesh-$V-setup.exe")
+          echo "Installer: $N bytes (budget 5000000)"
+          test "$N" -le 5000000 || { echo "The installer is over its 5 MB budget."; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.V }}

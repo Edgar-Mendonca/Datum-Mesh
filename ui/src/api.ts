@@ -124,7 +124,14 @@ export interface FrameBuckle { lambda: number; disp: [number, number, number][];
 export interface BarBuckle { id: number; n: number; ncr: number; lambda: number }
 export type ModeResults = { kind: "frame"; modes: FrameMode[]; equations: number; iterations: number; ms: number }
   | { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; modes: PartMode[]; equations: number; iterations: number; ms: number }
-  | { kind: "buckle"; modes: FrameBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number };
+  | { kind: "buckle"; modes: FrameBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number }
+  | { kind: "space"; modes: SpaceMode[]; equations: number; iterations: number; ms: number; warnings: string[] }
+  | { kind: "buckle3"; modes: SpaceBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number };
+/** 3D frames (0.2.6): a mode or buckled shape with six movements per node and 3D member shapes. */
+export interface SpaceMode { f: number; disp: number[][]; members: { id: number; d: P3[] }[] }
+export interface SpaceBuckle { lambda: number; disp: number[][]; members: { id: number; d: P3[] }[] }
+/** Buckling results, plane or 3D. */
+export const isBuckle = (r: ModeResults): r is Extract<ModeResults, { kind: "buckle" | "buckle3" }> => r.kind === "buckle" || r.kind === "buckle3";
 /** Modes as the shell sends them, made whole. */
 export const modesFromWire = (raw: any): ModeResults => { const r = unwire(raw); if (r.kind === "plane") r.draw = drawTris(r.mesh); return r; };
 

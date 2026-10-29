@@ -268,6 +268,13 @@ mod tests {
                 };
                 let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
             }
+            // Frequencies and buckling never panic; when they answer, they rise.
+            if let Ok(f) = crate::space::modes(&d.m, 3) {
+                assert!(f.modes.iter().all(|x| x.f >= 0.0 && x.f.is_finite()) && f.modes.windows(2).all(|w| w[1].f >= w[0].f * (1.0 - 1e-6)), "seed {seed}");
+            }
+            if let Ok(b) = crate::space::buckling(&d.m, 3) {
+                assert!(b.modes.iter().all(|x| x.lambda > 0.0) && b.modes.windows(2).all(|w| w[1].lambda >= w[0].lambda * (1.0 - 1e-6)), "seed {seed}");
+            }
             let Ok(res) = crate::space::solve(&d.m) else { continue };
             solved += 1;
             assert!(res.imbalance < 1e-6, "seed {seed}: imbalance {:e}, {:?} vs {:?}", res.imbalance, res.applied, res.reacted);

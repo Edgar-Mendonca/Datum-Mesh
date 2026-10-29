@@ -4,6 +4,7 @@
   "scripts": {
     "build:ui": "vite build ui",
     "check:ui": "tsc -p ui --noEmit",
+    "size:ui": "node tools/size.cjs",
     "tauri": "tauri",
     "dev": "tauri dev",
     "build": "tauri build",

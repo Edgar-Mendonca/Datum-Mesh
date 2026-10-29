@@ -1,6 +1,6 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
-import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame } from "./api";
+import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame, isBuckle } from "./api";
 import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
@@ -45,7 +45,7 @@ export const C = {
     setSolving(true);
     try {
       const r = modesFromWire(await invoke("modes", { count }));
-      if (r.kind === "buckle") return;
+      if (isBuckle(r)) return;
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
       toast(`${r.modes.length} natural frequencies: the lowest is ${num(r.modes[0].f, 4)} Hz.`, true);
     } catch (e) { toast(String(e)); }
@@ -57,7 +57,7 @@ export const C = {
     setSolving(true);
     try {
       const r = modesFromWire(await invoke("buckling", { count }));
-      if (r.kind !== "buckle") return;
+      if (!isBuckle(r)) return;
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
       const low = Math.min(r.modes[0]?.lambda ?? Infinity, ...r.bars.map(b => b.lambda));
       toast(r.modes.length ? `The lowest buckling load factor is ${num(low, 4)}.` : r.bars.length ? `No frame buckling; the weakest truss bar buckles at a load factor of ${num(low, 4)}.` : "Nothing buckles under these loads.", true);

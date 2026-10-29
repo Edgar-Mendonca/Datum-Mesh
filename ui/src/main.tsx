@@ -1,13 +1,7 @@
 // Datum Mesh window: layout, sidebar, status bar, keyboard shortcuts, startup and recovery.
 import { render } from "solid-js/web";
-import { For, Show, Switch, Match, onMount, createEffect, on } from "solid-js";
-import "@fontsource/ibm-plex-sans/latin-400.css";
-import "@fontsource/ibm-plex-sans/latin-500.css";
-import "@fontsource/ibm-plex-sans/latin-600.css";
-import "@fontsource/ibm-plex-sans/latin-700.css";
-import "@fontsource/ibm-plex-mono/latin-400.css";
-import "@fontsource/ibm-plex-mono/latin-500.css";
-import "@fontsource/ibm-plex-mono/latin-600.css";
+import { For, Show, Switch, Match, onMount, createEffect, on, lazy, Suspense } from "solid-js";
+import "./fonts.css";
 import "./styles.css";
 import { invoke, listen, Out, Options, num, isFrame } from "./api";
 import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed, modes, modeOn } from "./store";
@@ -20,7 +14,9 @@ import { ResultsPage, ResultsLegend } from "./results";
 import { PartLegend, MeshBar } from "./parts";
 import { ModesBar, ModeAnimator } from "./modes";
 import { ReportPage } from "./print";
-import { View3D, PlaneBar, SpaceLegend } from "./view3d";
+import { PlaneBar, SpaceLegend } from "./space3";
+// The 3D view brings three.js: loaded only when a 3D frame is shown.
+const View3D = lazy(() => import("./view3d").then(m => ({ default: m.View3D })));
 import { space, plane, onPlane, unproj } from "./plane3";
 import { Menu, Toast, Icon } from "./ui";
 import { fmt } from "./units";
@@ -94,7 +90,7 @@ const App = () => {
         <nav class="side"><For each={SIDE}>{x => x === "-" ? <hr /> : <button classList={{ on: view() === x[0] }} onClick={() => setView(x[0])} title={x[2]}><Icon n={x[1]} /><span>{x[2]}</span></button>}</For></nav>
         <div class="content">
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="center"><PlaneBar /><Show when={space() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><View3D /></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
+            <Switch fallback={<div class="modelview"><Tree /><div class="center"><PlaneBar /><Show when={space() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
               <Match when={view() === "results"}><ResultsPage /></Match>
               <Match when={view() === "report"}><ReportPage /></Match>
             </Switch>

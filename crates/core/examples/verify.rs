@@ -18,4 +18,10 @@ fn main() {
         }
         println!();
     }
+    let t = datum_core::bench::timings();
+    println!("## Solve times\n\nOn the machine that wrote this record (times vary with the computer; the budgets are in docs/MEMORY.md).\n");
+    println!("| Model | Unknowns | Time | Budget | |\n| --- | --- | --- | --- | --- |");
+    for x in &t {
+        println!("| {} | {} | {:.0} ms | {:.0} s | {} |", x.name, x.unknowns, x.ms, x.budget_ms / 1000.0, if x.ms <= x.budget_ms { "within" } else { "OVER" });
+    }
 }

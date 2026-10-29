@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.2.5 (2026-10-29) |
+| **Current version** | 0.2.6 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -49,7 +49,10 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/examples/bigpart.rs` | A 25 000-element bracket's results as JSON, for timing the window by hand (not a test) |
 | `crates/core/src/space.rs` | 3D frames: local axes (`axes`), the 12×12 beam (axial, torsion, bending both ways) and truss bars, member loads in any direction, supports and springs in six directions, results along members (N, Vy, Vz, T, My, Mz, 3D deflection), six-way equilibrium |
 | `ui/src/plane3.ts` | Working planes of a 3D frame: the projected model the canvas edits (`planeModel`), faint members off the plane, depths, and `lift` turning canvas edits into 3D |
-| `ui/src/view3d.tsx` | The three.js 3D view: members, nodes, supports, loads, the deflected shape coloured by a result, picking and placing, the probe, the plane bar and the 3D legend |
+| `ui/src/space3.tsx` | 3D frames without three.js: the colour-by choice and range, the deflection scale, the 3D legend and the plane bar (loaded at startup) |
+| `ui/src/fonts.css` | The IBM Plex fonts as woff2 only |
+| `tools/size.cjs` | The window's size budgets (startup code 400 kB, whole window 1.6 MB), run by CI |
+| `ui/src/view3d.tsx` | Loaded lazily (the only module importing three.js). The three.js 3D view: members, nodes, supports, loads, the deflected shape coloured by a result, picking and placing, the probe, the plane bar and the 3D legend |
 | `crates/core/src/modal.rs` | Natural frequencies and buckling (`subspace` shared, `Kind`): subspace iteration on one sparse Cholesky of K, Rayleigh–Ritz with a small dense Cholesky and Jacobi eigen solve; mode shapes scaled to a largest movement of 1 |
 | `ui/src/modes.tsx` | Modes on the drawing (frames along members; parts through the contour canvas, 16 cached swing steps), the mode list, the animation, the frequency table |
 | `crates/core/src/frame.rs` | Frames and trusses: beam and truss stiffness, linear member loads as consistent nodal loads, self-weight, springs, reactions, equilibrium sums, exact N, V, M and deflection along each member (41 stations), stress and utilisation |
@@ -77,7 +80,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 127 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
+| `tests_ui/run.cjs` | 132 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -147,6 +150,10 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.2.6 | Budgets: installer under 5 MB (release.yml), window startup code under 400 kB and whole window under 1.6 MB (tools/size.cjs, CI); speed: typical models under 1 s, large ones (about 100 000+ unknowns) under 10 s, timed in the verification record (`bench::timings`) | The user asked that the app stay small and optimised; budgets that fail the build keep it so |
+| 0.2.6 | three.js is loaded only when a 3D frame is shown (`lazy` view3d.tsx); fonts as woff2 only | Startup code 863 → 282 kB |
+| 0.2.6 | 3D buckling is flexural only: the geometric stiffness has no twisting term | Without warping stiffness an I-section twists under axial load at a small fraction of its real load (the portal gave λ = 0.25); flexural-torsional and lateral-torsional buckling need a warping degree of freedom, later |
+| 0.2.6 | 3D frames reuse the plane frame's modal solvers: `space::assemble(m, pieces)` with beams cut in 8, consistent masses (polar mass for twisting), geometric stiffness both ways | One path for supports and loads in static, modal and buckling solves |
 | 0.2.5 | Datum Mesh's purpose written down (top of this file); frames stay in the app but stop short of building design (no code checks or code combinations) | Keeps one clear purpose: analysis of parts and structures, verified, not code design |
 | 0.2.5 | The Windows publisher is "Datum" (`bundle.publisher`), as for the whole family (FAMILY §9); the copyright stays "© 2026 Edgar Mendonca" | One publisher name across the family's installers |
 | 0.2.4 | 3D frames are a separate analysis (`Space`) with y up and z as depth; the plane model gains z, roll, fz, mx, my, gz and six-way springs as serde defaults | Old files open unchanged; a plane frame is the 3D frame with z = 0 (benchmark 13 checks the portal to 1e-13) |
@@ -240,9 +247,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 ### 2026-10-29: Session 1, continued (0.2.5 publisher)
 - Released 0.2.4. Windows publisher set to "Datum" in tauri.conf.json (the only place it was written; docs/FAMILY.md only links to the hub). Patch release 0.2.5.
 
-## 5. Known limits (0.2.4)
+### 2026-10-29: Session 1, continued (0.2.6 3D frame dynamics, optimisation)
+- Released 0.2.5 (publisher Datum). Wrote down the purpose with the user; frames stay in Datum Mesh but stop short of building design. Engine: space.rs `assemble` with splitting, `modes`, `buckling`, benchmark 14, `bench::timings` and `building()`. Window: kinds space and buckle3, mode shapes swinging in the 3D view, three.js split out and loaded lazily (space3.tsx), woff2 fonts only, size budgets in CI and release. Found by benchmark 14: an I-section twisted under axial load at λ = 0.25 without warping stiffness; 3D buckling made flexural only and said so.
 
-- 3D frames: no natural frequencies or buckling yet; utilisation leaves out the shear stress of twisting; an angle bends about its leg axes (the product of inertia is left out); a channel's shear centre is not modelled.
+## 5. Known limits (0.2.6)
+
+- 3D frames: buckling by bending only (no flexural-torsional or lateral-torsional buckling: no warping stiffness); utilisation leaves out the shear stress of twisting; an angle bends about its leg axes (the product of inertia is left out); a channel's shear centre is not modelled.
 
 - Buckling: frames and trusses only, in their own plane; linear (eigenvalue) buckling of a perfect frame; no lateral-torsional buckling or design-code checks.
 

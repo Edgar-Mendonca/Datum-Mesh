@@ -22,6 +22,8 @@ jobs:
       - run: npm ci
       - run: npm run check:ui
       - run: npm run build:ui
+      - name: Size budget of the window
+        run: node tools/size.cjs
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - name: UI tests (Playwright)

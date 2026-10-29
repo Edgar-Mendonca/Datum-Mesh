@@ -47,7 +47,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
-          if (c === "buckling") { if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
+          if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
+          if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
           if (c === "materials_library") return f.library;
           if (c in m) return m[c];
@@ -59,6 +60,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   }, fix);
   await p.goto(url);
   await p.waitForTimeout(800);
+  check("the 3D view's code (three.js) is not loaded at startup (0.2.6)", !(await p.evaluate(() => performance.getEntriesByType("resource").some(e => e.name.includes("view3d")))));
   const ops = () => p.evaluate(() => window.__calls.filter(c => c[0] === "apply").map(c => c[1].op));
   const lastOp = async () => (await ops()).slice(-1)[0];
   const canvasBox = async () => p.$eval(".canvas", el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
@@ -363,6 +365,18 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the 3D Results page sums six ways and lists six reactions per support", pg3.includes("Σ Fz") && pg3.includes("Σ My about the origin") && (await p.$$eval(".page h2 + table thead tr", rs => rs.map(r => r.children.length))).includes(7), pg3.slice(0, 200));
   check("the 3D Results page lists every member with torque and both moments", (await p.$$(".page .tbl tbody tr.link")).length === pm.members.length && pg3.includes("|Mz| · |My|"));
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
+  check("the 3D view's code is loaded once a 3D frame is shown", await p.evaluate(() => performance.getEntriesByType("resource").some(e => e.name.includes("view3d"))));
+  // 3D frames vibrate and buckle (0.2.6).
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest natural frequencies and their mode shapes"]'); await p.waitForTimeout(400);
+  const p3m = unpack(fix.platform_modes);
+  check("a 3D frame's natural frequencies are listed under the 3D view", (await p.$$(".legend .modelist button")).length === p3m.modes.length && (await p.textContent(".legend .modelist")).includes("Hz") && (await p.$$(".view3d canvas")).length === 1);
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]'); await p.waitForTimeout(400);
+  const p3b = unpack(fix.platform_buckle);
+  check("a 3D frame's buckling load factors are listed", (await p.$$(".legend .modelist button")).length === p3b.modes.length && (await p.textContent(".legend .modelist")).includes("λ"));
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  check("the Results page says 3D buckling is by bending only", (await p.textContent(".page")).includes("twisting and lateral-torsional buckling of open sections"));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await p.click(".legend button:has-text('Back to the static results')"); await p.waitForTimeout(100);
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

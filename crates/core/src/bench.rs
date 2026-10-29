@@ -690,6 +690,61 @@ fn space() -> Vec<Check> {
     out
 }
 
+/// Benchmark 14 (0.2.6): natural frequencies and buckling of 3D frames.
+fn space_dynamics() -> Vec<Check> {
+    let mut out = vec![];
+    let (l, e, rho) = (2.0, 200e9, 7850.0);
+    let (b, h) = (0.05, 0.1);
+    let pr = crate::sections::props(&SectionShape::Rect { b, h }).unwrap();
+    let g = e / (2.0 * (1.0 + Material::steel(1).nu));
+    let src = "Euler–Bernoulli beam vibration (Blevins, table 8-1); torsional vibration of a shaft";
+    // A cantilever along x drawn as one member: it bends both ways and twists.
+    let mut d = space_frame(e, SectionShape::Rect { b, h });
+    d.m.materials[0].rho = rho;
+    member3(&mut d, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+    support3(&mut d, [0.0; 3], SupportKind::Fixed);
+    let r = crate::space::modes(&d.m, 8).expect("modes");
+    let a = b * h;
+    let bend = |i: f64| 1.875_104_068_711_961f64.powi(2) / (std::f64::consts::TAU * l * l) * (e * i / (rho * a)).sqrt();
+    let tip = d.m.nodes.iter().position(|n| n.x == l).unwrap();
+    let pick = |k: usize| r.modes.iter().find(|md| { let t = md.disp[tip]; let others = (0..4).filter(|j| *j != k).map(|j| t[j].abs()).fold(0.0, f64::max); t[k].abs() > 10.0 * others }).map(|md| md.f).unwrap_or(f64::NAN);
+    out.push(check(14, "3D cantilever, one member", "First frequency across the width (weak axis)", "hz", bend(pr.iy), pick(2), 1e-3, src));
+    out.push(check(14, "3D cantilever, one member", "First frequency across the depth (strong axis)", "hz", bend(pr.i), pick(1), 1e-3, src));
+    out.push(check(14, "3D cantilever, one member", "First twisting frequency √(GJ/ρIp) / 4L", "hz", (g * pr.j / (rho * (pr.i + pr.iy))).sqrt() / (4.0 * l), pick(3), 1e-2, "Torsional vibration of a shaft fixed at one end; linear twisting elements are 0.3 % high with eight pieces"));
+    // A column along y pinned at both ends (held from spinning at the foot), 80 × 100: it buckles
+    // first about its weak axis, then about its strong one.
+    let (lc, p) = (3.0, 10e3);
+    let pc = crate::sections::props(&SectionShape::Rect { b: 0.08, h: 0.1 }).unwrap();
+    let mut d = space_frame(e, SectionShape::Rect { b: 0.08, h: 0.1 });
+    member3(&mut d, [0.0; 3], [0.0, lc, 0.0], MemberKind::Beam);
+    let big = 1e15;
+    support3(&mut d, [0.0; 3], SupportKind::Spring { kx: big, ky: big, kr: 0.0, kz: big, krx: 0.0, kry: big });
+    support3(&mut d, [0.0, lc, 0.0], SupportKind::Spring { kx: big, ky: 0.0, kr: 0.0, kz: big, krx: 0.0, kry: 0.0 });
+    let top = node3(&d, [0.0, lc, 0.0]);
+    load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+    let r = crate::space::buckling(&d.m, 3).expect("buckling");
+    let euler = |i: f64| std::f64::consts::PI.powi(2) * e * i / (lc * lc) / p;
+    let src = "Euler buckling loads (Timoshenko & Gere, §2.1)";
+    out.push(check(14, "3D column pinned at both ends, 80 × 100", "First load factor, about the weak axis", "ratio", euler(pc.i.min(pc.iy)), r.modes[0].lambda, 1e-3, src));
+    out.push(check(14, "3D column pinned at both ends, 80 × 100", "Second load factor, about the strong axis", "ratio", euler(pc.i.max(pc.iy)), r.modes[1].lambda, 1e-3, src));
+    // The plane portal frame in 3D: its plane frequencies and buckling factors are among the 3D
+    // ones (the 3D frame also sways and twists out of its plane).
+    let mut pm = crate::examples::get("portal").unwrap();
+    let f2 = frame::modes(&pm, 3).unwrap();
+    let b2 = frame::buckling(&pm, 2).unwrap();
+    pm.analysis = Analysis::Space;
+    let f3 = crate::space::modes(&pm, 30).unwrap();
+    let b3 = crate::space::buckling(&pm, 30).unwrap();
+    let near = |v: f64, xs: &[f64]| xs.iter().map(|x| (x - v).abs() / v).fold(f64::INFINITY, f64::min);
+    let ff: Vec<f64> = f3.modes.iter().map(|m| m.f).collect();
+    let fb: Vec<f64> = b3.modes.iter().map(|m| m.lambda).collect();
+    let worst_f = f2.modes.iter().map(|m| near(m.f, &ff)).fold(0.0, f64::max);
+    let worst_b = b2.modes.iter().map(|m| near(m.lambda, &fb)).fold(0.0, f64::max);
+    out.push(check(14, "Portal frame example, in 3D", "Its three plane frequencies are among the 3D ones (largest difference)", "ratio", 1.0, 1.0 + worst_f, 1e-6, "The plane frame is a special case of the 3D frame"));
+    out.push(check(14, "Portal frame example, in 3D", "Its two plane buckling factors are among the 3D ones (largest difference)", "ratio", 1.0, 1.0 + worst_b, 1e-6, "The plane frame is a special case of the 3D frame"));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -705,6 +760,7 @@ pub fn run() -> Vec<Check> {
     v.extend(frequencies());
     v.extend(buckling());
     v.extend(space());
+    v.extend(space_dynamics());
     v
 }
 
@@ -722,8 +778,91 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=13 {
+        for b in 1..=14 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
+}
+
+/// How long a solve took (0.2.6): typical and large models, against the speed budgets in
+/// docs/MEMORY.md. Times depend on the machine; the record says which one ran them.
+#[derive(Clone, Debug, Serialize)]
+pub struct Timing {
+    pub name: String,
+    pub unknowns: usize,
+    pub ms: f64,
+    pub budget_ms: f64,
+}
+
+/// A building frame of `nx` × `nz` bays and `ny` storeys (3 m bays, 3 m storeys), fixed at the
+/// ground, gravity and a push along x at every floor node. Built directly (not edit by edit).
+pub fn building(nx: usize, ny: usize, nz: usize) -> Model {
+    use crate::model::{Member, Node};
+    let mut m = Model::new(Analysis::Space);
+    let id = |i: usize, j: usize, k: usize| (100 + (j * (nz + 1) + k) * (nx + 1) + i) as u32;
+    for j in 0..=ny {
+        for k in 0..=nz {
+            for i in 0..=nx {
+                m.nodes.push(Node { id: id(i, j, k), x: 3.0 * i as f64, y: 3.0 * j as f64, z: 3.0 * k as f64 });
+            }
+        }
+    }
+    let mut next = 100 + ((ny + 1) * (nz + 1) * (nx + 1)) as u32;
+    let mut member = |m: &mut Model, a: u32, b: u32| {
+        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0 });
+        next += 1;
+    };
+    for j in 0..=ny {
+        for k in 0..=nz {
+            for i in 0..=nx {
+                if j > 0 {
+                    member(&mut m, id(i, j - 1, k), id(i, j, k));
+                    if i < nx {
+                        member(&mut m, id(i, j, k), id(i + 1, j, k));
+                    }
+                    if k < nz {
+                        member(&mut m, id(i, j, k), id(i, j, k + 1));
+                    }
+                }
+            }
+        }
+    }
+    let mut sid = next;
+    for k in 0..=nz {
+        for i in 0..=nx {
+            m.supports.push(Support { id: sid, at: Target::Node { id: id(i, 0, k) }, kind: SupportKind::Fixed });
+            sid += 1;
+        }
+    }
+    m.loads.push(Load { id: sid, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 } });
+    sid += 1;
+    for j in 1..=ny {
+        m.loads.push(Load { id: sid, at: Target::Node { id: id(0, j, 0) }, kind: LoadKind::Force { fx: 5e3, fy: 0.0, fz: 0.0 } });
+        sid += 1;
+    }
+    m.next = sid;
+    m
+}
+
+/// Typical and large solves, timed.
+pub fn timings() -> Vec<Timing> {
+    let mut out = vec![];
+    let mut time = |name: &str, budget_ms: f64, f: &mut dyn FnMut() -> usize| {
+        let t0 = std::time::Instant::now();
+        let unknowns = f();
+        out.push(Timing { name: name.into(), unknowns, ms: t0.elapsed().as_secs_f64() * 1e3, budget_ms });
+    };
+    let portal = crate::examples::get("portal").unwrap();
+    time("Portal frame example: solve", 1000.0, &mut || frame::solve(&portal).unwrap().stats.equations);
+    let platform = crate::examples::get("platform").unwrap();
+    time("Steel platform (3D) example: solve", 1000.0, &mut || crate::space::solve(&platform).unwrap().stats.equations);
+    let bracket = crate::examples::get("bracket").unwrap();
+    time("L-bracket example: mesh and solve", 1000.0, &mut || plane::solve(&bracket).unwrap().stats.equations);
+    let mut fine = bracket.clone();
+    fine.mesh.size = 0.0006;
+    time("L-bracket, fine mesh: mesh and solve", 10_000.0, &mut || plane::solve(&fine).unwrap().stats.equations);
+    let tall = building(10, 12, 8);
+    time("3D building frame, 10 × 8 bays, 12 storeys: solve", 10_000.0, &mut || crate::space::solve(&tall).unwrap().stats.equations);
+    time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
+    out
 }

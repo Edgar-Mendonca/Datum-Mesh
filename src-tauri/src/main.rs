@@ -151,11 +151,11 @@ async fn modes(st: State<'_, St>, count: usize) -> R<serde_json::Value> {
     tauri::async_runtime::spawn_blocking(move || datum_core::modes(&m, count).map(|r| small(&r))).await.map_err(|e| e.to_string())?
 }
 
-/// The lowest buckling load factors and shapes of the open frame (0.2.3), sent as modes.
+/// The lowest buckling load factors and shapes of the open frame (0.2.3; 3D frames 0.2.6), sent as modes.
 #[tauri::command]
 async fn buckling(st: State<'_, St>, count: usize) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::buckling(&m, count).map(|r| small(&datum_core::Modes::Buckle(r)))).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || datum_core::buckling(&m, count).map(|r| small(&r))).await.map_err(|e| e.to_string())?
 }
 
 /// Mesh the open part without solving it (the Mesh view and its statistics).

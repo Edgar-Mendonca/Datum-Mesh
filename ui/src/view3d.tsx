@@ -2,52 +2,21 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
-import { Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Model, SpaceMember, SpaceResults, Target, num, clean, parseNum } from "./api";
-import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setView, setEdgeSel } from "./store";
+import { SpaceMember, Target, clean } from "./api";
+import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase } from "./store";
 import { palette, BANDS } from "./parts";
 import { defaultLoad, defaultSupport } from "./panels";
-import { fmt, unit, fromU, Q } from "./units";
-import { setPlane, plane, PLANES, space, depth, setDepth, depths, depthAxis, fit3d } from "./plane3";
-import { C, imbalanceOf } from "./cmds";
-import { Icon } from "./ui";
-
-type P3 = [number, number, number];
-const at3 = (m: Model) => new Map(m.nodes.map(n => [n.id, [n.x, n.y, n.z ?? 0] as P3]));
-
-/** The result the members are coloured by. */
-export type Q3 = "util" | "n" | "mz" | "my" | "t" | "vy" | "vz" | "d" | "none";
-export const Q3S: [Q3, string, Q][] = [["util", "Utilisation", "ratio"], ["n", "Axial force N", "force"], ["mz", "Bending moment Mz (about the strong axis)", "moment"], ["my", "Bending moment My (about the weak axis)", "moment"], ["t", "Torque T", "moment"], ["vy", "Shear Vy", "force"], ["vz", "Shear Vz", "force"], ["d", "Deflection", "len"], ["none", "None", "ratio"]];
-export const [q3, setQ3] = createSignal<Q3>("util");
-
-const span3 = (m: Model) => {
-  if (!m.nodes.length) return 1;
-  const lo = [0, 1, 2].map(k => Math.min(...m.nodes.map(n => [n.x, n.y, n.z ?? 0][k]))), hi = [0, 1, 2].map(k => Math.max(...m.nodes.map(n => [n.x, n.y, n.z ?? 0][k])));
-  return Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2], 1e-6);
-};
-const dlen = (d: P3) => Math.hypot(d[0], d[1], d[2]);
-/** How many times the deflections are drawn larger: a round number, as for plane frames. */
-export const deform3 = (m: Model, r: SpaceResults) => {
-  const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(dlen)));
-  if (!(dmax > 1e-12 * span3(m))) return 0;
-  const f = 0.08 * span3(m) / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p;
-  return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale;
-};
-/** A member's values for the chosen result, one per station. */
-const vals = (mr: SpaceMember, q: Q3): number[] => q === "util" ? mr.x.map(() => mr.util) : q === "d" ? mr.d.map(dlen) : q === "none" ? mr.x.map(() => 0) : mr[q];
-export const range3 = createMemo((): [number, number] | null => {
-  const r = spaceRes(), q = q3(); if (!r || q === "none") return null;
-  const v = r.members.flatMap(mr => vals(mr, q)); if (!v.length) return null;
-  let lo = Math.min(...v), hi = Math.max(...v);
-  if (q === "util") { lo = 0; hi = Math.max(hi, 1); }
-  if (hi - lo < 1e-12 * Math.max(Math.abs(hi), Math.abs(lo), 1e-300)) { hi = lo + 1; }
-  return [lo, hi];
-});
+import { fmt } from "./units";
+import { setPlane, fit3d } from "./plane3";
+import { C } from "./cmds";
+import { P3, at3, span3, dlen, deform3, vals, q3, range3 } from "./space3";
+import { modeAmp } from "./modes";
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 
@@ -63,6 +32,10 @@ export const View3D = () => {
   let controls: OrbitControls | null = null;
   const world = new THREE.Group();
   scene.add(world);
+  // A mode or buckled shape (0.2.6), redrawn alone as it swings.
+  const modeGroup = new THREE.Group();
+  scene.add(modeGroup);
+  const mode3 = () => { const r = modes(); return modeOn() && r && (r.kind === "space" || r.kind === "buckle3") ? r.modes[modeSel()] ?? null : null; };
   scene.add(new THREE.AmbientLight(0xffffff, 2.2));
   const sun = new THREE.DirectionalLight(0xffffff, 1.4);
   sun.position.set(1, 2, 1.5);
@@ -118,12 +91,12 @@ export const View3D = () => {
       const a = P.get(b.a), c = P.get(b.b); if (!a || !c) continue;
       (selSet.has(b.id) ? chosen : b.kind === "truss" ? bars : plain).push(...a, ...c);
     }
-    const resOn = showRes && show().deformed;
+    const resOn = (showRes && show().deformed) || !!mode3();
     if (plain.length) fat(plain, null, resOn ? faint : ink, resOn ? 1.5 : 3);
     if (bars.length) fat(bars, null, resOn ? faint : ink, resOn ? 1.2 : 2, true);
     if (chosen.length) fat(chosen, null, accent, 4);
     // The deflected shape, coloured by the chosen result.
-    if (showRes && r) {
+    if (showRes && r && !mode3()) {
       const pts: number[] = [], cs: number[] = [];
       const colourOf = (v: number) => { if (!rg || q === "none") return new THREE.Color(ink); const t = (v - rg[0]) / (rg[1] - rg[0]); return cols[Math.max(0, Math.min(BANDS - 1, Math.floor(t * BANDS)))]; };
       for (const mr of r.members) {
@@ -279,6 +252,29 @@ export const View3D = () => {
     onCleanup(() => { ro.disconnect(); controls?.dispose(); clear(); renderer.dispose(); renderer.domElement.remove(); if (frame) cancelAnimationFrame(frame); fit3d.run = null; });
   });
   createEffect(build);
+  createEffect(() => {
+    const md = mode3(), m = model(), k = modeAmp() * phase();
+    themeTick();
+    modeGroup.traverse(o => { const x = o as any; x.geometry?.dispose?.(); x.material?.dispose?.(); });
+    modeGroup.clear();
+    if (md && m) {
+      const P = at3(m), pts: number[] = [];
+      for (const sh of md.members) {
+        const b = m.members.find(x => x.id === sh.id), a = b && P.get(b.a), c = b && P.get(b.b); if (!a || !c) continue;
+        const n = sh.d.length - 1, at = (i: number): P3 => { const t = i / n, d = sh.d[i]; return [a[0] + (c[0] - a[0]) * t + d[0] * k, a[1] + (c[1] - a[1]) * t + d[1] * k, a[2] + (c[2] - a[2]) * t + d[2] * k]; };
+        for (let i = 0; i < n; i++) pts.push(...at(i), ...at(i + 1));
+      }
+      if (pts.length) {
+        const g = new LineSegmentsGeometry(); g.setPositions(pts);
+        const [w, h] = size();
+        const mt = new LineMaterial({ color: new THREE.Color(css("--blue")).getHex(), linewidth: 3.5, worldUnits: false });
+        mt.resolution.set(w, h);
+        lineMats.push(mt);
+        modeGroup.add(new LineSegments2(g, mt));
+      }
+    }
+    draw();
+  });
   // A new model (another file or example) is framed afresh.
   let lastName = "";
   createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}` : ""; if (key !== lastName) { lastName = key; queueMicrotask(() => fit()); } });
@@ -296,40 +292,3 @@ export const View3D = () => {
   );
 };
 
-/** Under the 3D view once solved: what colours the members, the deflection scale, equilibrium. */
-export const SpaceLegend = () => {
-  const r = () => spaceRes(), m = () => model();
-  const qd = () => Q3S.find(x => x[0] === q3())!;
-  const dmax = () => Math.max(0, ...(r()?.members.flatMap(mr => mr.d.map(dlen)) ?? [0]));
-  const cols = () => palette(opts().contours);
-  return (
-    <Show when={r() && m()}>
-      <div class="legend">
-        <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
-        <div><b>Colour by</b><select class="fpick" value={q3()} onChange={e => setQ3(e.currentTarget.value as Q3)}>{Q3S.map(([k, l]) => <option value={k} selected={k === q3()}>{l}</option>)}</select></div>
-        <Show when={range3()}>{rg => <span class="cbar"><span class="cb">{cols().map((c, k) => <i style={{ background: c }}><Show when={k % 3 === 0}><small>{q3() === "util" ? `${num((rg()[0] + (rg()[1] - rg()[0]) * k / BANDS) * 100, 2)}%` : num(+fmt(qd()[2], rg()[0] + (rg()[1] - rg()[0]) * k / BANDS, 3).split(" ")[0].replace("−", "-"), 3)}</small></Show></i>)}<b><small>{q3() === "util" ? `${num(rg()[1] * 100, 2)}%` : num(+fmt(qd()[2], rg()[1], 3).split(" ")[0].replace("−", "-"), 3)}</small></b></span><em>{q3() === "util" ? "" : unit(qd()[2])}</em></span>}</Show>
-        <div><b>Deflected shape</b><span>{deform3(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deform3(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
-          <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
-        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
-      </div>
-    </Show>
-  );
-};
-
-/** Over the model view of a 3D frame: the 3D view or a working plane, and the plane's depth. */
-export const PlaneBar = () => {
-  const [typed, setTyped] = createSignal("");
-  return (
-    <Show when={space()}>
-      <div class="planebar">
-        <span class="seg">{PLANES.map(([k, l, t]) => <button classList={{ on: plane() === k }} title={t} onClick={() => { setPlane(k); if (k === "3d") setTool("select"); }}>{l}</button>)}</span>
-        <Show when={plane() !== "3d"}>
-          <label>{depthAxis()} =</label>
-          <select value={String(depth())} onChange={e => setDepth(+e.currentTarget.value)}>{[...new Set([...depths(), depth()])].sort((a, b) => a - b).map(d => <option value={String(d)} selected={d === depth()}>{fmt("coord", d)}</option>)}</select>
-          <input class="mono" placeholder="other" value={typed()} title={`Another depth (${unit("coord")})`} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null) { setDepth(fromU("coord", v)); setTyped(""); e.currentTarget.value = ""; } }} />
-          <span class="muted">{plane() === "xy" ? "x across, y up" : plane() === "zy" ? "z across, y up (from the left)" : "x across, z towards you (from above)"} · members off this plane are faint</span>
-        </Show>
-      </div>
-    </Show>
-  );
-};

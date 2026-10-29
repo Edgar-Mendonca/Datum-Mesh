@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.2.6 — 2026-10-29
+
+3D frames vibrate and buckle; the app starts lighter and keeps to size and speed budgets.
+
+**3D frames**
+- Solve › **Natural Frequencies** and **Buckling** now work for 3D frames: beams bend both ways and twist as they vibrate, and buckle by bending about either axis. The shapes swing in the 3D view; the lists, tables and printed report are as for plane frames.
+- Truss bars in compression are checked on their own about their weaker axis.
+- Buckling in 3D is by bending only: twisting and lateral-torsional buckling of open sections (I, channel) are not checked yet, and the Results page says so.
+
+**Lighter and quicker**
+- The 3D view's code loads only when a 3D frame is shown: the window starts with a third of the code it had (282 kB, was 863 kB).
+- The fonts are bundled once, not twice (the window is 1.1 MB, was 1.2 MB).
+- Size budgets checked on every build: the installer stays under 5 MB, the window's startup code under 400 kB.
+- Solve times are in the verification record: the examples solve in milliseconds, a fine mesh of 141 000 unknowns in about 1.5 s, and six frequencies of a 12-storey 3D building frame (147 000 unknowns) in about 2.3 s.
+
+**Trust**
+- Help › Verification: 76 checks, all passing. New: a 3D cantilever's frequencies across its width, across its depth and in twisting; a column buckling about its weak and then its strong axis; and the portal frame in 3D, whose plane frequencies and buckling factors are found again to 1 part in 10¹².
+
 ## 0.2.5 — 2026-10-29
 
 - Windows now lists the publisher as Datum.
