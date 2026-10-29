@@ -42,10 +42,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
@@ -377,6 +377,34 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the Results page says 3D buckling is by bending only", (await p.textContent(".page")).includes("twisting and lateral-torsional buckling of open sections"));
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
   await p.click(".legend button:has-text('Back to the static results')"); await p.waitForTimeout(100);
+  // 3D solids (0.3.0): the L-bracket extruded, its faces, the solve, the Results page.
+  await open("bracket3d");
+  check("a 3D solid opens in the 3D view with 3D and Section", (await p.$$(".view3d canvas")).length === 1 && (await p.$$eval(".planebar .seg button", bs => bs.map(b => b.textContent))).join() === "3D,Section");
+  await p.click('.tabs > button:text-is("Home")');
+  check("Home shows 3D Solid chosen", await p.$eval('.ribbon button[title^="3D solids: the part"]', el => el.classList.contains("on")));
+  check("the Inspector has the thickness of the extrusion and the layers", (await p.textContent(".insp")).includes("Thickness (extruded along z)") && (await p.textContent(".insp")).includes("Layers through the thickness"));
+  await p.click('.planebar .seg button:text-is("Section")'); await p.waitForTimeout(250);
+  check("Section shows the part's outline to edit", (await p.$$(".dsvg .shape")).length === fix.bracket3d.m.shapes.length);
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Fixed")'); await p.waitForTimeout(100);
+  await p.click('.planebar button:has-text("the back face")'); await p.waitForTimeout(150);
+  const bf = await lastOp();
+  check("a support goes on the back face with a button", !!bf?.Add?.item?.Support && bf.Add.item.Support.at.on === "end" && bf.Add.item.Support.at.front === false, JSON.stringify(bf));
+  await p.keyboard.press("Escape");
+  await p.click('.planebar .seg button:text-is("3D")'); await p.waitForTimeout(250);
+  await p.evaluate(() => { window.__solveKey = "bracket3d_results"; });
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__solveKey = null; });
+  const lg3 = await p.textContent(".legend");
+  check("once solved, the solid is coloured by a result with its scale", lg3.includes("Von Mises stress") && lg3.includes("18-node wedges") && (await p.$$(".legend .cbar")).length === 1 && lg3.includes("Equilibrium"), lg3.slice(0, 200));
+  check("the tree shows the solved solid's mesh, not 'not meshed' (0.3.0 real-app bug)", (await p.textContent(".tree")).includes("wedges"));
+  await p.click('.tabs > button:text-is("Results")');
+  check("the Results tab offers the solid's results", !(await p.$eval('.ribbon button:has-text("Von Mises")', el => el.disabled)));
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  const sp3 = await p.textContent(".page");
+  check("the 3D solid's Results page has the extremes, six sums and the reactions", sp3.includes("Largest and smallest values") && sp3.includes("Σ Fz") && sp3.includes("Σ Mx about the origin") && sp3.includes("Displacement in z"));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
+  await open("blank-solid");
+  check("a blank 3D solid asks for its section", (await p.textContent(".view3d")).includes("Draw the part's section"));
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

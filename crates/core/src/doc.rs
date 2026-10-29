@@ -539,8 +539,8 @@ fn renumber(m: &mut Model, shape: u32, f: impl Fn(u32) -> Vec<u32>) {
             }
             let mut kind = x.kind.clone();
             // A total edge force is shared between the halves.
-            if let LoadKind::Traction { fx, fy, total: true } = kind {
-                kind = LoadKind::Traction { fx: fx / n as f64, fy: fy / n as f64, total: true };
+            if let LoadKind::Traction { fx, fy, total: true, .. } = kind {
+                kind = LoadKind::Traction { fx: fx / n as f64, fy: fy / n as f64, total: true, fz: 0.0 };
             }
             if let LoadKind::Bearing { fx, fy } = kind {
                 kind = LoadKind::Bearing { fx: fx / n as f64, fy: fy / n as f64 };
@@ -743,7 +743,7 @@ fn prune(m: &mut Model) {
         Target::Node { id } => nodes.contains(id),
         Target::Member { id } => members.contains(id),
         Target::Edge { shape, edge } => edges.get(shape).is_some_and(|n| (*edge as usize) < *n),
-        Target::Point { .. } | Target::Body => true,
+        Target::Point { .. } | Target::Body | Target::End { .. } => true,
     };
     m.supports.retain(|s| alive(&s.at));
     m.loads.retain(|s| alive(&s.at));

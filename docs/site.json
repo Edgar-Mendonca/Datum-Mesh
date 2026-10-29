@@ -13,7 +13,7 @@
   "steps": [
     {
       "title": "Draw and mesh",
-      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes, on a grid with snap and rulers."
+      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes (extruded into a 3D solid if you like), on a grid with snap and rulers."
     },
     {
       "title": "Load and support",
@@ -33,13 +33,14 @@
     "Natural frequencies and mode shapes of frames and parts, moving on screen",
     "Buckling of frames: load factors and buckled shapes, with every squeezed truss bar checked as a strut",
     "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
-    "Help › Verification: 76 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to NAFEMS LE1, with mesh convergence and solve times",
+    "3D solids: a part's outline extruded by its thickness, solved in 3D and coloured by its stresses in a 3D view",
+    "Help › Verification: 85 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Nine worked examples: a portal frame, a roof truss, a steel platform in 3D, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink, a pressure vessel and a heated plate",
+    "Ten worked examples, from a portal frame and a roof truss to a steel platform in 3D and an L-bracket solid in 3D",
     "Small and quick: a 3 MB installer, a window that starts light, and solve times recorded with every release"
   ],
   "screenshots": [
@@ -50,14 +51,13 @@
   ],
   "roadmap": [
     {
-      "v": "0.3",
-      "title": "3D solids",
+      "v": "0.3.1–0.3.3",
+      "title": "3D solids, continued",
       "when": "Next",
       "items": [
-        "Parts extruded or revolved from 2D outlines, meshed into layers of 3D elements",
-        "Linear static stress in 3D, then heat and natural frequencies",
-        "A 3D view: orbit, section plane, contours on faces",
-        "Verified: 3D cantilever, thick cylinder in 3D, NAFEMS LE10"
+        "The 3D view for solids: a cutting plane through the part, and picking faces in 3D",
+        "Revolved solids (shafts, hubs, vessels) and symmetry faces; verified on NAFEMS LE10",
+        "Heat conduction and natural frequencies of 3D solids"
       ]
     },
     {

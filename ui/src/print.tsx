@@ -6,7 +6,8 @@ import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
 import { Model, Pt, num, isFrame } from "./api";
-import { out, opts, call, toast, model, frameRes as results, partRes, spaceRes, stale, setBackstage, modes, modesStale } from "./store";
+import { SolidResultsPage } from "./results";
+import { out, opts, call, toast, model, frameRes as results, partRes, spaceRes, solidRes, stale, setBackstage, modes, modesStale } from "./store";
 import { fieldDef, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
 import { Help } from "./help";
 import { ModesTable } from "./modes";
@@ -101,7 +102,8 @@ const Report = (p: { m: Model }) => {
     <table class="tbl"><tbody><For each={m.supports} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td></tr>}</For></tbody></table>
     <h4>Loads</h4>
     <table class="tbl"><tbody><For each={m.loads} fallback={<tr><td>None yet.</td></tr>}>{x => <tr><td>{itemName(m, x.id)}</td><td>{loadValue(x.kind)}</td></tr>}</For></tbody></table>
-    <Show when={!isFrame(m.analysis)}><PartReport m={m} /></Show>
+    <Show when={!isFrame(m.analysis) && m.analysis !== "solid"}><PartReport m={m} /></Show>
+    <Show when={m.analysis === "solid"}><Show when={solidRes() && !stale()} fallback={<p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p>}><SolidResultsPage r={solidRes()!} /></Show></Show>
     <Show when={m.analysis === "space"}><Show when={spaceRes() && !stale()} fallback={<p class="muted">Solve the model (F5) to add its results, reactions and the equilibrium check to this page.</p>}>{_ => { const r = spaceRes()!; const name = (id: number) => `Node ${m.nodes.findIndex(n => n.id === id) + 1}`; return <>
       <h4>Equilibrium check</h4>
       <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>

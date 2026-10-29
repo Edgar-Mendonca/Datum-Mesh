@@ -354,7 +354,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
     for l in &m.loads {
         match (&l.kind, &l.at) {
             (LoadKind::Pressure { .. } | LoadKind::Traction { .. }, Target::Edge { shape, edge }) => {
-                let tr_total = if let LoadKind::Traction { fx, fy, total: true } = l.kind { let len = edge_len(*shape, *edge); if len > 0.0 { Some([fx / len, fy / len]) } else { None } } else { None };
+                let tr_total = if let LoadKind::Traction { fx, fy, total: true, .. } = l.kind { let len = edge_len(*shape, *edge); if len > 0.0 { Some([fx / len, fy / len]) } else { None } } else { None };
                 for e in ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge) {
                     for &(s, w) in &G3 {
                         let (pt, tg, n) = edge_geo(&ms.nodes, e, s);
@@ -363,7 +363,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
                         let out = [tg[1] / jl, -tg[0] / jl];
                         let tr = match l.kind {
                             LoadKind::Pressure { p } => [-p * out[0], -p * out[1]],
-                            LoadKind::Traction { fx, fy, total } => if total { tr_total.unwrap_or([0.0, 0.0]) } else { [fx, fy] },
+                            LoadKind::Traction { fx, fy, total, .. } => if total { tr_total.unwrap_or([0.0, 0.0]) } else { [fx, fy] },
                             _ => [0.0, 0.0],
                         };
                         for (q, ni) in n.iter().enumerate() {
@@ -785,7 +785,7 @@ mod tests {
         d.m.thickness = 0.01;
         let s = d.m.shapes[0].id;
         d.m.loads.clear();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Traction { fx: 1.5e3, fy: 0.0, total: true } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Traction { fx: 1.5e3, fy: 0.0, total: true, fz: 0.0 } }) }).unwrap();
         let r = solve(&d.m).unwrap();
         assert!((r.applied[0] - 1.5e3).abs() < 1e-9 * 1.5e3, "{}", r.applied[0]);
         // Per length: 2 kN/m on a 0.1 m edge is 200 N.

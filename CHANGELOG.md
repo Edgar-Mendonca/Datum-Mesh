@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0 — 2026-10-29
+
+3D solids: a part's outline extruded by its thickness and solved in 3D.
+
+**3D solids**
+- Home › **3D Solid**: draw the outline and holes in **Section**, exactly as for a plane part, and set the thickness; the part is extruded along z and shown in the 3D view.
+- Supports and loads go on faces: an edge in Section stands for its side face, and the **back** and **front** faces have their own buttons while a support or load is being placed. Fixed, roller and symmetry supports; pressures, face forces (now with Fz too) and gravity.
+- The section's mesh is swept through the thickness in layers of wedges: 18-node wedges from the quadratic mesh (accurate), 6-node from the linear one. Layers are automatic, or set in the Inspector.
+- Once solved, the surface is coloured by any of 14 results (von Mises, σ1, σ3, each stress and shear, the displacements, the safety factor) on the deformed shape; hover to read a value. The Results page and report give the largest and smallest values anywhere inside, with where, the reactions and the equilibrium check in six sums.
+- New examples: the L-bracket as a 3D solid, and a blank 3D solid.
+
+**Quicker solves**
+- The sparse solver now uses every core of the computer, and big 3D models store half the matrix: about 90 000 unknowns of a 3D solid solve in about 6 s and 1.2 GB on four cores.
+- A 3D solid is limited to 200 000 unknowns, with a message saying how to make the mesh coarser, so a too-fine mesh cannot run the computer out of memory.
+
+**Trust**
+- Help › Verification: 85 checks, all passing. New: a 3D patch test (a uniform stress reproduced to 1 part in 10¹⁴, with the thinning), a 3D cantilever against Timoshenko beam theory (0.005 %) and its bending stress, and a thick cylinder in 3D against Lamé (hoop stress 0.5 %, bore movement 0.003 %).
+- Random 3D solids (40 of them) solve with their reactions balancing the loads in all six sums, or say why they cannot.
+
 ## 0.2.6 — 2026-10-29
 
 3D frames vibrate and buckle; the app starts lighter and keeps to size and speed budgets.

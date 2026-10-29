@@ -2,14 +2,14 @@
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum, isFrame } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes } from "./store";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
 import * as D from "./dialogs";
 
-export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["space", "3D frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"]];
+export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["space", "3D frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"], ["solid", "3D solid (extruded)"]];
 
 /** A new support of a kind, with typical values. */
 export const defaultSupport = (k: string): SupportKind => {
@@ -42,6 +42,7 @@ const targetName = (m: Model, t: Target) => {
   if (t.on === "member") return `Member ${m.members.findIndex(n => n.id === t.id) + 1}`;
   if (t.on === "edge") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}`;
   if (t.on === "point") return `Point ${fmt("coord", t.x)}, ${fmt("coord", t.y)}`;
+  if (t.on === "end") return t.front ? "Front face" : "Back face";
   return "Whole model";
 };
 export const itemName = (m: Model, id: number): string => {
@@ -81,7 +82,7 @@ export const Tree = () => {
           <Group t="Supports" n={mm().supports.length} help="supports"><For each={mm().supports}>{s => <Leaf id={s.id} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Group>
           <Group t="Loads" n={mm().loads.length} help="loads"><For each={mm().loads}>{l => <Leaf id={l.id} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></Group>
           <Show when={!frame()}><Group t="Mesh" n={mm().mesh.refine.length} help="mesh">
-            <button class="ti" onClick={() => C.mesh()}><span>{(meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} elements` : "Not meshed yet"}</span><small>{mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} · {mm().mesh.order === 2 ? "6-node" : "3-node"}</small></button>
+            <button class="ti" onClick={() => C.mesh()}><span>{solidRes() ? `${solidRes()!.elements.toLocaleString()} wedges, ${solidRes()!.layers} ${solidRes()!.layers === 1 ? "layer" : "layers"}` : (meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} ${mm().analysis === "solid" ? "triangles in the section" : "elements"}` : "Not meshed yet"}</span><small>{mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} · {mm().mesh.order === 2 ? "6-node" : "3-node"}</small></button>
             <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><span>Finer near {targetName(mm(), r.at)}</span>
               <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => v > 0 && C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }), () => num(toU("len", r.size), 4))} />
               <button class="x" title="Remove" onClick={() => C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) })}>×</button></div>}</For>
@@ -198,7 +199,7 @@ const EdgeInsp = (p: { m: Model; e: { shape: number; edge: number } }) => {
 
 const SupportInsp = (p: { s: Support; m: Model }) => {
   const k = () => p.s.kind;
-  const kinds = (): string[] => p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : isFrame(p.m.analysis) ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
+  const kinds = (): string[] => p.s.at.on === "end" ? ["fixed", "roller", "symmetry"] : p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : isFrame(p.m.analysis) ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
   const put = (kind: SupportKind) => set("Support", { ...p.s, kind });
   return <>
     <Row label="On"><span>{targetName(p.m, p.s.at)}</span></Row>
@@ -235,6 +236,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
       <label class="chk"><input type="checkbox" checked={f("traction").total} onChange={e => put({ ...f("traction"), total: e.currentTarget.checked })} />The whole force (not per length)</label>
       <NumField label="Fx" q={f("traction").total ? "force" : "dist"} v={f("traction").fx} set={fx => put({ ...f("traction"), fx })} />
       <NumField label="Fy" q={f("traction").total ? "force" : "dist"} v={f("traction").fy} set={fy => put({ ...f("traction"), fy })} />
+      <Show when={p.m.analysis === "solid"}><NumField label="Fz" q={f("traction").total ? "force" : "stress"} v={f("traction").fz ?? 0} set={fz => put({ ...f("traction"), fz })} hint={f("traction").total ? "The whole force on the face." : "Per area of the face."} /></Show>
     </Show>
     <Show when={k().kind === "bearing"}>
       <NumField label="Fx" q="force" v={f("bearing").fx} set={fx => put({ ...f("bearing"), fx })} />
@@ -255,12 +257,13 @@ const ModelInsp = (p: { m: Model }) => {
     <Row label="Analysis"><Choice v={p.m.analysis} set={v => settings({ analysis: v })} opts={ANALYSES} /></Row>
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
     <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
-    <Show when={p.m.analysis === "stress" || p.m.analysis === "heat"}><NumField label="Thickness" q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
+    <Show when={p.m.analysis === "stress" || p.m.analysis === "heat" || p.m.analysis === "solid"}><NumField label={p.m.analysis === "solid" ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
     <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
     <Show when={!isFrame(p.m.analysis)}>
       <h4>Mesh<Help k="mesh" /></h4>
       <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part, finer for thin parts)." />
       <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>
+      <Show when={p.m.analysis === "solid"}><div class="iprow"><label>Layers through the thickness</label><input class="mono" value={p.m.mesh.layers || "auto"} onChange={numIn(v => v >= 0 && v <= 40 && Number.isInteger(v) && settings({ mesh: { ...p.m.mesh, layers: v } }), () => p.m.mesh.layers || "auto")} /><span class="hint">0 = automatic (about one element size each). The 2D mesh is swept through the thickness in layers of wedges.</span></div></Show>
       <div class="iprow"><label>Smallest angle<span class="unit">°</span></label><input class="mono" value={p.m.mesh.min_angle} onChange={numIn(v => v >= 5 && v <= 33 && settings({ mesh: { ...p.m.mesh, min_angle: v } }), () => p.m.mesh.min_angle)} /><span class="hint">5° to 33°; 25° is a good balance.</span></div>
     </Show>
     <Row label="Notes"><textarea rows="4" value={p.m.notes} onChange={e => act({ SetMeta: { name: p.m.name, notes: e.currentTarget.value } })} /></Row>

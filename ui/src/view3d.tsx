@@ -8,11 +8,12 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { SpaceMember, Target, clean } from "./api";
-import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase } from "./store";
-import { palette, BANDS } from "./parts";
+import { Model, SpaceMember, Target, clean } from "./api";
+import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes } from "./store";
+import { palette, BANDS, curField, rangeOf } from "./parts";
+import { outline, edgePts, inside } from "./geom";
 import { defaultLoad, defaultSupport } from "./panels";
-import { fmt } from "./units";
+import { fmt, unit } from "./units";
 import { setPlane, fit3d } from "./plane3";
 import { C } from "./cmds";
 import { P3, at3, span3, dlen, deform3, vals, q3, range3 } from "./space3";
@@ -65,10 +66,76 @@ export const View3D = () => {
   };
 
   /** Build the scene from the model, the selection and the results. */
+  // 3D solids (0.3.0): the deflection scale drawn, for the probe.
+  let solidF = 0;
+  /** A 3D solid: the extruded part with its supported and loaded faces outlined; once solved,
+   * the surface coloured by the chosen result on the deformed shape. */
+  const buildSolid = (m: Model) => {
+    const ink = css("--text"), green = css("--green"), load = css("--blue2"), accent = css("--blue");
+    scene.background = new THREE.Color(css("--bg2"));
+    const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4);
+    const bounds = m.shapes.flatMap(s => outline(s.geom, tol));
+    const size = Math.max(t, ...(bounds.length ? [Math.max(...bounds.map(p => p[0])) - Math.min(...bounds.map(p => p[0])), Math.max(...bounds.map(p => p[1])) - Math.min(...bounds.map(p => p[1]))] : [1e-3]));
+    world.add(new THREE.AxesHelper(size * 0.2));
+    const r = solidRes();
+    if (r && r.surface.nodes.length) {
+      const fd = curField(), fld = r.fields.find(f => f.key === fd.key) ?? r.fields[0];
+      const cs = palette(opts().contours, fd.reverse).map(c => new THREE.Color(c)), rg = rangeOf(fd, fld.v) ?? [fld.min, fld.max];
+      const dmax = Math.max(0, ...r.disp.map(d => Math.hypot(d[0], d[1], d[2])));
+      solidF = show().deformed && dmax > 1e-12 * size ? (() => { const f = 0.08 * size / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p; return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale; })() : 0;
+      const pos = new Float32Array(r.surface.nodes.length * 3), col = new Float32Array(r.surface.nodes.length * 3);
+      r.surface.nodes.forEach((p, i) => {
+        const d = r.disp[i];
+        for (let k = 0; k < 3; k++) pos[3 * i + k] = p[k] + d[k] * solidF;
+        const c = cs[Math.max(0, Math.min(BANDS - 1, Math.floor((fld.v[i] - rg[0]) / ((rg[1] - rg[0]) || 1) * BANDS)))];
+        col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b;
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.setIndex(r.surface.tris.flat());
+      g.computeVertexNormals();
+      world.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+      if (show().mesh) world.add(new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: new THREE.Color(ink), transparent: true, opacity: 0.18 })));
+      const pts: number[] = [];
+      for (const [a, b] of r.surface.lines) pts.push(pos[3 * a], pos[3 * a + 1], pos[3 * a + 2], pos[3 * b], pos[3 * b + 1], pos[3 * b + 2]);
+      if (pts.length) fat(pts, null, ink, 1.5);
+    } else if (m.shapes.some(s => !s.hole) && t > 0) {
+      // The part as it will be: each solid shape with the holes inside it, extruded.
+      const holes = m.shapes.filter(s => s.hole).map(s => outline(s.geom, tol));
+      for (const s of m.shapes.filter(x => !x.hole)) {
+        const o = outline(s.geom, tol), sh = new THREE.Shape(o.map(p => new THREE.Vector2(p[0], p[1])));
+        for (const h of holes) if (h.length && inside(o, h[0])) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
+        const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 24 });
+        world.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(css("--sky")), side: THREE.DoubleSide })));
+        world.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: new THREE.Color(ink) })));
+      }
+    }
+    // Supported and loaded faces outlined: green for supports, crimson for loads.
+    const selSet = new Set(sel());
+    const faceLines = (at: Target, colour: string) => {
+      const pts: number[] = [];
+      const loop = (ps: [number, number][], z: number) => { for (let i = 0; i + 1 < ps.length; i++) pts.push(ps[i][0], ps[i][1], z, ps[i + 1][0], ps[i + 1][1], z); };
+      if (at.on === "edge") {
+        const s = m.shapes.find(x => x.id === at.shape); if (!s) return;
+        const ps = edgePts(s.geom, at.edge, tol) as [number, number][];
+        loop(ps, 0); loop(ps, t);
+        for (const p of [ps[0], ps[ps.length - 1]]) pts.push(p[0], p[1], 0, p[0], p[1], t);
+      } else if (at.on === "end") {
+        for (const s of m.shapes) { const o = outline(s.geom, tol) as [number, number][]; loop([...o, o[0]], at.front ? t : 0); }
+      }
+      if (pts.length) fat(pts, null, colour, 3.5);
+    };
+    for (const s of m.supports) faceLines(s.at, selSet.has(s.id) ? accent : green);
+    for (const l of m.loads) faceLines(l.at, selSet.has(l.id) ? accent : load);
+    draw();
+  };
+
   const build = () => {
     themeTick();
     const m = model(); if (!m) return;
     clear();
+    if (m.analysis === "solid") return buildSolid(m);
     const P = at3(m), span = span3(m), selSet = new Set(sel());
     const ink = css("--text"), accent = css("--blue"), faint = css("--line3"), load = css("--blue2");
     scene.background = new THREE.Color(css("--bg2"));
@@ -161,8 +228,11 @@ export const View3D = () => {
 
   /** Frame the model, looking along `from` (towards the model), or as now, or from the corner. */
   const fit = (keepDir = false, from?: P3) => {
-    const m = model(); if (!m || !m.nodes.length) return;
+    const m = model(); if (!m) return;
     const box = new THREE.Box3(); m.nodes.forEach(n => box.expandByPoint(new THREE.Vector3(n.x, n.y, n.z ?? 0)));
+    // A solid: its outline at both ends of the extrusion.
+    if (m.analysis === "solid") for (const s of m.shapes) for (const p of outline(s.geom, Infinity)) for (const z of [0, m.thickness]) box.expandByPoint(new THREE.Vector3(p[0], p[1], z));
+    if (box.isEmpty()) return;
     const c = box.getCenter(new THREE.Vector3()), rad = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
     const dir = from ? new THREE.Vector3(...from).normalize() : keepDir && controls ? camera.position.clone().sub(controls.target).normalize() : new THREE.Vector3(1, 0.75, 1.3).normalize();
     camera.position.copy(c).addScaledVector(dir, rad / Math.sin(camera.fov * Math.PI / 360) * 1.15);
@@ -213,7 +283,13 @@ export const View3D = () => {
     if (!down || e.button !== 0) { down = null; return; }
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4; down = null;
     if (moved) return;
-    const rc = host.getBoundingClientRect(), h = pick(e.clientX - rc.left, e.clientY - rc.top), t = tool();
+    const rc = host.getBoundingClientRect(), t = tool();
+    if (model()?.analysis === "solid") {
+      if (t === "select") setSel([]);
+      else toast("Put it on a face: an edge in Section (its side face), or the back or front face with the buttons above.");
+      return;
+    }
+    const h = pick(e.clientX - rc.left, e.clientY - rc.top);
     if (t === "select") {
       setEdgeSel(null);
       if (!h) { if (!e.shiftKey && !e.ctrlKey) setSel([]); return; }
@@ -232,7 +308,20 @@ export const View3D = () => {
     setPlane("xy");
     toast("Members are drawn on a plane: Front (x-y) is open now; pick Side or Plan above, and the depth.", true);
   };
-  const onMove = (e: PointerEvent) => { if (e.buttons) { setProbe(null); return; } const rc = host.getBoundingClientRect(); setProbe(probeAt(e.clientX - rc.left, e.clientY - rc.top)); };
+  // The probe on a solid: the surface node nearest the pointer.
+  const [probe3, setProbe3] = createSignal<{ i: number } | null>(null);
+  const probeSolid = (x: number, y: number) => {
+    const r = solidRes(); if (!r || stale()) return null;
+    let best = -1, bd = 12;
+    r.surface.nodes.forEach((p, i) => { const d = r.disp[i], s = screen([p[0] + d[0] * solidF, p[1] + d[1] * solidF, p[2] + d[2] * solidF]), dd = Math.hypot(s[0] - x, s[1] - y); if (dd < bd) { bd = dd; best = i; } });
+    return best >= 0 ? { i: best } : null;
+  };
+  const onMove = (e: PointerEvent) => {
+    if (e.buttons) { setProbe(null); setProbe3(null); return; }
+    const rc = host.getBoundingClientRect();
+    if (model()?.analysis === "solid") setProbe3(probeSolid(e.clientX - rc.left, e.clientY - rc.top));
+    else setProbe(probeAt(e.clientX - rc.left, e.clientY - rc.top));
+  };
 
   onMount(() => {
     host.appendChild(renderer.domElement);
@@ -277,12 +366,15 @@ export const View3D = () => {
   });
   // A new model (another file or example) is framed afresh.
   let lastName = "";
-  createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}` : ""; if (key !== lastName) { lastName = key; queueMicrotask(() => fit()); } });
+  createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}|${m.shapes.length === 0}` : ""; if (key !== lastName) { lastName = key; queueMicrotask(() => fit()); } });
 
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
       onKeyDown={e => { if (e.key === "Escape") { if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
-      <Show when={!model()?.nodes.length}><div class="empty"><b>Draw a 3D frame</b><span>Members are drawn on a plane: pick Front, Side or Plan above and the depth, then Beam or Truss in Geometry. Repeat copies a frame along the depth and joins it (Geometry › Repeat).</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("beam"); }}>Draw on the front plane</button></div></Show>
+      <Show when={model()?.analysis === "solid" && !model()?.shapes.length}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
+      <Show when={model()?.analysis === "space" && !model()?.nodes.length}><div class="empty"><b>Draw a 3D frame</b><span>Members are drawn on a plane: pick Front, Side or Plan above and the depth, then Beam or Truss in Geometry. Repeat copies a frame along the depth and joins it (Geometry › Repeat).</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("beam"); }}>Draw on the front plane</button></div></Show>
+      <Show when={probe3() && solidRes()}>{_ => { const r = solidRes()!, i = probe3()!.i, p = r.surface.nodes[i], fd = curField(), v = r.fields.find(f => f.key === fd.key)?.v[i] ?? 0, d = r.disp[i]; return (
+        <div class="probe"><b>At {p.map(c => fmt("coord", c).split(" ")[0]).join(", ")} {unit("coord")}</b><span>{fd.short} {fmt(fd.q, v)}</span><span>|u| {fmt("len", Math.hypot(d[0], d[1], d[2]))}</span></div>); }}</Show>
       <Show when={probe()}>{p => { const mr = p().mr, i = p().i, d = mr.d[i]; return (
         <div class="probe"><b>Member {(model()?.members.findIndex(x => x.id === mr.id) ?? 0) + 1} at {fmt("len", mr.x[i])}</b>
           <span>N {fmt("force", clean(mr.n[i], 1e-3))}</span><span>Vy {fmt("force", clean(mr.vy[i], 1e-3))} · Vz {fmt("force", clean(mr.vz[i], 1e-3))}</span><span>T {fmt("moment", clean(mr.t[i], 1e-3))}</span><span>Mz {fmt("moment", clean(mr.mz[i], 1e-3))} · My {fmt("moment", clean(mr.my[i], 1e-3))}</span><span>δ {fmt("len", dlen(d))}</span></div>); }}</Show>

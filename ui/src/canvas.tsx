@@ -12,7 +12,7 @@ import { defaultLoad, defaultSupport } from "./panels";
 import { ResultsLayer, ResultsProbe } from "./results";
 import { PartLayer, PartMarkers, PartProbe } from "./parts";
 import { FrameModeLayer } from "./modes";
-import { planeModel as model, ghosts, lift, onPlane, plane, unproj, space, fit3d } from "./plane3";
+import { planeModel as model, ghosts, lift, onPlane, plane, unproj, in3d, fit3d } from "./plane3";
 
 /** Edits from the canvas, turned into 3D when drawing on a plane of a 3D frame. */
 const act = (op: object) => act0(lift(op));
@@ -28,7 +28,7 @@ const grid = () => model0()?.grid ?? 0.5;
 const snapV = (v: number) => (opts().snap ? Math.round(v / grid()) * grid() : v);
 
 export const fit = () => {
-  if (space() && plane() === "3d") return fit3d.run?.();
+  if (in3d() && plane() === "3d") return fit3d.run?.();
   const m = model(); if (!m || !box) return;
   const r = box.getBoundingClientRect();
   const b = boundsOf(m) ?? (isFrame(m.analysis) ? [0, 0, 12, 6] : [0, 0, 0.2, 0.1]);

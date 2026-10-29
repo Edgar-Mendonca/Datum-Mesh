@@ -13,6 +13,9 @@ pub struct System {
     pub n: usize,
     pub k: Vec<(usize, usize, f64)>,
     pub f: Vec<f64>,
+    /// Only the lower triangle (row ≥ column) is kept; the upper half is implied (0.3.0: 3D
+    /// solids, whose elements add many entries, store half as much).
+    pub half: bool,
 }
 
 /// How the solve went, for the solver report.
@@ -29,10 +32,15 @@ pub struct Stats {
 
 impl System {
     pub fn new(n: usize) -> System {
-        System { n, k: Vec::new(), f: vec![0.0; n] }
+        System { n, k: Vec::new(), f: vec![0.0; n], half: false }
+    }
+    /// A system that keeps only the lower triangle: entries above the diagonal are dropped as
+    /// they are added (add both halves, or only the lower one).
+    pub fn lower(n: usize) -> System {
+        System { half: true, ..System::new(n) }
     }
     pub fn add(&mut self, i: usize, j: usize, v: f64) {
-        if v != 0.0 {
+        if v != 0.0 && !(self.half && i < j) {
             self.k.push((i, j, v));
         }
     }
@@ -42,6 +50,9 @@ impl System {
         let mut out = vec![0.0; self.n];
         for &(i, j, v) in &self.k {
             out[i] += v * u[j];
+            if self.half && i != j {
+                out[j] += v * u[i];
+            }
         }
         out
     }
@@ -82,8 +93,15 @@ impl System {
                         diag[a] += v;
                     }
                 }
-                (a, usize::MAX) if a != usize::MAX && fixed[j] != 0.0 => rhs[a] -= v * fixed[j],
-                _ => {}
+                (a, b) => {
+                    if a != usize::MAX && b == usize::MAX && fixed[j] != 0.0 {
+                        rhs[a] -= v * fixed[j];
+                    }
+                    // The implied upper entry (j, i) of a half-stored system.
+                    if self.half && b != usize::MAX && a == usize::MAX && fixed[i] != 0.0 {
+                        rhs[b] -= v * fixed[i];
+                    }
+                }
             }
         }
         if !diag.iter().all(|d| *d > 0.0 && d.is_finite()) {
@@ -151,6 +169,30 @@ fn mechanism() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_half_stored_system_solves_as_the_full_one() {
+        // A small chain of springs with one end held at a prescribed movement.
+        let build = |s: &mut System| {
+            for i in 0..5 {
+                s.add(i, i, 2.0);
+                s.add(i + 1, i + 1, 2.0);
+                s.add(i, i + 1, -1.5);
+                s.add(i + 1, i, -1.5);
+            }
+            s.f[3] = 1.0;
+        };
+        let (mut a, mut b) = (System::new(6), System::lower(6));
+        build(&mut a);
+        build(&mut b);
+        assert!(b.k.len() < a.k.len());
+        let held = [true, false, false, false, false, true];
+        let fixed = [0.25, 0.0, 0.0, 0.0, 0.0, -0.5];
+        let (ua, _) = a.solve(&held, &fixed).unwrap();
+        let (ub, _) = b.solve(&held, &fixed).unwrap();
+        assert!(ua.iter().zip(&ub).all(|(x, y)| (x - y).abs() < 1e-12), "{ua:?} {ub:?}");
+        assert!(a.mul(&ua).iter().zip(b.mul(&ub)).all(|(x, y)| (x - y).abs() < 1e-12));
+    }
 
     #[test]
     fn a_chain_of_springs() {

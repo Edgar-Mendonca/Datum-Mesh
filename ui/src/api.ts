@@ -8,7 +8,7 @@ export const invoke = <T = any>(cmd: string, args?: object): Promise<T> =>
 export const listen = (e: string, f: (p: any) => void) => window.__TAURI__?.event.listen(e, x => f(x.payload));
 
 export type Pt = [number, number];
-export type Analysis = "frame" | "stress" | "strain" | "heat" | "axi" | "space";
+export type Analysis = "frame" | "stress" | "strain" | "heat" | "axi" | "space" | "solid";
 /** Frames and trusses: in the plane, or in space (0.2.4). */
 export const isFrame = (a?: Analysis) => a === undefined || a === "frame" || a === "space";
 export interface Node { id: number; x: number; y: number; z?: number }
@@ -21,17 +21,17 @@ export interface Section { id: number; name: string; shape: SectionShape }
 export interface Material { id: number; name: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
 export type Geom = { kind: "poly"; pts: Pt[]; bulge: number[] } | { kind: "circle"; c: Pt; r: number };
 export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom }
-export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" };
+export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean };
 export type SupportKind =
   | { kind: "fixed" } | { kind: "pinned" } | { kind: "rollerx" } | { kind: "rollery" } | { kind: "roller" } | { kind: "symmetry" }
   | { kind: "spring"; kx: number; ky: number; kr: number; kz?: number; krx?: number; kry?: number } | { kind: "temperature"; t: number };
 export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number; fz?: number } | { kind: "moment"; m: number; mx?: number; my?: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "z" | "local" }
-  | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
+  | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean; fz?: number } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
   | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number };
 export interface Load { id: number; at: Target; kind: LoadKind }
-export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[] }
+export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
 export interface Model {
   format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number;
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
@@ -87,7 +87,14 @@ export interface HeatResults { kind: "heat"; mesh: Mesh; draw: [number, number, 
 export type P3 = [number, number, number];
 export interface SpaceMember { id: number; length: number; x: number[]; n: number[]; vy: number[]; vz: number[]; t: number[]; my: number[]; mz: number[]; d: P3[]; stress: number; util: number; axes: [P3, P3, P3] }
 export interface SpaceResults { kind: "space"; disp: number[][]; reactions: { node: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
-export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults;
+/** 3D solids (0.3.0): the outer surface with its displacements and fields; min and max over every node. */
+export interface Field3 { key: string; v: number[]; min: number; max: number; at_min: P3; at_max: P3 }
+export interface SolidResults {
+  kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[];
+  reactions: { support: number; f: P3 }[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[];
+  elements: number; nodes: number; layers: number; order: number; size: number; quality: Quality;
+}
+export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults | SolidResults;
 export type PartResults = PlaneResults | HeatResults;
 export interface LibMaterial { id: string; name: string; family: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
 

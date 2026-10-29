@@ -292,6 +292,54 @@ mod tests {
     }
 
     #[test]
+    fn random_solids_solve_or_say_why_and_balance() {
+        // Random extruded parts: a plate or a disc with holes, any thickness, linear or quadratic,
+        // supports and loads on edges and on the end faces, gravity. Solving never panics; when it
+        // answers, loads and reactions balance in all six sums and the surface is well formed.
+        let mut solved = 0;
+        for seed in 1..=40u64 {
+            let mut r = Rng(seed.wrapping_mul(0x2545_F491_4F6C_DD1D) ^ 0x50_11D);
+            let mut d = Doc::new(Model::new(Analysis::Solid));
+            let (w, h) = (r.f(0.05, 1.0), r.f(0.05, 1.0));
+            let base = if r.below(3) == 0 { Geom::Circle { c: [0.0, 0.0], r: w / 2.0 } } else { Geom::rect(-w / 2.0, -h / 2.0, w / 2.0, h / 2.0) };
+            let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: base, ..Shape::default() }) }).unwrap()[0];
+            for _ in 0..r.below(3) {
+                let c = [r.f(-w / 3.0, w / 3.0), r.f(-h / 3.0, h / 3.0)];
+                let _ = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c, r: r.f(0.002, w.min(h) / 5.0) }, ..Shape::default() }) });
+            }
+            d.m.thickness = r.f(0.005, 0.3);
+            d.m.mesh.order = if r.below(4) == 0 { 1 } else { 2 };
+            d.m.mesh.size = w.max(h).max(d.m.thickness) / r.f(3.0, 6.0);
+            let edges = d.m.shape(s).unwrap().geom.edges();
+            let target = |r: &mut Rng| if r.below(3) == 0 { Target::End { front: r.below(2) == 0 } } else { Target::Edge { shape: s, edge: r.below(edges) as u32 } };
+            for _ in 0..1 + r.below(3) {
+                let at = target(&mut r);
+                let kind = [SupportKind::Fixed, SupportKind::Fixed, SupportKind::Roller, SupportKind::Symmetry, SupportKind::Pinned][r.below(5)].clone();
+                let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at, kind }) });
+            }
+            for _ in 0..1 + r.below(3) {
+                let at = target(&mut r);
+                let kind = match r.below(3) {
+                    0 => LoadKind::Pressure { p: r.f(-1e7, 1e7) },
+                    1 => LoadKind::Traction { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), total: true, fz: r.f(-1e4, 1e4) },
+                    _ => LoadKind::Traction { fx: 0.0, fy: r.f(-1e5, 1e5), total: false, fz: r.f(-1e5, 1e5) },
+                };
+                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+            }
+            if r.below(3) == 0 {
+                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: r.f(-5.0, 5.0) } }) });
+            }
+            let Ok(res) = crate::solid::solve(&d.m) else { continue };
+            solved += 1;
+            let barely = res.warnings.iter().any(|w| w.contains("barely hold"));
+            assert!(res.imbalance < 1e-6 || barely, "seed {seed}: imbalance {:e} {:?} {:?}", res.imbalance, res.applied, res.reacted);
+            assert!(res.surface.tris.iter().flatten().all(|&i| (i as usize) < res.surface.nodes.len()), "seed {seed}");
+            assert!(res.fields.iter().all(|f| f.v.len() == res.surface.nodes.len() && f.v.iter().all(|v| v.is_finite())), "seed {seed}");
+        }
+        assert!(solved >= 20, "only {solved} random solids solved");
+    }
+
+    #[test]
     fn random_parts_mesh_and_solve_or_say_why_and_balance() {
         // Random plates with random holes, arcs, supports and loads, as stress, strain and heat
         // models: meshing and solving never panic; when they answer, loads and reactions (or heat
@@ -331,9 +379,9 @@ mod tests {
                     (Analysis::Heat, 0) => LoadKind::Flux { q: r.f(-1e4, 1e4) },
                     (Analysis::Heat, _) => LoadKind::Convection { h: r.f(0.0, 100.0), t_inf: 293.0 },
                     (_, 0) => LoadKind::Pressure { p: r.f(-1e7, 1e7) },
-                    (_, 1) => LoadKind::Traction { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), total: true },
+                    (_, 1) => LoadKind::Traction { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), total: true, fz: 0.0 },
                     (_, 3) => LoadKind::Bearing { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4) },
-                    _ => LoadKind::Traction { fx: r.f(-1e5, 1e5), fy: 0.0, total: false },
+                    _ => LoadKind::Traction { fx: r.f(-1e5, 1e5), fy: 0.0, total: false, fz: 0.0 },
                 };
                 let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
             }
@@ -361,7 +409,7 @@ mod tests {
             let (imb, mesh) = match &res {
                 crate::Results::Plane(p) => (p.imbalance, &p.mesh),
                 crate::Results::Heat(p) => (p.imbalance, &p.mesh),
-                crate::Results::Frame(_) | crate::Results::Space(_) => unreachable!(),
+                crate::Results::Frame(_) | crate::Results::Space(_) | crate::Results::Solid(_) => unreachable!(),
             };
             let barely = match &res { crate::Results::Plane(p) => p.warnings.iter().any(|w| w.contains("barely hold")), _ => false };
             if analysis == Analysis::Axi {

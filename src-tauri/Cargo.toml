@@ -1,6 +1,6 @@
 [package]
 name = "datum-mesh"
-version = "0.2.6"
+version = "0.3.0"
 edition = "2021"
 description = "Datum Mesh: finite-element analysis on the desktop."
 license = "MIT"

@@ -3,10 +3,11 @@
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
 import { Show, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, parseNum } from "./api";
-import { model, spaceRes, stale, show, opts, setView, setTool } from "./store";
-import { palette, BANDS } from "./parts";
+import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel } from "./store";
+import { defaultLoad, defaultSupport } from "./panels";
+import { palette, BANDS, curField, fieldsFor, rangeOf, ColourBar } from "./parts";
 import { fmt, unit, fromU, Q } from "./units";
-import { setPlane, plane, PLANES, space, depth, setDepth, depths, depthAxis } from "./plane3";
+import { setPlane, plane, PLANES, space, solid, depth, setDepth, depths, depthAxis } from "./plane3";
 import { C, imbalanceOf } from "./cmds";
 import { Icon } from "./ui";
 
@@ -65,7 +66,21 @@ export const SpaceLegend = () => {
 /** Over the model view of a 3D frame: the 3D view or a working plane, and the plane's depth. */
 export const PlaneBar = () => {
   const [typed, setTyped] = createSignal("");
-  return (
+  /** Put the support or load being placed on the back or front face of a solid. */
+  const onEnd = async (front: boolean) => {
+    const t = tool(), [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4) === "pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
+    const o = await act({ Add: { item: { [kind]: { id: 0, at: { on: "end", front }, kind: val } } } });
+    if (o?.created.length) setSel(o.created);
+  };
+  const placing = () => (tool().startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(tool())) || ["load:pressure", "load:traction"].includes(tool());
+  return (<>
+    <Show when={solid()}>
+      <div class="planebar">
+        <span class="seg"><button classList={{ on: plane() === "3d" }} title="The solid in 3D: turn it with the left button, pan with the right, zoom with the wheel" onClick={() => { setPlane("3d"); }}>3D</button><button classList={{ on: plane() !== "3d" }} title="The part's section (x-y), drawn and edited as a plane part; it is extruded along z by the thickness" onClick={() => setPlane("xy")}>Section</button></span>
+        <span class="muted">extruded {fmt("len", model()?.thickness ?? 0)} along z</span>
+        <Show when={placing()}><span class="grow" /><span class="muted">Put it on</span><button class="btn sm" onClick={() => onEnd(false)} title="The face at z = 0">the back face</button><button class="btn sm" onClick={() => onEnd(true)} title="The face at z = thickness">the front face</button><span class="muted">or click an edge in Section (its side face)</span></Show>
+      </div>
+    </Show>
     <Show when={space()}>
       <div class="planebar">
         <span class="seg">{PLANES.map(([k, l, t]) => <button classList={{ on: plane() === k }} title={t} onClick={() => { setPlane(k); if (k === "3d") setTool("select"); }}>{l}</button>)}</span>
@@ -75,6 +90,29 @@ export const PlaneBar = () => {
           <input class="mono" placeholder="other" value={typed()} title={`Another depth (${unit("coord")})`} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null) { setDepth(fromU("coord", v)); setTyped(""); e.currentTarget.value = ""; } }} />
           <span class="muted">{plane() === "xy" ? "x across, y up" : plane() === "zy" ? "z across, y up (from the left)" : "x across, z towards you (from above)"} · members off this plane are faint</span>
         </Show>
+      </div>
+    </Show>
+  </>);
+};
+
+/** Under the 3D view of a solved 3D solid: the result shown and its colours, the deformed shape,
+ * the equilibrium check. */
+export const SolidLegend = () => {
+  const r = () => solidRes(), fd = () => curField();
+  const fld = () => r()?.fields.find(f => f.key === fd().key);
+  const cols = () => palette(opts().contours, fd().reverse);
+  const dmax = () => Math.max(0, ...(r()?.disp.map(d => Math.hypot(d[0], d[1], d[2])) ?? [0]));
+  return (
+    <Show when={r() && model()?.analysis === "solid"}>
+      <div class="legend">
+        <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
+        <div><b>Result</b><select class="fpick" value={fd().key} onChange={e => C.show({ field: e.currentTarget.value })}>{fieldsFor("solid").map(f => <option value={f.key} selected={f.key === fd().key}>{f.name}</option>)}</select>
+          <span>max {fmt(fd().q, fld()?.max ?? 0)} · min {fmt(fd().q, fld()?.min ?? 0)}</span></div>
+        <ColourBar d={fd()} range={fld() ? rangeOf(fd(), fld()!.v) : null} colours={cols()} />
+        <div><b>Deformed shape</b><span>{show().deformed && dmax() > 0 ? <>largest {fmt("len", r()!.fields.find(f => f.key === "umag")!.max)}</> : "off"}</span>
+          <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
+        <div><b>Mesh</b><span>{r()!.elements.toLocaleString()} {r()!.order === 2 ? "18-node" : "6-node"} wedges, {r()!.layers} {r()!.layers === 1 ? "layer" : "layers"}</span></div>
+        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
       </div>
     </Show>
   );

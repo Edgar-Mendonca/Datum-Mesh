@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.2.6 (2026-10-29) |
+| **Current version** | 0.3.0 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -47,6 +47,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/lib.rs` | `Results` (frame, plane or heat, tagged by `kind`) and `solve()` for any analysis; tests that every example solves, balances and agrees with hand checks |
 | `crates/core/src/wire.rs` | Results packed for the window: long numeric arrays as base64 (f32 values, u32 indices), everything else unchanged; the window's `unwire` (`ui/src/api.ts`) unpacks them |
 | `crates/core/examples/bigpart.rs` | A 25 000-element bracket's results as JSON, for timing the window by hand (not a test) |
+| `crates/core/src/solid.rs` | 3D solids (0.3.0): the section's 2D mesh swept into layers (`Swept`), 18- and 6-node wedges (triangle × line shape functions), faces for loads and supports (side faces from edges, end faces), penalty rollers on sloping faces, nodal stresses averaged by volume, principal stresses, the outer surface for the window (`Surface`), `MAX_UNKNOWNS` |
 | `crates/core/src/space.rs` | 3D frames: local axes (`axes`), the 12×12 beam (axial, torsion, bending both ways) and truss bars, member loads in any direction, supports and springs in six directions, results along members (N, Vy, Vz, T, My, Mz, 3D deflection), six-way equilibrium |
 | `ui/src/plane3.ts` | Working planes of a 3D frame: the projected model the canvas edits (`planeModel`), faint members off the plane, depths, and `lift` turning canvas edits into 3D |
 | `ui/src/space3.tsx` | 3D frames without three.js: the colour-by choice and range, the deflection scale, the 3D legend and the plane bar (loaded at startup) |
@@ -80,7 +81,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 132 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
+| `tests_ui/run.cjs` | 142 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -150,6 +151,11 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.3.0 | 3D solids are the 2D mesh swept through the thickness into wedges (18-node from quadratic, 6-node from linear), not a tetrahedral mesher | Robust (the 2D mesher's quality), no new mesher, exact layers through the thickness; arbitrary 3D shapes wait for an outside mesher (0.4+) |
+| 0.3.0 | End faces are a target of their own (`Target::End { front }`); side faces are the part's edges | No face picking in 3D needed to load a solid; old files unchanged |
+| 0.3.0 | The sparse system can store only its lower half (`System::lower`), and faer runs on every core (`rayon`, MIT/Apache) | A 3D solid of 178 000 unknowns took 22.7 s and 3.1 GB on one core; on four, 15 s; 90 000 take 6 s and 1.2 GB |
+| 0.3.0 | A 3D solid is refused beyond 200 000 unknowns, with how to coarsen | 500 000 needed 9.9 GB; one test run was killed out of memory: a crash in the app |
+| 0.3.0 | The window gets a solid's outer surface only (nodes, triangles, fields there); extremes over every node | A 90 000-unknown solid's surface is a small part of its nodes |
 | 0.2.6 | Budgets: installer under 5 MB (release.yml), window startup code under 400 kB and whole window under 1.6 MB (tools/size.cjs, CI); speed: typical models under 1 s, large ones (about 100 000+ unknowns) under 10 s, timed in the verification record (`bench::timings`) | The user asked that the app stay small and optimised; budgets that fail the build keep it so |
 | 0.2.6 | three.js is loaded only when a 3D frame is shown (`lazy` view3d.tsx); fonts as woff2 only | Startup code 863 → 282 kB |
 | 0.2.6 | 3D buckling is flexural only: the geometric stiffness has no twisting term | Without warping stiffness an I-section twists under axial load at a small fraction of its real load (the portal gave λ = 0.25); flexural-torsional and lateral-torsional buckling need a warping degree of freedom, later |
@@ -185,7 +191,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.2 | Natural frequencies of frames and parts (modal.rs subspace iteration, consistent masses), mode list and animation, benchmark 11 (47 checks) | ✅ |
 | 0.2.3 | Buckling of frames (geometric stiffness, beams cut in 8, modal::buckling on the pencil B φ = μ K φ), truss bars as struts, benchmark 12 (54 checks) | ✅ |
 | 0.2.4 | 3D frames (space.rs 12-unknown beams and truss bars, sections Iy and J, doc ops in 3D and Repeat), working planes (plane3.ts), three.js 3D view (view3d.tsx), benchmark 13 (69 checks) | ✅ |
-| 0.3.x | 3D solids by extrude and revolve: static, viewer (three.js), revolve and symmetry, heat and frequencies | ⬜ |
+| 0.3.0 | 3D solids by extrusion: solid.rs (swept wedges, faces, supports, loads, stresses, surface for the window), `Target::End`, layers, half-stored sparse system, solver on every core, 200 000-unknown limit; window: 3D/Section, end-face buttons, contoured surface, legend, Results page; benchmark 15 (85 checks) | ✅ |
+| 0.3.1–0.3.3 | 3D view for solids (cutting plane, picking faces), revolve and symmetry (NAFEMS LE10), 3D heat and frequencies | 🔜 |
 | later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
@@ -250,7 +257,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 ### 2026-10-29: Session 1, continued (0.2.6 3D frame dynamics, optimisation)
 - Released 0.2.5 (publisher Datum). Wrote down the purpose with the user; frames stay in Datum Mesh but stop short of building design. Engine: space.rs `assemble` with splitting, `modes`, `buckling`, benchmark 14, `bench::timings` and `building()`. Window: kinds space and buckle3, mode shapes swinging in the 3D view, three.js split out and loaded lazily (space3.tsx), woff2 fonts only, size budgets in CI and release. Found by benchmark 14: an I-section twisted under axial load at λ = 0.25 without warping stiffness; 3D buckling made flexural only and said so.
 
-## 5. Known limits (0.2.6)
+### 2026-10-29: Session 1, continued (0.3.0 3D solids)
+- Released 0.2.6. Engine: `Analysis::Solid`, `Target::End`, `MeshSettings.layers`, `Traction.fz`; solid.rs; `System::lower`; faer with rayon; benchmark 15 (patch test, cantilever, Lamé in 3D); the 3D bracket and blank solid examples; random solids balance; timings for the 3D bracket. Window: 3D/Section plane bar with end-face buttons, the extruded part and the contoured deformed surface in the 3D view, the probe, the solid legend, Results page and report, Inspector fields. Found while building: diagonal blocks added twice (the matrix was indefinite; the patch test caught it), and an out-of-memory kill on a fine mesh (the unknowns limit). Found in the app: the tree said "not meshed" after a solid was solved.
+
+## 5. Known limits (0.3.0)
+
+- 3D solids: extruded only (revolved in 0.3.2); no thermal or pin loads, no point supports or springs, no natural frequencies yet; faces picked by edge in Section or by the end-face buttons, not in the 3D view; no cutting plane yet; at most 200 000 unknowns.
 
 - 3D frames: buckling by bending only (no flexural-torsional or lateral-torsional buckling: no warping stiffness); utilisation leaves out the shear stress of twisting; an angle bends about its leg axes (the product of inertia is left out); a channel's shear centre is not modelled.
 

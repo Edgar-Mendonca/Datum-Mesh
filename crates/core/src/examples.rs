@@ -19,6 +19,7 @@ pub fn list() -> Vec<Example> {
         e("blank-frame", "Blank frame", "Nodes and members: beams and trusses in 2D.", Analysis::Frame),
         e("blank-stress", "Blank part", "Plane stress: a thin plate loaded in its plane.", Analysis::Stress),
         e("blank-space", "Blank 3D frame", "Nodes and members in 3D: beams that bend both ways and twist, and truss bars.", Analysis::Space),
+        e("blank-solid", "Blank 3D solid", "Draw a part's outline; it is extruded by its thickness into a 3D solid.", Analysis::Solid),
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
@@ -26,6 +27,7 @@ pub fn list() -> Vec<Example> {
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
+        e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
@@ -179,11 +181,22 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             let h = d.apply(shape(circle(60.0, 120.0, 20.0), true))?[0];
             d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Bearing { fx: 0.0, fy: 60e3 })]))?;
         }
+        "bracket3d" => {
+            d.m.notes = "The L-bracket as a 3D solid: legs 100 mm long and 20 mm thick, 10 mm deep (the extrusion), a 10 mm fillet inside the corner. The top end is bolted to a wall (fixed face); 1.5 kN pulls down on the free end's face.".into();
+            d.m.grid = 5.0 * mm;
+            d.m.thickness = 10.0 * mm;
+            let s = d.apply(shape(poly(&[[0.0, 0.0], [100.0, 0.0], [100.0, 20.0], [30.0, 20.0], [20.0, 30.0], [20.0, 100.0], [0.0, 100.0]], &[(3, -QUARTER)]), false))?[0];
+            d.apply(Op::Batch(vec![sup(edge(s, 5), SupportKind::Fixed), load(edge(s, 1), LoadKind::Traction { fx: 0.0, fy: -1.5e3, total: true, fz: 0.0 })]))?;
+            // Elements of 5 mm, 2.5 mm round the fillet, two quadratic layers: under a second.
+            d.m.mesh.size = 5.0 * mm;
+            d.m.mesh.layers = 2;
+            d.m.mesh.refine.push(crate::model::Refine { at: edge(s, 3), size: 2.5 * mm });
+        }
         "bracket" => {
             d.m.notes = "A 10 mm steel L-bracket, legs 100 mm long and 20 mm thick, with a 10 mm fillet in the inside corner. The top is bolted to a wall; 1.5 kN pulls down on the free end.".into();
             d.m.grid = 5.0 * mm;
             let s = d.apply(shape(poly(&[[0.0, 0.0], [100.0, 0.0], [100.0, 20.0], [30.0, 20.0], [20.0, 30.0], [20.0, 100.0], [0.0, 100.0]], &[(3, -QUARTER)]), false))?[0];
-            d.apply(Op::Batch(vec![sup(edge(s, 5), SupportKind::Fixed), load(edge(s, 1), LoadKind::Traction { fx: 0.0, fy: -1.5e3, total: true })]))?;
+            d.apply(Op::Batch(vec![sup(edge(s, 5), SupportKind::Fixed), load(edge(s, 1), LoadKind::Traction { fx: 0.0, fy: -1.5e3, total: true, fz: 0.0 })]))?;
             // Finer elements round the fillet, where the stress peaks.
             d.m.mesh.refine.push(crate::model::Refine { at: edge(s, 3), size: 1.0 * mm });
         }

@@ -28,6 +28,8 @@ pub enum Analysis {
     Axi,
     /// 3D frames and trusses (0.2.4): members bend about both axes and twist; y is up.
     Space,
+    /// 3D solids (0.3.0): the part drawn in the x-y plane, extruded along z by the thickness.
+    Solid,
 }
 
 impl Analysis {
@@ -289,6 +291,9 @@ pub enum Target {
     Point { x: f64, y: f64 },
     /// The whole model (gravity, heat generation).
     Body,
+    /// 3D solids (0.3.0): the back face (z = 0) or the front face (z = thickness) of the extruded
+    /// part; its side faces are its edges.
+    End { front: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -368,7 +373,14 @@ pub enum LoadKind {
     /// Edges: pressure (Pa), positive pushing into the body.
     Pressure { p: f64 },
     /// Edges: a force spread along the edge; `total` = (fx, fy) is the whole force (N), else per length (N/m).
-    Traction { fx: f64, fy: f64, total: bool },
+    Traction {
+        fx: f64,
+        fy: f64,
+        total: bool,
+        /// 3D solids (0.3.0): the force along z.
+        #[serde(default)]
+        fz: f64,
+    },
     /// Edges (usually a hole): a pin bearing on it with the whole force (fx, fy) (N). The pin
     /// presses only where it pushes into the part, with a pressure that peaks in line with the
     /// force and falls as the cosine away from it (0.1.4).
@@ -415,11 +427,13 @@ pub struct MeshSettings {
     /// The smallest angle refinement aims for (degrees).
     pub min_angle: f64,
     pub refine: Vec<Refine>,
+    /// 3D solids: layers of elements through the thickness; 0 = automatic.
+    pub layers: u32,
 }
 
 impl Default for MeshSettings {
     fn default() -> Self {
-        MeshSettings { size: 0.0, order: 2, min_angle: 25.0, refine: vec![] }
+        MeshSettings { size: 0.0, order: 2, min_angle: 25.0, refine: vec![], layers: 0 }
     }
 }
 
@@ -665,7 +679,7 @@ impl Model {
                     }
                 }
                 (SupportKind::Temperature { t }, _) => fin(*t, "A temperature")?,
-                (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. }) => {}
+                (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. } | Target::End { .. }) => {}
                 (SupportKind::Roller | SupportKind::Symmetry, _) => return Err("Roller and symmetry supports go on edges.".into()),
                 (_, Target::Member { .. } | Target::Body) => return Err("Supports go on nodes, edges or points.".into()),
                 _ => {}
@@ -677,8 +691,9 @@ impl Model {
                 (LoadKind::Force { fx, fy, fz }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Moment { m, mx, my }, Target::Node { .. }) => m.is_finite() && mx.is_finite() && my.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
-                (LoadKind::Pressure { p }, Target::Edge { .. }) => p.is_finite(),
-                (LoadKind::Traction { fx, fy, .. } | LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
+                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. }) => p.is_finite(),
+                (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
+                (LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
                 (LoadKind::Gravity { gx, gy, gz }, Target::Body) => gx.is_finite() && gy.is_finite() && gz.is_finite(),
                 (LoadKind::Flux { q }, Target::Edge { .. }) => q.is_finite(),
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
@@ -703,6 +718,8 @@ impl Model {
             },
             Target::Point { x, y } => (x.is_finite() && y.is_finite()).then_some(()).ok_or_else(|| "A point needs numbers.".into()),
             Target::Body => Ok(()),
+            Target::End { .. } if self.analysis == Analysis::Solid => Ok(()),
+            Target::End { .. } => Err("The back and front faces belong to 3D solids.".into()),
         }
     }
 }

@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view } from "./store";
+import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
@@ -30,7 +30,9 @@ const S = (p: { children: JSX.Element }) => <div class="stack">{p.children}</div
 /** A planned tool: shown dimmed with the release it arrives in. */
 const Planned = (p: { i: string; l: string; v: string; big?: boolean }) => <B i={p.i} l={p.l} big={p.big} off title={`${p.l}: planned for ${p.v}`} />;
 /** A contour field button: shows that result on the part. */
-const F = (p: { k: string; l: string; big?: boolean }) => <B i="contour" l={p.l} big={p.big} on={!!partRes() && curField().key === p.k} off={!partRes()} run={() => C.show({ field: p.k })} />;
+/** Contour results of a part, 2D or 3D. */
+const pres = () => !!partRes() || !!solidRes();
+const F = (p: { k: string; l: string; big?: boolean }) => <B i="contour" l={p.l} big={p.big} on={pres() && curField().key === p.k} off={!pres()} run={() => C.show({ field: p.k })} />;
 /** Element size: automatic, or the current size made coarser or finer. */
 const sizeMenu = (e: MouseEvent) => {
   const m = model(); if (!m) return;
@@ -123,13 +125,14 @@ const formatMembers = (f: (s: any) => object) => { const m = model()!, s = new S
 
 export const Ribbon = () => {
   const m = () => model();
-  const frame = () => isFrame(m()?.analysis), heat = () => m()?.analysis === "heat", sp = () => m()?.analysis === "space";
+  const frame = () => isFrame(m()?.analysis), heat = () => m()?.analysis === "heat", sp = () => m()?.analysis === "space", solid3 = () => m()?.analysis === "solid";
   return (
     <section class="ribbon" ref={fitRibbon}>
       <Show when={tab() === "home"}>
         <G l="Model" h="analysis"><S><B i="frame" l="Frame or truss" on={m()?.analysis === "frame"} run={() => C.analysis("frame")} /><B i="part" l="Plane stress" on={m()?.analysis === "stress"} run={() => C.analysis("stress")} /></S>
           <S><B i="part" l="Plane strain" on={m()?.analysis === "strain"} run={() => C.analysis("strain")} /><B i="temp" l="Heat conduction" on={m()?.analysis === "heat"} run={() => C.analysis("heat")} /></S>
-          <S><B i="axi" l="Axisymmetric" on={m()?.analysis === "axi"} run={() => C.analysis("axi")} title="Axisymmetric: draw the half-section right of the y axis; it is turned a full circle about it (vessels, shafts, discs)" /><B i="space" l="3D Frame" on={sp()} run={() => C.analysis("space")} title="3D frames and trusses: members bend both ways and twist; drawn on planes, seen in 3D" /></S></G>
+          <S><B i="axi" l="Axisymmetric" on={m()?.analysis === "axi"} run={() => C.analysis("axi")} title="Axisymmetric: draw the half-section right of the y axis; it is turned a full circle about it (vessels, shafts, discs)" /><B i="space" l="3D Frame" on={sp()} run={() => C.analysis("space")} title="3D frames and trusses: members bend both ways and twist; drawn on planes, seen in 3D" /></S>
+          <S><B i="solid" l="3D Solid" on={solid3()} run={() => C.analysis("solid")} title="3D solids: the part's outline extruded by its thickness along z, solved in 3D" /></S></G>
         <G l="Units" h="units"><S><B i="units" l="SI: mm, kN, MPa" on={m()?.units === "SI"} run={() => C.units("SI")} /><B i="units" l="US: in, kip, ksi" on={m()?.units === "US"} run={() => C.units("US")} /></S></G>
         <G l="Select" h="select"><T big i="select" l="Select" t="select" /><S><B i="all" l="Select All" run={C.selectAll} /><B i="del" l="Delete" run={C.del} off={!sel().length} /></S></G>
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
@@ -162,7 +165,7 @@ export const Ribbon = () => {
           <G l="Supports" h="supports"><T big i="fixed" l="Fixed" t="sup:fixed" /><T big i="pinned" l="Pinned" t="sup:pinned" />
             <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /></>}><T i="roller" l="Roller (along x)" t="sup:rollerx" /><T i="roller" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
           <G l="Loads" h="loads"><T big i="force" l="Force" t="load:force" />
-            <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><Show when={m()?.analysis !== "axi"}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
+            <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><Show when={m()?.analysis !== "axi" && !solid3()}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
               <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /></S></Show></G>
         </Show>
         <Show when={heat()}>
@@ -175,15 +178,15 @@ export const Ribbon = () => {
       <Show when={tab() === "solve"}>
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
-        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || m()?.analysis === "heat"} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
+        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || m()?.analysis === "heat" || solid3()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
         <Show when={frame()} fallback={<>
           <G l="Contours" h="contours"><Show when={!heat()} fallback={<><F big k="t" l="Temperature" /><S><F k="qmag" l="Heat Flux" /><F k="qx" l="Flux in x" /><F k="qy" l="Flux in y" /></S></>}>
             <F big k="vm" l="Von Mises" /><S><F k="umag" l="Displacement" /><F k="s1" l="Principal σ1" /><F k="sf" l="Safety Factor" /></S></Show>
-            <S><B i="contour" l="More Results" dd={e => openMenu(e, fieldsFor(m()!.analysis).map(f => ({ label: f.name, on: curField().key === f.key, run: () => C.show({ field: f.key }) })))} off={!partRes()} /></S></G>
-          <G l="Show" h="contours"><S><Show when={!heat()}><B i="deform" l="Deformed Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!partRes()} /></Show><B i="mesh" l="Mesh Lines" on={show().mesh} run={() => C.show({ mesh: !show().mesh })} off={!partRes()} /><B i="tri3" l="Per Element" on={show().elem} run={() => C.show({ elem: !show().elem })} off={!partRes()} /></S></G>
-          <G l="Inspect" h="results"><S><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!partRes()} /><B i="reactions" l="Report" run={() => C.view("report")} /></S></G>
+            <S><B i="contour" l="More Results" dd={e => openMenu(e, fieldsFor(m()!.analysis).map(f => ({ label: f.name, on: curField().key === f.key, run: () => C.show({ field: f.key }) })))} off={!pres()} /></S></G>
+          <G l="Show" h="contours"><S><Show when={!heat()}><B i="deform" l="Deformed Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!pres()} /></Show><B i="mesh" l="Mesh Lines" on={show().mesh} run={() => C.show({ mesh: !show().mesh })} off={!pres()} /><Show when={!solid3()}><B i="tri3" l="Per Element" on={show().elem} run={() => C.show({ elem: !show().elem })} off={!partRes()} /></Show></S></G>
+          <G l="Inspect" h="results"><S><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!pres()} /><B i="reactions" l="Report" run={() => C.view("report")} /></S></G>
         </>}>
           <G l="Shape" h="results"><B big i="deform" l="Deflected Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!results()} /></G>
           <Show when={sp()}>{(() => { const Q = (p: { k: Q3; l: string; big?: boolean }) => <B big={p.big} i={p.k === "util" ? "check" : p.k === "d" ? "deform" : "diagram"} l={p.l} on={q3() === p.k} run={() => { setQ3(q3() === p.k ? "none" : p.k); setPlane("3d"); }} off={!results()} />; return <>

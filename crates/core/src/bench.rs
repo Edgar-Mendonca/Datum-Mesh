@@ -745,6 +745,68 @@ fn space_dynamics() -> Vec<Check> {
     out
 }
 
+/// The value of a 3D solid's field at the surface node nearest a point.
+fn at_solid(r: &crate::solid::SolidResults, key: &str, p: [f64; 3]) -> f64 {
+    let n = r.surface.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, p).total_cmp(&crate::model::dist3(*b.1, p))).map(|x| x.0).unwrap();
+    r.field(key).v[n]
+}
+
+/// Benchmark 15 (0.3.0): 3D solids, extruded from the drawing, against exact answers.
+fn solids() -> Vec<Check> {
+    let mut out = vec![];
+    let e = 200e9;
+    let face = |d: &mut Doc, front: bool, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at: Target::End { front }, kind })); };
+    // A patch test: a block on rollers at three faces, pulled at the fourth. Every element must
+    // carry exactly the uniform stress, and the block thins by ν σ t / E.
+    let (p, nu, t) = (50e6, 0.3, 0.05);
+    let (mut d, ids) = part(Analysis::Solid, e, nu, vec![(Geom::rect(0.0, 0.0, 0.2, 0.1), false)]);
+    d.m.thickness = t;
+    edge_support(&mut d, ids[0], 3, SupportKind::Roller);
+    edge_support(&mut d, ids[0], 0, SupportKind::Roller);
+    face(&mut d, false, SupportKind::Roller);
+    edge_load(&mut d, ids[0], 1, LoadKind::Pressure { p: -p });
+    d.m.mesh.size = 0.04;
+    let r = crate::solid::solve(&d.m).expect("solid");
+    let src = "Patch test: a uniform stress must be reproduced exactly";
+    out.push(check(15, "3D patch test: a block pulled, 18-node wedges", "Largest von Mises stress (uniform σx)", "stress", p, r.field("vm").max, 1e-9, src));
+    out.push(check(15, "3D patch test: a block pulled, 18-node wedges", "Smallest von Mises stress (uniform σx)", "stress", p, r.field("vm").min, 1e-9, src));
+    out.push(check(15, "3D patch test: a block pulled, 18-node wedges", "Thinning of the block −νσt/E", "len", -nu * p * t / e, r.field("uz").min, 1e-9, src));
+    // A cantilever 1 m long, 100 deep and 50 wide, fixed at one end, 1 kN down at the other.
+    // Timoshenko beam theory with ν = 0 (no sideways spread at the fixed end): PL³/3EI + PL/κGA.
+    let (l, h, b, pf) = (1.0, 0.1, 0.05, 1e3);
+    let (mut d, ids) = part(Analysis::Solid, e, 0.0, vec![(Geom::rect(0.0, 0.0, l, h), false)]);
+    d.m.thickness = b;
+    edge_support(&mut d, ids[0], 3, SupportKind::Fixed);
+    edge_load(&mut d, ids[0], 1, LoadKind::Traction { fx: 0.0, fy: -pf, total: true, fz: 0.0 });
+    d.m.mesh.size = h / 4.0;
+    let r = crate::solid::solve(&d.m).expect("solid");
+    let i = b * h.powi(3) / 12.0;
+    let tip = pf * l.powi(3) / (3.0 * e * i) + pf * l / (5.0 / 6.0 * (e / 2.0) * b * h);
+    out.push(check(15, "3D cantilever, 1 m × 100 × 50, ν = 0", "Tip deflection PL³/3EI + PL/κGA", "len", -tip, at_solid(&r, "uy", [l, h / 2.0, b / 2.0]), 5e-3, "Timoshenko beam theory (κ = 5/6)"));
+    out.push(check(15, "3D cantilever, 1 m × 100 × 50, ν = 0", "Bending stress at mid-span, top, M c / I", "stress", pf * l / 2.0 * (h / 2.0) / i, at_solid(&r, "sx", [l / 2.0, h, b / 2.0]), 1e-2, "Beam theory"));
+    out.push(check(15, "3D cantilever, 1 m × 100 × 50, ν = 0", "Reaction at the fixed face equals the load", "force", pf, r.reactions[0].f[1], 1e-9, "Statics"));
+    // A thick cylinder, a quarter ring extruded and held at both ends along z (plane strain):
+    // Lamé's hoop stress at the bore.
+    let (a, bo, pr, nu) = (0.1, 0.2, 100e6, 0.3);
+    let q = (std::f64::consts::FRAC_PI_8).tan();
+    let ring = Geom::Poly { pts: vec![[a, 0.0], [bo, 0.0], [0.0, bo], [0.0, a]], bulge: vec![0.0, q, 0.0, -q] };
+    let (mut d, ids) = part(Analysis::Solid, e, nu, vec![(ring, false)]);
+    d.m.thickness = 0.02;
+    edge_support(&mut d, ids[0], 0, SupportKind::Symmetry);
+    edge_support(&mut d, ids[0], 2, SupportKind::Symmetry);
+    face(&mut d, false, SupportKind::Symmetry);
+    face(&mut d, true, SupportKind::Symmetry);
+    edge_load(&mut d, ids[0], 3, LoadKind::Pressure { p: pr });
+    d.m.mesh.size = 0.0125;
+    let r = crate::solid::solve(&d.m).expect("solid");
+    let k = a * a / (bo * bo - a * a);
+    let src = "Lamé thick-cylinder equations, plane strain";
+    out.push(check(15, "Thick cylinder in 3D, held at both ends", "Hoop stress at the bore p(b²+a²)/(b²−a²)", "stress", pr * k * (1.0 + bo * bo / (a * a)), at_solid(&r, "sy", [a, 0.0, 0.01]), 1e-2, src));
+    out.push(check(15, "Thick cylinder in 3D, held at both ends", "Axial stress ν(σr + σθ) = 2νpa²/(b²−a²)", "stress", 2.0 * nu * pr * k, at_solid(&r, "sz", [a, 0.0, 0.01]), 2e-2, src));
+    out.push(check(15, "Thick cylinder in 3D, held at both ends", "Bore radial movement", "len", (1.0 + nu) / e * pr * k * ((1.0 - 2.0 * nu) * a + bo * bo / a), at_solid(&r, "ux", [a, 0.0, 0.01]), 1e-3, src));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -761,6 +823,7 @@ pub fn run() -> Vec<Check> {
     v.extend(buckling());
     v.extend(space());
     v.extend(space_dynamics());
+    v.extend(solids());
     v
 }
 
@@ -778,7 +841,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=14 {
+        for b in 1..=15 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -861,6 +924,13 @@ pub fn timings() -> Vec<Timing> {
     let mut fine = bracket.clone();
     fine.mesh.size = 0.0006;
     time("L-bracket, fine mesh: mesh and solve", 10_000.0, &mut || plane::solve(&fine).unwrap().stats.equations);
+    let b3 = crate::examples::get("bracket3d").unwrap();
+    time("L-bracket in 3D example: mesh and solve", 1000.0, &mut || crate::solid::solve(&b3).unwrap().stats.equations);
+    let mut b3f = b3.clone();
+    b3f.mesh.size = 0.003;
+    b3f.thickness = 0.015;
+    b3f.mesh.layers = 0;
+    time("L-bracket in 3D, 15 deep, fine mesh: mesh and solve", 10_000.0, &mut || crate::solid::solve(&b3f).unwrap().stats.equations);
     let tall = building(10, 12, 8);
     time("3D building frame, 10 × 8 bays, 12 storeys: solve", 10_000.0, &mut || crate::space::solve(&tall).unwrap().stats.equations);
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
