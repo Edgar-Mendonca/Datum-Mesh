@@ -532,7 +532,7 @@ dependencies = [
 
 [[package]]
 name = "datum-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "faer",
  "serde",
@@ -542,7 +542,7 @@ dependencies = [
 
 [[package]]
 name = "datum-mesh"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "chrono",
  "datum-core",

@@ -534,6 +534,54 @@ fn frequencies() -> Vec<Check> {
     out
 }
 
+/// Benchmark 12 (0.2.3): buckling of a column drawn as one member, against Euler's loads for four
+/// ways of holding its ends, a column held at both ends and warmed, and a truss bar on its own.
+fn buckling() -> Vec<Check> {
+    let mut out = vec![];
+    let (l, e, p) = (3.0, 200e9, 10e3);
+    let (b, h) = (0.05, 0.1f64);
+    let ei = e * b * h.powi(3) / 12.0;
+    let euler = std::f64::consts::PI.powi(2) * ei / (l * l);
+    let column = |bottom: SupportKind, top: Option<SupportKind>, kind: MemberKind, warm: f64| {
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [0.0, l], kind);
+        support(&mut d, 0.0, 0.0, bottom);
+        if let Some(t) = top {
+            support(&mut d, 0.0, l, t);
+        }
+        if warm != 0.0 {
+            add(&mut d, Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt: warm } }) });
+        } else {
+            let top = node(&d, 0.0, l);
+            load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p });
+        }
+        frame::buckling(&d.m, 2).expect("buckling")
+    };
+    let src = "Euler buckling loads (Timoshenko & Gere, Theory of Elastic Stability, §2.1–2.5)";
+    // Sliding but not turning at the top: stiff springs across and in rotation, none along.
+    let slide = SupportKind::Spring { kx: 1e15, ky: 0.0, kr: 1e15 };
+    let cases = [
+        ("Column pinned at both ends, one member", "Load factor π²EI/L² / P", SupportKind::Pinned, Some(SupportKind::RollerY), 1.0),
+        ("Column fixed at the foot, free at the top (flagpole)", "Load factor π²EI/4L² / P", SupportKind::Fixed, None, 0.25),
+        ("Column fixed at the foot, pinned at the top", "Load factor 20.19 EI/L² / P", SupportKind::Fixed, Some(SupportKind::RollerY), 4.493_409_457_909_064f64.powi(2) / std::f64::consts::PI.powi(2)),
+        ("Column fixed at both ends (top slides along its axis)", "Load factor 4π²EI/L² / P", SupportKind::Fixed, Some(slide), 4.0),
+    ];
+    for (name, q, bottom, top, k) in cases {
+        let r = column(bottom, top, MemberKind::Beam, 0.0);
+        out.push(check(12, name, q, "ratio", k * euler / p, r.modes[0].lambda, 1e-3, src));
+    }
+    // Pinned–pinned again: the second mode is the S-shape at four times the first.
+    let r = column(SupportKind::Pinned, Some(SupportKind::RollerY), MemberKind::Beam, 0.0);
+    out.push(check(12, "Column pinned at both ends, one member", "Second load factor 4π²EI/L² / P", "ratio", 4.0 * euler / p, r.modes[1].lambda, 1e-3, src));
+    // Held at both ends and warmed 10 K: N = EAαΔT, so λ = 4π²EI/L² / EAαΔT.
+    let r = column(SupportKind::Fixed, Some(SupportKind::Fixed), MemberKind::Beam, 10.0);
+    out.push(check(12, "Column fixed at both ends, warmed 10 K", "Load factor 4π²EI/L² / EAαΔT", "ratio", 4.0 * euler / (e * b * h * 12e-6 * 10.0), r.modes[0].lambda, 1e-3, "Thermal buckling of a restrained bar (Timoshenko & Gere §2.1)"));
+    // A truss bar pinned at both ends is checked on its own as a strut.
+    let r = column(SupportKind::Pinned, Some(SupportKind::RollerY), MemberKind::Truss, 0.0);
+    out.push(check(12, "Truss bar pinned at both ends", "Its own load factor π²EI/L² / P", "ratio", euler / p, r.bars.first().map(|b| b.lambda).unwrap_or(f64::NAN), 1e-9, src));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -547,6 +595,7 @@ pub fn run() -> Vec<Check> {
     v.extend(thermal());
     v.extend(axisymmetric());
     v.extend(frequencies());
+    v.extend(buckling());
     v
 }
 
@@ -564,7 +613,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=11 {
+        for b in 1..=12 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

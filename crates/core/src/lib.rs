@@ -30,12 +30,14 @@ pub enum Results {
     Heat(heat::HeatResults),
 }
 
-/// Natural frequencies of a frame or a part (0.2.2), tagged by kind for the window.
+/// Natural frequencies of a frame or a part (0.2.2), or a frame's buckling (0.2.3), tagged by
+/// kind for the window.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Modes {
     Frame(frame::FrameModes),
     Plane(plane::PartModes),
+    Buckle(frame::FrameBuckling),
 }
 
 /// The lowest `count` natural frequencies and mode shapes of the model.
@@ -45,6 +47,14 @@ pub fn modes(m: &model::Model, count: usize) -> Result<Modes, String> {
         model::Analysis::Frame => frame::modes(m, count).map(Modes::Frame),
         model::Analysis::Heat => Err("Natural frequencies are for frames and for parts in stress (plane stress, plane strain or axisymmetric), not heat conduction.".into()),
         _ => plane::modes(m, count).map(Modes::Plane),
+    }
+}
+
+/// The lowest `count` buckling load factors of a frame (0.2.3): every load times λ buckles it.
+pub fn buckling(m: &model::Model, count: usize) -> Result<frame::FrameBuckling, String> {
+    match m.analysis {
+        model::Analysis::Frame => frame::buckling(m, count.clamp(1, 30)),
+        _ => Err("Buckling is for frames and trusses in this release; parts come later.".into()),
     }
 }
 
@@ -79,12 +89,23 @@ mod tests {
         for e in crate::examples::list().into_iter().filter(|e| !e.id.starts_with("blank") && e.analysis != crate::model::Analysis::Heat) {
             let m = crate::examples::get(e.id).unwrap();
             let r = crate::modes(&m, 4).unwrap_or_else(|x| panic!("{}: {x}", e.id));
-            let f: Vec<f64> = match &r { crate::Modes::Frame(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Plane(x) => x.modes.iter().map(|m| m.f).collect() };
+            let f: Vec<f64> = match &r { crate::Modes::Frame(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Plane(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Buckle(_) => unreachable!() };
             assert_eq!(f.len(), 4, "{}", e.id);
             assert!(f[0] > 0.0 && f.windows(2).all(|w| w[1] >= w[0] * (1.0 - 1e-9)), "{}: {f:?}", e.id);
         }
         // A heat model has no frequencies, and says why.
         assert!(crate::modes(&crate::examples::get("fin").unwrap(), 3).unwrap_err().contains("heat"));
+    }
+
+    #[test]
+    fn the_frame_examples_buckle_with_rising_factors() {
+        for id in ["portal", "truss"] {
+            let b = crate::buckling(&crate::examples::get(id).unwrap(), 3).unwrap_or_else(|x| panic!("{id}: {x}"));
+            let all: Vec<f64> = b.modes.iter().map(|x| x.lambda).chain(b.bars.iter().map(|x| x.lambda)).collect();
+            assert!(!all.is_empty() && all.iter().all(|l| *l > 0.0 && l.is_finite()), "{id}: {all:?}");
+            assert!(b.modes.windows(2).all(|w| w[1].lambda >= w[0].lambda * (1.0 - 1e-9)), "{id}");
+        }
+        assert!(crate::buckling(&crate::examples::get("bracket").unwrap(), 3).unwrap_err().contains("frames"));
     }
 
     #[test]

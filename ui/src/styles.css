@@ -895,3 +895,7 @@ tr.behind td { background: var(--err-bg); }
 .modelist { display: inline-flex; flex-wrap: wrap; gap: 4px; font-family: var(--sans) !important; }
 .modelist button { border: 1px solid var(--line); padding: 2px 8px; font: 500 11.5px var(--mono); }
 .modelist button.on { background: var(--sel); border-color: var(--blue); }
+
+/* Buckling (0.2.3): bars that buckle under the loads as given, and the solve's warnings. */
+.tbl tr.bad td { color: var(--crit); font-weight: 600; }
+p.warn { color: var(--warn-fg); }

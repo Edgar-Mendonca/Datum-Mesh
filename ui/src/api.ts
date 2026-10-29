@@ -112,8 +112,13 @@ export const drawTris = (ms: Mesh): [number, number, number][] => ms.tris.flatMa
 // ---------- natural frequencies (0.2.2) ----------
 export interface FrameMode { f: number; disp: [number, number, number][]; members: { id: number; d: Pt[] }[] }
 export interface PartMode { f: number; disp: Pt[] }
+/** A buckling mode (0.2.3): the load factor λ (every load times λ buckles the frame) and its shape. */
+export interface FrameBuckle { lambda: number; disp: [number, number, number][]; members: { id: number; d: Pt[] }[] }
+/** A truss bar in compression checked on its own as a pinned strut. */
+export interface BarBuckle { id: number; n: number; ncr: number; lambda: number }
 export type ModeResults = { kind: "frame"; modes: FrameMode[]; equations: number; iterations: number; ms: number }
-  | { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; modes: PartMode[]; equations: number; iterations: number; ms: number };
+  | { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; modes: PartMode[]; equations: number; iterations: number; ms: number }
+  | { kind: "buckle"; modes: FrameBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number };
 /** Modes as the shell sends them, made whole. */
 export const modesFromWire = (raw: any): ModeResults => { const r = unwire(raw); if (r.kind === "plane") r.draw = drawTris(r.mesh); return r; };
 

@@ -45,6 +45,8 @@ fn main() {
         "bracket_mesh": sent(&mesh::mesh(&examples::get("bracket").unwrap()).unwrap()),
         "library": materials::library(),
         "portal_modes": sent(&datum_core::modes(&examples::get("portal").unwrap(), 6).unwrap()),
+        "portal_buckle": sent(&datum_core::Modes::Buckle(datum_core::buckling(&examples::get("portal").unwrap(), 6).unwrap())),
+        "truss_buckle": sent(&datum_core::Modes::Buckle(datum_core::buckling(&examples::get("truss").unwrap(), 6).unwrap())),
         "bracket_modes": sent(&datum_core::modes(&examples::get("bracket").unwrap(), 6).unwrap()),
         "verification": bench::run(),
         "noload": out_m(&noload),

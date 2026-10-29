@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.2.2 (2026-10-29) |
+| **Current version** | 0.2.3 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -37,7 +37,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/lib.rs` | `Results` (frame, plane or heat, tagged by `kind`) and `solve()` for any analysis; tests that every example solves, balances and agrees with hand checks |
 | `crates/core/src/wire.rs` | Results packed for the window: long numeric arrays as base64 (f32 values, u32 indices), everything else unchanged; the window's `unwire` (`ui/src/api.ts`) unpacks them |
 | `crates/core/examples/bigpart.rs` | A 25 000-element bracket's results as JSON, for timing the window by hand (not a test) |
-| `crates/core/src/modal.rs` | Natural frequencies: subspace iteration on one sparse Cholesky of K, Rayleigh–Ritz with a small dense Cholesky and Jacobi eigen solve; mode shapes scaled to a largest movement of 1 |
+| `crates/core/src/modal.rs` | Natural frequencies and buckling (`subspace` shared, `Kind`): subspace iteration on one sparse Cholesky of K, Rayleigh–Ritz with a small dense Cholesky and Jacobi eigen solve; mode shapes scaled to a largest movement of 1 |
 | `ui/src/modes.tsx` | Modes on the drawing (frames along members; parts through the contour canvas, 16 cached swing steps), the mode list, the animation, the frequency table |
 | `crates/core/src/frame.rs` | Frames and trusses: beam and truss stiffness, linear member loads as consistent nodal loads, self-weight, springs, reactions, equilibrium sums, exact N, V, M and deflection along each member (41 stations), stress and utilisation |
 | `crates/core/src/bench.rs` | The verification benchmarks as data (`run()` → rows with result, reference, error, source); the test fails on any row over its tolerance |
@@ -64,7 +64,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 108 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
+| `tests_ui/run.cjs` | 115 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -134,6 +134,9 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.2.3 | Buckling solves B φ = μ K φ for the largest μ = 1/λ, so K (positive) stays the matrix factorised and the small problem stays well posed when B has both signs | Members in tension make K_G indefinite; λ ≤ 0 (buckling with the loads reversed) is dropped |
+| 0.2.3 | Beams are cut into 8 pieces (`frame::SPLIT`) for modes and buckling, not for the static solve | One cubic element is exact statically but 21 % high for a pinned column's buckling; 8 pieces give 3e-5 to 5e-4 |
+| 0.2.3 | Truss bars are checked on their own as pinned struts rather than cut | A pin-jointed bar has no bending unknowns; π²EI/L² is its exact answer |
 | 0.2.2 | Natural frequencies by subspace iteration (p = max(2q, q + 8) vectors, one factorisation of K) rather than a Lanczos code | Simple and robust for the few lowest modes asked for; checked against a mass-spring chain to 1e-9 |
 | 0.2.2 | Frame assembly (`frame::assemble`) and the plane solver's assembly (`plane::run` with a modes request) are shared by static and modal solves | One place for supports and held unknowns |
 | 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
@@ -154,7 +157,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Thermal stress (uniform change, temperatures from heat conduction on the same mesh, frames), heated plate example, benchmark 9 (32 checks) | ✅ |
 | 0.2.1 | Axisymmetric solids (hoop strain, 2πr weights, axis held radially, axial equilibrium, axisymmetric heat for thermal stress), pressure vessel example, benchmark 10 (39 checks), area-aware automatic size | ✅ |
 | 0.2.2 | Natural frequencies of frames and parts (modal.rs subspace iteration, consistent masses), mode list and animation, benchmark 11 (47 checks) | ✅ |
-| 0.2.3 | Buckling of frames | 🔜 |
+| 0.2.3 | Buckling of frames (geometric stiffness, beams cut in 8, modal::buckling on the pencil B φ = μ K φ), truss bars as struts, benchmark 12 (54 checks) | ✅ |
 | 0.2.4 | 3D frames | ⬜ |
 | 0.3.x | 3D solids by extrude and revolve: static, viewer (three.js), revolve and symmetry, heat and frequencies | ⬜ |
 | later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
@@ -209,7 +212,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 ### 2026-10-29: Session 1, continued (0.2.2 natural frequencies)
 - Released 0.2.1. modal.rs, frame and plane masses, `modes()` for every stress analysis, benchmark 11 (beams against Euler–Bernoulli, a plate strip's bending and stretching), a test that every example vibrates with rising frequencies. Window: Natural Frequencies, the mode list and animation, the frequency table on the Results page and in print. Found in the app: the part's fill covered its mode.
 
-## 5. Known limits (0.2.2)
+### 2026-10-29: Session 1, continued (0.2.3 buckling of frames)
+- Released 0.2.2. modal.rs generalised (`subspace` for vibration and buckling); frame.rs gains `kg_local`, `scatter`, `split` and `buckling`; the assembly cuts beams into pieces on request and keeps every inner node's position. Benchmark 12: Euler columns held four ways, the second mode, a warmed fixed column and a truss bar as a strut. Window: Solve › Buckling, the load factors under the canvas, the buckled shapes, the load factor and bar tables on the Results page and in print. Found in the app: bars were listed by internal id; now named Member n as in the tree.
+
+## 5. Known limits (0.2.3)
+
+- Buckling: frames and trusses only, in their own plane; linear (eigenvalue) buckling of a perfect frame; no lateral-torsional buckling or design-code checks.
 
 - Natural frequencies: the six lowest only (up to 30 through the engine), no point masses yet, no damping or forced response.
 

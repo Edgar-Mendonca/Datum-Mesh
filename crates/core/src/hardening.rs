@@ -199,6 +199,11 @@ mod tests {
                     let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: SupportKind::Fixed }) });
                 }
             }
+            // Buckling never panics; when it answers, the factors are positive and rising.
+            if let Ok(b) = crate::frame::buckling(&d.m, 3) {
+                assert!(b.modes.iter().all(|x| x.lambda > 0.0) && b.modes.windows(2).all(|w| w[1].lambda >= w[0].lambda * (1.0 - 1e-6)), "seed {seed}: {:?}", b.modes.iter().map(|x| x.lambda).collect::<Vec<_>>());
+                assert!(b.bars.iter().all(|x| x.n < 0.0 && x.lambda > 0.0), "seed {seed}");
+            }
             let Ok(res) = crate::frame::solve(&d.m) else { continue };
             solved += 1;
             let scale = res.applied[0].abs().max(res.applied[1].abs()).max(1.0);

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.3 — 2026-10-29
+
+Buckling of frames: how far the loads can grow before a frame buckles.
+
+**Buckling**
+- Solve › **Buckling**: the six lowest load factors of a frame or truss and their buckled shapes. Every load on the model, self-weight and warming included, times the load factor buckles it.
+- The axial forces come from a static solve first; members in compression soften the frame until it buckles. Beams are cut into eight pieces each, so a column drawn as one member buckles as it should.
+- Truss bars in compression are also checked on their own as pinned struts (π²EI/L²), weakest first, and the bar that buckles before the frame is named.
+- The load factors are listed on the Results page and in the printed report; a factor below 1 is flagged.
+
+**Better natural frequencies**
+- Beams are cut into eight pieces for natural frequencies too, so higher modes of frames drawn with few members are now accurate.
+
+**Trust**
+- Help › Verification: 54 checks, all passing. New: Euler's buckling loads for a column held four ways (pinned, flagpole, fixed and pinned, fixed at both ends) and its second mode, all within 0.05 %; a column held at both ends and warmed; a truss bar checked as a strut.
+
 ## 0.2.2 — 2026-10-29
 
 Natural frequencies: how frames and parts vibrate on their own.

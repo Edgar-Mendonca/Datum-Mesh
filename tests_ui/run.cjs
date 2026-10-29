@@ -47,6 +47,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
+          if (c === "buckling") { if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
           if (c === "materials_library") return f.library;
           if (c in m) return m[c];
@@ -306,6 +307,26 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest natural frequencies and their mode shapes"]'); await p.waitForTimeout(500);
   check("a part's mode is drawn on the contour canvas", await p.$eval("canvas.contours", el => el.classList.contains("on")) && (await p.textContent(".legend")).includes("Natural frequencies"));
   check("the part's fill is cleared under its mode (0.2.2 real-app bug)", await p.$eval(".dsvg", el => el.classList.contains("under")));
+  // Buckling (0.2.3): a frame's load factors and shapes, and a truss's bars checked on their own.
+  await open("portal");
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]'); await p.waitForTimeout(400);
+  const pbk = unpack(fix.portal_buckle);
+  check("Buckling lists the load factors under the canvas", (await p.$$(".legend .modelist button")).length === pbk.modes.length && (await p.textContent(".legend")).includes("Buckling load factors") && (await p.textContent(".legend .modelist")).includes("λ"));
+  check("a buckled shape is drawn along every member", (await p.$$(".modeline")).length === fix.portal.m.members.length);
+  check("the ribbon offers Buckled Shapes", (await p.$$('.ribbon button[title^="Show the buckled shapes"]')).length === 1);
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  check("the Results page lists the load factors", (await p.textContent(".page")).includes("Load factor λ") && (await p.textContent(".page")).includes(String(pbk.modes[0].lambda.toPrecision(3)).slice(0, 3)));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await open("truss");
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]'); await p.waitForTimeout(400);
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  const tbk = unpack(fix.truss_buckle);
+  check("a truss's squeezed bars are checked on their own, weakest first", (await p.textContent(".page")).includes("Truss bars in compression") && (await p.$eval(".page", el => [...el.querySelectorAll("h3 + .tbl tbody tr td:first-child")].map(td => td.textContent)))[0] === `Member ${fix.truss.m.members.findIndex(x => x.id === [...tbk.bars].sort((a, b) => a.lambda - b.lambda)[0].id) + 1}`);
+  check("the bar that buckles first is named as the tree names it", /Member \d+, a truss bar, buckles on its own/.test(await p.textContent(".page")));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await open("bracket");
+  await p.click('.tabs > button:text-is("Solve")');
+  check("Buckling is off for parts", await p.$eval('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]', el => el.disabled || el.classList.contains("off")));
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

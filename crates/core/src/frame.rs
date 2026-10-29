@@ -13,6 +13,10 @@ use crate::sections;
 use crate::sparse::{Stats, System};
 use serde::Serialize;
 
+/// Pieces each beam is cut into for natural frequencies and buckling (one cubic element is exact
+/// for a static beam, not for its vibration or buckling shapes).
+pub const SPLIT: usize = 8;
+
 /// Points along each member where diagrams are given (ends included).
 pub const STATIONS: usize = 41;
 
@@ -73,6 +77,7 @@ impl FrameResults {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Elem {
     id: u32,
     kind: MemberKind,
@@ -116,6 +121,80 @@ fn k_local(e: &Elem) -> [[f64; 6]; 6] {
     k
 }
 
+/// The geometric stiffness in local axes for an axial force n (tension positive): the consistent
+/// matrix of a cubic beam, the string stiffness n/L of a straight truss bar.
+fn kg_local(e: &Elem, n: f64) -> [[f64; 6]; 6] {
+    let mut k = [[0.0; 6]; 6];
+    let l = e.l;
+    if e.kind == MemberKind::Beam {
+        let t = [[36.0, 3.0 * l, -36.0, 3.0 * l], [3.0 * l, 4.0 * l * l, -3.0 * l, -l * l], [-36.0, -3.0 * l, 36.0, -3.0 * l], [3.0 * l, -l * l, -3.0 * l, 4.0 * l * l]];
+        let idx = [1, 2, 4, 5];
+        for i in 0..4 {
+            for j in 0..4 {
+                k[idx[i]][idx[j]] = n / (30.0 * l) * t[i][j];
+            }
+        }
+    } else {
+        let a = n / l;
+        k[1][1] = a;
+        k[4][4] = a;
+        k[1][4] = -a;
+        k[4][1] = -a;
+    }
+    k
+}
+
+/// A local 6×6 matrix turned into global axes, entry by entry (global dof, global dof, value).
+fn scatter(e: &Elem, k: &[[f64; 6]; 6], mut out: impl FnMut(usize, usize, f64)) {
+    let t = |i: usize, j: usize| -> f64 {
+        if i / 3 != j / 3 {
+            return 0.0;
+        }
+        match (i % 3, j % 3) {
+            (0, 0) | (1, 1) => e.c,
+            (0, 1) => e.s,
+            (1, 0) => -e.s,
+            (2, 2) => 1.0,
+            _ => 0.0,
+        }
+    };
+    let mut kt = [[0.0; 6]; 6];
+    for i in 0..6 {
+        for j in 0..6 {
+            kt[i][j] = (0..6).map(|q| k[i][q] * t(q, j)).sum();
+        }
+    }
+    let dof = |i: usize| if i < 3 { 3 * e.a + i } else { 3 * e.b + i - 3 };
+    for i in 0..6 {
+        for j in 0..6 {
+            let v: f64 = (0..6).map(|q| t(q, i) * kt[q][j]).sum();
+            if v != 0.0 {
+                out(dof(i), dof(j), v);
+            }
+        }
+    }
+}
+
+/// Cut a beam into `pieces` equal elements; the inner nodes are numbered from `first`. Its
+/// distributed load is shared out along the pieces. A truss bar is not cut.
+fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
+    if e.kind != MemberKind::Beam || pieces <= 1 {
+        return vec![e.clone()];
+    }
+    let [p1, p2, q1, q2] = e.p;
+    (0..pieces)
+        .map(|k| {
+            let (s0, s1) = (k as f64 / pieces as f64, (k + 1) as f64 / pieces as f64);
+            let mut c = e.clone();
+            c.a = if k == 0 { e.a } else { first + k - 1 };
+            c.b = if k == pieces - 1 { e.b } else { first + k };
+            c.l = e.l / pieces as f64;
+            c.p = [p1 + (p2 - p1) * s0, p1 + (p2 - p1) * s1, q1 + (q2 - q1) * s0, q1 + (q2 - q1) * s1];
+            c
+        })
+        .collect()
+}
+
 /// Rotation from global to local for one node's (x, y, θ).
 fn rot(e: &Elem, g: [f64; 3]) -> [f64; 3] {
     [e.c * g[0] + e.s * g[1], -e.s * g[0] + e.c * g[1], g[2]]
@@ -152,6 +231,10 @@ pub(crate) struct Assembly {
     pub sys: System,
     pub held: Vec<bool>,
     pub(crate) elems: Vec<Elem>,
+    /// The elements solved for: the members, or with beams cut into pieces; `spans[i]` is the
+    /// range of `parts` that make up member i. Nodes from `nodes` on are the pieces' inner nodes.
+    pub(crate) parts: Vec<Elem>,
+    pub spans: Vec<std::ops::Range<usize>>,
     pub free_rot: Vec<bool>,
     pub has_member: Vec<bool>,
     pub has_beam: Vec<bool>,
@@ -159,7 +242,7 @@ pub(crate) struct Assembly {
     pub warnings: Vec<String>,
 }
 
-pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
+pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     m.check()?;
     if m.members.is_empty() {
         return Err("There are no members to solve. Draw beams or truss bars first (Geometry › Beam).".into());
@@ -202,11 +285,26 @@ pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
             e.p[3] += w2 * ay;
         }
     }
-    // Unknowns: ux, uy, θ for every node.
-    let mut sys = System::new(3 * nn);
+    let mut parts = vec![];
+    let mut spans = vec![];
+    let mut nt = nn;
+    let mut pos: Vec<[f64; 2]> = m.nodes.iter().map(|n| [n.x, n.y]).collect();
+    for e in &elems {
+        let pcs = split(e, pieces, nt);
+        let (a, b) = (pos[e.a], pos[e.b]);
+        for k in 1..pcs.len() {
+            let t = k as f64 / pcs.len() as f64;
+            pos.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+        }
+        nt += pcs.len() - 1;
+        spans.push(parts.len()..parts.len() + pcs.len());
+        parts.extend(pcs);
+    }
+    // Unknowns: ux, uy, θ for every node (and every inner node of a cut beam).
+    let mut sys = System::new(3 * nt);
     let mut applied = [0.0; 3];
     let mut add_load = |sys: &mut System, node: usize, f: [f64; 3]| {
-        let (x, y) = (m.nodes[node].x, m.nodes[node].y);
+        let [x, y] = pos[node];
         for k in 0..3 {
             sys.f[3 * node + k] += f[k];
         }
@@ -214,35 +312,9 @@ pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
         applied[1] += f[1];
         applied[2] += f[2] + x * f[1] - y * f[0];
     };
-    for e in &elems {
-        let k = k_local(e);
+    for e in &parts {
         // Global stiffness T' k T, with T the block rotation.
-        let t = |i: usize, j: usize| -> f64 {
-            let (bi, bj) = (i / 3, j / 3);
-            if bi != bj {
-                return 0.0;
-            }
-            match (i % 3, j % 3) {
-                (0, 0) | (1, 1) => e.c,
-                (0, 1) => e.s,
-                (1, 0) => -e.s,
-                (2, 2) => 1.0,
-                _ => 0.0,
-            }
-        };
-        let mut kt = [[0.0; 6]; 6];
-        for i in 0..6 {
-            for j in 0..6 {
-                kt[i][j] = (0..6).map(|q| k[i][q] * t(q, j)).sum();
-            }
-        }
-        let dof = |i: usize| if i < 3 { 3 * e.a + i } else { 3 * e.b + i - 3 };
-        for i in 0..6 {
-            for j in 0..6 {
-                let v: f64 = (0..6).map(|q| t(q, i) * kt[q][j]).sum();
-                sys.add(dof(i), dof(j), v);
-            }
-        }
+        scatter(e, &k_local(e), |i, j, v| sys.add(i, j, v));
         let f = equivalent(e);
         add_load(&mut sys, e.a, unrot(e, [f[0], f[1], f[2]]));
         add_load(&mut sys, e.b, unrot(e, [f[3], f[4], f[5]]));
@@ -256,7 +328,7 @@ pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
         }
     }
     // Supports.
-    let mut held = vec![false; 3 * nn];
+    let mut held = vec![false; 3 * nt];
     for s in &m.supports {
         let Target::Node { id } = s.at else {
             warnings.push("A support that is not on a node was left out.".into());
@@ -278,15 +350,15 @@ pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
     }
     // Rotations of nodes no beam holds (truss joints, loose nodes) are not unknowns; a node no
     // member reaches has no unknowns at all.
-    let mut has_beam = vec![false; nn];
-    let mut has_member = vec![false; nn];
-    for e in &elems {
+    let mut has_beam = vec![false; nt];
+    let mut has_member = vec![false; nt];
+    for e in &parts {
         for n in [e.a, e.b] {
             has_member[n] = true;
             has_beam[n] |= e.kind == MemberKind::Beam;
         }
     }
-    let mut free_rot = vec![false; nn];
+    let mut free_rot = vec![false; nt];
     for i in 0..nn {
         if !has_beam[i] {
             if sys.f[3 * i + 2].abs() > 0.0 {
@@ -310,12 +382,12 @@ pub(crate) fn assemble(m: &Model) -> Result<Assembly, String> {
             held[3 * i + 1] = true;
         }
     }
-    Ok(Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, warnings })
+    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, warnings })
 }
 
 /// Solve a frame or truss model.
 pub fn solve(m: &Model) -> Result<FrameResults, String> {
-    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings } = assemble(m)?;
+    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings, .. } = assemble(m, 1)?;
     let nn = m.nodes.len();
     // The size of the loads, for judging the equilibrium check: forces added up without their
     // signs, and moments about the origin likewise (so loads that cancel still give a scale).
@@ -418,31 +490,10 @@ pub struct FrameModes {
 /// The lowest natural frequencies of a frame, with consistent masses (members' density × area).
 pub fn modes(m: &Model, count: usize) -> Result<FrameModes, String> {
     let t0 = std::time::Instant::now();
-    let Assembly { sys, held, elems, free_rot, has_beam, .. } = assemble(m)?;
+    let Assembly { sys, held, elems, parts, spans, free_rot, has_beam, .. } = assemble(m, SPLIT)?;
     let mut mass = vec![];
-    for e in &elems {
-        let me = m_local(e);
-        let rot = |i: usize, j: usize| -> f64 {
-            if i / 3 != j / 3 {
-                return 0.0;
-            }
-            match (i % 3, j % 3) {
-                (0, 0) | (1, 1) => e.c,
-                (0, 1) => e.s,
-                (1, 0) => -e.s,
-                (2, 2) => 1.0,
-                _ => 0.0,
-            }
-        };
-        let dof = |i: usize| if i < 3 { 3 * e.a + i } else { 3 * e.b + i - 3 };
-        for i in 0..6 {
-            for j in 0..6 {
-                let v: f64 = (0..6).map(|p| (0..6).map(|q| rot(p, i) * me[p][q] * rot(q, j)).sum::<f64>()).sum();
-                if v != 0.0 {
-                    mass.push((dof(i), dof(j), v));
-                }
-            }
-        }
+    for e in &parts {
+        scatter(e, &m_local(e), |i, j, v| mass.push((i, j, v)));
     }
     let (found, iterations) = crate::modal::lowest(&sys, &mass, &held, count)?;
     let nn = m.nodes.len();
@@ -452,21 +503,24 @@ pub fn modes(m: &Model, count: usize) -> Result<FrameModes, String> {
         .map(|md| {
             let u = md.shape;
             let disp = (0..nn).map(|i| [u[3 * i], u[3 * i + 1], if free_rot[i] || !has_beam[i] { 0.0 } else { u[3 * i + 2] }]).collect();
-            let members = elems.iter().map(|e| MemberShape { id: e.id, d: shape_along(e, &u) }).collect();
+            let members = elems.iter().zip(&spans).map(|(e, r)| MemberShape { id: e.id, d: shape_along(&parts[r.clone()], &u) }).collect();
             FrameMode { f: md.f, disp, members }
         })
         .collect();
     Ok(FrameModes { modes, equations, iterations, ms: t0.elapsed().as_secs_f64() * 1e3, warnings: vec![] })
 }
 
-/// A mode's shape along a member from its end movements: cubic (Hermite) across a beam, straight
-/// across a truss bar, straight along both.
-fn shape_along(e: &Elem, u: &[f64]) -> Vec<[f64; 2]> {
-    let la = rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]);
-    let lb = rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]);
+/// A shape along a member from the movements of its pieces' ends: cubic (Hermite) across each
+/// beam piece, straight across a truss bar, straight along both.
+fn shape_along(pieces: &[Elem], u: &[f64]) -> Vec<[f64; 2]> {
+    let np = pieces.len();
     (0..STATIONS)
         .map(|k| {
-            let s = k as f64 / (STATIONS - 1) as f64;
+            let t = k as f64 / (STATIONS - 1) as f64 * np as f64;
+            let e = &pieces[(t.floor() as usize).min(np - 1)];
+            let s = t - (t.floor()).min(np as f64 - 1.0);
+            let la = rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]);
+            let lb = rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]);
             let ux = la[0] * (1.0 - s) + lb[0] * s;
             let vy = if e.kind == MemberKind::Beam {
                 let (h1, h2, h3, h4) = (1.0 - 3.0 * s * s + 2.0 * s.powi(3), e.l * (s - 2.0 * s * s + s.powi(3)), 3.0 * s * s - 2.0 * s.powi(3), e.l * (-s * s + s.powi(3)));
@@ -478,6 +532,95 @@ fn shape_along(e: &Elem, u: &[f64]) -> Vec<[f64; 2]> {
             [g[0], g[1]]
         })
         .collect()
+}
+
+/// One buckling mode of a frame: its load factor (the loads as applied times λ buckle it), node
+/// movements and the shape along each member, scaled so the largest movement is 1.
+#[derive(Clone, Debug, Serialize)]
+pub struct FrameBuckle {
+    pub lambda: f64,
+    pub disp: Vec<[f64; 3]>,
+    pub members: Vec<MemberShape>,
+}
+/// A truss bar in compression checked on its own as a pinned strut: N_cr = π²EI/L².
+#[derive(Clone, Debug, Serialize)]
+pub struct BarBuckle {
+    pub id: u32,
+    /// Axial force under the loads as applied (N, negative in compression), and the bar's own
+    /// buckling load and load factor.
+    pub n: f64,
+    pub ncr: f64,
+    pub lambda: f64,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct FrameBuckling {
+    pub modes: Vec<FrameBuckle>,
+    pub bars: Vec<BarBuckle>,
+    pub equations: usize,
+    pub iterations: usize,
+    pub ms: f64,
+    pub warnings: Vec<String>,
+}
+
+/// Linear (eigenvalue) buckling of a frame: the lowest load factors λ at which the loads as
+/// applied, every one of them times λ, make the frame buckle. The axial forces come from a static
+/// solve; the geometric stiffness they give is set against the stiffness.
+pub fn buckling(m: &Model, count: usize) -> Result<FrameBuckling, String> {
+    let t0 = std::time::Instant::now();
+    let Assembly { sys, held, elems, parts, spans, free_rot, has_beam, mut warnings, .. } = assemble(m, SPLIT)?;
+    if sys.f.iter().all(|f| *f == 0.0) {
+        return Err("There are no loads on the model, so nothing is squeezed and nothing can buckle. Add loads on the Loads tab.".into());
+    }
+    let (u, _) = sys.solve(&held, &vec![0.0; sys.n])?;
+    let axial = |e: &Elem| {
+        let (la, lb) = (rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]), rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]));
+        let ul = [la[0], la[1], la[2], lb[0], lb[1], lb[2]];
+        let (k, eq) = (k_local(e), equivalent(e));
+        let end = |i: usize| (0..6).map(|j| k[i][j] * ul[j]).sum::<f64>() - eq[i];
+        (-end(0) + end(3)) / 2.0
+    };
+    let mut g = vec![];
+    for e in &parts {
+        scatter(e, &kg_local(e, axial(e)), |i, j, v| g.push((i, j, v)));
+    }
+    let bars: Vec<BarBuckle> = elems
+        .iter()
+        .filter(|e| e.kind == MemberKind::Truss)
+        .map(|e| (e, axial(e)))
+        .filter(|(e, n)| *n < 0.0 && e.ei > 0.0)
+        .map(|(e, n)| {
+            let ncr = std::f64::consts::PI.powi(2) * e.ei / (e.l * e.l);
+            BarBuckle { id: e.id, n, ncr, lambda: ncr / -n }
+        })
+        .collect();
+    // Bars squeezed in a frame that cannot sway still buckle on their own: report those.
+    let (found, iterations) = match crate::modal::buckling(&sys, &g, &held, count) {
+        Err(x) if x.contains("squeezed") && !bars.is_empty() => (vec![], 0),
+        r => r?,
+    };
+    let nn = m.nodes.len();
+    let equations = held.iter().filter(|h| !**h).count();
+    let modes: Vec<FrameBuckle> = found
+        .into_iter()
+        .map(|(lambda, u)| {
+            let disp = (0..nn).map(|i| [u[3 * i], u[3 * i + 1], if free_rot[i] || !has_beam[i] { 0.0 } else { u[3 * i + 2] }]).collect();
+            let members = elems.iter().zip(&spans).map(|(e, r)| MemberShape { id: e.id, d: shape_along(&parts[r.clone()], &u) }).collect();
+            FrameBuckle { lambda, disp, members }
+        })
+        .collect();
+    let first = modes.first().map(|b| b.lambda).unwrap_or(f64::INFINITY);
+    if let Some(b) = bars.iter().filter(|b| b.lambda < first).min_by(|a, b| a.lambda.total_cmp(&b.lambda)) {
+        // Named as the window names members: by their place in the list.
+        let k = elems.iter().position(|e| e.id == b.id).map_or(0, |k| k + 1);
+        warnings.push(format!("Member {k}, a truss bar, buckles on its own at a load factor of {:.3}, before the frame as a whole{}.", b.lambda, if first.is_finite() { format!(" ({first:.3})") } else { String::new() }));
+    }
+    if first.min(bars.iter().map(|b| b.lambda).fold(f64::INFINITY, f64::min)) < 1.0 {
+        warnings.push("A load factor is below 1: the model buckles before the loads reach the size given.".into());
+    }
+    if modes.is_empty() {
+        warnings.push("The frame as a whole found no buckling mode under these loads.".into());
+    }
+    Ok(FrameBuckling { modes, bars, equations, iterations, ms: t0.elapsed().as_secs_f64() * 1e3, warnings })
 }
 
 fn load_name(k: &LoadKind) -> &'static str {

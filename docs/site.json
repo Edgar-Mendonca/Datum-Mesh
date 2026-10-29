@@ -30,13 +30,14 @@
     "Thermal stress: temperatures solved on the same mesh, then the stress they cause; uniform temperature changes in frames and parts",
     "Axisymmetric solids: pressure vessels, shafts and discs from their half-section, with hoop stress",
     "Natural frequencies and mode shapes of frames and parts, moving on screen",
-    "Help › Verification: 27 benchmark checks with known answers solved in front of you, with mesh convergence for the plate with a hole, the thick cylinder and NAFEMS LE1",
+    "Buckling of frames: load factors and buckled shapes, with every squeezed truss bar checked as a strut",
+    "Help › Verification: 54 benchmark checks with known answers solved in front of you, from beam theory and Euler columns to NAFEMS LE1, with mesh convergence",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Six worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate and a heat sink"
+    "Eight worked examples: a portal frame, a roof truss, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink, a pressure vessel and a heated plate"
   ],
   "screenshots": [
     "docs/images/bracket-solved.png",
@@ -46,17 +47,9 @@
   ],
   "roadmap": [
     {
-      "v": "0.2.3",
-      "title": "Buckling of frames",
-      "when": "Next",
-      "items": [
-        "Critical load factors and buckled shapes, verified against Euler columns"
-      ]
-    },
-    {
       "v": "0.2.4",
       "title": "3D frames",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Space frames and trusses with torsion and bending about both axes, in a 3D view"
       ]

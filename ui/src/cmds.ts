@@ -45,8 +45,23 @@ export const C = {
     setSolving(true);
     try {
       const r = modesFromWire(await invoke("modes", { count }));
+      if (r.kind === "buckle") return;
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
       toast(`${r.modes.length} natural frequencies: the lowest is ${num(r.modes[0].f, 4)} Hz.`, true);
+    } catch (e) { toast(String(e)); }
+    finally { setSolving(false); }
+  },
+  /** The lowest buckling load factors of a frame and their shapes (0.2.3). */
+  buckling: async (count = 6) => {
+    const m = model(); if (!m || solving()) return;
+    setSolving(true);
+    try {
+      const r = modesFromWire(await invoke("buckling", { count }));
+      if (r.kind !== "buckle") return;
+      batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
+      const low = Math.min(r.modes[0]?.lambda ?? Infinity, ...r.bars.map(b => b.lambda));
+      toast(r.modes.length ? `The lowest buckling load factor is ${num(low, 4)}.` : r.bars.length ? `No frame buckling; the weakest truss bar buckles at a load factor of ${num(low, 4)}.` : "Nothing buckles under these loads.", true);
+      for (const w of r.warnings) toast(w);
     } catch (e) { toast(String(e)); }
     finally { setSolving(false); }
   },
@@ -96,7 +111,7 @@ export const C = {
 export const imbalanceOf = (r: { imbalance: number }) => r.imbalance;
 
 export const ALL_CMDS: [string, () => void, string?][] = [
-  ["Solve", () => C.solve(), "F5"], ["Natural frequencies and mode shapes", () => C.modes()], ["Mesh the part", () => C.mesh()], ["Refine the mesh near an edge or point", () => C.tool("refine")], ["Quadratic elements (6-node)", () => C.meshSettings({ order: 2 })], ["Linear elements (3-node)", () => C.meshSettings({ order: 1 })], ["Automatic element size", () => C.meshSettings({ size: 0 })],
+  ["Solve", () => C.solve(), "F5"], ["Natural frequencies and mode shapes", () => C.modes()], ["Buckling load factors and shapes", () => C.buckling()], ["Mesh the part", () => C.mesh()], ["Refine the mesh near an edge or point", () => C.tool("refine")], ["Quadratic elements (6-node)", () => C.meshSettings({ order: 2 })], ["Linear elements (3-node)", () => C.meshSettings({ order: 1 })], ["Automatic element size", () => C.meshSettings({ size: 0 })],
   ["Von Mises stress", () => C.show({ field: "vm" })], ["Displacement", () => C.show({ field: "umag" })], ["Safety factor", () => C.show({ field: "sf" })], ["Temperature", () => C.show({ field: "t" })], ["Heat flux", () => C.show({ field: "qmag" })], ["Mesh lines on results", () => C.show({ mesh: !show().mesh })], ["Materials library", () => D.library()], ["Results table", () => setView("results")], ["Verification", () => D.verification()],
   ["Deflected shape", () => C.show({ deformed: !show().deformed })], ["Bending moment diagram", () => C.show({ diagram: "m" })], ["Shear force diagram", () => C.show({ diagram: "v" })], ["Axial force diagram", () => C.show({ diagram: "n" })],
   ["Reactions", () => C.show({ reactions: !show().reactions })], ["Utilisation colours", () => C.show({ util: !show().util })],
