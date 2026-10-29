@@ -427,6 +427,66 @@ fn thermal() -> Vec<Check> {
     out
 }
 
+/// Benchmark 10 (0.2.1): axisymmetric solids, drawn as a half-section right of the axis.
+fn axisymmetric() -> Vec<Check> {
+    let mut out = vec![];
+    let (e, nu) = (210e9, 0.3);
+    // A long thick cylinder, its ends held from moving along the axis (plane strain): Lamé.
+    let (a, b, p) = (0.1, 0.2, 100e6);
+    let build = |h: f64| {
+        let (mut d, ids) = part(Analysis::Axi, e, nu, vec![(Geom::rect(a, 0.0, b, 0.05), false)]);
+        edge_support(&mut d, ids[0], 0, SupportKind::Roller);
+        edge_support(&mut d, ids[0], 2, SupportKind::Roller);
+        edge_load(&mut d, ids[0], 3, LoadKind::Pressure { p });
+        d.m.mesh.size = h;
+        d
+    };
+    let k = a * a / (b * b - a * a);
+    let hoop = p * k * (1.0 + b * b / (a * a));
+    let (v, steps) = converge(&[0.025, 0.0125, 0.00625], build, |r| at(r, "sz", [a, 0.025]), hoop);
+    out.push(with_steps(check(10, "Long thick cylinder, axisymmetric, internal pressure", "Hoop stress σθ at the bore (Lamé)", "stress", hoop, v, 1e-2, "Lamé thick-cylinder equations"), steps));
+    // A thick hollow sphere under internal pressure: a quarter ring turned about the y axis.
+    let q = (std::f64::consts::FRAC_PI_8).tan();
+    let build = |h: f64| {
+        let ring = Geom::Poly { pts: vec![[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], bulge: vec![0.0, q, 0.0, -q] };
+        let (mut d, ids) = part(Analysis::Axi, e, nu, vec![(ring, false)]);
+        edge_support(&mut d, ids[0], 0, SupportKind::Symmetry);
+        edge_load(&mut d, ids[0], 3, LoadKind::Pressure { p });
+        d.m.mesh.size = h;
+        d
+    };
+    let c3 = b.powi(3) - a.powi(3);
+    let hoop = p * (b.powi(3) + 2.0 * a.powi(3)) / (2.0 * c3);
+    let u = p * a.powi(3) / (e * c3) * ((1.0 - 2.0 * nu) * a + (1.0 + nu) * b.powi(3) / (2.0 * a * a));
+    let src = "Lamé thick-sphere equations (Timoshenko and Goodier, Theory of Elasticity, §137)";
+    let (v, steps) = converge(&[0.04, 0.02, 0.01], build, |r| at(r, "sz", [a, 0.0]), hoop);
+    out.push(with_steps(check(10, "Thick hollow sphere, internal pressure", "Hoop stress at the inside p(b³ + 2a³)/2(b³ − a³)", "stress", hoop, v, 1e-2, src), steps));
+    let (v, steps) = converge(&[0.04, 0.02, 0.01], build, |r| at(r, "ux", [a, 0.0]), u);
+    out.push(with_steps(check(10, "Thick hollow sphere, internal pressure", "Growth of the inside radius", "len", u, v, 1e-3, src), steps));
+    // A solid round bar pulled along its axis: σ along it everywhere, no hoop stress, and the
+    // radius shrinks by νσR/E. Exact for any mesh (a patch test with the axis in it).
+    let (r0, s) = (0.03, 80e6);
+    let (mut d, ids) = part(Analysis::Axi, e, nu, vec![(Geom::rect(0.0, 0.0, r0, 0.1), false)]);
+    edge_support(&mut d, ids[0], 0, SupportKind::Roller);
+    edge_load(&mut d, ids[0], 2, LoadKind::Pressure { p: -s });
+    d.m.mesh.size = 0.011;
+    let r = plane::solve(&d.m).expect("solves");
+    let src = "FE theory: constant stress is reproduced exactly";
+    out.push(check(10, "Round bar pulled along its axis (patch test)", "σ along the axis, the worst node", "stress", s, if (r.field("sy").max - s).abs() > (r.field("sy").min - s).abs() { r.field("sy").max } else { r.field("sy").min }, 1e-9, src));
+    out.push(check(10, "Round bar pulled along its axis (patch test)", "Radius shrinks by νσR/E", "len", -nu * s * r0 / e, r.field("ux").min, 1e-9, src));
+    // A free cylinder warmed evenly: it grows by αΔT R and has no stress.
+    let (mut d, ids) = part(Analysis::Axi, e, nu, vec![(Geom::rect(0.05, 0.0, 0.08, 0.1), false)]);
+    d.m.materials[0].alpha = 12e-6;
+    edge_support(&mut d, ids[0], 0, SupportKind::Roller);
+    add_id(&mut d, Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt: 80.0 } }));
+    d.m.mesh.size = 0.01;
+    let r = plane::solve(&d.m).expect("solves");
+    let src = "Thermoelasticity: free, even warming";
+    out.push(check(10, "Free tube warmed 80 K, axisymmetric", "Outside radius grows by αΔT R", "len", 12e-6 * 80.0 * 0.08, r.field("ux").max, 1e-9, src));
+    out.push(check(10, "Free tube warmed 80 K, axisymmetric", "No stress: 1 + largest σvm/EαΔT", "ratio", 1.0, 1.0 + r.field("vm").max / (e * 12e-6 * 80.0), 1e-9, src));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -438,6 +498,7 @@ pub fn run() -> Vec<Check> {
     v.extend(conduction());
     v.extend(patch_tests());
     v.extend(thermal());
+    v.extend(axisymmetric());
     v
 }
 
@@ -455,7 +516,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=9 {
+        for b in 1..=10 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

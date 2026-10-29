@@ -6,7 +6,7 @@ import { For, Show, JSX, createSignal, createMemo, onMount, onCleanup, batch } f
 import { Pt, Geom, Model, Target, Support, Load, Shape, Member } from "./api";
 import { model, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act, opts, setCursor, openMenu, Item, toast, partRes, view, meshed } from "./store";
 import { C } from "./cmds";
-import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient } from "./geom";
+import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient, area } from "./geom";
 import { fmt } from "./units";
 import { defaultLoad, defaultSupport } from "./panels";
 import { ResultsLayer, ResultsProbe } from "./results";
@@ -38,8 +38,13 @@ export const zoomBy = (f: number, at?: Pt) => {
 };
 export const zoomPct = () => scale();
 
-/** The automatic element size, as the engine picks it: a twenty-fifth of the part's larger side. */
-const autoSize = (m: Model) => { const b = boundsOf(m); return b ? Math.max(b[2] - b[0], b[3] - b[1]) / 25 : 0.01; };
+/** The automatic element size, as the engine picks it (`mesh::auto_size`): a twenty-fifth of the
+ * part's larger side, and no larger than gives about 800 triangles over its area. */
+const autoSize = (m: Model) => {
+  const b = boundsOf(m); if (!b) return 0.01;
+  const a = Math.max(0, m.shapes.reduce((s, x) => s + (x.hole ? -1 : 1) * Math.abs(x.geom.kind === "circle" ? Math.PI * x.geom.r ** 2 : area(outline(x.geom, 1e-4))), 0));
+  return Math.min(Math.max(b[2] - b[0], b[3] - b[1]) / 25, a > 0 ? Math.sqrt(a / (0.43 * 800)) : Infinity);
+};
 
 const boundsOf = (m: Model): [number, number, number, number] | null => {
   const ps: Pt[] = [...m.nodes.map(n => [n.x, n.y] as Pt), ...m.shapes.flatMap(s => s.geom.kind === "circle" ? [[s.geom.c[0] - s.geom.r, s.geom.c[1] - s.geom.r], [s.geom.c[0] + s.geom.r, s.geom.c[1] + s.geom.r]] as Pt[] : outline(s.geom, Infinity))];
@@ -466,6 +471,7 @@ export const Canvas = () => {
       <svg class="dsvg" ref={svg} classList={{ under: under() }}>
         <path d={gridLines().minor} class="gminor" /><path d={gridLines().major} class="gmajor" />
         <path d={`M${pan()[0]} 0V${size()[1]}M0 ${pan()[1]}H${size()[0]}`} class="gaxis" />
+        <Show when={m()?.analysis === "axi"}><path d={`M${pan()[0]} 0V${size()[1]}`} class="axi" /><text x={pan()[0] + 6} y={RULER + 16} class="axilbl">axis of turning · draw right of it</text></Show>
         {/* plane geometry */}
         <For each={shapes()}>{s => <path d={shapePath(s)} class="shape" classList={{ hole: s.hole, sel: selSet().has(s.id), hover: hoverIs("shape", s.id) }} data-id={s.id} />}</For>
         <Show when={edgeHover()}>{e => <path d={edgePath(e())} class="edgehl" />}</Show>

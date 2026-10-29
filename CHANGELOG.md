@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 — 2026-10-29
+
+Axisymmetric solids: pressure vessels, shafts, discs and nozzles solved from their half-section.
+
+**Axisymmetric**
+- Home › **Axisymmetric**: draw the half-section to the right of the y axis; it is turned a full circle about it. The canvas shows the axis.
+- Results named as engineers read them: radial, axial and hoop stress (σr, σz, σθ), radial and axial displacement, von Mises, principal stresses and the safety factor.
+- Points on the axis are held from moving off it by themselves. Loads and reactions are totals for the full circle; the equilibrium check sums the forces along the axis.
+- Thermal stress works here too: temperatures are solved round the axis, then the stress.
+- A new worked example, **Pressure vessel**: a cylinder with a hemispherical head under 2 MPa. The hoop stress in the cylinder agrees with pr/t.
+
+**Trust**
+- Help › Verification: 39 checks, all passing. New: a long thick cylinder (Lamé) and a thick hollow sphere under pressure (hoop stress and growth of the bore), each on three meshes with the error falling; a round bar pulled along its axis and a free tube warmed evenly, both exact.
+
+**Meshing**
+- The automatic element size is finer for thin parts (about 800 triangles over the part), so a thin wall gets several elements through it instead of one.
+
 ## 0.2.0 — 2026-10-29
 
 Thermal stress: parts and frames that are warmed or cooled push on what holds them. The first release on the way to 3D (see the roadmap).

@@ -9,7 +9,7 @@ import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
 import * as D from "./dialogs";
 
-export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["heat", "Heat conduction"]];
+export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"]];
 
 /** A new support of a kind, with typical values. */
 export const defaultSupport = (k: string): SupportKind => {
@@ -251,7 +251,7 @@ const ModelInsp = (p: { m: Model }) => {
     <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
     <Show when={p.m.analysis !== "frame"}>
       <h4>Mesh<Help k="mesh" /></h4>
-      <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part)." />
+      <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part, finer for thin parts)." />
       <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>
       <div class="iprow"><label>Smallest angle<span class="unit">°</span></label><input class="mono" value={p.m.mesh.min_angle} onChange={numIn(v => v >= 5 && v <= 33 && settings({ mesh: { ...p.m.mesh, min_angle: v } }), () => p.m.mesh.min_angle)} /><span class="hint">5° to 33°; 25° is a good balance.</span></div>
     </Show>

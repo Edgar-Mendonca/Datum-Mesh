@@ -24,6 +24,7 @@ pub fn list() -> Vec<Example> {
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
+        e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
 }
@@ -153,6 +154,13 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 ops.push(sup(edge(b, 0), SupportKind::Fixed));
             }
             d.apply(Op::Batch(ops))?;
+        }
+        "vessel" => {
+            d.m.notes = "A steel vessel: inside radius 100 mm, wall 10 mm, a 200 mm cylinder closed by a hemispherical head, 2 MPa inside. Drawn as the half-section right of the axis (x is the radius) and cut in half at y = 0 by symmetry. The membrane hoop stress in the cylinder is pr/t ≈ 21 MPa; in the head about half that.".into();
+            d.m.grid = 5.0 * mm;
+            let q = (std::f64::consts::FRAC_PI_8).tan();
+            let s = d.apply(shape(poly(&[[100.0, 0.0], [110.0, 0.0], [110.0, 200.0], [0.0, 310.0], [0.0, 300.0], [100.0, 200.0]], &[(2, q), (4, -q)]), false))?[0];
+            d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Symmetry), load(edge(s, 4), LoadKind::Pressure { p: 2e6 }), load(edge(s, 5), LoadKind::Pressure { p: 2e6 })]))?;
         }
         "hotplate" => {
             d.m.notes = "A 200 × 60 mm steel plate, 10 mm thick, with a 20 mm hole. The left edge is welded to a cool wall at 20 °C; the right edge is heated to 220 °C. Solve finds the temperatures first, then the stress from the plate's growth held back at the wall and bent round the hole.".into();

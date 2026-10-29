@@ -7,7 +7,7 @@ import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
 import { Model, Pt, num } from "./api";
 import { out, opts, call, toast, model, frameRes as results, partRes, stale, setBackstage } from "./store";
-import { FIELDS, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
+import { fieldDef, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
 import { Help } from "./help";
 import { Pick, Check } from "./ui";
 import { svgPath, outline } from "./geom";
@@ -118,7 +118,7 @@ const PartReport = (p: { m: Model }) => {
   const pics = createMemo(() => {
     const rr = r(); if (!rr) return [];
     const keys = rr.kind === "heat" ? ["t", "qmag"] : [curField().key === "umag" ? "vm" : curField().key, "umag"];
-    return [...new Set(keys)].map(k => { const d = FIELDS.find(f => f.key === k)!, cs = palette(opts().contours, d.reverse); return { d, cs, src: contourImage(rr, d, 640, 300, cs), range: rangeOf(d, rr.fields.find(f => f.key === k)!.v) }; });
+    return [...new Set(keys)].map(k => { const d = fieldDef(k), cs = palette(opts().contours, d.reverse); return { d, cs, src: contourImage(rr, d, 640, 300, cs), range: rangeOf(d, rr.fields.find(f => f.key === k)!.v) }; });
   });
   return <Show when={r()} fallback={<p class="muted">Solve the model (F5) to add the mesh, result pictures, the largest values, reactions and the equilibrium check to this page.</p>}>{rr => <>
     <h4>Mesh</h4>
@@ -130,7 +130,7 @@ const PartReport = (p: { m: Model }) => {
       <For each={fieldsFor(rr().kind === "heat" ? "heat" : p.m.analysis).filter(d => d.key !== "sf")}>{d => { const f = rr().fields.find(x => x.key === d.key)!; const at = (q: Pt) => `${fmt("coord", q[0]).split(" ")[0]}, ${fmt("coord", q[1])}`; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For>
       <Show when={rr().kind === "plane" && rr().fields.find(f => f.key === "sf")!.max > 0}><tr><td>Smallest safety factor against yield</td><td class="r">{num(Math.min(...rr().fields.find(f => f.key === "sf")!.v.filter(v => v > 0)), 3)}</td><td colSpan={3} /></tr></Show></tbody></table>
     <Show when={rr().kind === "plane"}>{_ => { const pr = rr() as any; return <>
-      <h4>Equilibrium check</h4><EqTable applied={pr.applied} reacted={pr.reacted} scale={pr.scale} />
+      <h4>Equilibrium check</h4><EqTable applied={pr.applied} reacted={pr.reacted} scale={pr.scale} axi={p.m.analysis === "axi"} />
       <p class={pr.imbalance > 1e-6 ? "badline" : "okline"}>{pr.imbalance > 1e-6 ? `The reactions miss the loads by ${num(pr.imbalance * 100, 2)} %.` : `The reactions balance the loads (difference ${num(pr.imbalance * 100, 2)} %).`}</p>
       <h4>Reactions</h4>
       <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx</th><th class="r">Fy</th></tr></thead><tbody><For each={pr.reactions}>{(x: any) => <tr><td>{itemName(p.m, x.support)}</td><td class="r">{fmt("force", x.fx)}</td><td class="r">{fmt("force", x.fy)}</td></tr>}</For></tbody></table>

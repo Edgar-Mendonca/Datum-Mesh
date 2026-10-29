@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.2.0 (2026-10-29) |
+| **Current version** | 0.2.1 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -62,7 +62,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 97 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
+| `tests_ui/run.cjs` | 100 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -130,6 +130,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Thermal stress inside a stress model: fixed temperatures and convection in a stress or strain model are solved as heat conduction on the same mesh first; a uniform `Warming` body load adds to it; `t_ref` is the stress-free temperature | One model, one mesh, no linking of two files |
 | 0.2.0 | A solve whose residual is over 1e-8 warns that the supports barely hold the part | Rollers on curved edges are stiff springs, so a part free to turn about an arc's centre was not caught as a mechanism (found by the random parts) |
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
+| 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
+| 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
 | 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
 
 ## 3. Roadmap
@@ -146,8 +148,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.4 | Polish: packed result transfer (22 → 6.2 MB), pin load, Join Where They Cross, the 0.1.1 review's low findings (safe save, undo clears changed, autosave interval, arrows follow drags, drag snaps position, print units and moment row, damaged settings) | ✅ |
 | 0.1.5 | Fixes from first use on a clean Windows PC; a user guide in the app's help (waits for a person on Windows) | ⬜ |
 | 0.2.0 | Thermal stress (uniform change, temperatures from heat conduction on the same mesh, frames), heated plate example, benchmark 9 (32 checks) | ✅ |
-| 0.2.1 | Axisymmetric solids | 🔜 |
-| 0.2.2 | Natural frequencies of frames and parts | ⬜ |
+| 0.2.1 | Axisymmetric solids (hoop strain, 2πr weights, axis held radially, axial equilibrium, axisymmetric heat for thermal stress), pressure vessel example, benchmark 10 (39 checks), area-aware automatic size | ✅ |
+| 0.2.2 | Natural frequencies of frames and parts | 🔜 |
 | 0.2.3 | Buckling of frames | ⬜ |
 | 0.2.4 | 3D frames | ⬜ |
 | 0.3.x | 3D solids by extrude and revolve: static, viewer (three.js), revolve and symmetry, heat and frequencies | ⬜ |
@@ -197,7 +199,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - 0.2.0: `Warming` body load, `t_ref`, temperatures solved on the same mesh before the stress (plane.rs `temperatures`), thermal strain in frame members, benchmark 9 (five checks, exact), the heated plate example with a hand check. The random-part tests found two faults (a barely held part without a warning; a folded sliver where a hole crosses the outline), both fixed with tests.
 - Window: Thermal group on the Loads tab (Temperature Change, Edge Temperature, Convection), temperature supports on edges of stress models, the stress-free temperature in the Inspector, Temperature among the results of a warmed part. 97 UI checks.
 
-## 5. Known limits (0.2.0)
+### 2026-10-29: Session 1, continued (0.2.1 axisymmetric)
+- Released 0.2.0. Axisymmetric solids in plane.rs and heat.rs; benchmark 10 (Lamé cylinder and sphere with convergence, an axial patch test, free warming); the pressure vessel example with a pr/t hand check; random axisymmetric parts in the hardening tests (including parts across the axis, which must be refused). Window: the analysis, the axis on the canvas, radial/axial/hoop names, axial-only equilibrium. Found in the real app: the vessel's wall had one element through it; the automatic size now looks at the area.
+
+## 5. Known limits (0.2.1)
+
+- Axisymmetric loads are round the axis only (no bending of a shaft by a side load: that needs Fourier modes or 3D).
 
 - Temperatures for thermal stress come from steady conduction only (no transient heating).
 

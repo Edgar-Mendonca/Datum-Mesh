@@ -33,7 +33,7 @@ pub enum Results {
 pub fn solve(m: &model::Model) -> Result<Results, String> {
     match m.analysis {
         model::Analysis::Frame => frame::solve(m).map(Results::Frame),
-        model::Analysis::Stress | model::Analysis::Strain => plane::solve(m).map(Results::Plane),
+        model::Analysis::Stress | model::Analysis::Strain | model::Analysis::Axi => plane::solve(m).map(Results::Plane),
         model::Analysis::Heat => heat::solve(m).map(Results::Heat),
     }
 }
@@ -77,6 +77,13 @@ mod tests {
         assert!((t.min - 293.15).abs() < 1e-6 && (t.max - 493.15).abs() < 1e-6, "{} {}", t.min, t.max);
         let vm = r.field("vm").max;
         assert!(vm > 10e6 && vm < 504e6, "hot plate peak {vm:e}");
+        // Pressure vessel: halfway along the cylinder the hoop stress is close to the membrane value
+        // pr/t at the mid radius (2 MPa × 105 mm / 10 mm = 21 MPa); the axial forces balance.
+        let Ok(crate::Results::Plane(r)) = crate::solve(&crate::examples::get("vessel").unwrap()) else { panic!() };
+        let mid = r.mesh.nodes.iter().enumerate().filter(|(_, p)| (p[1] - 0.1).abs() < 0.01).map(|(i, _)| r.field("sz").v[i]).collect::<Vec<_>>();
+        let avg = mid.iter().sum::<f64>() / mid.len() as f64;
+        assert!((avg - 21e6).abs() < 0.05 * 21e6, "vessel hoop {avg:e}");
+        assert!(r.imbalance < 1e-6);
         // Heat sink: every temperature between the air (25 °C) and the base (80 °C).
         let Ok(crate::Results::Heat(h)) = crate::solve(&crate::examples::get("fin").unwrap()) else { panic!() };
         let t = h.field("t");

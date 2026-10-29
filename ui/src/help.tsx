@@ -8,7 +8,7 @@ type Topic = { t: string; what: string; how?: string[]; tip?: string };
 export const HELP: Record<string, Topic> = {
   // Home
   analysis: { t: "Kind of model", what: "What Datum Mesh solves: a frame or truss of members, or a part in plane stress, plane strain or heat conduction.",
-    how: ["Frame or truss: members between nodes; results are deflections, member forces and moments.", "Plane stress: a thin plate loaded in its plane (set its thickness in the Inspector).", "Plane strain: a long body with the same section all along, such as a dam, a pipe wall or a retaining wall.", "Heat conduction: steady temperatures and heat flow in the same part."] },
+    how: ["Frame or truss: members between nodes; results are deflections, member forces and moments.", "Axisymmetric: a solid turned about the y axis, from its half-section (vessels, shafts, discs).", "Plane stress: a thin plate loaded in its plane (set its thickness in the Inspector).", "Plane strain: a long body with the same section all along, such as a dam, a pipe wall or a retaining wall.", "Heat conduction: steady temperatures and heat flow in the same part."] },
   units: { t: "Units", what: "How values are shown and typed: SI (mm, kN, MPa, °C) or US (in, kip, ksi, °F). Frames show coordinates in m or ft.", tip: "The file always keeps SI base units, so switching never rounds anything." },
   select: { t: "Select", what: "Pick, move and delete items on the canvas.",
     how: ["Click an item; Shift or Ctrl adds to the selection; drag on empty space to select an area.", "Drag a selection to move it; it lands on the grid. The arrow keys move it one grid step.", "Click near a part's outline to pick one edge, for supports and loads."] },
@@ -34,7 +34,7 @@ export const HELP: Record<string, Topic> = {
   snap: { t: "Snap", what: "Points land on the grid, or on a node or corner near the pointer. The grid step is in the Inspector when nothing is selected." },
   // Mesh
   mesh: { t: "Mesh", what: "Splits a part into triangles, with angles kept above a minimum (25° by default). Solve meshes the part for you; Mesh shows it first.",
-    how: ["Element size: automatic is a twenty-fifth of the part's larger side; finer gives better stresses and takes longer.", "Refine Near: click an edge or a point to make the elements a quarter of the size there; they grow back gradually.", "The Mesh view colours triangles by their smallest angle: under 20° is poor."],
+    how: ["Element size: automatic is a twenty-fifth of the part's larger side, or finer for a thin part (about 800 triangles); finer gives better stresses and takes longer.", "Refine Near: click an edge or a point to make the elements a quarter of the size there; they grow back gradually.", "The Mesh view colours triangles by their smallest angle: under 20° is poor."],
     tip: "Check a result by solving again with a finer mesh: if the number hardly changes, the mesh is fine enough." },
   contours: { t: "Contours", what: "The part coloured by a result in 12 bands, from blue (low) to red (high); the colour-blind-safe scale is in Options.",
     how: ["Pick the result under the canvas. Hover anywhere to read the values there.", "Smoothed averages stresses where elements meet; Per element shows each element's own value. Where the two differ a lot, the mesh is too coarse.", "The safety factor is the yield strength over the von Mises stress; its colours run red (low) to blue (safe), and over 10 shows as 10+."],
@@ -45,6 +45,9 @@ export const HELP: Record<string, Topic> = {
     how: ["Fixed: no movement and, for beams, no turning. Pinned: no movement, free to turn.", "Roller: free to slide one way. On a part's edge it slides along the edge.", "Symmetry: model half a symmetric part and hold the cut edge across it.", "Pick the kind, then click a node, an edge or a point."] },
   loads: { t: "Loads", what: "What acts on the model: forces and moments at nodes, distributed loads on members, pressure and forces on edges, and gravity.",
     how: ["Pick the kind, then click where it acts; set the value in the Inspector.", "Up and +x are positive; pressure is positive pushing into the part.", "Self-weight uses each material's density."] },
+  axi: { t: "Axisymmetric", what: "A solid turned about an axis (a pressure vessel, a shaft, a disc, a nozzle), solved from its half-section: the y axis is the axis of turning and x is the radius.",
+    how: ["Draw the half-section right of the y axis (x ≥ 0); edges on the axis are held from moving away from it by themselves.", "Loads and reactions are totals for the full circle: a point force is a ring of force.", "Results: radial, axial and hoop stress (σr, σz, σθ), and radial and axial displacement."],
+    tip: "Only the forces along the axis are summed in the equilibrium check: radial pushes round a circle cancel by themselves." },
   thermal: { t: "Thermal stress", what: "Stress from temperature: a part or member that is warmed grows, and where it cannot grow freely it pushes on what holds it.",
     how: ["Temperature Change: the whole model warms (or cools) by the same amount from the stress-free temperature.", "In a part, hold edges at temperatures (and add convection): Solve finds the temperatures first, on the same mesh, then the stress. Temperature appears among the results.", "The stress-free temperature is in the Inspector with nothing selected (20 °C unless you change it)."],
     tip: "A free part with temperatures varying in a straight line through it has no thermal stress; uneven heating, or holding it, makes stress." },

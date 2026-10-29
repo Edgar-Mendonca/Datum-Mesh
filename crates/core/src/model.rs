@@ -22,6 +22,10 @@ pub enum Analysis {
     Strain,
     /// Steady heat conduction.
     Heat,
+    /// Axisymmetric solids (0.2.1): a half-section drawn right of the y axis (x is the radius,
+    /// y runs along the axis), turned a full circle about it. Loads and reactions are totals for
+    /// the whole circle.
+    Axi,
 }
 
 impl Analysis {

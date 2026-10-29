@@ -31,10 +31,15 @@ export const FIELDS: FieldDef[] = [
   { key: "qx", name: "Heat flux in x", short: "qx", q: "flux", heat: true },
   { key: "qy", name: "Heat flux in y", short: "qy", q: "flux", heat: true },
 ];
+/** In a turned (axisymmetric) solid x is the radius and y the axis: the results are named so. */
+const AXI: Record<string, [string, string]> = { sx: ["Radial stress σr", "σr"], sy: ["Axial stress σz", "σz"], sz: ["Hoop stress σθ", "σθ"], txy: ["Shear stress τrz", "τrz"], ux: ["Radial displacement", "ur"], uy: ["Axial displacement", "uz"] };
+const named = (f: FieldDef, a: string): FieldDef => (a === "axi" && AXI[f.key] ? { ...f, name: AXI[f.key][0], short: AXI[f.key][1] } : f);
+/** A result's description, named for the open model's analysis. */
+export const fieldDef = (key: string): FieldDef => named(FIELDS.find(x => x.key === key)!, model()?.analysis ?? "stress");
 /** The results an analysis has; a part solved with thermal stress also has its temperatures. */
 export const fieldsFor = (a: string) => {
   const r = partRes(), warm = a !== "heat" && r?.kind === "plane" && r.fields.some(f => f.key === "t");
-  return FIELDS.filter(f => (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain")));
+  return FIELDS.filter(f => (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));
 };
 /** The field being shown: the one picked, if the analysis has it, else the first. */
 export const curField = (): FieldDef => { const list = fieldsFor(partRes()?.kind === "heat" ? "heat" : model()?.analysis ?? "stress"); return list.find(f => f.key === show().field) ?? list[0]; };
@@ -270,7 +275,7 @@ export const partProbe = createMemo(() => {
     if (l1 < eps || l2 < eps || l3 < eps) continue;
     const el = Math.floor(k / (r.mesh.order === 2 ? 4 : 1));
     const val = (key: string) => {
-      const d = FIELDS.find(x => x.key === key)!;
+      const d = fieldDef(key);
       if (isElem(d)) { const ef = r.elem.find(x => x.key === key); if (ef) return ef.v[el]; }
       const f = r.fields.find(x => x.key === key); return f ? l1 * f.v[t[0]] + l2 * f.v[t[1]] + l3 * f.v[t[2]] : NaN;
     };
@@ -285,7 +290,7 @@ export const partProbe = createMemo(() => {
 
 export const PartProbe = () => (
   <Show when={partProbe()}>{p => <div class="probe"><b>At {fmt("coord", p().at[0])}, {fmt("coord", p().at[1])}</b>
-    <For each={p().rows}>{([k, v]) => { const d = FIELDS.find(x => x.key === k)!; return <span>{d.short} {k === "sf" && !(v > 0) ? "—" : fmt(d.q, v, 4)}</span>; }}</For></div>}</Show>
+    <For each={p().rows}>{([k, v]) => { const d = fieldDef(k); return <span>{d.short} {k === "sf" && !(v > 0) ? "—" : fmt(d.q, v, 4)}</span>; }}</For></div>}</Show>
 );
 
 // ---------- the legend ----------
@@ -355,10 +360,13 @@ export const PartResultsPage = (p: { r: PartResults }) => {
     <Show when={p.r.kind === "plane"}>{_ => { const r = p.r as PlaneResults; return <>
       <h2>Equilibrium check <Help k="equilibrium" /></h2>
       <p classList={{ okline: r.imbalance <= 1e-6, badline: r.imbalance > 1e-6 }}><Icon n={r.imbalance > 1e-6 ? "info" : "check"} /> {r.imbalance > 1e-6 ? `The reactions miss the loads by ${num(r.imbalance * 100, 2)} %.` : `The reactions balance the loads (difference ${num(r.imbalance * 100, 2)} % of the load).`}</p>
-      <EqTable applied={r.applied} reacted={r.reacted} scale={r.scale} />
+      <EqTable applied={r.applied} reacted={r.reacted} scale={r.scale} axi={m().analysis === "axi"} />
       <h2>Reactions</h2>
+      <Show when={m().analysis !== "axi"} fallback={<table class="tbl"><thead><tr><th>Support</th><th class="r">Along the axis ({unit("force")})</th></tr></thead><tbody>
+        <For each={r.reactions}>{x => <tr class="link" onClick={() => { setSel([x.support]); setView("model"); }}><td>{supName(m(), x.support)}</td><td class="r">{fmt("force", clean(x.fy, r.scale[0])).split(" ")[0]}</td></tr>}</For></tbody></table>}>
       <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy ({unit("force")})</th></tr></thead><tbody>
-        <For each={r.reactions}>{x => <tr class="link" onClick={() => { setSel([x.support]); setView("model"); }}><td>{supName(m(), x.support)}</td><td class="r">{fmt("force", clean(x.fx, r.scale[0])).split(" ")[0]}</td><td class="r">{fmt("force", clean(x.fy, r.scale[0])).split(" ")[0]}</td></tr>}</For></tbody></table>
+        <For each={r.reactions}>{x => <tr class="link" onClick={() => { setSel([x.support]); setView("model"); }}><td>{supName(m(), x.support)}</td><td class="r">{fmt("force", clean(x.fx, r.scale[0])).split(" ")[0]}</td><td class="r">{fmt("force", clean(x.fy, r.scale[0])).split(" ")[0]}</td></tr>}</For></tbody></table></Show>
+      <Show when={m().analysis === "axi"}><p class="muted small">A turned solid: forces are totals for the full circle; the radial pushes round the circle cancel by themselves, so only the forces along the axis are summed.</p></Show>
       <Show when={m().analysis === "stress"}><p class="muted small">Forces are for the whole thickness ({fmt("len", m().thickness)}). Plane strain results are per metre of length.</p></Show>
       <Show when={m().analysis === "strain"}><p class="muted small">Plane strain: forces are per metre of the body's length.</p></Show>
     </>; }}</Show>
@@ -388,8 +396,9 @@ export const PartResultsPage = (p: { r: PartResults }) => {
 };
 
 /** Loads, reactions and their sums: forces in x and y, moments about the origin. */
-export const EqTable = (p: { applied: number[]; reacted: number[]; scale: number[] }) => {
-  const rows: [string, number, number, "force" | "moment", number][] = [["Σ Fx", p.applied[0], p.reacted[0], "force", p.scale[0]], ["Σ Fy", p.applied[1], p.reacted[1], "force", p.scale[0]], ["Σ M about the origin", p.applied[2], p.reacted[2], "moment", p.scale[1]]];
+export const EqTable = (p: { applied: number[]; reacted: number[]; scale: number[]; axi?: boolean }) => {
+  const all: [string, number, number, "force" | "moment", number][] = [["Σ Fx", p.applied[0], p.reacted[0], "force", p.scale[0]], ["Σ Fy", p.applied[1], p.reacted[1], "force", p.scale[0]], ["Σ M about the origin", p.applied[2], p.reacted[2], "moment", p.scale[1]]];
+  const rows = p.axi ? [["Σ F along the axis", p.applied[1], p.reacted[1], "force", p.scale[0]] as [string, number, number, "force" | "moment", number]] : all;
   return <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
     <For each={rows}>{([l, a, b, q, sc]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(a, sc))}</td><td class="r">{fmt(q, clean(b, sc))}</td><td class="r">{fmt(q, clean(a + b, sc))}</td></tr>}</For></tbody></table>;
 };

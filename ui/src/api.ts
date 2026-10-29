@@ -8,7 +8,7 @@ export const invoke = <T = any>(cmd: string, args?: object): Promise<T> =>
 export const listen = (e: string, f: (p: any) => void) => window.__TAURI__?.event.listen(e, x => f(x.payload));
 
 export type Pt = [number, number];
-export type Analysis = "frame" | "stress" | "strain" | "heat";
+export type Analysis = "frame" | "stress" | "strain" | "heat" | "axi";
 export interface Node { id: number; x: number; y: number }
 export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number }
 export type SectionShape =

@@ -71,7 +71,10 @@ pub fn solve(m: &Model) -> Result<HeatResults, String> {
 }
 
 pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<HeatResults, String> {
+    // A turned solid (thermal stress in an axisymmetric part) weighs everything by 2πr.
+    let axi = m.analysis == Analysis::Axi;
     let t = m.thickness;
+    let wt = |x: f64| if axi { std::f64::consts::TAU * x } else { t };
     let nn = ms.nodes.len();
     let ord = ms.order;
     let mut sys = System::new(nn);
@@ -96,7 +99,7 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<HeatResults, String> {
             if det <= 0.0 {
                 return Err("The mesh has a folded element; try a different element size.".into());
             }
-            let f = w * det * t;
+            let f = w * det * wt(n.iter().zip(&xy).map(|(ni, p)| ni * p[0]).sum());
             for i in 0..nd {
                 for j in 0..nd {
                     ke[i * nd + j] += mt.k * (g[i][0] * g[j][0] + g[i][1] * g[j][1]) * f;
@@ -123,9 +126,9 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<HeatResults, String> {
                 for e in ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge) {
                     let nodes: Vec<usize> = e.n.iter().filter(|n| **n != u32::MAX).map(|n| *n as usize).collect();
                     for &(s, w) in &G3 {
-                        let (_, tg, nf) = edge_geo(&ms.nodes, e, s);
+                        let (pt, tg, nf) = edge_geo(&ms.nodes, e, s);
                         let nf: Vec<f64> = if e.n[1] == u32::MAX { vec![nf[0], nf[2]] } else { nf.to_vec() };
-                        let jl = tg[0].hypot(tg[1]) * w * t;
+                        let jl = tg[0].hypot(tg[1]) * w * wt(pt[0]);
                         match l.kind {
                             LoadKind::Flux { q } => {
                                 for (a, &na) in nodes.iter().enumerate() {

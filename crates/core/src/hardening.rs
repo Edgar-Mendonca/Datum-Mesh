@@ -222,7 +222,7 @@ mod tests {
         let mut solved = 0;
         for seed in 1..=60u64 {
             let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xABCD);
-            let analysis = [Analysis::Stress, Analysis::Strain, Analysis::Heat][r.below(3)];
+            let analysis = [Analysis::Stress, Analysis::Strain, Analysis::Heat, Analysis::Axi][r.below(4)];
             let mut d = Doc::new(Model::new(analysis));
             let w = r.f(0.05, 2.0);
             let h = r.f(0.05, 2.0);
@@ -270,6 +270,13 @@ mod tests {
                     let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: r.below(edges as usize) as u32 }, kind: SupportKind::Temperature { t: r.f(250.0, 500.0) } }) });
                 }
             }
+            if analysis == Analysis::Axi && r.below(4) > 0 {
+                // Mostly to the right of the axis (sometimes touching it); now and then across it,
+                // which must be refused with a reason.
+                let x0 = d.m.bounds().unwrap()[0];
+                let ids: Vec<u32> = d.m.shapes.iter().map(|s| s.id).collect();
+                let _ = d.apply(Op::Move { ids, dx: -x0 + if r.below(2) == 0 { 0.0 } else { w * 0.1 }, dy: 0.0 });
+            }
             d.m.mesh.size = w.max(h) / r.f(4.0, 30.0);
             d.m.mesh.order = 1 + r.below(2) as u8;
             let Ok(res) = crate::solve(&d.m) else { continue };
@@ -280,6 +287,9 @@ mod tests {
                 crate::Results::Frame(_) => unreachable!(),
             };
             let barely = match &res { crate::Results::Plane(p) => p.warnings.iter().any(|w| w.contains("barely hold")), _ => false };
+            if analysis == Analysis::Axi {
+                assert!(d.m.bounds().unwrap()[0] >= -1e-9, "seed {seed}: an axisymmetric part across the axis was solved");
+            }
             assert!(imb < 1e-6 || barely, "seed {seed}: imbalance {imb:e} without a warning");
             for t in &mesh.tris {
                 let p = [mesh.nodes[t[0] as usize], mesh.nodes[t[1] as usize], mesh.nodes[t[2] as usize]];

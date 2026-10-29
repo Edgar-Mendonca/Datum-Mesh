@@ -120,8 +120,9 @@ pub(crate) fn gauss(order: u8) -> &'static [(f64, f64, f64)] {
 /// Reference coordinates of an element's nodes (for stresses at the nodes).
 pub(crate) const NODES_REF: [(f64, f64); 6] = [(0.0, 0.0), (1.0, 0.0), (0.0, 1.0), (0.5, 0.0), (0.5, 0.5), (0.0, 0.5)];
 
-/// The strain–displacement matrix at a point: B (3 × 2n), and det J.
-fn bmat(xy: &[[f64; 2]], order: u8, xi: f64, eta: f64) -> (Vec<[f64; 3]>, Vec<f64>, f64) {
+/// The strain–displacement matrix at a point: B (4 × 2n: εx, εy, γxy and, for axisymmetric
+/// solids, the hoop strain u/r), the shape functions and det J.
+fn bmat(xy: &[[f64; 2]], order: u8, xi: f64, eta: f64, axi: bool) -> (Vec<[f64; 4]>, Vec<f64>, f64) {
     let (n, d) = shape(order, xi, eta);
     let (mut j11, mut j12, mut j21, mut j22) = (0.0, 0.0, 0.0, 0.0);
     for (k, p) in xy.iter().enumerate() {
@@ -132,24 +133,37 @@ fn bmat(xy: &[[f64; 2]], order: u8, xi: f64, eta: f64) -> (Vec<[f64; 3]>, Vec<f6
     }
     let det = j11 * j22 - j12 * j21;
     // dN/dx, dN/dy from the inverse Jacobian; columns of B per node: (εx, εy, γxy) for ux and uy.
-    let mut b = vec![[0.0; 3]; 2 * xy.len()];
+    let r: f64 = n.iter().zip(xy).map(|(ni, p)| ni * p[0]).sum();
+    let mut b = vec![[0.0; 4]; 2 * xy.len()];
     for k in 0..xy.len() {
         let dx = (j22 * d[k][0] - j12 * d[k][1]) / det;
         let dy = (-j21 * d[k][0] + j11 * d[k][1]) / det;
-        b[2 * k] = [dx, 0.0, dy];
-        b[2 * k + 1] = [0.0, dy, dx];
+        // On the axis u = 0, and u/r tends to ∂u/∂r.
+        let hoop = if !axi { 0.0 } else if r > 1e-12 * (j11.abs() + j22.abs()) { n[k] / r } else { dx };
+        b[2 * k] = [dx, 0.0, dy, hoop];
+        b[2 * k + 1] = [0.0, dy, dx, 0.0];
     }
     (b, n, det)
 }
 
-fn dmat(a: Analysis, e: f64, nu: f64) -> [[f64; 3]; 3] {
-    if a == Analysis::Strain {
-        let c = e / ((1.0 + nu) * (1.0 - 2.0 * nu));
-        [[c * (1.0 - nu), c * nu, 0.0], [c * nu, c * (1.0 - nu), 0.0], [0.0, 0.0, c * (1.0 - 2.0 * nu) / 2.0]]
-    } else {
-        let c = e / (1.0 - nu * nu);
-        [[c, c * nu, 0.0], [c * nu, c, 0.0], [0.0, 0.0, c * (1.0 - nu) / 2.0]]
+/// The elasticity matrix for (εx, εy, γxy, εθ); the hoop row and column are used by
+/// axisymmetric solids only.
+fn dmat(a: Analysis, e: f64, nu: f64) -> [[f64; 4]; 4] {
+    match a {
+        Analysis::Strain | Analysis::Axi => {
+            let c = e / ((1.0 + nu) * (1.0 - 2.0 * nu));
+            let h = if a == Analysis::Axi { c * nu } else { 0.0 };
+            let hh = if a == Analysis::Axi { c * (1.0 - nu) } else { 0.0 };
+            [[c * (1.0 - nu), c * nu, 0.0, h], [c * nu, c * (1.0 - nu), 0.0, h], [0.0, 0.0, c * (1.0 - 2.0 * nu) / 2.0, 0.0], [h, h, 0.0, hh]]
+        }
+        _ => {
+            let c = e / (1.0 - nu * nu);
+            [[c, c * nu, 0.0, 0.0], [c * nu, c, 0.0, 0.0], [0.0, 0.0, c * (1.0 - nu) / 2.0, 0.0], [0.0; 4]]
+        }
     }
+}
+fn dot4(d: &[[f64; 4]; 4], v: [f64; 4]) -> [f64; 4] {
+    [0, 1, 2, 3].map(|i| d[i][0] * v[0] + d[i][1] * v[1] + d[i][2] * v[2] + d[i][3] * v[3])
 }
 
 /// Points on a mesh edge (quadratic or straight) and its tangent, for line integrals.
@@ -170,15 +184,28 @@ pub(crate) const G3: [(f64, f64); 3] = [(0.112_701_665_379_258_3, 5.0 / 18.0), (
 
 /// Mesh and solve a plane stress or plane strain model.
 pub fn solve(m: &Model) -> Result<PlaneResults, String> {
-    if !matches!(m.analysis, Analysis::Stress | Analysis::Strain) {
-        return Err("This solves plane stress and plane strain models.".into());
+    if !matches!(m.analysis, Analysis::Stress | Analysis::Strain | Analysis::Axi) {
+        return Err("This solves plane stress, plane strain and axisymmetric models.".into());
+    }
+    if m.analysis == Analysis::Axi {
+        if let Some(b) = m.bounds() {
+            if b[0] < -1e-9 * (b[2] - b[0]).max(b[3] - b[1]) {
+                return Err("An axisymmetric part is drawn as its half-section to the right of the axis (x is the radius, x ≥ 0): move it so no part of it is left of x = 0.".into());
+            }
+        }
     }
     let ms = mesh::mesh(m)?;
     solve_mesh(m, ms)
 }
 
 pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
+    let axi = m.analysis == Analysis::Axi;
     let t = if m.analysis == Analysis::Strain { 1.0 } else { m.thickness };
+    // What an area or a length of the drawing stands for: the thickness in plane stress, a metre
+    // in plane strain, and the full circle 2πr in an axisymmetric solid.
+    let area_w = |p: [f64; 2]| if axi { std::f64::consts::TAU * p[0] } else { t };
+    // Edge forces are per length for the whole thickness in a plate; round the circle when turned.
+    let len_w = |p: [f64; 2]| if axi { std::f64::consts::TAU * p[0] } else { 1.0 };
     let nn = ms.nodes.len();
     let mut sys = System::new(2 * nn);
     let mut warnings = vec![];
@@ -191,8 +218,9 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     if temps.is_none() && m.loads.iter().any(|l| matches!(l.kind, LoadKind::Flux { .. } | LoadKind::Heat { .. })) {
         warnings.push("Heat fluxes and generation need a fixed temperature or convection somewhere to set the temperatures for thermal stress; they were left out.".into());
     }
-    // The free thermal strain; in plane strain the held length along the body adds (1 + ν).
-    let eps0 = |mt: &crate::model::Material, dt: f64| mt.alpha * dt * if m.analysis == Analysis::Strain { 1.0 + mt.nu } else { 1.0 };
+    // The free thermal strain (x, y, xy, hoop); in plane strain the held length along the body
+    // adds (1 + ν); a turned solid grows round its circumference too.
+    let eps0 = |mt: &crate::model::Material, dt: f64| { let e = mt.alpha * dt * if m.analysis == Analysis::Strain { 1.0 + mt.nu } else { 1.0 }; [e, e, 0.0, if axi { e } else { 0.0 }] };
     for (k, tri) in ms.tris.iter().enumerate() {
         let mt = mats.get(&ms.mat[k]).ok_or("A shape's material is missing.")?;
         let d = dmat(m.analysis, mt.e, mt.nu);
@@ -201,16 +229,17 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
         let mut ke = vec![0.0; nd * nd];
         let mut fe = vec![0.0; nd];
         for &(xi, eta, w) in gauss(ord) {
-            let (b, n, det) = bmat(&xy, ord, xi, eta);
+            let (b, n, det) = bmat(&xy, ord, xi, eta, axi);
             if det <= 0.0 {
                 return Err("The mesh has a folded element; try a different element size.".into());
             }
-            let f = w * det * t;
+            let pt = [n.iter().zip(&xy).map(|(ni, p)| ni * p[0]).sum::<f64>(), 0.0];
+            let f = w * det * area_w(pt);
             // DB columns.
-            let db: Vec<[f64; 3]> = b.iter().map(|c| [d[0][0] * c[0] + d[0][1] * c[1] + d[0][2] * c[2], d[1][0] * c[0] + d[1][1] * c[1] + d[1][2] * c[2], d[2][0] * c[0] + d[2][1] * c[1] + d[2][2] * c[2]]).collect();
+            let db: Vec<[f64; 4]> = b.iter().map(|c| dot4(&d, *c)).collect();
             for i in 0..nd {
                 for j in i..nd {
-                    let v = (b[i][0] * db[j][0] + b[i][1] * db[j][1] + b[i][2] * db[j][2]) * f;
+                    let v = (b[i][0] * db[j][0] + b[i][1] * db[j][1] + b[i][2] * db[j][2] + b[i][3] * db[j][3]) * f;
                     ke[i * nd + j] += v;
                 }
             }
@@ -221,11 +250,10 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                 }
             }
             if let Some(dt) = &dt {
-                // f = ∫ Bᵀ D ε₀, ε₀ = (e, e, 0).
-                let e0 = eps0(mt, n.iter().zip(tri.iter()).map(|(ni, &i)| ni * dt[i as usize]).sum());
-                let s0 = [(d[0][0] + d[0][1]) * e0, (d[1][0] + d[1][1]) * e0];
+                // f = ∫ Bᵀ D ε₀.
+                let s0 = dot4(&d, eps0(mt, n.iter().zip(tri.iter()).map(|(ni, &i)| ni * dt[i as usize]).sum()));
                 for i in 0..nd {
-                    fe[i] += (b[i][0] * s0[0] + b[i][1] * s0[1]) * f;
+                    fe[i] += (b[i][0] * s0[0] + b[i][1] * s0[1] + b[i][2] * s0[2] + b[i][3] * s0[3]) * f;
                 }
             }
         }
@@ -242,8 +270,9 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
         }
     }
     // Edge loads.
+    // The length of an edge (in a turned solid, the area of the surface it sweeps).
     let edge_len = |shape: u32, edge: u32| -> f64 {
-        ms.edges.iter().filter(|e| e.shape == shape && e.edge == edge).map(|e| G3.iter().map(|&(s, w)| { let (_, tg, _) = edge_geo(&ms.nodes, e, s); w * tg[0].hypot(tg[1]) }).sum::<f64>()).sum()
+        ms.edges.iter().filter(|e| e.shape == shape && e.edge == edge).map(|e| G3.iter().map(|&(s, w)| { let (p, tg, _) = edge_geo(&ms.nodes, e, s); w * tg[0].hypot(tg[1]) * len_w(p) }).sum::<f64>()).sum()
     };
     let point_node = |x: f64, y: f64| ms.points.iter().find(|p| p.0 == [x, y]).map(|p| p.1 as usize);
     for l in &m.loads {
@@ -252,7 +281,7 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                 let tr_total = if let LoadKind::Traction { fx, fy, total: true } = l.kind { let len = edge_len(*shape, *edge); if len > 0.0 { Some([fx / len, fy / len]) } else { None } } else { None };
                 for e in ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge) {
                     for &(s, w) in &G3 {
-                        let (_, tg, n) = edge_geo(&ms.nodes, e, s);
+                        let (pt, tg, n) = edge_geo(&ms.nodes, e, s);
                         // Mesh edges run with the material on their left: the outward normal is (ty, −tx).
                         let jl = tg[0].hypot(tg[1]);
                         let out = [tg[1] / jl, -tg[0] / jl];
@@ -269,13 +298,14 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                             for c in 0..2 {
                                 // Pressure acts per area (times the thickness); an edge force is per
                                 // length of edge for the whole thickness, or the whole force.
-                                let tt = if matches!(l.kind, LoadKind::Pressure { .. }) { t } else { 1.0 };
+                                let tt = if matches!(l.kind, LoadKind::Pressure { .. }) { area_w(pt) } else { len_w(pt) };
                                 sys.f[2 * node as usize + c] += ni * tr[c] * w * jl * tt;
                             }
                         }
                     }
                 }
             }
+            (LoadKind::Bearing { .. }, Target::Edge { .. }) if axi => warnings.push("A pin load does not act on an axisymmetric solid (a pin is not round the axis); it was left out.".into()),
             (LoadKind::Bearing { fx, fy }, Target::Edge { shape, edge }) => {
                 // The pin presses where the edge's outward normal points against the force:
                 // p = p₀ max(0, −n·F̂), pushing into the part; p₀ makes the push along F̂ equal |F|.
@@ -409,6 +439,15 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
         }
         sup_nodes.push((s.id, nodes));
     }
+    if axi {
+        // Points on the axis cannot move away from it.
+        let size = m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(1.0);
+        for (n, p) in ms.nodes.iter().enumerate() {
+            if p[0].abs() <= 1e-9 * size {
+                held[2 * n] = true;
+            }
+        }
+    }
     for &(_, n, nv) in &penalties {
         for a in 0..2 {
             for b in 0..2 {
@@ -472,26 +511,33 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
         let mt = mats[&ms.mat[k]];
         let d = dmat(m.analysis, mt.e, mt.nu);
         let xy: Vec<[f64; 2]> = tri.iter().map(|&i| ms.nodes[i as usize]).collect();
-        let (_, _, det0) = bmat(&xy, ord, 1.0 / 3.0, 1.0 / 3.0);
+        let (_, _, det0) = bmat(&xy, ord, 1.0 / 3.0, 1.0 / 3.0, axi);
         let area = det0.abs() / 2.0;
         let mut es = [0.0f64; 4];
         for (q, &(xi, eta)) in NODES_REF.iter().take(tri.len()).enumerate() {
-            let (b, _, _) = bmat(&xy, ord, xi, eta);
-            let mut eps = [0.0; 3];
+            let (b, _, _) = bmat(&xy, ord, xi, eta, axi);
+            let mut eps = [0.0; 4];
             for (i, c) in b.iter().enumerate() {
                 let ui = u[2 * tri[i / 2] as usize + i % 2];
-                for r in 0..3 {
+                for r in 0..4 {
                     eps[r] += c[r] * ui;
                 }
             }
             // Stress comes from the strain beyond the free thermal strain.
             let dtn = dt.as_ref().map(|v| v[tri[q] as usize]).unwrap_or(0.0);
             let e0 = eps0(mt, dtn);
-            eps[0] -= e0;
-            eps[1] -= e0;
-            let s = [d[0][0] * eps[0] + d[0][1] * eps[1], d[1][0] * eps[0] + d[1][1] * eps[1], d[2][2] * eps[2]];
-            // Plane strain holds the length along the body: σz = ν(σx + σy) − EαΔT.
-            let sz = if m.analysis == Analysis::Strain { mt.nu * (s[0] + s[1]) - mt.e * mt.alpha * dtn } else { 0.0 };
+            for r in 0..4 {
+                eps[r] -= e0[r];
+            }
+            let s4 = dot4(&d, eps);
+            let s = [s4[0], s4[1], s4[2]];
+            // The stress across the plane: plane strain holds the length along the body
+            // (σz = ν(σx + σy) − EαΔT); a turned solid has its hoop stress σθ.
+            let sz = match m.analysis {
+                Analysis::Strain => mt.nu * (s[0] + s[1]) - mt.e * mt.alpha * dtn,
+                Analysis::Axi => s4[3],
+                _ => 0.0,
+            };
             let n = tri[q] as usize;
             for r in 0..3 {
                 acc[n][r] += s[r] * area;
@@ -543,7 +589,13 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     // origin (a pressure on a bore centred there has no moment of its own to compare with).
     let reach = ms.nodes.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
     applied.scale[1] = applied.scale[0] * reach;
-    let imbalance = imbalance(applied.sum, reacted.sum, applied.scale);
+    // In a turned solid, radial forces round the circle cancel by themselves and moments about the
+    // origin mean nothing: only the forces along the axis must balance.
+    let imbalance = if axi {
+        if applied.scale[0] > 0.0 { (applied.sum[1] + reacted.sum[1]).abs() / applied.scale[0] } else { 0.0 }
+    } else {
+        imbalance(applied.sum, reacted.sum, applied.scale)
+    };
     Ok(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })
 }
 
@@ -555,7 +607,8 @@ fn temperatures(m: &Model, ms: &Mesh) -> Result<(Option<Vec<f64>>, Option<Vec<f6
     let heat = m.supports.iter().any(|s| matches!(s.kind, SupportKind::Temperature { .. })) || m.loads.iter().any(|l| matches!(l.kind, LoadKind::Convection { h, .. } if h > 0.0));
     let temps = if heat {
         let mut hm = m.clone();
-        hm.analysis = Analysis::Heat;
+        // Heat conduction on the same mesh (weighted round the axis for a turned solid).
+        hm.analysis = if m.analysis == Analysis::Axi { Analysis::Axi } else { Analysis::Heat };
         hm.supports.retain(|s| matches!(s.kind, SupportKind::Temperature { .. }));
         hm.loads.retain(|l| matches!(l.kind, LoadKind::Flux { .. } | LoadKind::Convection { .. } | LoadKind::Heat { .. }));
         let r = crate::heat::solve_mesh(&hm, ms.clone()).map_err(|e| format!("The temperatures for thermal stress could not be found: {e}"))?;

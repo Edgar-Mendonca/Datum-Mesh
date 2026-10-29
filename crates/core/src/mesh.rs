@@ -115,9 +115,13 @@ fn inside(poly: &[[f64; 2]], p: [f64; 2]) -> bool {
     c
 }
 
-/// The automatic element size: about a twenty-fifth of the part's larger side.
+/// The automatic element size: about a twenty-fifth of the part's larger side, and no larger than
+/// what gives about 800 triangles over the part's area (0.2.1: a thin-walled vessel got one
+/// element through its wall).
 pub fn auto_size(m: &Model) -> f64 {
-    m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1]) / 25.0).unwrap_or(0.01)
+    let area: f64 = m.shapes.iter().map(|s| if s.hole { -s.geom.area().abs() } else { s.geom.area().abs() }).sum::<f64>().max(0.0);
+    let by_area = if area > 0.0 { (area / (0.43 * 800.0)).sqrt() } else { f64::INFINITY };
+    m.bounds().map(|b| ((b[2] - b[0]).max(b[3] - b[1]) / 25.0).min(by_area)).unwrap_or(0.01)
 }
 
 /// Mesh the model's shapes.

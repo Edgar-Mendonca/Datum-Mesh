@@ -28,7 +28,7 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 ## What it does
 
 - **Frames and trusses, solved**: draw beams and truss bars on a grid, put on supports and loads, press Solve (F5). See the deflected shape, the moment, shear and axial diagrams, the reactions, stresses and utilisation; hover a member to read the values there.
-- **Parts, meshed and solved**: plane stress, plane strain, steady heat conduction and thermal stress on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
+- **Parts, meshed and solved**: plane stress, plane strain, axisymmetric solids (vessels, shafts), steady heat conduction and thermal stress on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
 - **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 27 benchmark checks with known answers solved in front of you, from beam theory to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
 - **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out.
@@ -39,7 +39,7 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 
 | Release | What arrives |
 | --- | --- |
-| 0.2.1–0.2.4 | Axisymmetric solids, natural frequencies, buckling of frames, 3D frames |
+| 0.2.2–0.2.4 | Natural frequencies, buckling of frames, 3D frames |
 | 0.3 | 3D solids extruded or revolved from 2D outlines: stress, heat and frequencies, with a 3D view |
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.
