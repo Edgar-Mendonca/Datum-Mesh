@@ -31,7 +31,11 @@ export const FIELDS: FieldDef[] = [
   { key: "qx", name: "Heat flux in x", short: "qx", q: "flux", heat: true },
   { key: "qy", name: "Heat flux in y", short: "qy", q: "flux", heat: true },
 ];
-export const fieldsFor = (a: string) => FIELDS.filter(f => (a === "heat" ? f.heat : !f.heat && (!f.strain || a === "strain")));
+/** The results an analysis has; a part solved with thermal stress also has its temperatures. */
+export const fieldsFor = (a: string) => {
+  const r = partRes(), warm = a !== "heat" && r?.kind === "plane" && r.fields.some(f => f.key === "t");
+  return FIELDS.filter(f => (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain")));
+};
 /** The field being shown: the one picked, if the analysis has it, else the first. */
 export const curField = (): FieldDef => { const list = fieldsFor(partRes()?.kind === "heat" ? "heat" : model()?.analysis ?? "stress"); return list.find(f => f.key === show().field) ?? list[0]; };
 const fieldOf = (r: PartResults, key: string, elem: boolean): Field | undefined => (elem ? r.elem.find(f => f.key === key) : undefined) ?? r.fields.find(f => f.key === key);
@@ -249,7 +253,7 @@ export const PartMarkers = () => {
   });
   // When the two marks are close, the smallest's label goes to the left so they do not overlap.
   const close = () => { const ms = marks(); if (ms.length < 2) return false; const a = toS(ms[0][1]), b = toS(ms[1][1]); return Math.abs(a[0] - b[0]) < 170 && Math.abs(a[1] - b[1]) < 18; };
-  return <For each={marks()}>{([k, p, v]) => { const s = () => toS(p), left = () => k === "min" && close(); return <g class={`mm ${k}`}><path d={`M${s()[0]} ${s()[1]}l-5 -9h10z`} /><text x={s()[0] + (left() ? -8 : 8)} y={s()[1] - 8} text-anchor={left() ? "end" : "start"}>{k} {fmt(curField().q, v, 4)}</text></g>; }}</For>;
+  return <For each={marks()}>{([k, p, v]) => { const s = () => toS(p), left = () => (k === "min" && close()) || s()[0] > (document.querySelector(".canvas")?.clientWidth ?? 1e9) - 170; return <g class={`mm ${k}`}><path d={`M${s()[0]} ${s()[1]}l-5 -9h10z`} /><text x={s()[0] + (left() ? -8 : 8)} y={s()[1] - 8} text-anchor={left() ? "end" : "start"}>{k} {fmt(curField().q, v, 4)}</text></g>; }}</For>;
 };
 
 /** Values under the pointer, from the drawing triangle it is over. */

@@ -7,7 +7,7 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
-    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
+    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
   ],
   "steps": [
     {
@@ -27,6 +27,7 @@
     "Parts meshed automatically into quality triangles, finer where you ask, and solved in plane stress, plane strain or heat conduction",
     "Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; hover anywhere to read values",
     "An equilibrium check after every solve (a heat balance for heat models): the reactions are added up against the loads",
+    "Thermal stress: temperatures solved on the same mesh, then the stress they cause; uniform temperature changes in frames and parts",
     "Help › Verification: 27 benchmark checks with known answers solved in front of you, with mesh convergence for the plate with a hole, the thick cylinder and NAFEMS LE1",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
@@ -43,25 +44,36 @@
   ],
   "roadmap": [
     {
-      "v": "0.1.5",
-      "title": "First use",
+      "v": "0.2.1",
+      "title": "Axisymmetric solids",
       "when": "Next",
       "items": [
-        "Fixes from first use on a clean Windows PC",
-        "A user guide in the app's help"
+        "Pressure vessels, shafts and discs from a half section",
+        "Hoop stress; verified against the thick cylinder and a closed vessel"
       ]
     },
     {
-      "v": "0.2",
-      "title": "More analyses",
-      "when": "Later",
+      "v": "0.2.2",
+      "title": "Natural frequencies",
+      "when": "Soon",
       "items": [
-        "Axisymmetric solids",
-        "3D frames",
-        "Natural frequencies and buckling of frames",
-        "DXF import",
-        "Thermal stress",
-        "Send results to Datum Calc and Datum Plot"
+        "Mode shapes and frequencies of frames and parts"
+      ]
+    },
+    {
+      "v": "0.2.3",
+      "title": "Buckling of frames",
+      "when": "Soon",
+      "items": [
+        "Critical load factors and buckled shapes, verified against Euler columns"
+      ]
+    },
+    {
+      "v": "0.2.4",
+      "title": "3D frames",
+      "when": "Soon",
+      "items": [
+        "Space frames and trusses with torsion and bending about both axes, in a 3D view"
       ]
     },
     {
@@ -69,8 +81,20 @@
       "title": "3D solids",
       "when": "Later",
       "items": [
-        "Linear static, modal and thermal analysis of 3D parts",
-        "STEP import"
+        "Parts extruded or revolved from 2D outlines, meshed into layers of 3D elements",
+        "Linear static stress in 3D, then heat and natural frequencies",
+        "A 3D view: orbit, section plane, contours on faces",
+        "Verified: 3D cantilever, thick cylinder in 3D, NAFEMS LE10"
+      ]
+    },
+    {
+      "v": "0.3+",
+      "title": "Imports and links",
+      "when": "Later",
+      "items": [
+        "DXF import of outlines",
+        "Send results to Datum Calc and Datum Plot",
+        "First-use fixes on a clean Windows PC and a user guide in Help"
       ]
     },
     {

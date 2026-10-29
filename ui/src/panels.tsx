@@ -29,12 +29,13 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "flux": return { kind: "flux", q: 1000 };
     case "convection": return { kind: "convection", h: 25, t_inf: 293.15 };
     case "heat": return { kind: "heat", q: 1e5 };
+    case "warming": return { kind: "warming", dt: 50 };
     default: return { kind: "force", fx: 0, fy: frame ? -10e3 : -1e3 };
   }
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change" };
 
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
@@ -192,7 +193,7 @@ const EdgeInsp = (p: { m: Model; e: { shape: number; edge: number } }) => {
 
 const SupportInsp = (p: { s: Support; m: Model }) => {
   const k = () => p.s.kind;
-  const kinds = (): string[] => p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry"]) : p.m.analysis === "heat" ? ["temperature"] : p.m.analysis === "frame" ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
+  const kinds = (): string[] => p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : p.m.analysis === "frame" ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
   const put = (kind: SupportKind) => set("Support", { ...p.s, kind });
   return <>
     <Row label="On"><span>{targetName(p.m, p.s.at)}</span></Row>
@@ -234,6 +235,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
     <Show when={k().kind === "gravity"}><NumField label="gx" q="accel" v={f("gravity").gx} set={gx => put({ ...f("gravity"), gx })} /><NumField label="gy" q="accel" v={f("gravity").gy} set={gy => put({ ...f("gravity"), gy })} hint="Self-weight from each material's density." /></Show>
     <Show when={k().kind === "flux"}><NumField label="Heat flux" q="flux" v={f("flux").q} set={q => put({ kind: "flux", q })} hint="Positive flows into the part." /></Show>
     <Show when={k().kind === "convection"}><NumField label="Film coefficient h" q="film" v={f("convection").h} min={0} set={h => put({ ...f("convection"), h })} /><NumField label="Fluid temperature" q="temp" v={f("convection").t_inf} set={t_inf => put({ ...f("convection"), t_inf })} /></Show>
+    <Show when={k().kind === "warming"}><NumField label="Change" q="dtemp" v={f("warming").dt} set={dt => put({ kind: "warming", dt })} hint={p.m.analysis === "frame" ? "Every member grows by αΔT per length; where it cannot, it pushes on its supports." : "A uniform change from the stress-free temperature (Inspector, with nothing selected); added to any temperatures set on edges."} /></Show>
     <Show when={k().kind === "heat"}><NumField label="Heat generated" q="heatgen" v={f("heat").q} set={q => put({ kind: "heat", q })} /></Show>
   </>;
 };
@@ -246,6 +248,7 @@ const ModelInsp = (p: { m: Model }) => {
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
     <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
     <Show when={p.m.analysis === "stress" || p.m.analysis === "heat"}><NumField label="Thickness" q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
+    <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
     <Show when={p.m.analysis !== "frame"}>
       <h4>Mesh<Help k="mesh" /></h4>
       <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part)." />

@@ -65,10 +65,10 @@ export const C = {
   del: () => { if (sel().length) act({ Delete: { ids: sel() } }).then(o => { if (o) setSel([]); }); else if (edgeSel()) toast("An edge belongs to its shape: select the shape to delete it."); },
   selectAll: () => { const m = model(); if (m) setSel([...m.nodes, ...m.members, ...m.shapes].map(x => x.id)); },
   /** Gravity or heat generation on the whole model (one of each). */
-  body: async (kind: "gravity" | "heat") => {
+  body: async (kind: "gravity" | "heat" | "warming") => {
     const m = model(); if (!m) return;
     const have = m.loads.find(l => l.kind.kind === kind);
-    if (have) { setSel([have.id]); return toast(kind === "gravity" ? "Gravity is already on: change it in the Inspector." : "Heat generation is already on: change it in the Inspector."); }
+    if (have) { setSel([have.id]); return toast(`${{ gravity: "Gravity", heat: "Heat generation", warming: "A temperature change" }[kind]} is already on: change it in the Inspector.`); }
     const o = await act({ Add: { item: { Load: { id: 0, at: { on: "body" }, kind: defaultLoad(kind, m.analysis === "frame") } } } });
     if (o?.created.length) { setSel(o.created); setEdgeSel(null); }
   },
@@ -96,7 +96,7 @@ export const ALL_CMDS: [string, () => void, string?][] = [
   ["Sections", () => D.sections()], ["Materials", () => D.materials()],
   ["Fixed support", () => C.tool("sup:fixed")], ["Pinned support", () => C.tool("sup:pinned")], ["Roller support", () => C.tool(model()?.analysis === "frame" ? "sup:rollerx" : "sup:roller")], ["Spring support", () => C.tool("sup:spring")], ["Symmetry", () => C.tool("sup:symmetry")],
   ["Force", () => C.tool("load:force")], ["Moment", () => C.tool("load:moment")], ["Distributed load", () => C.tool("load:dist")], ["Pressure", () => C.tool("load:pressure")], ["Edge force", () => C.tool("load:traction")], ["Pin load (bearing in a hole)", () => C.tool("load:bearing")], ["Gravity (self-weight)", () => C.body("gravity")],
-  ["Fixed temperature", () => C.tool("sup:temperature")], ["Heat flux", () => C.tool("load:flux")], ["Convection", () => C.tool("load:convection")], ["Heat generation", () => C.body("heat")],
+  ["Fixed temperature", () => C.tool("sup:temperature")], ["Heat flux", () => C.tool("load:flux")], ["Convection", () => C.tool("load:convection")], ["Heat generation", () => C.body("heat")], ["Temperature change (thermal stress)", () => C.body("warming")],
   ["Frame or truss model", () => C.analysis("frame")], ["Plane stress model", () => C.analysis("stress")], ["Plane strain model", () => C.analysis("strain")], ["Heat conduction model", () => C.analysis("heat")],
   ["SI units", () => C.units("SI")], ["US units", () => C.units("US")],
   ["Zoom in", C.zoomIn], ["Zoom out", C.zoomOut], ["Fit to window", fit, "F"], ["Options", () => setBackstage("options")], ["Check for updates", () => setBackstage("about")], ["Roadmap", () => setBackstage("roadmap")],

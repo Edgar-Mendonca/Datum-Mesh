@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.2.0 — 2026-10-29
+
+Thermal stress: parts and frames that are warmed or cooled push on what holds them. The first release on the way to 3D (see the roadmap).
+
+**Thermal stress**
+- **Temperature Change** (Loads tab): the whole model warms or cools by the same amount from its stress-free temperature (20 °C unless you change it, in the Inspector with nothing selected).
+- In a part, hold edges at temperatures and add convection: Solve finds the temperatures first, on the same mesh, then the stress. Temperature appears among the results, beside the stresses.
+- Frame members grow by αΔT per length; where they cannot, they push on their supports.
+- Plane strain holds the length along the body, as it should: σz = ν(σx + σy) − EαΔT.
+- A new worked example, **Heated plate**: a steel plate with a hole, fixed at a cool wall and heated at its other edge.
+
+**Trust**
+- Help › Verification: 32 checks, all passing. New: a bar held at both ends and warmed (σ = −EαΔT), a block held on every side in plane strain (σ = −EαΔT/(1 − 2ν)), a free plate with a temperature varying in a straight line through it (no stress at all), and a beam fixed at both ends and warmed (N = −EAαΔT).
+
+**Fixed**
+- A part held only by a roller on one curved edge can turn about the edge's centre; it now says the supports barely hold it, instead of giving numbers without a warning. Found by the random-model tests.
+- Where a round hole crosses a round outline, a tiny triangle could fold inside out; it no longer does. Found by the random-model tests.
+- Labels of the largest and smallest values near the right edge of the canvas no longer run off it.
+
 ## 0.1.4 — 2026-10-29
 
 Polish: large parts open faster, a pin load for lugs and clevises, members joined where they cross when you ask, and the small problems left over from the 0.1.1 review.

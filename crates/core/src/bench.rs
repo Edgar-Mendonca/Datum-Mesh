@@ -381,6 +381,52 @@ fn patch_tests() -> Vec<Check> {
     out
 }
 
+/// Benchmark 9 (0.2.0): thermal stress, against hand calculations.
+fn thermal() -> Vec<Check> {
+    let mut out = vec![];
+    let (e, nu, a, dt) = (210e9, 0.3, 12e-6, 50.0);
+    let src = "Hand calculation, thermal strain held back";
+    let warmed = |analysis: Analysis, sides: &[u32]| {
+        let (mut d, ids) = part(analysis, e, nu, vec![(Geom::rect(0.0, 0.0, 0.2, 0.05), false)]);
+        d.m.materials[0].alpha = a;
+        for &k in sides {
+            edge_support(&mut d, ids[0], k, SupportKind::Roller);
+        }
+        add_id(&mut d, Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt } }));
+        d.m.mesh.size = 0.02;
+        plane::solve(&d.m).expect("solves")
+    };
+    // A bar held at both ends, free to grow across: σx = −EαΔT, σy = 0.
+    let r = warmed(Analysis::Stress, &[3, 1, 0]);
+    out.push(check(9, "Bar held at both ends, warmed 50 K", "σx = −EαΔT", "stress", -e * a * dt, r.field("sx").min, 1e-9, src));
+    // A block held on every side in plane strain: σx = σy = σz = −EαΔT/(1 − 2ν).
+    let r = warmed(Analysis::Strain, &[0, 1, 2, 3]);
+    out.push(check(9, "Block held on every side, plane strain, warmed 50 K", "σx = −EαΔT/(1 − 2ν)", "stress", -e * a * dt / (1.0 - 2.0 * nu), r.field("sx").max, 1e-9, src));
+    out.push(check(9, "Block held on every side, plane strain, warmed 50 K", "σz = −EαΔT/(1 − 2ν)", "stress", -e * a * dt / (1.0 - 2.0 * nu), r.field("sz").max, 1e-9, src));
+    // A free plate with a temperature varying linearly through it has no stress at all: the
+    // temperature comes from fixed temperatures on two edges (a heat solve on the same mesh).
+    let (mut d, ids) = part(Analysis::Stress, e, nu, vec![(Geom::rect(0.0, 0.0, 0.2, 0.05), false)]);
+    d.m.materials[0].alpha = a;
+    add_id(&mut d, Item::Support(Support { id: 0, at: Target::Edge { shape: ids[0], edge: 0 }, kind: SupportKind::Temperature { t: 393.15 } }));
+    add_id(&mut d, Item::Support(Support { id: 0, at: Target::Edge { shape: ids[0], edge: 2 }, kind: SupportKind::Temperature { t: 293.15 } }));
+    add_id(&mut d, Item::Support(Support { id: 0, at: Target::Point { x: 0.0, y: 0.0 }, kind: SupportKind::Pinned }));
+    add_id(&mut d, Item::Support(Support { id: 0, at: Target::Point { x: 0.2, y: 0.0 }, kind: SupportKind::RollerX }));
+    d.m.mesh.size = 0.01;
+    let r = plane::solve(&d.m).expect("solves");
+    let worst = r.field("vm").max / (e * a * 100.0);
+    out.push(check(9, "Free plate, temperature linear through it (100 K)", "No stress: 1 + largest σvm/EαΔT", "ratio", 1.0, 1.0 + worst, 1e-9, "Thermoelasticity: a linear temperature leaves a free plate unstressed"));
+    // A frame member fixed at both ends, warmed: N = −EAαΔT.
+    let mut f = frame(e, SectionShape::Rect { b: 0.1, h: 0.2 });
+    f.m.materials[0].alpha = a;
+    member(&mut f, [0.0, 0.0], [4.0, 0.0], MemberKind::Beam);
+    support(&mut f, 0.0, 0.0, SupportKind::Fixed);
+    support(&mut f, 4.0, 0.0, SupportKind::Fixed);
+    add(&mut f, Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt } }) });
+    let r = frame::solve(&f.m).expect("solves");
+    out.push(check(9, "Beam fixed at both ends, warmed 50 K", "Axial force N = −EAαΔT", "force", -e * 0.02 * a * dt, r.members[0].n[0], 1e-9, src));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
@@ -391,6 +437,7 @@ pub fn run() -> Vec<Check> {
     v.extend(le1());
     v.extend(conduction());
     v.extend(patch_tests());
+    v.extend(thermal());
     v
 }
 
@@ -408,7 +455,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=8 {
+        for b in 1..=9 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

@@ -6,7 +6,7 @@
 | | |
 | --- | --- |
 | **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.1.4 (2026-10-29) |
+| **Current version** | 0.2.0 (2026-10-29) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -62,7 +62,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `ui/src/help.tsx` | The `?` cards |
 | `ui/src/roadmap.tsx` | File › Roadmap from `docs/site.json` |
 | `ui/src/styles.css`, `ui/src/ui.tsx`, `ui/index.html` | Plan's styles (crimson accent) and components; the icon sprite |
-| `tests_ui/run.cjs` | 93 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
+| `tests_ui/run.cjs` | 97 UI checks of the built window with a mocked bridge (results in the fixture packed as the shell sends them) |
 | `tests_ui/realapp.sh` | Screenshots of the real app under Xvfb |
 | `docs/PLAN-0.1.md`, `docs/site.json`, `CHANGELOG.md` | The plan, the public summary and roadmap, the change log |
 
@@ -126,6 +126,10 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.4 | The document is "changed" when it differs from the saved snapshot; saving writes a temp file then renames | 0.1.1 review: undo to the saved state stayed changed; a crash mid-save could corrupt the file |
 | 0.1.4 | A drag snaps the grabbed point (node, member start, first corner) to the grid, not the offset | 0.1.1 review: items off the grid stayed off it |
 | 0.1.4 | Each top-level setting is read on its own; one that cannot be read falls back to its default with a warning | 0.1.1 review: an unknown analysis or a negative counter refused the whole file |
+| 0.2.0 | The user asked for a big update toward 3D FEA for simple problems; plan in `docs/PLAN-0.2-0.3.md`. Answers: 3D parts by extruding or revolving 2D parts; analyses first (thermal stress, axisymmetric, frequencies, buckling, 3D frames), then 3D solids, then DXF and Calc/Plot; three.js for the 3D view; small numbered releases | The user's answers, 2026-10-29 |
+| 0.2.0 | Thermal stress inside a stress model: fixed temperatures and convection in a stress or strain model are solved as heat conduction on the same mesh first; a uniform `Warming` body load adds to it; `t_ref` is the stress-free temperature | One model, one mesh, no linking of two files |
+| 0.2.0 | A solve whose residual is over 1e-8 warns that the supports barely hold the part | Rollers on curved edges are stiff springs, so a part free to turn about an arc's centre was not caught as a mechanism (found by the random parts) |
+| 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.1.1 | Help › Verification runs `bench::run()` in the app, so the report is always true for the version running; the same rows are tests and the dated record | The brief's headline feature, earlier than planned because it was cheap |
 
 ## 3. Roadmap
@@ -140,8 +144,14 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.1.2 | Fixes release: the 13 findings of the 0.1.1 review (see Decisions) | ✅ |
 | 0.1.3 | Meshing (spade CDT + refinement, graded local sizes), T6/T3 plane stress and strain, steady heat conduction; contours, probe, deformed shape, mesh view; materials library from Atlas; results report; benchmarks 4–8 with convergence (27 checks) | ✅ |
 | 0.1.4 | Polish: packed result transfer (22 → 6.2 MB), pin load, Join Where They Cross, the 0.1.1 review's low findings (safe save, undo clears changed, autosave interval, arrows follow drags, drag snaps position, print units and moment row, damaged settings) | ✅ |
-| 0.1.5 | Fixes from first use on a clean Windows PC; a user guide in the app's help | 🔜 |
-| 0.2 | Axisymmetric, 3D frames, modal, buckling, DXF import, thermal stress, Send to Calc and Plot | ⬜ |
+| 0.1.5 | Fixes from first use on a clean Windows PC; a user guide in the app's help (waits for a person on Windows) | ⬜ |
+| 0.2.0 | Thermal stress (uniform change, temperatures from heat conduction on the same mesh, frames), heated plate example, benchmark 9 (32 checks) | ✅ |
+| 0.2.1 | Axisymmetric solids | 🔜 |
+| 0.2.2 | Natural frequencies of frames and parts | ⬜ |
+| 0.2.3 | Buckling of frames | ⬜ |
+| 0.2.4 | 3D frames | ⬜ |
+| 0.3.x | 3D solids by extrude and revolve: static, viewer (three.js), revolve and symmetry, heat and frequencies | ⬜ |
+| later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
 ## 4. Session log
@@ -182,11 +192,17 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - Checked: clippy, tests, UI checks, cargo deny, real app (lug with its pin load solved). Timing: a 25 000-element result now arrives as 6.2 MB.
 - Not checked: a clean Windows PC (no Windows machine here; CI builds and tests on Windows).
 
-## 5. Known limits (0.1.4)
+### 2026-10-29: Session 1, continued (plan for 0.2–0.3; 0.2.0 thermal stress)
+- The user asked for a big update to reach 3D FEA for simple problems, finishing the roadmap first. Wrote `docs/PLAN-0.2-0.3.md` and asked four questions; answers recorded in Decisions.
+- 0.2.0: `Warming` body load, `t_ref`, temperatures solved on the same mesh before the stress (plane.rs `temperatures`), thermal strain in frame members, benchmark 9 (five checks, exact), the heated plate example with a hand check. The random-part tests found two faults (a barely held part without a warning; a folded sliver where a hole crosses the outline), both fixed with tests.
+- Window: Thermal group on the Loads tab (Temperature Change, Edge Temperature, Convection), temperature supports on edges of stress models, the stress-free temperature in the Inspector, Temperature among the results of a warmed part. 97 UI checks.
+
+## 5. Known limits (0.2.0)
+
+- Temperatures for thermal stress come from steady conduction only (no transient heating).
 
 - Not yet tried on a clean Windows PC by a person (0.1.5).
 - Stresses at the corner where a fixed edge meets a free edge, or at a sharp inside corner, keep rising with mesh refinement (a singularity); the help says so, the app does not mark them.
-- No thermal stress (0.2); heat and stress are separate models.
 - NAFEMS LE1's error is flat between the first two meshes (0.24 %) before falling to 0.09 %.
 - A pin load on an edge split in two (a corner added in it) is shared half and half, each half bearing on its own; on a circle hole it is one edge, so this rarely matters.
 - No member end releases (hinges inside a frame), no buckling check of members in compression.

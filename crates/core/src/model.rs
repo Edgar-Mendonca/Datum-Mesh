@@ -309,6 +309,9 @@ pub enum LoadKind {
     /// presses only where it pushes into the part, with a pressure that peaks in line with the
     /// force and falls as the cosine away from it (0.1.4).
     Bearing { fx: f64, fy: f64 },
+    /// Body: a uniform change of temperature from the stress-free one (K): thermal stress in
+    /// parts, thermal strain in members (0.2.0).
+    Warming { dt: f64 },
     /// Body: gravity (m/s²), self-weight from the density.
     Gravity { gx: f64, gy: f64 },
     /// Edges: heat flux into the body (W/m²).
@@ -364,6 +367,8 @@ pub struct Model {
     pub grid: f64,
     /// Plane-stress thickness (m); plane strain uses 1 m.
     pub thickness: f64,
+    /// The temperature at which the part is free of thermal stress (K), for thermal stress.
+    pub t_ref: f64,
     pub nodes: Vec<Node>,
     pub members: Vec<Member>,
     pub shapes: Vec<Shape>,
@@ -386,6 +391,7 @@ impl Default for Model {
             units: "SI".into(),
             grid: 0.5,
             thickness: 0.01,
+            t_ref: 293.15,
             nodes: vec![],
             members: vec![],
             shapes: vec![],
@@ -480,6 +486,7 @@ impl Model {
         }
         pos(self.grid, "The grid step")?;
         pos(self.thickness, "The thickness")?;
+        fin(self.t_ref, "The stress-free temperature")?;
         if self.mesh.size < 0.0 || !self.mesh.size.is_finite() {
             return Err("The element size must be zero (automatic) or more.".into());
         }
@@ -603,6 +610,7 @@ impl Model {
                 (LoadKind::Flux { q }, Target::Edge { .. }) => q.is_finite(),
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
+                (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 _ => return Err("That load cannot go there.".into()),
             };
             if !ok {

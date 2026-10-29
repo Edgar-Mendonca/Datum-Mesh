@@ -185,6 +185,14 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy]) } else { None }).fold([0.0, 0.0], |a, b| [a[0] + b[0], a[1] + b[1]]);
     let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
     let ord = ms.order;
+    // Thermal stress (0.2.0): the change of temperature at every node from the stress-free one,
+    // from fixed temperatures, fluxes and convection solved on this mesh, plus any uniform change.
+    let (temps, dt) = temperatures(m, &ms)?;
+    if temps.is_none() && m.loads.iter().any(|l| matches!(l.kind, LoadKind::Flux { .. } | LoadKind::Heat { .. })) {
+        warnings.push("Heat fluxes and generation need a fixed temperature or convection somewhere to set the temperatures for thermal stress; they were left out.".into());
+    }
+    // The free thermal strain; in plane strain the held length along the body adds (1 + ν).
+    let eps0 = |mt: &crate::model::Material, dt: f64| mt.alpha * dt * if m.analysis == Analysis::Strain { 1.0 + mt.nu } else { 1.0 };
     for (k, tri) in ms.tris.iter().enumerate() {
         let mt = mats.get(&ms.mat[k]).ok_or("A shape's material is missing.")?;
         let d = dmat(m.analysis, mt.e, mt.nu);
@@ -210,6 +218,14 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                 for (q, ni) in n.iter().enumerate() {
                     fe[2 * q] += ni * mt.rho * g[0] * f;
                     fe[2 * q + 1] += ni * mt.rho * g[1] * f;
+                }
+            }
+            if let Some(dt) = &dt {
+                // f = ∫ Bᵀ D ε₀, ε₀ = (e, e, 0).
+                let e0 = eps0(mt, n.iter().zip(tri.iter()).map(|(ni, &i)| ni * dt[i as usize]).sum());
+                let s0 = [(d[0][0] + d[0][1]) * e0, (d[1][0] + d[1][1]) * e0];
+                for i in 0..nd {
+                    fe[i] += (b[i][0] * s0[0] + b[i][1] * s0[1]) * f;
                 }
             }
         }
@@ -302,7 +318,7 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                 }
             }
             (LoadKind::Gravity { .. }, _) => {}
-            (LoadKind::Flux { .. } | LoadKind::Convection { .. } | LoadKind::Heat { .. }, _) => warnings.push("Heat loads act only in heat conduction models; they were left out.".into()),
+            (LoadKind::Flux { .. } | LoadKind::Convection { .. } | LoadKind::Heat { .. } | LoadKind::Warming { .. }, _) => {}
             _ => warnings.push("A load that does not act on parts (it belongs to frames) was left out.".into()),
         }
     }
@@ -330,6 +346,10 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     let mut sup_nodes: Vec<(u32, Vec<(usize, [bool; 2])>)> = vec![];
     for s in &m.supports {
         let mut nodes: Vec<(usize, [bool; 2])> = vec![];
+        if matches!(s.kind, SupportKind::Temperature { .. }) {
+            // Fixed temperatures set the temperatures for thermal stress; they hold nothing.
+            continue;
+        }
         match (&s.kind, &s.at) {
             (k, Target::Edge { shape, edge }) => {
                 let es: Vec<&mesh::BEdge> = ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge).collect();
@@ -401,6 +421,11 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
         sys.add(2 * n + 1, 2 * n + 1, ky);
     }
     let (u, stats) = sys.solve(&held, &vec![0.0; 2 * nn])?;
+    if stats.residual > 1e-8 {
+        // Rollers on curved or sloping edges are stiff springs, so a part they hold only nearly
+        // (a roller on one arc lets it turn about the arc's centre) is not caught as a mechanism.
+        warnings.push(format!("The supports barely hold the part (the equations were solved only to {:.0e}): it can probably turn or slide. Add a fixed or pinned support, or rollers on edges at an angle to each other.", stats.residual));
+    }
     // Reactions: K u − f at held unknowns (each node counted once, for the support that holds it
     // first), plus the stiff springs of rollers on sloping edges and the springs.
     let ku = sys.mul(&u);
@@ -459,8 +484,14 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
                     eps[r] += c[r] * ui;
                 }
             }
+            // Stress comes from the strain beyond the free thermal strain.
+            let dtn = dt.as_ref().map(|v| v[tri[q] as usize]).unwrap_or(0.0);
+            let e0 = eps0(mt, dtn);
+            eps[0] -= e0;
+            eps[1] -= e0;
             let s = [d[0][0] * eps[0] + d[0][1] * eps[1], d[1][0] * eps[0] + d[1][1] * eps[1], d[2][2] * eps[2]];
-            let sz = if m.analysis == Analysis::Strain { mt.nu * (s[0] + s[1]) } else { 0.0 };
+            // Plane strain holds the length along the body: σz = ν(σx + σy) − EαΔT.
+            let sz = if m.analysis == Analysis::Strain { mt.nu * (s[0] + s[1]) - mt.e * mt.alpha * dtn } else { 0.0 };
             let n = tri[q] as usize;
             for r in 0..3 {
                 acc[n][r] += s[r] * area;
@@ -496,7 +527,10 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
             cols[k].1.push(*v);
         }
     }
-    let fields = cols.into_iter().map(|(key, v)| field(key, v, &ms.nodes)).collect();
+    let mut fields: Vec<Field> = cols.into_iter().map(|(key, v)| field(key, v, &ms.nodes)).collect();
+    if let Some(t) = temps {
+        fields.push(field("t", t, &ms.nodes));
+    }
     let draw = draw_tris(&ms);
     let elem = ecols.into_iter().map(|(key, v)| field(key, v, &centres)).collect();
     let disp = (0..nn).map(|n| [u[2 * n], u[2 * n + 1]]).collect();
@@ -511,6 +545,30 @@ pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
     applied.scale[1] = applied.scale[0] * reach;
     let imbalance = imbalance(applied.sum, reacted.sum, applied.scale);
     Ok(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })
+}
+
+/// Temperatures for thermal stress: the nodal temperatures when the model has fixed temperatures
+/// or convection (solved as heat conduction on the same mesh), and the change from the
+/// stress-free temperature at every node (with any uniform change added). None when nothing warms.
+fn temperatures(m: &Model, ms: &Mesh) -> Result<(Option<Vec<f64>>, Option<Vec<f64>>), String> {
+    let uniform: f64 = m.loads.iter().filter_map(|l| if let (LoadKind::Warming { dt }, Target::Body) = (&l.kind, &l.at) { Some(*dt) } else { None }).sum();
+    let heat = m.supports.iter().any(|s| matches!(s.kind, SupportKind::Temperature { .. })) || m.loads.iter().any(|l| matches!(l.kind, LoadKind::Convection { h, .. } if h > 0.0));
+    let temps = if heat {
+        let mut hm = m.clone();
+        hm.analysis = Analysis::Heat;
+        hm.supports.retain(|s| matches!(s.kind, SupportKind::Temperature { .. }));
+        hm.loads.retain(|l| matches!(l.kind, LoadKind::Flux { .. } | LoadKind::Convection { .. } | LoadKind::Heat { .. }));
+        let r = crate::heat::solve_mesh(&hm, ms.clone()).map_err(|e| format!("The temperatures for thermal stress could not be found: {e}"))?;
+        Some(r.fields.into_iter().find(|f| f.key == "t").map(|f| f.v).unwrap_or_default())
+    } else {
+        None
+    };
+    let dt = match (&temps, uniform != 0.0) {
+        (Some(t), _) => Some(t.iter().map(|x| x - m.t_ref + uniform).collect()),
+        (None, true) => Some(vec![uniform; ms.nodes.len()]),
+        (None, false) => None,
+    };
+    Ok((temps, dt))
 }
 
 /// A nodal field with where it is smallest and largest.

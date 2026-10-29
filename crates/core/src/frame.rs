@@ -88,6 +88,8 @@ struct Elem {
     fy: f64,
     /// Distributed load in local axes, linear from end a to end b: (px1, px2, qy1, qy2) in N/m.
     p: [f64; 4],
+    /// Free thermal strain αΔT from a uniform temperature change.
+    at: f64,
 }
 
 /// The 6×6 stiffness in local axes (dofs u_a, v_a, θ_a, u_b, v_b, θ_b).
@@ -129,6 +131,8 @@ fn equivalent(e: &Elem) -> [f64; 6] {
     let (dp, dq) = (p2 - p1, q2 - q1);
     let fa = p1 * l / 2.0 + dp * l / 6.0;
     let fb = p1 * l / 2.0 + dp * l / 3.0;
+    // A warmed member pushes its ends apart with EAαΔT (the force that would hold it at its length).
+    let (fa, fb) = (fa - e.ea * e.at, fb + e.ea * e.at);
     if e.kind == MemberKind::Truss {
         return [fa, q1 * l / 2.0 + dq * l / 6.0, 0.0, fb, q1 * l / 2.0 + dq * l / 3.0, 0.0];
     }
@@ -151,6 +155,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     let mut warnings = vec![];
     // Gravity for self-weight.
     let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy]) } else { None }).fold([0.0, 0.0], |a, b| [a[0] + b[0], a[1] + b[1]]);
+    let warming: f64 = m.loads.iter().filter_map(|l| if let (LoadKind::Warming { dt }, Target::Body) = (&l.kind, &l.at) { Some(*dt) } else { None }).sum();
     let mut elems = Vec::with_capacity(m.members.len());
     for mb in &m.members {
         let (a, b) = (idx[&mb.a], idx[&mb.b]);
@@ -160,7 +165,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
         let sec = m.section(mb.section).ok_or("A member's section is missing.")?;
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4] };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming };
         // Self-weight: ρ A g per length, resolved into the member's axes.
         let w = [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1]];
         let (wx, wy) = (e.c * w[0] + e.s * w[1], -e.s * w[0] + e.c * w[1]);
@@ -232,7 +237,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
         match (&l.kind, &l.at) {
             (LoadKind::Force { fx, fy }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, 0.0]),
             (LoadKind::Moment { m: mz }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -395,7 +400,7 @@ fn member_result(e: &Elem, u: &[f64]) -> MemberResult {
         .iter()
         .map(|&s| {
             let vy = va + theta_a * s + vp(s);
-            let ux = ul[0] + (-ends[0] * s - p1 * s * s / 2.0 - dp * s.powi(3) / (6.0 * l)) / e.ea;
+            let ux = ul[0] + (-ends[0] * s - p1 * s * s / 2.0 - dp * s.powi(3) / (6.0 * l)) / e.ea + e.at * s;
             let g = unrot(e, [ux, vy, 0.0]);
             [g[0], g[1]]
         })

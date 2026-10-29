@@ -157,7 +157,7 @@ export const ReportPage = () => {
 const loadValue = (k: any): string => ({
   force: () => `Fx ${fmt("force", k.fx)}, Fy ${fmt("force", k.fy)}`, moment: () => fmt("moment", k.m), dist: () => `${fmt("dist", k.w1)} to ${fmt("dist", k.w2)} (${k.dir === "local" ? "across" : `global ${k.dir}`})`,
   pressure: () => fmt("stress", k.p), bearing: () => `pin, Fx ${fmt("force", k.fx)}, Fy ${fmt("force", k.fy)}`, traction: () => `Fx ${fmt(k.total ? "force" : "dist", k.fx)}, Fy ${fmt(k.total ? "force" : "dist", k.fy)}${k.total ? " in total" : ""}`,
-  gravity: () => `gx ${fmt("accel", k.gx)}, gy ${fmt("accel", k.gy)}`, flux: () => fmt("flux", k.q), convection: () => `h ${fmt("film", k.h)}, fluid ${fmt("temp", k.t_inf)}`, heat: () => fmt("heatgen", k.q),
+  gravity: () => `gx ${fmt("accel", k.gx)}, gy ${fmt("accel", k.gy)}`, flux: () => fmt("flux", k.q), warming: () => `ΔT ${fmt("dtemp", k.dt)}`, convection: () => `h ${fmt("film", k.h)}, fluid ${fmt("temp", k.t_inf)}`, heat: () => fmt("heatgen", k.q),
 } as Record<string, () => string>)[k.kind]?.() ?? "";
 
 const [printing, setPrinting] = createSignal(false);

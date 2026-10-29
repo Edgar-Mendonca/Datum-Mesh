@@ -34,6 +34,8 @@ fn main() {
         "bracket": out("bracket"),
         "lug": out("lug"),
         "fin": out("fin"),
+        "hotplate": out("hotplate"),
+        "hotplate_results": sent(&datum_core::solve(&examples::get("hotplate").unwrap()).unwrap()),
         "portal_results": sent(&datum_core::solve(&examples::get("portal").unwrap()).unwrap()),
         "truss_results": sent(&datum_core::solve(&examples::get("truss").unwrap()).unwrap()),
         "bracket_results": sent(&datum_core::solve(&examples::get("bracket").unwrap()).unwrap()),

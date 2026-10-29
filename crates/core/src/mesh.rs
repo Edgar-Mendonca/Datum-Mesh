@@ -312,6 +312,7 @@ pub fn mesh(m: &Model) -> Result<Mesh, String> {
     }
     bedges.sort_by_key(|x| (segs[x.2].shape, segs[x.2].edge, x.0, x.1));
     // Steiner points that refinement put on an arc's chord go onto the arc itself.
+    let before = nodes.clone();
     for &(a, b, s) in &bedges {
         if let Some((c, r)) = segs[s].arc {
             for n in [a, b] {
@@ -321,6 +322,18 @@ pub fn mesh(m: &Model) -> Result<Mesh, String> {
                     nodes[n as usize] = [c[0] + (p[0] - c[0]) * r / d, c[1] + (p[1] - c[1]) * r / d];
                 }
             }
+        }
+    }
+    // Where two arcs meet (a hole crossing the outline) the move can fold a sliver inside out:
+    // such triangles keep their corners where the triangulation put them.
+    let area2 = |t: &[u32], nodes: &[[f64; 2]]| { let p = [nodes[t[0] as usize], nodes[t[1] as usize], nodes[t[2] as usize]]; (p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]) };
+    for _ in 0..10 {
+        let folded: Vec<u32> = tris.iter().filter(|t| area2(t, &nodes) <= 0.0).flat_map(|t| t.iter().take(3).copied().collect::<Vec<_>>()).collect();
+        if folded.is_empty() {
+            break;
+        }
+        for n in folded {
+            nodes[n as usize] = before[n as usize];
         }
     }
     let order = m.mesh.order;
@@ -454,6 +467,20 @@ mod tests {
         assert!(m.tris.len() > 3 * coarse.tris.len());
         // Absurd sizes are refused before any work.
         assert!(mesh(&part(vec![(Geom::rect(0.0, 0.0, 1.0, 1.0), false)], 1e-5, 1)).unwrap_err().contains("too small"));
+    }
+
+    #[test]
+    fn a_hole_across_the_outline_leaves_no_folded_triangle() {
+        // Found by the random parts (0.2.0): where a round hole crosses a round outline, moving
+        // points onto both arcs folded a sliver triangle inside out.
+        for order in [1, 2] {
+            let md = part(vec![(Geom::Circle { c: [0.0, 0.0], r: 0.2541289 }, false), (Geom::Circle { c: [-0.03763089925419999, 0.157107686498], r: 0.14182545401599997 }, true)], 0.2541289 * 2.0 / 20.0, order);
+            let m = mesh(&md).unwrap();
+            for t in &m.tris {
+                let p = [m.nodes[t[0] as usize], m.nodes[t[1] as usize], m.nodes[t[2] as usize]];
+                assert!((p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1]) > 0.0);
+            }
+        }
     }
 
     #[test]

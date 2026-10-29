@@ -27,11 +27,11 @@ export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number } | { kind: "moment"; m: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "local" }
   | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number }
-  | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number };
+  | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number };
 export interface Load { id: number; at: Target; kind: LoadKind }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[] }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number;
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number;
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }

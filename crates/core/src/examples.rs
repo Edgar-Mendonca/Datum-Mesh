@@ -24,6 +24,7 @@ pub fn list() -> Vec<Example> {
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
+        e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
 }
 
@@ -153,6 +154,17 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             }
             d.apply(Op::Batch(ops))?;
         }
+        "hotplate" => {
+            d.m.notes = "A 200 × 60 mm steel plate, 10 mm thick, with a 20 mm hole. The left edge is welded to a cool wall at 20 °C; the right edge is heated to 220 °C. Solve finds the temperatures first, then the stress from the plate's growth held back at the wall and bent round the hole.".into();
+            d.m.grid = 5.0 * mm;
+            let s = d.apply(shape(poly(&[[0.0, 0.0], [200.0, 0.0], [200.0, 60.0], [0.0, 60.0]], &[]), false))?[0];
+            d.apply(shape(circle(100.0, 30.0, 10.0), true))?;
+            d.apply(Op::Batch(vec![
+                sup(edge(s, 3), SupportKind::Fixed),
+                sup(edge(s, 3), SupportKind::Temperature { t: 293.15 }),
+                sup(edge(s, 1), SupportKind::Temperature { t: 493.15 }),
+            ]))?;
+        }
         "fin" => {
             d.m.notes = "An aluminium heat sink: a 60 × 6 mm base held at 80 °C, four 3 mm fins 40 mm tall, cooled by air at 25 °C (h = 25 W/m²·K).".into();
             d.m.grid = 1.0 * mm;
@@ -188,10 +200,14 @@ mod tests {
             m.check().unwrap();
             assert_eq!(m.analysis, e.analysis);
             if !e.id.starts_with("blank") {
-                assert!(!m.supports.is_empty() && !m.loads.is_empty(), "{} has supports and loads", e.id);
+                // Something to hold it and something to load it (temperatures load the heated plate).
+                let warmed = m.supports.iter().any(|s| matches!(s.kind, SupportKind::Temperature { .. }));
+                assert!(!m.supports.is_empty() && (!m.loads.is_empty() || warmed), "{} has supports and loads", e.id);
             }
         }
         assert!(get("nope").is_none());
+        // The heated plate keeps both its fixed support and the wall's temperature on one edge.
+        assert_eq!(get("hotplate").unwrap().supports.len(), 3);
         let t = get("truss").unwrap();
         assert_eq!(t.members.len(), 6 + 4 + 5 + 2 + 4);
         assert!(t.members.iter().all(|m| m.kind == MemberKind::Truss));

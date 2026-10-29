@@ -70,6 +70,13 @@ mod tests {
         // the pin's bearing raises the peak well above that, but not to yield (355 MPa).
         let vm = r.field("vm").max;
         assert!(vm > 37.5e6 && vm < 355e6, "lug peak {vm:e}");
+        // Heated plate: temperatures between the wall (20 °C) and the hot edge (220 °C); the stress
+        // is below EαΔT = 504 MPa (the stress if the whole 200 K rise were held back) but not zero.
+        let Ok(crate::Results::Plane(r)) = crate::solve(&crate::examples::get("hotplate").unwrap()) else { panic!() };
+        let t = r.field("t");
+        assert!((t.min - 293.15).abs() < 1e-6 && (t.max - 493.15).abs() < 1e-6, "{} {}", t.min, t.max);
+        let vm = r.field("vm").max;
+        assert!(vm > 10e6 && vm < 504e6, "hot plate peak {vm:e}");
         // Heat sink: every temperature between the air (25 °C) and the base (80 °C).
         let Ok(crate::Results::Heat(h)) = crate::solve(&crate::examples::get("fin").unwrap()) else { panic!() };
         let t = h.field("t");

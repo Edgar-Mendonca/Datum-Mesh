@@ -26,6 +26,9 @@ pub struct Settings {
     pub grid: f64,
     pub thickness: f64,
     pub mesh: MeshSettings,
+    /// The stress-free temperature (K); left as it is when not given.
+    #[serde(default)]
+    pub t_ref: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -385,6 +388,9 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             m.grid = s.grid;
             m.thickness = s.thickness;
             m.mesh = s.mesh;
+            if let Some(t) = s.t_ref {
+                m.t_ref = t;
+            }
         }
         Op::SetMeta { name, notes } => {
             let name = name.trim();

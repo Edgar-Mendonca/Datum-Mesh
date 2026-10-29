@@ -451,7 +451,7 @@ export const Canvas = () => {
   const supportsAtNodes = () => (m()?.supports ?? []).filter(s => s.at.on === "node" || s.at.on === "point");
   const supportsOnEdges = () => (m()?.supports ?? []).filter(s => s.at.on === "edge");
   const supAt = (s: Support): Pt | null => s.at.on === "node" ? (np().get(s.at.id) ?? null) : s.at.on === "point" ? [s.at.x, s.at.y] : null;
-  const gravity = () => (m()?.loads ?? []).filter(l => l.kind.kind === "gravity" || l.kind.kind === "heat");
+  const gravity = () => (m()?.loads ?? []).filter(l => l.kind.kind === "gravity" || l.kind.kind === "heat" || l.kind.kind === "warming");
   const labels = createMemo(() => (m() ? labelled(m()!) : new Set<number>()));
   const empty = () => { const mm = m(); return !!mm && !mm.nodes.length && !mm.shapes.length; };
   /** Contours or the mesh are drawn under the outlines: shapes are not filled then. */
@@ -495,7 +495,7 @@ export const Canvas = () => {
           <rect x={0} y={0} width={RULER} height={RULER} class="ruler corner" /><text x={3} y={14} class="rtxt unitlbl">{fmt("coord", 0).split(" ")[1]}</text>
         </Show>
       </svg>
-      <Show when={gravity().length}><div class="gbadge"><For each={gravity()}>{l => <button classList={{ on: selSet().has(l.id) }} onClick={() => setSel([l.id])}>{l.kind.kind === "gravity" ? `g = ${fmt("accel", Math.hypot((l.kind as any).gx, (l.kind as any).gy), 3)}` : `q = ${fmt("heatgen", (l.kind as any).q, 3)}`}</button>}</For></div></Show>
+      <Show when={gravity().length}><div class="gbadge"><For each={gravity()}>{l => <button classList={{ on: selSet().has(l.id) }} onClick={() => setSel([l.id])}>{l.kind.kind === "gravity" ? `g = ${fmt("accel", Math.hypot((l.kind as any).gx, (l.kind as any).gy), 3)}` : l.kind.kind === "warming" ? `ΔT = ${fmt("dtemp", (l.kind as any).dt, 3)}` : `q = ${fmt("heatgen", (l.kind as any).q, 3)}`}</button>}</For></div></Show>
       <Show when={empty() && tool() === "select"}>
         <div class="empty"><b>{frame() ? "Draw a frame or truss" : "Draw a part"}</b>
           <span>{frame() ? "Pick Beam or Truss in Geometry, then click two points for each member. Supports and loads are on the Loads tab." : "Pick Rectangle, Circle or Polygon in Geometry and draw the outline; holes cut out of it. Supports and loads go on its edges."}</span>

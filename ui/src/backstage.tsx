@@ -41,6 +41,7 @@ const ExampleArt = (p: { id: string }) => {
     bracket: "M24 8H38V40Q38 46 44 46H84V56H24z",
     flange: "M28 30a22 22 0 1 0 44 0a22 22 0 1 0 -44 0M42 30a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M47 14a3 3 0 1 0 6 0a3 3 0 1 0 -6 0M47 46a3 3 0 1 0 6 0a3 3 0 1 0 -6 0",
     fin: "M14 52H86V44H80V10H76V44H62V10H58V44H44V10H40V44H26V10H22V44H14z",
+    hotplate: "M14 18H86V44H14zM44 31a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M8 14V48M92 22v4M92 30v4M92 38v4",
   };
   return <svg viewBox="0 0 100 60" class="exart"><path d={pics[p.id] ?? pics["blank-frame"]} {...s} /></svg>;
 };

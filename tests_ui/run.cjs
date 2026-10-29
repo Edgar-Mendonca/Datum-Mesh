@@ -42,10 +42,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "materials_library") return f.library;
           if (c in m) return m[c];
@@ -277,6 +277,16 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the pin load's arrows press on one side of the hole only", await p.$eval(`.load[data-id="${pin.id}"] path`, el => (el.getAttribute("d").match(/M/g) || []).length) < 3 * 40);
   await p.click(`.tree .ti:has-text('Pin load')`); await p.waitForTimeout(150);
   check("the Inspector edits a pin load's force", (await p.textContent(".insp")).includes("Pin load") && (await p.$$(".insp .iprow input")).length === 2);
+  // Thermal stress (0.2.0): the heated plate solves for temperatures, then stress.
+  await open("hotplate"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  check("a part with edge temperatures shows Temperature among its stress results", (await p.$$eval(".legend .fpick option", os => os.map(o => o.value))).includes("t") && (await p.$eval(".legend .fpick", el => el.value)) === "vm");
+  await p.selectOption(".legend .fpick", "t"); await p.waitForTimeout(150);
+  check("the heated plate's temperatures run from 20 to 220 °C", (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".mm.max")).includes("220"));
+  await p.click(".canvas", { position: { x: 30, y: 400 } }); await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  check("the Inspector has the stress-free temperature", (await p.textContent(".insp")).includes("Stress-free temperature"));
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button[title^="A uniform change of temperature"]'); await p.waitForTimeout(150);
+  const wl = (await ops()).reverse().find(o => o.Add && o.Add.item.Load && o.Add.item.Load.kind.kind === "warming");
+  check("Temperature Change adds a uniform warming of the whole part", !!wl && wl.Add.item.Load.at.on === "body", JSON.stringify(wl));
   // Heat sink: temperature contours and the heat balance.
   await open("fin"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
   check("a heat model shows temperatures in °C and the heat balance", (await p.$eval(".legend .fpick", el => el.value)) === "t" && (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".legend")).includes("Heat balance"));

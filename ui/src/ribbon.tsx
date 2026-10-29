@@ -164,7 +164,8 @@ export const Ribbon = () => {
         <Show when={heat()}>
           <G l="Heat" h="heat"><T big i="temp" l="Temperature" t="sup:temperature" /><S><T i="flux" l="Heat Flux" t="load:flux" /><T i="convection" l="Convection" t="load:convection" /><B i="heatgen" l="Heat Generation" run={() => C.body("heat")} /></S></G>
         </Show>
-        <Show when={!heat() && !frame()}><G l="Heat" h="heat"><S><Planned i="temp" l="Thermal Stress" v="0.2" /></S></G></Show>
+        <Show when={!heat()}><G l="Thermal" h="thermal"><B big i="temp" l="Temperature Change" run={() => C.body("warming")} title="A uniform change of temperature: thermal stress" />
+          <Show when={!frame()}><S><T i="temp" l="Edge Temperature" t="sup:temperature" title="Hold an edge at a temperature; the temperatures inside are solved first, then the thermal stress" /><T i="convection" l="Convection" t="load:convection" /></S></Show></G></Show>
         <G l="Load Cases" h="loads"><S><Planned i="table" l="Load Cases" v="0.2" /><Planned i="table" l="Combinations" v="0.2" /></S></G>
       </Show>
       <Show when={tab() === "solve"}>
