@@ -27,6 +27,7 @@ pub fn list() -> Vec<Example> {
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
+        e("fin3d", "Heat sink in 3D", "The heat sink as a 3D solid 30 mm deep, cooled by air on every face, its ends too: temperatures and heat flow in 3D.", Analysis::SolidHeat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
@@ -291,8 +292,13 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 sup(edge(s, 1), SupportKind::Temperature { t: 493.15 }),
             ]))?;
         }
-        "fin" => {
-            d.m.notes = "An aluminium heat sink: a 60 × 6 mm base held at 80 °C, four 3 mm fins 40 mm tall, cooled by air at 25 °C (h = 25 W/m²·K).".into();
+        "fin" | "fin3d" => {
+            d.m.notes = if id == "fin3d" { "The aluminium heat sink as a 3D solid 30 mm deep: a 60 × 6 mm base held at 80 °C on its underside, four 3 mm fins 40 mm tall, cooled by air at 25 °C (h = 25 W/m²·K) on every other face, the ends of the fins and base too." } else { "An aluminium heat sink: a 60 × 6 mm base held at 80 °C, four 3 mm fins 40 mm tall, cooled by air at 25 °C (h = 25 W/m²·K)." }.into();
+            if id == "fin3d" {
+                d.m.thickness = 30.0 * mm;
+                d.m.mesh.size = 3.0 * mm;
+                d.m.mesh.layers = 3;
+            }
             d.m.grid = 1.0 * mm;
             let mut pts = vec![[0.0, 0.0], [60.0, 0.0]];
             for i in (0..4).rev() {
@@ -307,6 +313,11 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             let mut ops = vec![Op::Set { item: Item::Material(al) }, sup(edge(s, 0), SupportKind::Temperature { t: 353.15 })];
             for e in 1..pts.len() as u32 {
                 ops.push(load(edge(s, e), LoadKind::Convection { h: 25.0, t_inf: 298.15 }));
+            }
+            if id == "fin3d" {
+                for front in [false, true] {
+                    ops.push(load(Target::End { front }, LoadKind::Convection { h: 25.0, t_inf: 298.15 }));
+                }
             }
             d.apply(Op::Batch(ops))?;
         }

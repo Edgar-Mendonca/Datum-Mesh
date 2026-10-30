@@ -10,7 +10,7 @@ import * as K from "./sketch";
 import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
 import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
-import { invoke, Example, isFrame, isBuckle } from "./api";
+import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
 import { q3, setQ3, Q3 } from "./space3";
 import { setPlane } from "./plane3";
 
@@ -134,14 +134,14 @@ const SketchTools = () => <>
 
 export const Ribbon = () => {
   const m = () => model();
-  const frame = () => isFrame(m()?.analysis), heat = () => m()?.analysis === "heat", sp = () => m()?.analysis === "space", solid3 = () => m()?.analysis === "solid";
+  const frame = () => isFrame(m()?.analysis), heat = () => m()?.analysis === "heat" || m()?.analysis === "solidheat", sp = () => m()?.analysis === "space", solid3 = () => isSolidA(m()?.analysis);
   return (
     <section class="ribbon" ref={fitRibbon}>
       <Show when={tab() === "home"}>
         <G l="Model" h="analysis"><S><B i="frame" l="Frame or truss" on={m()?.analysis === "frame"} run={() => C.analysis("frame")} /><B i="part" l="Plane stress" on={m()?.analysis === "stress"} run={() => C.analysis("stress")} /></S>
           <S><B i="part" l="Plane strain" on={m()?.analysis === "strain"} run={() => C.analysis("strain")} /><B i="temp" l="Heat conduction" on={m()?.analysis === "heat"} run={() => C.analysis("heat")} /></S>
           <S><B i="axi" l="Axisymmetric" on={m()?.analysis === "axi"} run={() => C.analysis("axi")} title="Axisymmetric: draw the half-section right of the y axis; it is turned a full circle about it (vessels, shafts, discs)" /><B i="space" l="3D Frame" on={sp()} run={() => C.analysis("space")} title="3D frames and trusses: members bend both ways and twist; drawn on planes, seen in 3D" /></S>
-          <S><B i="solid" l="3D Solid" on={solid3()} run={() => C.analysis("solid")} title="3D solids: the part's outline extruded by its thickness along z, solved in 3D" /></S></G>
+          <S><B i="solid" l="3D Solid" on={m()?.analysis === "solid"} run={() => C.analysis("solid")} title="3D solids: the part's section extruded along z or revolved about y, solved in 3D for stress and vibration" /><B i="temp" l="3D Heat" on={m()?.analysis === "solidheat"} run={() => C.analysis("solidheat")} title="Heat conduction in a 3D solid, extruded or revolved: temperatures and heat flow in 3D" /></S></G>
         <G l="Units" h="units"><S><B i="units" l="SI: mm, kN, MPa" on={m()?.units === "SI"} run={() => C.units("SI")} /><B i="units" l="US: in, kip, ksi" on={m()?.units === "US"} run={() => C.units("US")} /></S></G>
         <G l="Select" h="select"><T big i="select" l="Select" t="select" /><S><B i="all" l="Select All" run={C.selectAll} /><B i="del" l="Delete" run={C.del} off={!sel().length} /></S></G>
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
@@ -189,7 +189,7 @@ export const Ribbon = () => {
       <Show when={tab() === "solve"}>
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
-        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || m()?.analysis === "heat" || solid3()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
+        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || heat()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
         <Show when={frame()} fallback={<>

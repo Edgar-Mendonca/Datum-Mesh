@@ -8,7 +8,7 @@
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
-    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
+    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
   ],
   "steps": [
     {
@@ -34,15 +34,15 @@
     "Natural frequencies and mode shapes of frames and parts, moving on screen",
     "Buckling of frames: load factors and buckled shapes, with every squeezed truss bar checked as a strut",
     "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
-    "3D solids: a part's section extruded or revolved (shafts, hubs, vessels), solved in 3D, coloured by its stresses in a 3D view, with a cutting plane to see inside and faces picked by clicking",
+    "3D solids: a part's section extruded or revolved (shafts, hubs, vessels), solved in 3D for stress, natural frequencies or heat conduction, coloured in a 3D view, with a cutting plane to see inside and faces picked by clicking",
     "Sketch tools: round and bevel corners, union, subtract and intersect shapes with arcs kept true, slots, rounded rectangles, polygons, offsets and patterns of holes",
-    "Help › Verification: 120 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
+    "Help › Verification: 131 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Twelve worked examples, from a portal frame, a roof truss and a braced steel frame with load cases to a steel platform, an L-bracket and a pressure vessel in 3D",
+    "Thirteen worked examples, from a portal frame, a roof truss and a braced steel frame with load cases to a steel platform, an L-bracket and a pressure vessel in 3D",
     "Small and quick: a 3 MB installer, a window that starts light, and solve times recorded with every release"
   ],
   "screenshots": [
@@ -53,11 +53,10 @@
   ],
   "roadmap": [
     {
-      "v": "0.3.4–0.3.5",
+      "v": "0.3.5",
       "title": "3D solids, continued",
       "when": "Next",
       "items": [
-        "Heat conduction and natural frequencies of 3D solids",
         "DXF import of section outlines",
         "A quicker solver ordering for large 3D models"
       ]

@@ -5,7 +5,7 @@
 // and its edits are turned back into 3D here before they go to the engine. Members off the plane
 // are drawn faint and cannot be picked; the 3D view shows everything.
 import { createMemo, createSignal } from "solid-js";
-import { Model, Node, Load, Pt, isFrame } from "./api";
+import { Model, Node, Load, Pt, isFrame, isSolidA } from "./api";
 import { model, shownLoad } from "./store";
 
 export type Plane = "3d" | "xy" | "zy" | "xz";
@@ -18,7 +18,7 @@ export const depthAxis = () => ({ xy: "z", zy: "x", xz: "y", "3d": "" })[plane()
 
 export const space = () => model()?.analysis === "space";
 /** A 3D solid (0.3.0): its section is drawn on the canvas, the solid seen in the 3D view. */
-export const solid = () => model()?.analysis === "solid";
+export const solid = () => isSolidA(model()?.analysis);
 /** Models with a 3D view: 3D frames and 3D solids. */
 export const in3d = () => space() || solid();
 /** Drawing on a plane of a 3D frame (not the 3D view, not a plane frame). */

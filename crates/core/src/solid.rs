@@ -403,14 +403,24 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("This model is not a 3D solid.".into());
     }
-    if m.revolve == 0.0 && !(m.thickness > 0.0) {
-        return Err("A 3D solid needs a thickness to extrude its outline by (Inspector, with nothing selected).".into());
-    }
-    let sw = sweep(m)?;
+    let sw = swept_of(m)?;
     solve_swept(m, sw)
 }
 
-pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> {
+/// The solid's stiffness, loads and supports, ready to solve (shared by the static solve and the
+/// natural frequencies).
+struct Built {
+    sys: System,
+    held: Vec<bool>,
+    sup_nodes: Vec<(u32, Vec<(usize, [bool; 3])>)>,
+    penalties: Vec<(u32, usize, [f64; 3])>,
+    kpen: f64,
+    applied: Tally,
+    warnings: Vec<String>,
+    ne: usize,
+}
+
+fn build(m: &Model, sw: &Swept) -> Result<Built, String> {
     let o = sw.order;
     let nn = sw.count();
     let layers = (sw.levels - 1) / o;
@@ -485,7 +495,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
         }
     }
     // Loads on faces.
-    let area = |at: &Target| -> f64 { faces(&sw, at).iter().flat_map(|f| face_points(&sw, f)).map(|(_, nv, _)| (nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]).sqrt()).sum() };
+    let area = |at: &Target| -> f64 { faces(sw, at).iter().flat_map(|f| face_points(sw, f)).map(|(_, nv, _)| (nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]).sqrt()).sum() };
     for l in &m.loads {
         match (&l.kind, &l.at) {
             (LoadKind::Pressure { .. } | LoadKind::Traction { .. }, Target::Edge { .. } | Target::End { .. }) => {
@@ -504,8 +514,8 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
                 if matches!(l.at, Target::End { .. }) && !sw.has_ends() {
                     warnings.push("A part revolved a full turn has no back or front face; a load on one was left out.".into());
                 }
-                for f in faces(&sw, &l.at) {
-                    for (_, nv, nodes) in face_points(&sw, &f) {
+                for f in faces(sw, &l.at) {
+                    for (_, nv, nodes) in face_points(sw, &f) {
                         // Pressure pushes into the part, against the outward normal.
                         let tr = match (&l.kind, per) {
                             (LoadKind::Pressure { p }, _) => nv.map(|v| -p * v),
@@ -553,10 +563,10 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
             (SupportKind::Temperature { .. }, _) => continue,
             (SupportKind::Fixed | SupportKind::Pinned | SupportKind::Hold { .. }, Target::Line { .. }) => {
                 let h = if let SupportKind::Hold { x, y, z } = s.kind { [x, y, z] } else { [true; 3] };
-                nodes.extend(line_nodes(&sw, &s.at).into_iter().map(|n| (n, h)));
+                nodes.extend(line_nodes(sw, &s.at).into_iter().map(|n| (n, h)));
             }
             (SupportKind::Hold { x, y, z }, Target::Edge { .. } | Target::End { .. }) => {
-                let mut ns: Vec<usize> = faces(&sw, &s.at).iter().flat_map(|f| face_points(&sw, f)).flat_map(|(_, _, ns)| ns.into_iter().map(|(n, _)| n)).collect();
+                let mut ns: Vec<usize> = faces(sw, &s.at).iter().flat_map(|f| face_points(sw, f)).flat_map(|(_, _, ns)| ns.into_iter().map(|(n, _)| n)).collect();
                 ns.sort_unstable();
                 ns.dedup();
                 nodes.extend(ns.into_iter().map(|n| (n, [*x, *y, *z])));
@@ -565,8 +575,8 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
                 let fixed = matches!(k, SupportKind::Fixed | SupportKind::Pinned);
                 // Each face node with the normal averaged over the faces that meet there.
                 let mut nrm: std::collections::BTreeMap<usize, [f64; 3]> = std::collections::BTreeMap::new();
-                for f in faces(&sw, &s.at) {
-                    for (_, nv, ns) in face_points(&sw, &f) {
+                for f in faces(sw, &s.at) {
+                    for (_, nv, ns) in face_points(sw, &f) {
                         for (n, w) in ns {
                             let v = nrm.entry(n).or_insert([0.0; 3]);
                             for c in 0..3 {
@@ -611,6 +621,15 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
             }
         }
     }
+    Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, ne })
+}
+
+pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> {
+    let Built { sys, held, sup_nodes, penalties, kpen, applied, mut warnings, ne } = build(m, &sw)?;
+    let o = sw.order;
+    let nn = sw.count();
+    let layers = (sw.levels - 1) / o;
+    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
     let (u, stats) = sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid also needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?;
     if stats.residual > 1e-8 {
         warnings.push(format!("The supports barely hold the part (the equations were solved only to {:.0e}): it can probably turn or slide. Add a fixed face, or rollers on faces at angles to each other.", stats.residual));
@@ -819,6 +838,305 @@ fn surface(sw: &Swept) -> (Surface, Vec<usize>) {
     }
     let nodes = ids.iter().map(|&n| sw.at(n)).collect();
     (Surface { nodes, tris, lines }, ids)
+}
+
+/// A field over the surface nodes, with its extremes over every node of the solid.
+fn field3(key: &'static str, v: &[f64], ids: &[usize], sw: &Swept) -> Field3 {
+    let (mut imin, mut imax) = (0, 0);
+    for i in 0..v.len() {
+        if v[i] < v[imin] {
+            imin = i;
+        }
+        if v[i] > v[imax] {
+            imax = i;
+        }
+    }
+    Field3 { key, min: v[imin], max: v[imax], at_min: sw.at(imin), at_max: sw.at(imax), v: ids.iter().map(|&n| v[n]).collect() }
+}
+
+/// A solid's sweep, after checking it has a thickness (extruded) or an angle (revolved).
+fn swept_of(m: &Model) -> Result<Swept, String> {
+    if m.revolve == 0.0 && !(m.thickness > 0.0) {
+        return Err("A 3D solid needs a thickness to extrude its outline by (Inspector, with nothing selected).".into());
+    }
+    sweep(m)
+}
+
+// ---------- natural frequencies (0.3.4) ----------
+
+/// One natural mode of a 3D solid: its frequency and the movement of the surface nodes, scaled
+/// so the largest movement anywhere is 1.
+#[derive(Clone, Debug, Serialize)]
+pub struct SolidMode {
+    pub f: f64,
+    pub disp: Vec<[f64; 3]>,
+}
+#[derive(Clone, Debug, Serialize)]
+pub struct SolidModes {
+    pub surface: Surface,
+    pub modes: Vec<SolidMode>,
+    pub equations: usize,
+    pub iterations: usize,
+    pub ms: f64,
+    pub warnings: Vec<String>,
+}
+
+/// The lowest natural frequencies of a 3D solid, with consistent masses (density × volume).
+pub fn modes(m: &Model, count: usize) -> Result<SolidModes, String> {
+    let t0 = std::time::Instant::now();
+    if m.analysis != Analysis::Solid {
+        return Err("Natural frequencies are for 3D solids in stress, not heat conduction.".into());
+    }
+    let sw = swept_of(m)?;
+    let b = build(m, &sw)?;
+    let o = sw.order;
+    let layers = (sw.levels - 1) / o;
+    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
+    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
+    let mut mass = vec![];
+    for k in 0..sw.ms.tris.len() {
+        let rho = mats.get(&sw.ms.mat[k]).ok_or("A shape's material is missing.")?.rho;
+        for l in 0..layers {
+            let en = sw.element(k, l);
+            let xyz: Vec<[f64; 3]> = en.iter().map(|&n| sw.at(n)).collect();
+            let nd = en.len();
+            let mut me = vec![0.0; nd * nd];
+            for &(xi, eta, wt) in &rule_t {
+                for &(zeta, wz) in &rule_z {
+                    let (_, n, det) = wedge(&xyz, o, xi, eta, zeta);
+                    for i in 0..nd {
+                        for j in 0..nd {
+                            me[i * nd + j] += rho * n[i] * n[j] * wt * wz * det;
+                        }
+                    }
+                }
+            }
+            for i in 0..nd {
+                for j in 0..nd {
+                    for c in 0..3 {
+                        mass.push((3 * en[i] + c, 3 * en[j] + c, me[i * nd + j]));
+                    }
+                }
+            }
+        }
+    }
+    let (found, iterations) = crate::modal::lowest(&b.sys, &mass, &b.held, count)?;
+    let (surface, ids) = surface(&sw);
+    let modes = found.into_iter().map(|md| SolidMode { f: md.f, disp: ids.iter().map(|&n| [md.shape[3 * n], md.shape[3 * n + 1], md.shape[3 * n + 2]]).collect() }).collect();
+    Ok(SolidModes { surface, modes, equations: b.held.iter().filter(|h| !**h).count(), iterations, ms: t0.elapsed().as_secs_f64() * 1e3, warnings: vec![] })
+}
+
+// ---------- heat conduction (0.3.4) ----------
+
+/// Steady temperatures in a 3D solid: the temperature and heat flux over the surface (extremes
+/// over every node), the heat flowing in or out through each fixed temperature and each load,
+/// and the heat balance.
+#[derive(Clone, Debug, Serialize)]
+pub struct SolidHeatResults {
+    pub surface: Surface,
+    /// t (K), qx, qy, qz, qmag (W/m²).
+    pub fields: Vec<Field3>,
+    pub supports: Vec<crate::heat::Flow>,
+    pub loads: Vec<crate::heat::Flow>,
+    pub imbalance: f64,
+    pub stats: Stats,
+    pub warnings: Vec<String>,
+    pub elements: usize,
+    pub nodes: usize,
+    pub layers: usize,
+    pub order: u8,
+    pub size: f64,
+    pub quality: Quality,
+    pub volume: Volume,
+}
+
+impl SolidHeatResults {
+    pub fn field(&self, k: &str) -> &Field3 {
+        self.fields.iter().find(|f| f.key == k).expect("field")
+    }
+}
+
+/// Solve steady heat conduction in a 3D solid.
+pub fn heat(m: &Model) -> Result<SolidHeatResults, String> {
+    if m.analysis != Analysis::SolidHeat {
+        return Err("This model is not a 3D heat model.".into());
+    }
+    let has_t = m.supports.iter().any(|s| matches!(s.kind, SupportKind::Temperature { .. }));
+    let has_conv = m.loads.iter().any(|l| matches!(l.kind, LoadKind::Convection { h, .. } if h > 0.0));
+    if !has_t && !has_conv {
+        return Err("Fix a temperature on a face, or add convection to a fluid: without one the temperatures have no level to settle at (Loads tab).".into());
+    }
+    let sw = swept_of(m)?;
+    let o = sw.order;
+    let nn = sw.count();
+    let layers = (sw.levels - 1) / o;
+    let mut sys = System::lower(nn);
+    let mut warnings = vec![];
+    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
+    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
+    let gen: Vec<(u32, f64)> = m.loads.iter().filter_map(|l| if let (LoadKind::Heat { q }, Target::Body) = (&l.kind, &l.at) { Some((l.id, *q)) } else { None }).collect();
+    let mut fgen = vec![0.0; gen.len()];
+    for k in 0..sw.ms.tris.len() {
+        let mt = mats.get(&sw.ms.mat[k]).ok_or("A shape's material is missing.")?;
+        if mt.k <= 0.0 {
+            return Err(format!("{}: heat conduction needs a thermal conductivity above zero (Home › Materials).", mt.name));
+        }
+        for l in 0..layers {
+            let en = sw.element(k, l);
+            let xyz: Vec<[f64; 3]> = en.iter().map(|&n| sw.at(n)).collect();
+            let nd = en.len();
+            let mut ke = vec![0.0; nd * nd];
+            let mut fe = vec![0.0; nd];
+            for &(xi, eta, wt) in &rule_t {
+                for &(zeta, wz) in &rule_z {
+                    let (g, n, det) = wedge(&xyz, o, xi, eta, zeta);
+                    if det <= 0.0 {
+                        return Err("The mesh has a folded element; try a different element size.".into());
+                    }
+                    let w = wt * wz * det;
+                    for i in 0..nd {
+                        for j in 0..nd {
+                            ke[i * nd + j] += mt.k * (g[i][0] * g[j][0] + g[i][1] * g[j][1] + g[i][2] * g[j][2]) * w;
+                        }
+                        for (gi, &(_, q)) in gen.iter().enumerate() {
+                            fe[i] += n[i] * q * w;
+                            fgen[gi] += n[i] * q * w;
+                        }
+                    }
+                }
+            }
+            for i in 0..nd {
+                for j in 0..nd {
+                    let (r, c) = (en[i], en[j]);
+                    // The lower half (two element nodes that are one node count both ways).
+                    if r >= c {
+                        sys.add(r, c, ke[i * nd + j]);
+                    }
+                }
+                sys.f[en[i]] += fe[i];
+            }
+        }
+    }
+    // Flux and convection on faces; convection's flow is h (T∞ − T), summed after the solve.
+    let mut fload: Vec<(u32, f64)> = gen.iter().zip(&fgen).map(|((id, _), q)| (*id, *q)).collect();
+    let mut conv: Vec<(u32, f64, f64, Vec<(f64, Vec<(usize, f64)>)>)> = vec![];
+    for l in &m.loads {
+        match (&l.kind, &l.at) {
+            (LoadKind::Flux { .. } | LoadKind::Convection { .. }, Target::Edge { .. } | Target::End { .. }) => {
+                let fs = faces(&sw, &l.at);
+                if fs.is_empty() {
+                    warnings.push("A heat load on a back or front face of a part revolved a full turn was left out (it has none).".into());
+                }
+                let mut total = 0.0;
+                let mut pts = vec![];
+                for f in fs {
+                    for (_, nv, ns) in face_points(&sw, &f) {
+                        let da = (nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]).sqrt();
+                        match l.kind {
+                            LoadKind::Flux { q } => {
+                                for &(n, s) in &ns {
+                                    sys.f[n] += s * q * da;
+                                    total += s * q * da;
+                                }
+                            }
+                            LoadKind::Convection { h, t_inf } => {
+                                for &(a, sa) in &ns {
+                                    sys.f[a] += sa * h * t_inf * da;
+                                    for &(b2, sb) in &ns {
+                                        if a >= b2 {
+                                            sys.add(a, b2, sa * sb * h * da);
+                                        }
+                                    }
+                                }
+                                pts.push((da, ns));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                match l.kind {
+                    LoadKind::Convection { h, t_inf } => conv.push((l.id, h, t_inf, pts)),
+                    _ => fload.push((l.id, total)),
+                }
+            }
+            (LoadKind::Heat { .. }, Target::Body) => {}
+            _ => warnings.push("A load that does not act in heat conduction (forces, pressures, gravity) was left out.".into()),
+        }
+    }
+    // Fixed temperatures on faces and lines.
+    let mut held = vec![false; nn];
+    let mut fixed = vec![0.0; nn];
+    let mut sup_nodes: Vec<(u32, Vec<usize>)> = vec![];
+    for s in &m.supports {
+        let SupportKind::Temperature { t: tv } = s.kind else {
+            warnings.push("A support that holds movement does not act in heat conduction; it was left out.".into());
+            continue;
+        };
+        let mut nodes: Vec<usize> = match &s.at {
+            Target::Line { .. } => line_nodes(&sw, &s.at),
+            _ => faces(&sw, &s.at).iter().flat_map(|f| face_points(&sw, f)).flat_map(|(_, _, ns)| ns.into_iter().map(|(n, _)| n)).collect(),
+        };
+        nodes.sort_unstable();
+        nodes.dedup();
+        let mut own = vec![];
+        for n in nodes {
+            if !held[n] {
+                held[n] = true;
+                fixed[n] = tv;
+                own.push(n);
+            }
+        }
+        if own.is_empty() {
+            warnings.push("A fixed temperature found no nodes to hold and was left out.".into());
+        }
+        sup_nodes.push((s.id, own));
+    }
+    let (u, stats) = sys.solve(&held, &fixed)?;
+    let ku = sys.mul(&u);
+    let supports: Vec<crate::heat::Flow> = sup_nodes.iter().map(|(id, ns)| crate::heat::Flow { id: *id, q: ns.iter().map(|&n| ku[n] - sys.f[n]).sum::<f64>() }).collect();
+    let mut loads: Vec<crate::heat::Flow> = fload.into_iter().map(|(id, q)| crate::heat::Flow { id, q }).collect();
+    for (id, h, t_inf, pts) in &conv {
+        let q: f64 = pts.iter().map(|(da, ns)| h * (t_inf - ns.iter().map(|&(n, s)| s * u[n]).sum::<f64>()) * da).sum();
+        loads.push(crate::heat::Flow { id: *id, q });
+    }
+    let total: f64 = supports.iter().chain(loads.iter()).map(|f| f.q).sum();
+    let size: f64 = supports.iter().chain(loads.iter()).map(|f| f.q.abs()).sum();
+    let imbalance = if size > 0.0 { total.abs() / size } else { 0.0 };
+    // Heat flux q = −k ∇T at each element's nodes, averaged by volume.
+    let refs = node_ref(o);
+    let mut acc = vec![[0.0f64; 3]; nn];
+    let mut wsum = vec![0.0f64; nn];
+    for k in 0..sw.ms.tris.len() {
+        let kc = mats[&sw.ms.mat[k]].k;
+        for l in 0..layers {
+            let en = sw.element(k, l);
+            let xyz: Vec<[f64; 3]> = en.iter().map(|&n| sw.at(n)).collect();
+            let vol = wedge(&xyz, o, 1.0 / 3.0, 1.0 / 3.0, 0.0).2.abs();
+            for (q, &(xi, eta, zeta)) in refs.iter().enumerate() {
+                let (mut g, _, det) = wedge(&xyz, o, xi, eta, zeta);
+                if det.abs() < 1e-9 * vol {
+                    g = wedge(&xyz, o, xi + (1.0 / 3.0 - xi) * 0.02, eta + (1.0 / 3.0 - eta) * 0.02, zeta).0;
+                }
+                let mut grad = [0.0; 3];
+                for (i, gi) in g.iter().enumerate() {
+                    for c in 0..3 {
+                        grad[c] += gi[c] * u[en[i]];
+                    }
+                }
+                let n = en[q];
+                for c in 0..3 {
+                    acc[n][c] += -kc * grad[c] * vol;
+                }
+                wsum[n] += vol;
+            }
+        }
+    }
+    let qv: Vec<[f64; 3]> = (0..nn).map(|n| acc[n].map(|v| v / wsum[n].max(1e-300))).collect();
+    let all: Vec<Vec<f64>> = vec![u.clone(), qv.iter().map(|q| q[0]).collect(), qv.iter().map(|q| q[1]).collect(), qv.iter().map(|q| q[2]).collect(), qv.iter().map(|q| (q[0] * q[0] + q[1] * q[1] + q[2] * q[2]).sqrt()).collect()];
+    let (surface, ids) = surface(&sw);
+    let fields = ["t", "qx", "qy", "qz", "qmag"].iter().zip(&all).map(|(k, v)| field3(k, v, &ids, &sw)).collect();
+    let volume = Volume { nodes: sw.pos.clone(), disp: vec![[0.0; 3]; nn], tets: tets(&sw), v: all };
+    Ok(SolidHeatResults { surface, fields, supports, loads, imbalance, stats, warnings, elements: sw.ms.tris.len() * layers, nodes: nn, layers, order: o as u8, size: sw.ms.size, quality: sw.ms.quality.clone(), volume })
 }
 
 #[cfg(test)]

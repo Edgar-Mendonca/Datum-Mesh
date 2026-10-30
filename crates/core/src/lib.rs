@@ -36,6 +36,8 @@ pub enum Results {
     Heat(heat::HeatResults),
     Space(space::SpaceResults),
     Solid(solid::SolidResults),
+    /// 3D heat conduction (0.3.4).
+    SolidHeat(solid::SolidHeatResults),
 }
 
 /// Natural frequencies of a frame or a part (0.2.2), or a frame's buckling (0.2.3), tagged by
@@ -49,6 +51,8 @@ pub enum Modes {
     /// 3D frames (0.2.6): natural frequencies, and buckling.
     Space(space::SpaceModes),
     Buckle3(space::SpaceBuckling),
+    /// 3D solids (0.3.4).
+    Solid(solid::SolidModes),
 }
 
 /// The lowest `count` natural frequencies and mode shapes of the model.
@@ -57,7 +61,8 @@ pub fn modes(m: &model::Model, count: usize) -> Result<Modes, String> {
     match m.analysis {
         model::Analysis::Frame => frame::modes(m, count).map(Modes::Frame),
         model::Analysis::Space => space::modes(m, count).map(Modes::Space),
-        model::Analysis::Solid => Err("Natural frequencies of 3D solids come in a later release (0.3.4).".into()),
+        model::Analysis::Solid => solid::modes(m, count).map(Modes::Solid),
+        model::Analysis::SolidHeat => Err("Natural frequencies are for 3D solids in stress, not heat conduction.".into()),
         model::Analysis::Heat => Err("Natural frequencies are for frames and for parts in stress (plane stress, plane strain or axisymmetric), not heat conduction.".into()),
         _ => plane::modes(m, count).map(Modes::Plane),
     }
@@ -92,6 +97,7 @@ pub fn solve(m: &model::Model) -> Result<Results, String> {
         model::Analysis::Heat => heat::solve(m).map(Results::Heat),
         model::Analysis::Space => space::solve(m).map(Results::Space),
         model::Analysis::Solid => solid::solve(m).map(Results::Solid),
+        model::Analysis::SolidHeat => solid::heat(m).map(Results::SolidHeat),
     }
 }
 
@@ -108,6 +114,7 @@ mod tests {
                 crate::Results::Heat(r) => (r.imbalance, &r.warnings),
                 crate::Results::Space(r) => (r.imbalance, &r.warnings),
                 crate::Results::Solid(r) => (r.imbalance, &r.warnings),
+                crate::Results::SolidHeat(r) => (r.imbalance, &r.warnings),
             };
             assert!(imb < 1e-6, "{}: imbalance {imb:e}", e.id);
             assert!(warnings.is_empty(), "{}: {warnings:?}", e.id);
@@ -116,10 +123,10 @@ mod tests {
 
     #[test]
     fn every_example_vibrates_with_rising_frequencies() {
-        for e in crate::examples::list().into_iter().filter(|e| !e.id.starts_with("blank") && !matches!(e.analysis, crate::model::Analysis::Heat | crate::model::Analysis::Solid)) {
+        for e in crate::examples::list().into_iter().filter(|e| !e.id.starts_with("blank") && !matches!(e.analysis, crate::model::Analysis::Heat | crate::model::Analysis::SolidHeat)) {
             let m = crate::examples::get(e.id).unwrap();
             let r = crate::modes(&m, 4).unwrap_or_else(|x| panic!("{}: {x}", e.id));
-            let f: Vec<f64> = match &r { crate::Modes::Frame(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Plane(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Space(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Buckle(_) | crate::Modes::Buckle3(_) => unreachable!() };
+            let f: Vec<f64> = match &r { crate::Modes::Frame(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Plane(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Space(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Solid(x) => x.modes.iter().map(|m| m.f).collect(), crate::Modes::Buckle(_) | crate::Modes::Buckle3(_) => unreachable!() };
             assert_eq!(f.len(), 4, "{}", e.id);
             assert!(f[0] > 0.0 && f.windows(2).all(|w| w[1] >= w[0] * (1.0 - 1e-9)), "{}: {f:?}", e.id);
         }

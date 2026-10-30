@@ -2,7 +2,7 @@
 // legend under the 3D view and the plane bar over it. The 3D view itself (view3d.tsx, with
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
 import { Show, createMemo, createSignal } from "solid-js";
-import { Model, SpaceMember, SpaceResults, num, parseNum } from "./api";
+import { Model, SpaceMember, SpaceResults, num, parseNum, isSolidA, solidDisp } from "./api";
 import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel, solvedFor } from "./store";
 import { defaultLoad, defaultSupport } from "./panels";
 import { palette, BANDS, curField, fieldsFor, rangeOf, ColourBar } from "./parts";
@@ -74,7 +74,7 @@ export const PlaneBar = () => {
     if (o?.created.length) setSel(o.created);
   };
   const full = () => (model()?.revolve ?? 0) >= Math.PI * 2 - 1e-9;
-  const placing = () => (tool().startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(tool())) || ["load:pressure", "load:traction"].includes(tool());
+  const placing = () => model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(tool()) : (tool().startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(tool())) || ["load:pressure", "load:traction"].includes(tool());
   return (<>
     <Show when={solid()}>
       <div class="planebar">
@@ -108,21 +108,22 @@ export const SolidLegend = () => {
   const r = () => solidRes(), fd = () => curField();
   const fld = () => r()?.fields.find(f => f.key === fd().key);
   const cols = () => palette(opts().contours, fd().reverse);
-  const dmax = () => Math.max(0, ...(r()?.disp.map(d => Math.hypot(d[0], d[1], d[2])) ?? [0]));
+  const dmax = () => { const x = r(); return x ? Math.max(0, ...solidDisp(x).map(d => Math.hypot(d[0], d[1], d[2]))) : 0; };
+  const hot = () => r()?.kind === "solidheat";
   return (
-    <Show when={r() && model()?.analysis === "solid"}>
+    <Show when={r() && isSolidA(model()?.analysis)}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
-        <div><b>Result</b><select class="fpick" value={fd().key} onChange={e => C.show({ field: e.currentTarget.value })}>{fieldsFor("solid").map(f => <option value={f.key} selected={f.key === fd().key}>{f.name}</option>)}</select>
+        <div><b>Result</b><select class="fpick" value={fd().key} onChange={e => C.show({ field: e.currentTarget.value })}>{fieldsFor(r()!.kind).map(f => <option value={f.key} selected={f.key === fd().key}>{f.name}</option>)}</select>
           <span>max {fmt(fd().q, fld()?.max ?? 0)} · min {fmt(fd().q, fld()?.min ?? 0)}</span></div>
         <ColourBar d={fd()} range={fld() ? rangeOf(fd(), fld()!.v) : null} colours={cols()} />
-        <div><b>Deformed shape</b><span>{show().deformed && dmax() > 0 ? <>largest {fmt("len", r()!.fields.find(f => f.key === "umag")!.max)}</> : "off"}</span>
-          <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
+        <Show when={!hot()}><div><b>Deformed shape</b><span>{show().deformed && dmax() > 0 ? <>largest {fmt("len", r()!.fields.find(f => f.key === "umag")!.max)}</> : "off"}</span>
+          <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={r()!.volume}><div><b>Cut</b><span class="seg">{(["off", "x", "y", "z"] as CutAxis[]).map(a => <button classList={{ on: cut().axis === a }} title={a === "off" ? "The whole part" : `Cut across ${a}: the part beyond the plane is hidden and the inside shown`} onClick={() => setCut({ ...cut(), axis: a })}>{a === "off" ? "Off" : a}</button>)}</span>
           <Show when={cut().axis !== "off"}><input type="range" min="0" max="1" step="0.01" value={cut().at} onInput={e => setCut({ ...cut(), at: +e.currentTarget.value })} title="Where the plane cuts, across the part" /></Show></div></Show>
         <div><b>Mesh</b><span>{r()!.elements.toLocaleString()} {r()!.order === 2 ? "18-node" : "6-node"} wedges, {r()!.layers} {r()!.layers === 1 ? "layer" : "layers"}</span></div>
-        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
+        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{hot() ? (imbalanceOf(r()!) > 1e-6 ? "Heat in and out do not balance" : "Heat balance: heat in equals heat out") : imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
       </div>
     </Show>
   );

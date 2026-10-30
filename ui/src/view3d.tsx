@@ -8,7 +8,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Model, SpaceMember, Target, clean } from "./api";
+import { Model, SpaceMember, Target, clean, isSolidA, solidDisp } from "./api";
 import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
 import { palette, BANDS, curField, rangeOf } from "./parts";
 import { outline, edgePts, inside } from "./geom";
@@ -37,6 +37,8 @@ export const View3D = () => {
   const modeGroup = new THREE.Group();
   scene.add(modeGroup);
   const mode3 = () => { const r = modes(); return modeOn() && r && (r.kind === "space" || r.kind === "buckle3") ? r.modes[modeSel()] ?? null : null; };
+  /** A 3D solid's mode (0.3.4): its surface and the movement of each surface node. */
+  const modeSolid = () => { const r = modes(); return modeOn() && r?.kind === "solid" && r.modes[modeSel()] ? { s: r.surface, d: r.modes[modeSel()].disp } : null; };
   scene.add(new THREE.AmbientLight(0xffffff, 2.2));
   const sun = new THREE.DirectionalLight(0xffffff, 1.4);
   sun.position.set(1, 2, 1.5);
@@ -82,14 +84,16 @@ export const View3D = () => {
     const sweep = (p: number[], f: number): P3 => rev ? [p[0] * Math.cos(rev * f), p[1], p[0] * Math.sin(rev * f)] : [p[0], p[1], t * f];
     const loop = (pts: number[], ps: number[][], f: number) => { for (let i = 0; i + 1 < ps.length; i++) pts.push(...sweep(ps[i], f), ...sweep(ps[i + 1], f)); };
     const r = solidRes();
-    if (r && r.surface.nodes.length) {
+    if (modeSolid()) {
+      // A mode is shown: it is drawn, swinging, by the mode effect below.
+    } else if (r && r.surface.nodes.length) {
       const fd = curField(), fld = r.fields.find(f => f.key === fd.key) ?? r.fields[0];
       const cs = palette(opts().contours, fd.reverse).map(c => new THREE.Color(c)), rg = rangeOf(fd, fld.v) ?? [fld.min, fld.max];
-      const dmax = Math.max(0, ...r.disp.map(d => Math.hypot(d[0], d[1], d[2])));
+      const disp = solidDisp(r), dmax = Math.max(0, ...disp.map(d => Math.hypot(d[0], d[1], d[2])));
       solidF = show().deformed && dmax > 1e-12 * size ? (() => { const f = 0.08 * size / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p; return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale; })() : 0;
       const pos = new Float32Array(r.surface.nodes.length * 3), col = new Float32Array(r.surface.nodes.length * 3);
       r.surface.nodes.forEach((p, i) => {
-        const d = r.disp[i];
+        const d = disp[i];
         for (let k = 0; k < 3; k++) pos[3 * i + k] = p[k] + d[k] * solidF;
         const c = cs[Math.max(0, Math.min(BANDS - 1, Math.floor((fld.v[i] - rg[0]) / ((rg[1] - rg[0]) || 1) * BANDS)))];
         col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b;
@@ -184,7 +188,7 @@ export const View3D = () => {
     themeTick();
     const m = model(); if (!m) return;
     clear();
-    if (m.analysis === "solid") return buildSolid(m);
+    if (isSolidA(m.analysis)) return buildSolid(m);
     const P = at3(m), span = span3(m), selSet = new Set(sel());
     const ink = css("--text"), accent = css("--blue"), faint = css("--line3"), load = css("--blue2");
     scene.background = new THREE.Color(css("--bg2"));
@@ -280,7 +284,7 @@ export const View3D = () => {
     const m = model(); if (!m) return;
     const box = new THREE.Box3(); m.nodes.forEach(n => box.expandByPoint(new THREE.Vector3(n.x, n.y, n.z ?? 0)));
     // A solid: its outline at both ends of the extrusion.
-    if (m.analysis === "solid") for (const s of m.shapes) for (const p of outline(s.geom, m.revolve ? 1e-3 : Infinity)) {
+    if (isSolidA(m.analysis)) for (const s of m.shapes) for (const p of outline(s.geom, m.revolve ? 1e-3 : Infinity)) {
       if (m.revolve) for (let i = 0; i <= 16; i++) { const a = m.revolve * i / 16; box.expandByPoint(new THREE.Vector3(p[0] * Math.cos(a), p[1], p[0] * Math.sin(a))); }
       else for (const z of [0, m.thickness]) box.expandByPoint(new THREE.Vector3(p[0], p[1], z));
     }
@@ -336,10 +340,10 @@ export const View3D = () => {
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4; down = null;
     if (moved) return;
     const rc = host.getBoundingClientRect(), t = tool();
-    if (model()?.analysis === "solid") {
+    if (isSolidA(model()?.analysis)) {
       if (t === "select") { setSel([]); return; }
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
-      const ok = (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction"].includes(t);
+      const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction"].includes(t);
       if (!at || !ok) { toast(ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
       const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(at.on === "end" && t === "sup:pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
@@ -393,13 +397,14 @@ export const View3D = () => {
   const probeSolid = (x: number, y: number) => {
     const r = solidRes(); if (!r || stale()) return null;
     let best = -1, bd = 12;
-    r.surface.nodes.forEach((p, i) => { const d = r.disp[i], s = screen([p[0] + d[0] * solidF, p[1] + d[1] * solidF, p[2] + d[2] * solidF]), dd = Math.hypot(s[0] - x, s[1] - y); if (dd < bd) { bd = dd; best = i; } });
+    const disp = solidDisp(r);
+    r.surface.nodes.forEach((p, i) => { const d = disp[i], s = screen([p[0] + d[0] * solidF, p[1] + d[1] * solidF, p[2] + d[2] * solidF]), dd = Math.hypot(s[0] - x, s[1] - y); if (dd < bd) { bd = dd; best = i; } });
     return best >= 0 ? { i: best } : null;
   };
   const onMove = (e: PointerEvent) => {
     if (e.buttons) { setProbe(null); setProbe3(null); return; }
     const rc = host.getBoundingClientRect();
-    if (model()?.analysis === "solid") setProbe3(probeSolid(e.clientX - rc.left, e.clientY - rc.top));
+    if (isSolidA(model()?.analysis)) setProbe3(probeSolid(e.clientX - rc.left, e.clientY - rc.top));
     else setProbe(probeAt(e.clientX - rc.left, e.clientY - rc.top));
   };
 
@@ -424,10 +429,30 @@ export const View3D = () => {
   });
   createEffect(build);
   createEffect(() => {
-    const md = mode3(), m = model(), k = modeAmp() * phase();
+    const md = mode3(), ms = modeSolid(), m = model(), k = modeAmp() * phase();
     themeTick();
     modeGroup.traverse(o => { const x = o as any; x.geometry?.dispose?.(); x.material?.dispose?.(); });
     modeGroup.clear();
+    if (ms) {
+      // The solid's surface moved by the mode, coloured by how far each point moves.
+      const cs = palette(opts().contours, false).map(c => new THREE.Color(c));
+      const pos = new Float32Array(ms.s.nodes.length * 3), col = new Float32Array(ms.s.nodes.length * 3);
+      ms.s.nodes.forEach((p, i) => {
+        const d = ms.d[i], a = Math.hypot(d[0], d[1], d[2]);
+        for (let c = 0; c < 3; c++) pos[3 * i + c] = p[c] + d[c] * k;
+        const cc = cs[Math.max(0, Math.min(BANDS - 1, Math.floor(a * BANDS)))];
+        col[3 * i] = cc.r; col[3 * i + 1] = cc.g; col[3 * i + 2] = cc.b;
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.setIndex(ms.s.tris.flat());
+      g.computeVertexNormals();
+      modeGroup.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+      const pts: number[] = [];
+      for (const [a, b] of ms.s.lines) pts.push(pos[3 * a], pos[3 * a + 1], pos[3 * a + 2], pos[3 * b], pos[3 * b + 1], pos[3 * b + 2]);
+      if (pts.length) modeGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color(css("--text")) })));
+    }
     if (md && m) {
       const P = at3(m), pts: number[] = [];
       for (const sh of md.members) {
@@ -453,10 +478,10 @@ export const View3D = () => {
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
       onKeyDown={e => { if (e.key === "Escape") { if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
-      <Show when={model()?.analysis === "solid" && !model()?.shapes.length}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
+      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length}><div class="empty"><b>Draw a 3D frame</b><span>Members are drawn on a plane: pick Front, Side or Plan above and the depth, then Beam or Truss in Geometry. Repeat copies a frame along the depth and joins it (Geometry › Repeat).</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("beam"); }}>Draw on the front plane</button></div></Show>
-      <Show when={probe3() && solidRes()}>{_ => { const r = solidRes()!, i = probe3()!.i, p = r.surface.nodes[i], fd = curField(), v = r.fields.find(f => f.key === fd.key)?.v[i] ?? 0, d = r.disp[i]; return (
-        <div class="probe"><b>At {p.map(c => fmt("coord", c).split(" ")[0]).join(", ")} {unit("coord")}</b><span>{fd.short} {fmt(fd.q, v)}</span><span>|u| {fmt("len", Math.hypot(d[0], d[1], d[2]))}</span></div>); }}</Show>
+      <Show when={probe3() && solidRes()}>{_ => { const r = solidRes()!, i = probe3()!.i, p = r.surface.nodes[i], fd = curField(), v = r.fields.find(f => f.key === fd.key)?.v[i] ?? 0, d = solidDisp(r)[i]; return (
+        <div class="probe"><b>At {p.map(c => fmt("coord", c).split(" ")[0]).join(", ")} {unit("coord")}</b><span>{fd.short} {fmt(fd.q, v)}</span><Show when={r.kind === "solid"}><span>|u| {fmt("len", Math.hypot(d[0], d[1], d[2]))}</span></Show></div>); }}</Show>
       <Show when={probe()}>{p => { const mr = p().mr, i = p().i, d = mr.d[i]; return (
         <div class="probe"><b>Member {(model()?.members.findIndex(x => x.id === mr.id) ?? 0) + 1} at {fmt("len", mr.x[i])}</b>
           <span>N {fmt("force", clean(mr.n[i], 1e-3))}</span><span>Vy {fmt("force", clean(mr.vy[i], 1e-3))} · Vz {fmt("force", clean(mr.vz[i], 1e-3))}</span><span>T {fmt("moment", clean(mr.t[i], 1e-3))}</span><span>Mz {fmt("moment", clean(mr.mz[i], 1e-3))} · My {fmt("moment", clean(mr.my[i], 1e-3))}</span><span>δ {fmt("len", dlen(d))}</span></div>); }}</Show>

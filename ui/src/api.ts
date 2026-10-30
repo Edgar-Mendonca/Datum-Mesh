@@ -8,7 +8,9 @@ export const invoke = <T = any>(cmd: string, args?: object): Promise<T> =>
 export const listen = (e: string, f: (p: any) => void) => window.__TAURI__?.event.listen(e, x => f(x.payload));
 
 export type Pt = [number, number];
-export type Analysis = "frame" | "stress" | "strain" | "heat" | "axi" | "space" | "solid";
+export type Analysis = "frame" | "stress" | "strain" | "heat" | "axi" | "space" | "solid" | "solidheat";
+/** 3D solids, for stress or for heat (0.3.4). */
+export const isSolidA = (a?: string) => a === "solid" || a === "solidheat";
 /** Frames and trusses: in the plane, or in space (0.2.4). */
 export const isFrame = (a?: Analysis) => a === undefined || a === "frame" || a === "space";
 export interface Node { id: number; x: number; y: number; z?: number }
@@ -95,6 +97,15 @@ export interface SpaceMember { id: number; length: number; x: number[]; n: numbe
 export interface SpaceResults { kind: "space"; disp: number[][]; reactions: { node: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
 /** 3D solids (0.3.0): the outer surface with its displacements and fields; min and max over every node. */
 export interface Field3 { key: string; v: number[]; min: number; max: number; at_min: P3; at_max: P3 }
+/** 3D heat conduction (0.3.4): temperatures and heat flux over the surface, flows and the balance. */
+export interface SolidHeatResults {
+  kind: "solidheat"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; fields: Field3[];
+  supports: { id: number; q: number }[]; loads: { id: number; q: number }[]; imbalance: number; stats: SolveStats; warnings: string[];
+  elements: number; nodes: number; layers: number; order: number; size: number; quality: Quality;
+  volume?: { nodes: P3[]; disp: P3[]; tets: [number, number, number, number][]; v: number[][] };
+}
+/** A solid result's surface movements (none for heat). */
+export const solidDisp = (r: SolidResults | SolidHeatResults): P3[] => r.kind === "solid" ? r.disp : r.surface.nodes.map(() => [0, 0, 0] as P3);
 export interface SolidResults {
   kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[];
   reactions: { support: number; f: P3 }[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[];
@@ -102,7 +113,7 @@ export interface SolidResults {
   /** Every node, its movement and field values (in the order of `fields`), and tetrahedra: for the cutting plane. */
   volume?: { nodes: P3[]; disp: P3[]; tets: [number, number, number, number][]; v: number[][] };
 }
-export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults | SolidResults;
+export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults | SolidResults | SolidHeatResults;
 export type PartResults = PlaneResults | HeatResults;
 export interface LibMaterial { id: string; name: string; family: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
 
@@ -141,7 +152,8 @@ export type ModeResults = { kind: "frame"; modes: FrameMode[]; equations: number
   | { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; modes: PartMode[]; equations: number; iterations: number; ms: number }
   | { kind: "buckle"; modes: FrameBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number }
   | { kind: "space"; modes: SpaceMode[]; equations: number; iterations: number; ms: number; warnings: string[] }
-  | { kind: "buckle3"; modes: SpaceBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number };
+  | { kind: "buckle3"; modes: SpaceBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number }
+  | { kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; modes: { f: number; disp: P3[] }[]; equations: number; iterations: number; ms: number; warnings: string[] };
 /** 3D frames (0.2.6): a mode or buckled shape with six movements per node and 3D member shapes. */
 export interface SpaceMode { f: number; disp: number[][]; members: { id: number; d: P3[] }[] }
 export interface SpaceBuckle { lambda: number; disp: number[][]; members: { id: number; d: P3[] }[] }

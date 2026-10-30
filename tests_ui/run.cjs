@@ -42,13 +42,14 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
+          if (c === "modes" && window.__cur?.m?.analysis === "solid") return f.bracket3d_modes;
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
           if (c === "materials_library") return f.library;
           if (c === "envelope") return f.braced_envelope;
@@ -407,6 +408,30 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
   await open("blank-solid");
   check("a blank 3D solid asks for its section", (await p.textContent(".view3d")).includes("Draw the part's section"));
+  // 0.3.4: 3D heat conduction, and natural frequencies of 3D solids.
+  await open("fin3d"); await p.waitForTimeout(300);
+  await p.click('.tabs > button:text-is("Home")');
+  check("Home shows 3D Heat chosen", await p.$eval('.ribbon button[title^="Heat conduction in a 3D solid"]', el => el.classList.contains("on")));
+  await p.click('.tabs > button:text-is("Loads")'); await p.waitForTimeout(100);
+  const lt = await p.textContent(".ribbon");
+  check("Loads offers the heat tools for a 3D heat model", lt.includes("Temperature") && lt.includes("Convection") && lt.includes("Heat Flux") && !lt.includes("Pressure"), lt.slice(0, 200));
+  await p.click('.ribbon button:has-text("Convection")'); await p.waitForTimeout(100);
+  check("convection can go on the back or front face", (await p.$$('.planebar button:has-text("the back face")')).length === 1);
+  await p.keyboard.press("Escape");
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  const hl = await p.textContent(".legend");
+  check("a solved 3D heat model shows temperatures and its heat balance", hl.includes("Temperature") && hl.includes("Heat balance") && !hl.includes("Deformed shape"), hl.slice(0, 200));
+  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  const hp = await p.textContent(".page");
+  check("its Results page lists the heat flowing through each face and the sum", hp.includes("Heat balance") && hp.includes("Fixed temperature") && hp.includes("Convection") && hp.includes("Heat flux in z"), hp.slice(0, 200));
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await open("bracket3d"); await p.waitForTimeout(200);
+  await p.click('.tabs > button:text-is("Solve")'); await p.waitForTimeout(100);
+  check("Natural Frequencies works for 3D solids", !(await p.$eval('.ribbon button[title^="The lowest natural frequencies"]', el => el.disabled)));
+  await p.click('.ribbon button[title^="The lowest natural frequencies"]'); await p.waitForTimeout(500);
+  const mb = await p.textContent(".legend");
+  check("a solid's modes are listed under the 3D view", mb.includes("Natural frequencies") && (await p.$$(".legend .modelist button")).length === fix.bracket3d_modes.modes.length, mb.slice(0, 160));
+  await p.click('.legend button:has-text("Back to the static results")'); await p.waitForTimeout(100);
   // 0.3.2: picking faces in 3D, revolved solids, held directions and lines, the cutting plane.
   await open("bracket3d"); await p.waitForTimeout(300);
   await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(100);

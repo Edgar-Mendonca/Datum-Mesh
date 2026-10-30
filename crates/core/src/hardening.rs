@@ -447,7 +447,7 @@ mod tests {
             let (imb, mesh) = match &res {
                 crate::Results::Plane(p) => (p.imbalance, &p.mesh),
                 crate::Results::Heat(p) => (p.imbalance, &p.mesh),
-                crate::Results::Frame(_) | crate::Results::Space(_) | crate::Results::Solid(_) => unreachable!(),
+                crate::Results::Frame(_) | crate::Results::Space(_) | crate::Results::Solid(_) | crate::Results::SolidHeat(_) => unreachable!(),
             };
             let barely = match &res { crate::Results::Plane(p) => p.warnings.iter().any(|w| w.contains("barely hold")), _ => false };
             if analysis == Analysis::Axi {
@@ -630,5 +630,72 @@ mod tests {
             assert!(d.m.loads.iter().all(|l| d.m.case_of(l) != cases[0]) && d.m.combos[0].parts.iter().all(|p| p.case != cases[0]), "seed {seed}");
         }
         assert!(tried >= 40, "{tried}");
+    }
+
+    #[test]
+    fn random_solids_conduct_heat_and_vibrate_or_say_why() {
+        // Random extruded and revolved parts (0.3.4): heat with fixed temperatures, flux,
+        // convection and generation balances or says why; natural frequencies, when found, are
+        // positive and rising.
+        let (mut heated, mut vibrated) = (0, 0);
+        for seed in 1..=40u64 {
+            let mut r = Rng(seed.wrapping_mul(0x51_7CC1_B727_220A) ^ 0x4EA7);
+            let rev = r.below(3) == 0;
+            let (w, h) = (r.f(0.05, 0.5), r.f(0.05, 0.5));
+            let x0 = if rev { w / 2.0 + if r.below(2) == 0 { 0.0 } else { r.f(0.0, 0.2) } } else { 0.0 };
+            let heat = r.below(2) == 0;
+            let mut d = Doc::new(Model::new(if heat { Analysis::SolidHeat } else { Analysis::Solid }));
+            let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(x0 - w / 2.0, -h / 2.0, x0 + w / 2.0, h / 2.0), ..Shape::default() }) }).unwrap()[0];
+            if r.below(2) == 0 {
+                let _ = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c: [x0, 0.0], r: w.min(h) / 5.0 }, ..Shape::default() }) });
+            }
+            d.m.thickness = r.f(0.01, 0.3);
+            if rev {
+                d.m.revolve = [std::f64::consts::FRAC_PI_2, std::f64::consts::TAU, r.f(0.3, 6.0)][r.below(3)];
+                d.m.mesh.layers = 4 + r.below(6) as u32;
+            }
+            d.m.mesh.size = w.max(h) / r.f(3.0, 5.0);
+            d.m.mesh.order = if r.below(4) == 0 { 1 } else { 2 };
+            let target = |r: &mut Rng| match r.below(4) {
+                0 => Target::End { front: r.below(2) == 0 },
+                1 => Target::Line { shape: s, edge: r.below(4) as u32, at: r.f(0.0, 1.0) },
+                _ => Target::Edge { shape: s, edge: r.below(4) as u32 },
+            };
+            if heat {
+                for _ in 0..r.below(3) {
+                    let at = target(&mut r);
+                    let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at, kind: SupportKind::Temperature { t: r.f(250.0, 400.0) } }) });
+                }
+                for _ in 0..1 + r.below(3) {
+                    let at = target(&mut r);
+                    let kind = match r.below(3) {
+                        0 => LoadKind::Flux { q: r.f(-1e4, 1e4) },
+                        1 => LoadKind::Convection { h: r.f(0.0, 100.0), t_inf: 290.0 },
+                        _ => LoadKind::Heat { q: r.f(0.0, 1e5) },
+                    };
+                    let at = if matches!(kind, LoadKind::Heat { .. }) { Target::Body } else { at };
+                    let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) });
+                }
+                let Ok(res) = crate::solid::heat(&d.m) else { continue };
+                heated += 1;
+                assert!(res.imbalance < 1e-6, "seed {seed}: heat imbalance {:e}", res.imbalance);
+                assert!(res.fields.iter().all(|f| f.v.len() == res.surface.nodes.len() && f.v.iter().all(|v| v.is_finite())), "seed {seed}");
+            } else {
+                // Mostly held by a fixed face, sometimes by whatever else comes.
+                if r.below(4) > 0 {
+                    let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Fixed }) });
+                }
+                for _ in 0..1 + r.below(2) {
+                    let at = target(&mut r);
+                    let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at, kind: [SupportKind::Fixed, SupportKind::Symmetry, SupportKind::Hold { x: true, y: r.below(2) == 0, z: true }][r.below(3)].clone() }) });
+                }
+                let Ok(md) = crate::solid::modes(&d.m, 3) else { continue };
+                vibrated += 1;
+                let f: Vec<f64> = md.modes.iter().map(|x| x.f).collect();
+                assert!(f.iter().all(|v| *v > 0.0 && v.is_finite()) && f.windows(2).all(|p| p[1] >= p[0] * (1.0 - 1e-6)), "seed {seed}: {f:?}");
+                assert!(md.modes.iter().all(|x| x.disp.len() == md.surface.nodes.len()), "seed {seed}");
+            }
+        }
+        assert!(heated >= 8 && vibrated >= 5, "{heated} heated, {vibrated} vibrated");
     }
 }

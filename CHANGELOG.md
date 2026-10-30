@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.4 — 2026-10-30
+
+3D solids conduct heat and vibrate.
+
+**3D heat conduction**
+- Home › **3D Heat**: a part's section extruded or revolved, as for a 3D solid, solved for steady heat conduction. Fix temperatures on faces, add heat flux, convection to air (on side faces and the back and front faces) and heat generation, by clicking faces in the 3D view or edges in Section.
+- Temperatures and heat flux (in x, y, z and its size) coloured over the part, with the cutting plane to see inside, the probe, and a Results page with the largest and smallest values and the heat flowing through each fixed temperature and each load, adding up to the heat balance.
+- New example: the heat sink as a 3D solid, cooled by air on every face.
+
+**Natural frequencies of 3D solids**
+- Solve › **Natural Frequencies** now works for 3D solids, extruded or revolved, with consistent masses: the lowest frequencies are listed under the 3D view and each mode swings on the part's surface. Six frequencies of the 3D L-bracket (18 000 unknowns) take about 2 s.
+
+**Trust**
+- Help › Verification: 131 checks, all passing. New: benchmark 19, a wall with fixed face temperatures (exact), a pipe wall revolved a quarter turn (temperature and heat flow within 0.001 %), a pin fin cooled by air against the fin equation (0.03 %), a slab heating itself (exact), and three vibrations: a bar's axial frequency (exact to 10⁻⁸), a 3D cantilever's bending frequency (0.03 %) and a revolved shaft's (0.1 %).
+- Random 3D solids, extruded and revolved, now also conduct heat (their heat always balances) and vibrate (their frequencies positive and rising), or say why they cannot.
+
 ## 0.3.3 — 2026-10-30
 
 Frames for everyday structural analysis: load cases and combinations, hinges, steel section tables.

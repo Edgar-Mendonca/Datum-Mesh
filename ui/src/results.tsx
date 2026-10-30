@@ -2,7 +2,7 @@
 // reactions, utilisation colours, a probe that follows the pointer, a legend) and the Results page
 // (equilibrium check, reactions, members, the solver report). The engine computes every number.
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Pt, MemberResult, Model, FrameResults, SpaceResults, SolidResults, num, clean, isFrame } from "./api";
+import { Pt, MemberResult, Model, FrameResults, SpaceResults, SolidResults, SolidHeatResults, num, clean, isFrame } from "./api";
 import { fieldsFor } from "./parts";
 import { frameRes as results, partRes, spaceRes, solidRes, stale, show, model, cursor, setView, sel, setSel, modeOn, solvedFor } from "./store";
 import { toS, scale } from "./canvas";
@@ -171,7 +171,7 @@ export const ResultsPage = () => {
         <PartResultsPage r={pr()} />
       </>}</Show>
       <Show when={spaceRes()}>{sr => <SpaceResultsPage r={sr()} />}</Show>
-      <Show when={solidRes()}>{sr => <SolidResultsPage r={sr()} />}</Show>
+      <Show when={solidRes()}>{sr => { const x = sr(); return x.kind === "solid" ? <SolidResultsPage r={x} /> : <SolidHeatResultsPage r={x} />; }}</Show>
       <Show when={(r() || !partRes()) && !spaceRes() && !solidRes()} fallback={null}><Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>Solve the model to see its results</b><p class="muted">{isFrame(m().analysis) ? "Deflections, reactions, the equilibrium check and the forces in every member." : m().analysis === "heat" ? "Temperatures, heat flux, the heat balance and the largest and smallest values." : "Stresses, displacements, reactions, the equilibrium check and the largest and smallest values."}</p><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></div>}>{rr => <>
         <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
         <Show when={rr().warnings.length}><For each={rr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
@@ -235,6 +235,38 @@ export const SpaceResultsPage = (p: { r: SpaceResults }) => {
       <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
       <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
       <tr><td>Method</td><td>3D beam elements (axial, torsion, bending about both axes) and truss bars; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+  </>;
+};
+
+/** The Results page of 3D heat conduction (0.3.4): the mesh, the largest and smallest values with
+ * where they are, and the heat balance by fixed temperature and load. */
+export const SolidHeatResultsPage = (p: { r: SolidHeatResults }) => {
+  const m = () => model()!, r = () => p.r;
+  const at = (q: number[]) => q.map(c => fmt("coord", c).split(" ")[0]).join(", ");
+  const where = (t: any) => !t ? "" : t.on === "end" ? (t.front ? "front face" : "back face") : t.on === "body" ? "the whole part" : t.on === "edge" || t.on === "line" ? `${m().shapes.find(x => x.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}` : "";
+  const supName = (id: number) => { const s = m().supports.find(x => x.id === id); return s ? `Fixed temperature, ${where(s.at)}` : "A fixed temperature"; };
+  const loadName = (id: number) => { const l = m().loads.find(x => x.id === id); return l ? `${({ flux: "Heat flux", convection: "Convection", heat: "Heat generation" } as Record<string, string>)[l.kind.kind] ?? "A load"}, ${where(l.at)}` : "A load"; };
+  const flows = () => [...r().supports.map(f => [supName(f.id), f.q] as [string, number]), ...r().loads.map(f => [loadName(f.id), f.q] as [string, number])];
+  return <>
+    <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+    <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+    <h2>Mesh</h2>
+    <table class="tbl"><tbody>
+      <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} {m().revolve ? `round ${num(m().revolve! * 180 / Math.PI, 4)}°` : `through ${fmt("len", m().thickness)}`}; {r().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></tbody></table>
+    <h2>Largest and smallest values</h2>
+    <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at ({unit("coord")})</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
+      <For each={fieldsFor("solidheat")}>{d => { const f = r().fields.find(x => x.key === d.key)!; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For></tbody></table>
+    <h2>Heat balance <Help k="equilibrium" /></h2>
+    <p classList={{ okline: r().imbalance <= 1e-6, badline: r().imbalance > 1e-6 }}><Icon n={r().imbalance > 1e-6 ? "info" : "check"} /> {r().imbalance > 1e-6 ? `Heat in and out differ by ${num(r().imbalance * 100, 2)} %.` : `Heat in equals heat out (difference ${num(r().imbalance * 100, 2)} % of the flow).`}</p>
+    <table class="tbl"><thead><tr><th>Where</th><th class="r">Heat into the part ({unit("power")})</th></tr></thead><tbody>
+      <For each={flows()}>{([n, q]) => <tr><td>{n}</td><td class="r">{fmt("power", q).split(" ")[0]}</td></tr>}</For>
+      <tr><td><b>Sum</b></td><td class="r"><b>{fmt("power", flows().reduce((a, f) => a + f[1], 0)).split(" ")[0]}</b></td></tr></tbody></table>
+    <p class="muted small">Heat flux is −k ∇T, averaged at the nodes from the elements round them. Negative flows leave the part.</p>
+    <h2>Solver</h2>
+    <table class="tbl"><tbody>
+      <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
+      <tr><td>Method</td><td>The section's triangle mesh swept through the thickness (or round the turn) into wedges, steady conduction; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
   </>;
 };
 

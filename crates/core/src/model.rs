@@ -30,6 +30,8 @@ pub enum Analysis {
     Space,
     /// 3D solids (0.3.0): the part drawn in the x-y plane, extruded along z by the thickness.
     Solid,
+    /// Steady heat conduction in a 3D solid (0.3.4), extruded or revolved as a 3D solid is.
+    SolidHeat,
 }
 
 impl Analysis {
@@ -39,6 +41,10 @@ impl Analysis {
     /// Frames and trusses, in the plane or in space.
     pub fn is_frame(self) -> bool {
         matches!(self, Analysis::Frame | Analysis::Space)
+    }
+    /// 3D solids, for stress or heat.
+    pub fn is_solid(self) -> bool {
+        matches!(self, Analysis::Solid | Analysis::SolidHeat)
     }
 }
 
@@ -782,8 +788,8 @@ impl Model {
                 (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
                 (LoadKind::Gravity { gx, gy, gz }, Target::Body) => gx.is_finite() && gy.is_finite() && gz.is_finite(),
-                (LoadKind::Flux { q }, Target::Edge { .. }) => q.is_finite(),
-                (LoadKind::Convection { h, t_inf }, Target::Edge { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
+                (LoadKind::Flux { q }, Target::Edge { .. } | Target::End { .. }) => q.is_finite(),
+                (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 _ => return Err("That load cannot go there.".into()),
@@ -805,9 +811,9 @@ impl Model {
             },
             Target::Point { x, y } => (x.is_finite() && y.is_finite()).then_some(()).ok_or_else(|| "A point needs numbers.".into()),
             Target::Body => Ok(()),
-            Target::End { .. } if self.analysis == Analysis::Solid => Ok(()),
+            Target::End { .. } if self.analysis.is_solid() => Ok(()),
             Target::End { .. } => Err("The back and front faces belong to 3D solids.".into()),
-            Target::Line { shape, edge, at } if self.analysis == Analysis::Solid => match self.shape(*shape) {
+            Target::Line { shape, edge, at } if self.analysis.is_solid() => match self.shape(*shape) {
                 Some(s) if (*edge as usize) < s.geom.edges() && (0.0..=1.0).contains(at) => Ok(()),
                 Some(_) if !(0.0..=1.0).contains(at) => Err("A line on a face lies 0 to 100 % of the way through.".into()),
                 _ => Err("That edge does not exist.".into()),

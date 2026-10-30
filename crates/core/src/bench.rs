@@ -1010,6 +1010,110 @@ fn frames_more() -> Vec<Check> {
     out
 }
 
+/// The value of a 3D heat field at the surface node nearest a point.
+fn at_heat3(r: &crate::solid::SolidHeatResults, key: &str, p: [f64; 3]) -> f64 {
+    let n = r.surface.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, p).total_cmp(&crate::model::dist3(*b.1, p))).map(|x| x.0).unwrap();
+    r.field(key).v[n]
+}
+
+/// Benchmark 19 (0.3.4): heat conduction and natural frequencies of 3D solids, against exact
+/// answers: a wall, a revolved pipe wall, a fin, a slab heating itself; a bar's axial and
+/// bending vibration, and a revolved shaft's.
+fn solids_more() -> Vec<Check> {
+    use std::f64::consts::{FRAC_PI_2, PI, TAU};
+    let mut out = vec![];
+    let tsup = |d: &mut Doc, at: Target, t: f64| { add_id(d, Item::Support(Support { id: 0, at, kind: SupportKind::Temperature { t } })); };
+    let tload = |d: &mut Doc, at: Target, kind: LoadKind| { add_id(d, Item::Load(Load { case: 0, id: 0, at, kind })); };
+    let heat_part = |k: f64, g: Geom| {
+        let (mut d, ids) = part(Analysis::SolidHeat, 200e9, 0.3, vec![(g, false)]);
+        d.m.materials[0].k = k;
+        (d, ids[0])
+    };
+    // A wall 100 mm thick, 0 °C on one face and 100 °C on the other: a straight line of
+    // temperature, and the flux kΔT/L everywhere.
+    let (l, k, t0) = (0.1, 50.0, 273.15);
+    let (mut d, s) = heat_part(k, Geom::rect(0.0, 0.0, l, 0.04));
+    d.m.thickness = 0.02;
+    tsup(&mut d, Target::Edge { shape: s, edge: 3 }, t0 + 100.0);
+    tsup(&mut d, Target::Edge { shape: s, edge: 1 }, t0);
+    d.m.mesh.size = 0.02;
+    let r = crate::solid::heat(&d.m).expect("heat");
+    let name = "3D wall, temperatures fixed on two faces";
+    out.push(check(19, name, "Temperature halfway through", "dtemp", 50.0, at_heat3(&r, "t", [l / 2.0, 0.0, 0.0]) - t0, 1e-9, "Fourier's law (a patch test)"));
+    out.push(check(19, name, "Heat flux kΔT/L, everywhere", "flux", k * 100.0 / l, r.field("qmag").max, 1e-9, "Fourier's law (a patch test)"));
+    out.push(check(19, name, "Heat balance: the flow in equals the flow out", "flux", k * 100.0 / l, r.supports[0].q / (0.04 * 0.02), 1e-9, "Conservation of energy"));
+    // A pipe wall, its section revolved a quarter turn: T(r) = Ti − ΔT ln(r/ri)/ln(ro/ri).
+    let (ri, ro, h) = (0.05, 0.1, 0.02);
+    let (mut d, s) = heat_part(k, Geom::rect(ri, 0.0, ro, h));
+    d.m.revolve = FRAC_PI_2;
+    tsup(&mut d, Target::Edge { shape: s, edge: 3 }, t0 + 100.0);
+    tsup(&mut d, Target::Edge { shape: s, edge: 1 }, t0);
+    d.m.mesh.size = 0.0125;
+    d.m.mesh.layers = 6;
+    let r = crate::solid::heat(&d.m).expect("heat");
+    let rm = 0.075;
+    let name = "Pipe wall, revolved a quarter turn, inside hotter";
+    out.push(check(19, name, "Temperature halfway through the wall", "dtemp", 100.0 - 100.0 * (rm / ri).ln() / (ro / ri).ln(), at_heat3(&r, "t", [rm, h / 2.0, 0.0]) - t0, 2e-3, "Radial conduction through a cylinder wall (Incropera, §3.3)"));
+    out.push(check(19, name, "Heat flow through the quarter, 2πkhΔT / 4 ln(ro/ri)", "power", TAU * k * h * 100.0 / (4.0 * (ro / ri).ln()), r.supports[0].q, 2e-3, "Radial conduction through a cylinder wall (Incropera, §3.3)"));
+    // A pin fin, 10 mm square and 100 mm long, its base at 100 °C, cooled by air on its sides,
+    // its tip sealed: the tip at θ_b / cosh(mL), m = √(hP/kA).
+    let (lf, w, kf, hc) = (0.1, 0.01, 200.0, 25.0);
+    let (mut d, s) = heat_part(kf, Geom::rect(0.0, 0.0, lf, w));
+    d.m.thickness = w;
+    tsup(&mut d, Target::Edge { shape: s, edge: 3 }, t0 + 100.0);
+    for at in [Target::Edge { shape: s, edge: 0 }, Target::Edge { shape: s, edge: 2 }, Target::End { front: false }, Target::End { front: true }] {
+        tload(&mut d, at, LoadKind::Convection { h: hc, t_inf: t0 });
+    }
+    d.m.mesh.size = 0.005;
+    let r = crate::solid::heat(&d.m).expect("heat");
+    let mf = (hc * 4.0 * w / (kf * w * w)).sqrt();
+    let name = "Pin fin, convection on its sides, tip sealed";
+    out.push(check(19, name, "Tip temperature rise θ_b / cosh(mL)", "dtemp", 100.0 / (mf * lf).cosh(), at_heat3(&r, "t", [lf, w / 2.0, w / 2.0]) - t0, 5e-3, "Fin equation (Incropera, §3.6), Biot number 0.0006"));
+    out.push(check(19, name, "Heat balance over the fin", "ratio", 1.0, 1.0 + r.imbalance, 1e-9, "Conservation of energy"));
+    // A slab heating itself, both faces at 0 °C: the middle rises by qL²/8k.
+    let (ls, qg) = (0.1, 1e6);
+    let (mut d, s) = heat_part(k, Geom::rect(0.0, 0.0, ls, 0.04));
+    d.m.thickness = 0.02;
+    tsup(&mut d, Target::Edge { shape: s, edge: 3 }, t0);
+    tsup(&mut d, Target::Edge { shape: s, edge: 1 }, t0);
+    tload(&mut d, Target::Body, LoadKind::Heat { q: qg });
+    d.m.mesh.size = 0.02;
+    let r = crate::solid::heat(&d.m).expect("heat");
+    out.push(check(19, "Slab heating itself, both faces at 0 °C", "Rise in the middle qL²/8k", "dtemp", qg * ls * ls / (8.0 * k), r.field("t").max - t0, 1e-9, "Conduction with generation (a parabola, exact for quadratic elements)"));
+    // Vibration: a steel bar 1 m long, 50 mm square, fixed at one end (ν = 0).
+    let (e, rho) = (200e9, 7850.0);
+    let bar = |lb: f64, a: f64, size: f64| {
+        let (mut d, ids) = part(Analysis::Solid, e, 0.0, vec![(Geom::rect(0.0, 0.0, lb, a), false)]);
+        d.m.materials[0].rho = rho;
+        d.m.thickness = a;
+        edge_support(&mut d, ids[0], 3, SupportKind::Fixed);
+        d.m.mesh.size = size;
+        d
+    };
+    let d = bar(1.0, 0.05, 0.05);
+    let md = crate::solid::modes(&d.m, 8).expect("modes");
+    let axial = (e / rho).sqrt() / 4.0;
+    let fa = md.modes.iter().map(|x| x.f).min_by(|a, b| (a - axial).abs().total_cmp(&(b - axial).abs())).unwrap();
+    out.push(check(19, "Bar 1 m long fixed at one end, ν = 0", "Lowest axial frequency √(E/ρ) / 4L", "hz", axial, fa, 1e-3, "Axial vibration of a bar (Blevins, table 8-16)"));
+    // A slender cantilever, 1 m × 20 × 20: its lowest bending frequency.
+    let d = bar(1.0, 0.02, 0.01);
+    let md = crate::solid::modes(&d.m, 1).expect("modes");
+    let bend = 1.875_104_068_711_96f64.powi(2) / TAU * (e * 0.02f64.powi(4) / 12.0 / (rho * 0.02 * 0.02)).sqrt();
+    out.push(check(19, "Cantilever 1 m × 20 × 20 in 3D, ν = 0", "Lowest bending frequency (1.875²/2π)√(EI/ρAL⁴)", "hz", bend, md.modes[0].f, 1e-2, "Euler–Bernoulli beam vibration (Blevins, table 8-1); shear and rotary inertia lower it slightly"));
+    // A round shaft 40 mm across, revolved a full turn, fixed at its foot: its bending frequency.
+    let (rs, ls2) = (0.02, 1.0);
+    let (mut d, ids) = part(Analysis::Solid, e, 0.0, vec![(Geom::rect(0.0, 0.0, rs, ls2), false)]);
+    d.m.materials[0].rho = rho;
+    d.m.revolve = TAU;
+    edge_support(&mut d, ids[0], 0, SupportKind::Fixed);
+    d.m.mesh.size = 0.02;
+    d.m.mesh.layers = 8;
+    let md = crate::solid::modes(&d.m, 1).expect("modes");
+    let shaft = 1.875_104_068_711_96f64.powi(2) / TAU * (e * PI * rs.powi(4) / 4.0 / (rho * PI * rs * rs)).sqrt() / (ls2 * ls2);
+    out.push(check(19, "Round shaft 40 mm across, 1 m long, revolved a full turn", "Lowest bending frequency (1.875²/2π)√(EI/ρAL⁴)", "hz", shaft, md.modes[0].f, 1e-2, "Euler–Bernoulli beam vibration (Blevins, table 8-1)"));
+    out
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1077,6 +1181,7 @@ pub fn run() -> Vec<Check> {
     v.extend(sketch());
     v.extend(revolved());
     v.extend(frames_more());
+    v.extend(solids_more());
     v
 }
 
@@ -1094,7 +1199,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=18 {
+        for b in 1..=19 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -1184,6 +1289,9 @@ pub fn timings() -> Vec<Timing> {
     b3f.thickness = 0.015;
     b3f.mesh.layers = 0;
     time("L-bracket in 3D, 15 deep, fine mesh: mesh and solve", 10_000.0, &mut || crate::solid::solve(&b3f).unwrap().stats.equations);
+    time("L-bracket in 3D example: 6 natural frequencies", 3000.0, &mut || crate::solid::modes(&b3, 6).unwrap().equations);
+    let f3 = crate::examples::get("fin3d").unwrap();
+    time("Heat sink in 3D example: mesh and solve", 1000.0, &mut || crate::solid::heat(&f3).unwrap().stats.equations);
     let v3 = crate::examples::get("vessel3d").unwrap();
     time("Vessel in 3D (revolved) example: mesh and solve", 2000.0, &mut || crate::solid::solve(&v3).unwrap().stats.equations);
     let tall = building(10, 12, 8);

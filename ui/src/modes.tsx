@@ -85,6 +85,6 @@ export const ModesTable = () => (
     <h2>Natural frequencies</h2>
     <table class="tbl"><thead><tr><th>Mode</th><th class="r">Frequency (Hz)</th><th class="r">Period (ms)</th><th class="r">ω (rad/s)</th></tr></thead><tbody>
       <For each={x.modes}>{(m, i) => <tr class="link" onClick={() => showMode(i())}><td>{i() + 1}</td><td class="r">{num(m.f, 5)}</td><td class="r">{num(1000 / m.f, 4)}</td><td class="r">{num(2 * Math.PI * m.f, 5)}</td></tr>}</For></tbody></table>
-    <p class="muted small">Consistent masses from each material's density; supports held. {x.kind === "frame" ? "Beams bend and stretch; truss bars stretch and carry their mass along." : x.kind === "space" ? "Beams bend both ways, twist and stretch; truss bars carry their mass along." : "Every element of the mesh vibrates in its plane."} Click a row to see the mode.</p>
+    <p class="muted small">Consistent masses from each material's density; supports held. {x.kind === "frame" ? "Beams bend and stretch; truss bars stretch and carry their mass along." : x.kind === "space" ? "Beams bend both ways, twist and stretch; truss bars carry their mass along." : x.kind === "solid" ? "The whole 3D solid vibrates, every wedge with its mass; the mode is drawn on its surface." : "Every element of the mesh vibrates in its plane."} Click a row to see the mode.</p>
   </>; }}</Show>
 );

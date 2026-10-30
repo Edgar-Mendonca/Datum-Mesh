@@ -33,20 +33,20 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 - **Parts, meshed and solved**: plane stress, plane strain, axisymmetric solids (vessels, shafts), steady heat conduction and thermal stress on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
 - **Natural frequencies** and mode shapes of frames and parts, moving on screen.
 - **Buckling of frames**: load factors and buckled shapes, with every squeezed truss bar checked as a strut.
-- **3D solids**: a part's section extruded by its thickness or revolved about an axis (shafts, hubs, vessels), solved in 3D, coloured by its stresses in a 3D view, with a cutting plane to see inside; faces picked by clicking them.
+- **3D solids**: a part's section extruded by its thickness or revolved about an axis (shafts, hubs, vessels), solved in 3D for stress, natural frequencies or heat conduction, coloured in a 3D view, with a cutting plane to see inside; faces picked by clicking them.
 - **3D frames and trusses**: drawn on front, side and plan planes, repeated into bays, seen in a 3D view and coloured by their results, with natural frequencies and buckling.
-- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 120 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and LE10 and conduction through a fin, with mesh convergence.
+- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 131 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and LE10 and conduction through a fin, with mesh convergence.
 - **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out, and European steel tables (IPE, HEA, HEB).
 - **Load cases and combinations** with your own factors, an envelope of every member's forces over all combinations, and **hinged member ends**.
 - **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; slots, rounded rectangles and regular polygons; rounded and bevelled corners; union, subtract and intersect with arcs kept true; offsets and patterns of holes; supports and loads on edges and points, including a pin load that bears on one side of a hole.
 - **Units**: SI (mm, kN, MPa) or US (in, kip, ksi); files keep SI.
-- **Worked examples**: a portal frame, a roof truss, a braced steel frame with load cases, a steel platform in 3D, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink, a pressure vessel (also revolved in 3D) and a heated plate.
+- **Worked examples**: a portal frame, a roof truss, a braced steel frame with load cases, a steel platform in 3D, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink (also in 3D), a pressure vessel (also revolved in 3D) and a heated plate.
 - **Print to PDF**: the model with a title block and a report with the mesh, contour pictures, the largest values, reactions and the equilibrium check; a `?` card beside every tool, light and dark themes, recovery of unsaved work, updates from inside the app.
 
 | Release | What arrives |
 | --- | --- |
-| 0.3.4–0.3.5 | 3D heat and natural frequencies, DXF import, a quicker solver for large 3D models |
+| 0.3.5 | DXF import, a quicker solver for large 3D models |
 | 0.4 | STEP import of any 3D part (with an open mesher in the installer), then yielding, large deflection and contact |
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.

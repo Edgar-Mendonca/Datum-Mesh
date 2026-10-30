@@ -31,13 +31,13 @@ export const C = {
       batch(() => {
         setResults(r); setStale(false); setTab("results"); setModeOn(false);
         if (r.kind === "plane" || r.kind === "heat") { fieldAfterSolve(r.kind === "heat" ? "heat" : m.analysis); setMeshed(null); setMeshStale(false); if (view() === "mesh") setView("model"); }
-        if (r.kind === "solid") { fieldAfterSolve("solid"); if (view() === "mesh") setView("model"); }
+        if (r.kind === "solid" || r.kind === "solidheat") { fieldAfterSolve(r.kind); if (view() === "mesh") setView("model"); }
       });
       // The legend bar takes room under the canvas the first time: fit the model again.
       if (first) setTimeout(fit, 40);
       const bad = r.imbalance > 1e-6, ms = r.stats.ms < 1 ? "under 1 ms" : r.stats.ms < 2000 ? `${Math.round(r.stats.ms)} ms` : `${(r.stats.ms / 1000).toFixed(1)} s`;
-      const what = r.kind === "frame" || r.kind === "space" ? `${r.stats.equations} equations` : r.kind === "solid" ? `${r.elements.toLocaleString()} elements in ${r.layers} ${r.layers === 1 ? "layer" : "layers"}, ${r.stats.equations.toLocaleString()} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
-      const bal = r.kind === "heat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : "Reactions balance the loads.";
+      const what = r.kind === "frame" || r.kind === "space" ? `${r.stats.equations} equations` : r.kind === "solid" || r.kind === "solidheat" ? `${r.elements.toLocaleString()} elements in ${r.layers} ${r.layers === 1 ? "layer" : "layers"}, ${r.stats.equations.toLocaleString()} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
+      const bal = r.kind === "heat" || r.kind === "solidheat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : "Reactions balance the loads.";
       toast(r.warnings.length ? r.warnings.join(" ") : `Solved${w ? ` (${whichName(m, w)})` : ""}: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
     } catch (e) { setResults(null); toast(String(e)); }
     finally { setSolving(false); }
@@ -50,6 +50,7 @@ export const C = {
       const r = modesFromWire(await invoke("modes", { count }));
       if (isBuckle(r)) return;
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
+      if (r.kind === "solid") import("./plane3").then(p => p.setPlane("3d"));
       toast(`${r.modes.length} natural frequencies: the lowest is ${num(r.modes[0].f, 4)} Hz.`, true);
     } catch (e) { toast(String(e)); }
     finally { setSolving(false); }

@@ -36,6 +36,8 @@ export const FIELDS: FieldDef[] = [
   { key: "tyz", name: "Shear stress τyz", short: "τyz", q: "stress" },
   { key: "tzx", name: "Shear stress τzx", short: "τzx", q: "stress" },
   { key: "uz", name: "Displacement in z", short: "uz", q: "len", nodal: true },
+  // 3D heat (0.3.4).
+  { key: "qz", name: "Heat flux in z", short: "qz", q: "flux", heat: true },
 ];
 const SOLID = ["vm", "s1", "s3", "sx", "sy", "sz", "txy", "tyz", "tzx", "umag", "ux", "uy", "uz", "sf"];
 /** In a turned (axisymmetric) solid x is the radius and y the axis: the results are named so. */
@@ -45,9 +47,10 @@ const named = (f: FieldDef, a: string): FieldDef => (a === "axi" && AXI[f.key] ?
 export const fieldDef = (key: string): FieldDef => named(FIELDS.find(x => x.key === key)!, model()?.analysis ?? "stress");
 /** The results an analysis has; a part solved with thermal stress also has its temperatures. */
 export const fieldsFor = (a: string) => {
+  if (a === "solidheat") return ["t", "qmag", "qx", "qy", "qz"].map(k => FIELDS.find(f => f.key === k)!);
   if (a === "solid") return SOLID.map(k => FIELDS.find(f => f.key === k)!).map(f => f.key === "sz" ? { ...f, name: "Stress σz" } : f);
   const r = partRes(), warm = a !== "heat" && r?.kind === "plane" && r.fields.some(f => f.key === "t");
-  return FIELDS.filter(f => !["s3", "tyz", "tzx", "uz"].includes(f.key) && (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));
+  return FIELDS.filter(f => !["s3", "tyz", "tzx", "uz", "qz"].includes(f.key) && (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));
 };
 /** The field being shown: the one picked, if the analysis has it, else the first. */
 export const curField = (): FieldDef => { const list = fieldsFor(partRes()?.kind === "heat" ? "heat" : model()?.analysis ?? "stress"); return list.find(f => f.key === show().field) ?? list[0]; };

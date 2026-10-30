@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Writes the engine's real output for the UI tests (tests_ui/fixture.json):
 //! cargo run -q -p datum-core --example dump > tests_ui/fixture.json
 use datum_core::{bench, examples, materials, mesh, wire};
@@ -44,6 +45,9 @@ fn main() {
         "braced_results": sent(&datum_core::solve(&examples::get("braced").unwrap()).unwrap()),
         "braced_envelope": datum_core::cases::envelope(&examples::get("braced").unwrap()).unwrap(),
         "sections": datum_core::steel::library(),
+        "fin3d": out("fin3d"),
+        "fin3d_results": sent(&datum_core::solve(&examples::get("fin3d").unwrap()).unwrap()),
+        "bracket3d_modes": sent(&datum_core::modes(&examples::get("bracket3d").unwrap(), 6).unwrap()),
         "vessel3d": out("vessel3d"),
         "vessel3d_results": sent(&datum_core::solve(&examples::get("vessel3d").unwrap()).unwrap()),
         "space": out("blank-space"),
