@@ -53,6 +53,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
           if (c === "materials_library") return f.library;
           if (c === "envelope") return f.braced_envelope;
+          if (c === "import_dxf") { window.__cur = f.dxf_import; return window.__cur; }
+          if (c === "export_dxf") return "0\nSECTION\n2\nENTITIES\n0\nENDSEC\n0\nEOF\n";
           if (c === "sections_library") return f.sections;
           if (c in m) return m[c];
           return null;
@@ -408,6 +410,21 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
   await open("blank-solid");
   check("a blank 3D solid asks for its section", (await p.textContent(".view3d")).includes("Draw the part's section"));
+  // 0.3.5: DXF import and export.
+  await open("lug"); await p.waitForTimeout(200);
+  await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
+  await p.click('.ribbon button[title^="Import a section drawn in CAD"]'); await p.waitForTimeout(150);
+  await p.selectOption(".dlg select", "in");
+  await p.click('.dlg button:text-is("Choose the file…")'); await p.waitForTimeout(300);
+  const ic = await p.evaluate(() => window.__calls.filter(c => c[0] === "import_dxf").slice(-1)[0]?.[1]);
+  check("DXF import asks the engine with the units picked", Math.abs(ic?.scale - 0.0254) < 1e-12, JSON.stringify(ic));
+  check("the imported outlines are in the model and the import says what came in", (await p.textContent(".tree")).includes("Hole 2") && (await p.textContent("#toast")).includes("Imported 1 shape and 2 holes") && (await p.textContent("#toast")).includes("spline"));
+  await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
+  await p.click('.bs aside button:has-text("Export")'); await p.waitForTimeout(150);
+  await p.click('.tile:has-text("Section as DXF")'); await p.waitForTimeout(300);
+  const sv = await p.evaluate(() => window.__calls.filter(c => c[0] === "save_file").slice(-1)[0]?.[1]);
+  check("File › Export saves the section as a DXF", sv?.name?.endsWith(".dxf") && sv.data.includes("ENTITIES"), JSON.stringify(sv)?.slice(0, 120));
+  await p.click(".bs aside .back"); await p.waitForTimeout(150);
   // 0.3.4: 3D heat conduction, and natural frequencies of 3D solids.
   await open("fin3d"); await p.waitForTimeout(300);
   await p.click('.tabs > button:text-is("Home")');

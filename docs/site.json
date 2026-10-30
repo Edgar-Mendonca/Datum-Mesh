@@ -28,6 +28,7 @@
     "Parts meshed automatically into quality triangles, finer where you ask, and solved in plane stress, plane strain or heat conduction",
     "Frames for everyday structural analysis: load cases and combinations with an envelope of every member's forces, hinged member ends, and European steel section tables (IPE, HEA, HEB)",
     "Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; hover anywhere to read values",
+    "Sections from CAD: DXF import of outlines, arcs kept as arcs and holes found by nesting, and DXF export of a section",
     "An equilibrium check after every solve (a heat balance for heat models): the reactions are added up against the loads",
     "Thermal stress: temperatures solved on the same mesh, then the stress they cause; uniform temperature changes in frames and parts",
     "Axisymmetric solids: pressure vessels, shafts and discs from their half-section, with hoop stress",
@@ -36,7 +37,7 @@
     "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
     "3D solids: a part's section extruded or revolved (shafts, hubs, vessels), solved in 3D for stress, natural frequencies or heat conduction, coloured in a 3D view, with a cutting plane to see inside and faces picked by clicking",
     "Sketch tools: round and bevel corners, union, subtract and intersect shapes with arcs kept true, slots, rounded rectangles, polygons, offsets and patterns of holes",
-    "Help › Verification: 131 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
+    "Help › Verification: 134 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
@@ -53,12 +54,12 @@
   ],
   "roadmap": [
     {
-      "v": "0.3.5",
-      "title": "3D solids, continued",
+      "v": "0.4",
+      "title": "Any 3D part, and beyond linear",
       "when": "Next",
       "items": [
-        "DXF import of section outlines",
-        "A quicker solver ordering for large 3D models"
+        "STEP import of any 3D part, meshed with an open mesher that comes in the installer",
+        "Yielding, large deflection and contact"
       ]
     },
     {
@@ -69,15 +70,6 @@
         "Second-order (P-delta) analysis",
         "Plates and shells for slabs and walls",
         "Response spectrum analysis"
-      ]
-    },
-    {
-      "v": "0.4",
-      "title": "Any 3D part, and beyond linear",
-      "when": "Later",
-      "items": [
-        "STEP import of any 3D part, meshed with an open mesher that comes in the installer",
-        "Yielding, large deflection and contact"
       ]
     },
     {

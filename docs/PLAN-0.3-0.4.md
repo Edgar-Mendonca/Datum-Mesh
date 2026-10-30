@@ -25,7 +25,7 @@ It is **not** a CAD program and **not** a pre-processor that prepares models for
 | 0.3.2 ✅ | **Revolve** a section about an axis (shafts, hubs, vessels; full turn or a sector with symmetry faces); the 3D view's **cutting plane** and **picking faces** in 3D | NAFEMS LE10 (thick plate under pressure), closed-end cylinder, revolved Lamé |
 | 0.3.3 ✅ | **Frames for everyday structural analysis** (added 2026-10-30 at the user's choice): load cases and combinations, member end releases, steel section tables | Hand frames with hinges; combinations by superposition |
 | 0.3.4 ✅ | **3D heat conduction and natural frequencies** of solids | 3D fin, block and plate vibration modes |
-| 0.3.5 | **DXF import** of section outlines (lines, arcs, polylines, circles) | Round trip of the examples |
+| 0.3.5 ✅ | **DXF import** of section outlines (lines, arcs, polylines, circles) | Round trip of the examples |
 | 0.4.0 | **STEP import** of any 3D part, meshed by **Gmsh** into 10-node tetrahedra, solved by our own solver | 3D cantilever and Lamé again on tetrahedra, NAFEMS LE10 |
 | 0.4.x | Beyond linear: yielding, large deflection, contact | NAFEMS nonlinear benchmarks |
 | 0.5 | Heat and flow together | — |

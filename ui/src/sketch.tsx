@@ -2,8 +2,8 @@
 // bevelling corners, combining two shapes, offsetting an outline and patterns of copies. The engine
 // does the geometry (crates/core/src/sketch.rs); these dialogs only collect the numbers.
 import { For, Show, createSignal } from "solid-js";
-import { Geom, Shape, num } from "./api";
-import { openDialog, act, model, sel, setSel, toast } from "./store";
+import { Geom, Shape, Out, num } from "./api";
+import { openDialog, act, call, model, sel, setSel, setOut, toast } from "./store";
 import { numIn } from "./panels";
 import { Dialog } from "./ui";
 import { F } from "./dialogs";
@@ -133,4 +133,32 @@ export const pattern = (circular: boolean) => {
       <Show when={circular}><p class="muted small">Counter-clockwise; with the angle left as it is, the copies and the original go evenly round a full circle.</p></Show>
     </Dialog>;
   });
+};
+
+/** Geometry › DXF (0.3.5): bring in a section drawn in CAD. The engine reads the file and adds its
+ * outlines as shapes and holes, in one step to undo. */
+export const importDxf = () => openDialog(() => {
+  const [u, setU] = createSignal("file");
+  const SCALE: Record<string, number | null> = { file: null, mm: 0.001, cm: 0.01, m: 1, in: 0.0254 };
+  return <Dialog title="Import a DXF drawing" okText="Choose the file…" help="import" ok={async () => {
+    const o = await call<Out | null>("import_dxf", { scale: SCALE[u()] });
+    if (!o) return false;
+    const notes = o.warnings;
+    setOut({ ...o, warnings: [] });
+    setSel(o.created);
+    toast(notes.join(" "), notes.length === 1);
+    import("./canvas").then(c => setTimeout(c.fit, 60));
+  }}>
+    <p class="muted small">Lines, arcs, circles and polylines (with their arcs) that close into outlines become shapes; outlines inside others become holes. Arcs stay arcs. Save the drawing from CAD as an ASCII DXF of the section alone.</p>
+    <div class="form"><label>Drawing units</label><select value={u()} onChange={e => setU(e.currentTarget.value)}>
+      <option value="file">As the drawing says (millimetres if it does not)</option><option value="mm">Millimetres</option><option value="cm">Centimetres</option><option value="m">Metres</option><option value="in">Inches</option></select></div>
+  </Dialog>;
+});
+
+/** File › Export › Section as DXF (0.3.5). */
+export const exportDxf = async () => {
+  const m = model(); if (!m?.shapes.length) return toast("There is no section to export: draw the part first.");
+  const text = await call<string>("export_dxf"); if (!text) return;
+  const p = await call<string | null>("save_file", { name: `${m.name || "section"}.dxf`, data: text });
+  if (p) toast(`Saved the section as ${p}.`, true);
 };

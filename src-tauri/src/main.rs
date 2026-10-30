@@ -102,6 +102,34 @@ fn apply(st: State<St>, op: Op) -> R<Out> {
     Ok(o)
 }
 
+/// Import a part's section from a DXF drawing (0.3.5): the outlines join the model as shapes and
+/// holes, in one step to undo. `scale` (metres per drawing unit) overrides the units the file
+/// gives. None if the person cancelled the file dialog.
+#[tauri::command]
+async fn import_dxf(app: AppHandle, st: State<'_, St>, scale: Option<f64>) -> R<Option<Out>> {
+    let Some(path) = pick(&app, "DXF drawing", &["dxf"]) else { return Ok(None) };
+    let bytes = std::fs::read(&path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    let imp = datum_core::dxf::read(&String::from_utf8_lossy(&bytes), scale)?;
+    let mut a = st.lock();
+    if !a.doc.m.analysis.is_plane() {
+        return Err("A DXF brings in a part's section: switch to a part (plane stress, axisymmetric, a 3D solid, …) on Home first.".into());
+    }
+    let material = a.doc.m.materials.first().map(|x| x.id).ok_or("Add a material first.")?;
+    let (n, holes) = (imp.shapes.iter().filter(|s| !s.1).count(), imp.shapes.iter().filter(|s| s.1).count());
+    let ops = imp.shapes.into_iter().map(|(geom, hole)| Op::Add { item: datum_core::doc::Item::Shape(datum_core::model::Shape { id: 0, name: String::new(), hole, material, geom }) }).collect();
+    let created = a.doc.apply(Op::Batch(ops))?;
+    let mut o = out(&a);
+    o.created = created;
+    o.warnings = std::iter::once(format!("Imported {n} {} and {holes} {} from {}.", if n == 1 { "shape" } else { "shapes" }, if holes == 1 { "hole" } else { "holes" }, path.file_name().map(|x| x.to_string_lossy().to_string()).unwrap_or_default())).chain(imp.warnings).collect();
+    Ok(Some(o))
+}
+
+/// The part's section as a DXF drawing (0.3.5), for the window to save.
+#[tauri::command]
+fn export_dxf(st: State<St>) -> String {
+    datum_core::dxf::write(&st.lock().doc.m)
+}
+
 #[tauri::command]
 fn history(st: State<St>, redo: bool) -> Out {
     let mut a = st.lock();
@@ -466,7 +494,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

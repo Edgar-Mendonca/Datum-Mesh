@@ -45,6 +45,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | `crates/core/src/release.rs` | Hinges by static condensation: `Release<N>` (T, Tᵀ K T, Tᵀ f, the released rotations recovered) shared by frame.rs and space.rs |
 | `crates/core/src/steel.rs` | IPE, HEA, HEB tables (EN 10365 dimensions with root radii and table areas) |
 | `ui/src/cases.tsx` | The case picker, the cases and combinations dialog, the envelope, the section tables dialog |
+| `crates/core/src/dxf.rs` | DXF (0.3.5): `read` (entities, units, chaining loose pieces into rings, holes by nesting depth, arcs over a half turn split) and `write` (closed LWPOLYLINEs and CIRCLEs in mm); `SAMPLE` drawing for tests |
+| `crates/core/src/order.rs` | The shared sparse Cholesky `Factor` (0.3.5): faer's AMD, or for 3D solids over 20 000 unknowns a nested dissection on the matrix graph (BFS levels from a far node, the middle level thinned to the nodes touching both sides) through faer's low-level symbolic/numeric API |
 | `crates/core/src/sections.rs` | Section properties (A, I, c) for rectangle, round bar, tube, box, I, channel, angle and custom |
 | `crates/core/src/sparse.rs` | The shared linear solver: triplets, supports by elimination, prescribed values, faer sparse Cholesky, a probe solve that catches mechanisms, residual |
 | `crates/core/src/mesh.rs` | Meshing parts: outlines (arcs split by the local size) into a spade constrained Delaunay triangulation inside a frame round the part, refined for angle and size; local sizes from refined edges and points grow into the global size (a size field: too-large triangles get a point at their centre, then refinement again); triangles kept where there is material (centroid test); 6-node triangles with midside nodes on true arcs; boundary edges tagged with their shape edge; quality |
@@ -163,6 +165,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.3.0 | End faces are a target of their own (`Target::End { front }`); side faces are the part's edges | No face picking in 3D needed to load a solid; old files unchanged |
 | 0.3.0 | The sparse system can store only its lower half (`System::lower`), and faer runs on every core (`rayon`, MIT/Apache) | A 3D solid of 178 000 unknowns took 22.7 s and 3.1 GB on one core; on four, 15 s; 90 000 take 6 s and 1.2 GB |
 | 0.3.0 | A 3D solid is refused beyond 200 000 unknowns, with how to coarsen | 500 000 needed 9.9 GB; one test run was killed out of memory: a crash in the app |
+| 0.3.5 | Nested dissection only for 3D solids (`System::half`) above 20 000 unknowns | Measured: the 90 000-unknown solid 11.7 → about 8 s; the frame chains (beams in 8 pieces) got 4× slower with it, so frames keep AMD; the middle level beat the smallest level near the middle, leaf size made no difference |
+| 0.3.5 | DXF import adds shapes to the open part in one step; shapes sorted solids first, largest first; non-finite numbers skipped | Undo restores; a garbled file never makes a NaN corner |
 | 0.3.4 | 3D heat is its own analysis (`Analysis::SolidHeat`, `is_solid()`), sharing the solid's sweep, faces and window; natural frequencies of solids reuse `build` (stiffness and supports) with consistent masses through `modal::lowest` | One geometry path for stress, vibration and heat; the window tells them apart by result kind |
 | 0.3.3 | Load cases: `Load.case` (a case that does not exist means the first; adding the first case moves every load into it), `Model.cases`, `Model.combos` with factors; a combination is solved as one model with scaled loads (linear), the envelope solves each combination | Superposition is exact for every analysis here; one solve per combination keeps the code one path |
 | 0.3.3 | Hinges by static condensation of the member's released end rotations (one transform for K, loads, mass and K_G); in 3D both bending rotations, and twisting too at a node no rigid beam holds (else its moment was lost to a held rotation: found by the random 3D frames) | No extra unknowns, and nodes whose beams are all hinged are held like truss joints |
@@ -215,9 +219,9 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.3.2 | Revolved solids (full turn or sector, through the axis), held directions and line supports, face picking in 3D, cutting plane; benchmark 17 with NAFEMS LE10 (105 checks); 3D vessel example | ✅ |
 | 0.3.3 | Frames: load cases and combinations with an envelope, hinges (2D and 3D, static, modes, buckling), IPE/HEA/HEB tables with root radii; braced frame example; benchmark 18 (120 checks) | ✅ |
 | 0.3.4 | 3D heat conduction (SolidHeat: temperatures, flux, flows, balance, cut) and natural frequencies of 3D solids (modes on the surface in the 3D view); heat sink in 3D example; benchmark 19 (131 checks) | ✅ |
-| 0.3.5 | DXF import, nested-dissection ordering for large 3D solves | 🔜 |
+| 0.3.5 | DXF import and export of sections, nested dissection for large 3D solids (90k unknowns 11.7 → 8 s), benchmark 20 (134 checks) | ✅ |
 | later | Frames: P-delta, plates and shells, response spectrum | ⬜ |
-| 0.4.0 | STEP import, Gmsh bundled in the installer (separate program), 10-node tetrahedra | ⬜ |
+| 0.4.0 | STEP import, Gmsh bundled in the installer (separate program), 10-node tetrahedra | 🔜 |
 | later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
@@ -297,7 +301,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 ### 2026-10-30: Session 1, continued (0.3.4 3D heat and frequencies)
 - Released 0.3.3. Engine: `Analysis::SolidHeat`, `is_solid`, solid.rs split into `build` and the static solve, `modes` (consistent masses, `Modes::Solid` with the surface), `heat` (conduction, flux, convection and generation on faces, fixed temperatures on faces and lines, flows and balance, flux at nodes, volume for the cut), flux and convection allowed on end faces, benchmark 19, random heat and vibration of solids, the 3D heat sink example, timings for both. Window: Home › 3D Heat, heat tools and face picking for it, the 3D heat legend and Results page, `solidDisp`, the solid's modes swinging in the 3D view, Natural Frequencies enabled for solids, help. Measured: six frequencies of the 3D bracket take 2.3 s (budget 3 s).
 
-## 5. Known limits (0.3.4)
+### 2026-10-30: Session 1, continued (0.3.5 DXF and ordering)
+- Released 0.3.4. Engine: order.rs (Factor with AMD or nested dissection; used by sparse.rs and modal.rs), dxf.rs (read, write, sample), benchmark 20, DXF fuzz hardening. Tried and measured: nested dissection everywhere (frames 4× slower: now solids only), the reverse permutation (wrong: 39 GB), separator choice and leaf size. Shell: `import_dxf` (file dialog, units, one undo step) and `export_dxf`. Window: Geometry › DXF with a units choice, File › Export › Section as DXF, help card, stale planned-release labels fixed. Found in the app: "1 lines or arcs … do not close" (now singular).
+
+## 5. Known limits (0.3.5)
+
+- DXF: ASCII only (not binary DXF); blocks (INSERT), splines and ellipses are left out; the drawing's layers are not used to tell part from holes (nesting is). The nested dissection is a simple graph bisection (no multilevel refinement): about a third faster than minimum degree on large 3D solids, not as good as a dedicated partitioner.
 
 - 3D heat: steady only (no transient); no thermal stress in 3D solids yet (temperatures are not passed to a 3D stress solve, and uniform temperature changes are left out with a warning). 3D frequencies: consistent masses, the lowest 30 at most; no point masses. Mode search on large solids is slow (several seconds above 20 000 unknowns).
 

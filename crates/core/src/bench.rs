@@ -1114,6 +1114,35 @@ fn solids_more() -> Vec<Check> {
     out
 }
 
+/// Benchmark 20 (0.3.5): DXF import. Every example's section written to a DXF and read back, and a
+/// drawing of loose lines and arcs joined into a plate with a slot and a hole, against hand areas.
+fn dxf() -> Vec<Check> {
+    use std::f64::consts::PI;
+    let mut worst = 0.0f64;
+    let mut n = 0;
+    for e in crate::examples::list() {
+        let m = crate::examples::get(e.id).expect("example");
+        if m.shapes.is_empty() {
+            continue;
+        }
+        let back = crate::dxf::read(&crate::dxf::write(&m), None).expect("dxf");
+        let total = |v: &mut dyn Iterator<Item = (f64, bool)>| v.map(|(a, h)| if h { -a.abs() } else { a.abs() }).sum::<f64>();
+        let (a0, a1) = (total(&mut m.shapes.iter().map(|s| (s.geom.area(), s.hole))), total(&mut back.shapes.iter().map(|(g, h)| (g.area(), *h))));
+        worst = worst.max((a1 - a0).abs() / a0.abs());
+        n += 1;
+    }
+    let r = crate::dxf::read(crate::dxf::SAMPLE, None).expect("dxf");
+    let inch = 0.0254f64;
+    let solid: f64 = r.shapes.iter().filter(|s| !s.1).map(|s| s.0.area()).sum();
+    let holes: f64 = r.shapes.iter().filter(|s| s.1).map(|s| s.0.area()).sum();
+    let src = "Hand areas";
+    vec![
+        check(20, "DXF round trip of every example's section", Box::leak(format!("Net area after writing and reading back ({n} sections, the largest difference)").into_boxed_str()), "ratio", 1.0, 1.0 + worst, 1e-9, "The sections as drawn"),
+        check(20, "DXF of loose lines and arcs, in inches", "Plate joined from four lines: 100 × 40 in", "area", 4000.0 * inch * inch, solid, 1e-9, src),
+        check(20, "DXF of loose lines and arcs, in inches", "Holes: a slot of two lines and two arcs, and a circle", "area", (200.0 + PI * 25.0 + PI * 64.0) * inch * inch, holes, 1e-9, src),
+    ]
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1182,6 +1211,7 @@ pub fn run() -> Vec<Check> {
     v.extend(revolved());
     v.extend(frames_more());
     v.extend(solids_more());
+    v.extend(dxf());
     v
 }
 
@@ -1199,7 +1229,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=19 {
+        for b in 1..=20 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

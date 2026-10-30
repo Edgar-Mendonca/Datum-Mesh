@@ -154,12 +154,11 @@ export const Ribbon = () => {
           <G l="Ready-made" h="sketch"><S><B i="slot" l="Slot…" run={() => K.makeShape("slot")} /><B i="rrect" l="Rounded Rectangle…" run={() => K.makeShape("rounded")} /><B i="ngon" l="Regular Polygon…" run={() => K.makeShape("polygon")} /></S></G>
           <SketchTools />
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G>
-          <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.3.4" /></G>
+          <G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /></G>
         </>}>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
-          <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.3.4" /></G>
         </Show>
         <G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G>
       </Show>
@@ -189,7 +188,7 @@ export const Ribbon = () => {
       <Show when={tab() === "solve"}>
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
-        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || heat()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="0.3" /></S></G>
+        <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || heat()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="a later release" /></S></G>
       </Show>
       <Show when={tab() === "results"}>
         <Show when={frame()} fallback={<>
@@ -209,7 +208,7 @@ export const Ribbon = () => {
           <G l="Combinations" h="cases"><B big i="table" l="Envelope" run={envelope} off={!hasEnvelope()} title="The largest and smallest member forces and reactions over every combination" /></G>
         </Show>
         <Show when={modes()}>{r => <Show when={isBuckle(r())} fallback={<G l="Vibration" h="modes"><B big i="modes" l="Mode Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the natural modes on the drawing instead of the static results" /></G>}><G l="Buckling" h="buckle"><B big i="buckle" l="Buckled Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the buckled shapes on the drawing instead of the static results" /></G></Show>}</Show>
-        <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><B i="report" l="Results Report" run={() => C.view("report")} /><Planned i="csv" l="Send to Datum Plot" v="0.2" /><Planned i="calc" l="Send to Datum Calc" v="0.2" /></S></G>
+        <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><B i="report" l="Results Report" run={() => C.view("report")} /><Planned i="csv" l="Send to Datum Plot" v="a later release" /><Planned i="calc" l="Send to Datum Calc" v="a later release" /></S></G>
       </Show>
       <Show when={tab() === "view"}>
         <G l="Zoom" h="zoom"><B big i="fit" l="Fit" run={C.fit} /><S><B i="zin" l="Zoom In" run={C.zoomIn} /><B i="zout" l="Zoom Out" run={C.zoomOut} /></S></G>

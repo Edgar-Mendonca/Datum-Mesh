@@ -3,7 +3,7 @@ import { For, Show, createSignal, createResource, onMount, JSX } from "solid-js"
 import { PAPERS, PrintPage } from "./print";
 import { RoadmapPage } from "./roadmap";
 import { Options, Out, Example, listen, invoke } from "./api";
-import { backstage, setBackstage, call, out, setOut, opts, setOpts, toast, setThemeRaw, applyTheme } from "./store";
+import { backstage, setBackstage, call, out, setOut, model, opts, setOpts, toast, setThemeRaw, applyTheme } from "./store";
 import { C } from "./cmds";
 import * as D from "./dialogs";
 import { Icon, Text, Pick, Check } from "./ui";
@@ -97,8 +97,9 @@ const Export = () => (
   <div><h1>Export</h1>
     <div class="tiles">
       <button class="tile" onClick={() => setBackstage("print")}><div class="pic"><svg class="ic"><use href="#i-print" /></svg></div><b>Print or save as PDF</b><span>The model drawn to scale, with its materials, sections, supports and loads.</span></button>
-      <button class="tile" disabled><div class="pic"><svg class="ic"><use href="#i-csv" /></svg><small>0.2</small></div><b>Results as CSV</b><span>Probe lines and convergence data for Datum Plot. Planned for 0.2.</span></button>
-      <button class="tile" disabled><div class="pic"><svg class="ic"><use href="#i-calc" /></svg><small>0.2</small></div><b>Send to Datum Calc</b><span>A result as a variable with units, for a hand check beside it. Planned for 0.2.</span></button>
+      <button class="tile" disabled={!model()?.shapes.length} onClick={() => import("./sketch").then(k => k.exportDxf())}><div class="pic"><svg class="ic"><use href="#i-export" /></svg></div><b>Section as DXF</b><span>The part's outline and holes as an ASCII DXF in millimetres, for CAD.</span></button>
+      <button class="tile" disabled><div class="pic"><svg class="ic"><use href="#i-csv" /></svg></div><b>Results as CSV</b><span>Probe lines and convergence data for Datum Plot. Planned for a later release.</span></button>
+      <button class="tile" disabled><div class="pic"><svg class="ic"><use href="#i-calc" /></svg></div><b>Send to Datum Calc</b><span>A result as a variable with units, for a hand check beside it. Planned for a later release.</span></button>
     </div>
   </div>
 );

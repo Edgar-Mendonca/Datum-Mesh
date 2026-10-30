@@ -698,4 +698,47 @@ mod tests {
         }
         assert!(heated >= 8 && vibrated >= 5, "{heated} heated, {vibrated} vibrated");
     }
+
+    #[test]
+    fn damaged_dxf_files_read_or_say_why_never_panic() {
+        // The sample drawing and an example's section, cut short, with lines dropped, numbers
+        // garbled or swapped: reading never panics, and what it reads is a valid section.
+        let texts = [crate::dxf::SAMPLE.to_string(), crate::dxf::write(&crate::examples::get("flange").unwrap())];
+        let mut read = 0;
+        for seed in 1..=300u64 {
+            let mut r = Rng(seed.wrapping_mul(0xD1F_5EED) ^ 0xDF);
+            let base = &texts[r.below(2)];
+            let mut lines: Vec<String> = base.lines().map(|l| l.to_string()).collect();
+            for _ in 0..1 + r.below(6) {
+                if lines.is_empty() {
+                    break;
+                }
+                let i = r.below(lines.len());
+                match r.below(5) {
+                    0 => {
+                        lines.remove(i);
+                    }
+                    1 => lines[i] = format!("{}", r.f(-1e6, 1e6)),
+                    2 => lines[i] = "nan".into(),
+                    3 => lines.truncate(i),
+                    _ => {
+                        let j = r.below(lines.len());
+                        lines.swap(i, j);
+                    }
+                }
+            }
+            let Ok(imp) = crate::dxf::read(&lines.join("\n"), None) else { continue };
+            read += 1;
+            let mut m = Model::new(Analysis::Stress);
+            for (k, (g, hole)) in imp.shapes.into_iter().enumerate() {
+                m.shapes.push(Shape { id: 100 + k as u32, material: 1, hole, geom: g, ..Shape::default() });
+            }
+            m.next = 100 + m.shapes.len() as u32 + 1;
+            // Every number read is a number; the section is valid or refused with a reason (a
+            // garbled number can make two corners meet).
+            assert!(m.shapes.iter().all(|s| s.geom.clone().points_mut().iter().all(|p| p[0].is_finite() && p[1].is_finite())), "seed {seed}");
+            let _ = m.check();
+        }
+        assert!(read > 50, "{read}");
+    }
 }

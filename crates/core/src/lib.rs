@@ -7,6 +7,7 @@
 pub mod bench;
 pub mod cases;
 pub mod doc;
+pub mod dxf;
 pub mod examples;
 pub mod frame;
 mod hardening;
@@ -15,6 +16,7 @@ pub mod materials;
 pub mod modal;
 pub mod mesh;
 pub mod model;
+mod order;
 pub mod plane;
 mod release;
 pub mod sections;

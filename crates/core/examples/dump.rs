@@ -26,6 +26,11 @@ fn main() {
     let id = d.m.nodes[1].id;
     d.apply(datum_core::doc::Op::Add { item: datum_core::doc::Item::Load(datum_core::model::Load { case: 0, id: 0, at: datum_core::model::Target::Node { id }, kind: datum_core::model::LoadKind::Force { fx: 0.0, fy: -1e4, fz: 0.0 } }) }).unwrap();
     let offgrid = d.m;
+    // A part with the sample DXF imported (0.3.5), as the shell sends it back.
+    let imp = datum_core::dxf::read(datum_core::dxf::SAMPLE_PUB, None).unwrap();
+    let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Stress));
+    let created = d.apply(datum_core::doc::Op::Batch(imp.shapes.into_iter().map(|(geom, hole)| datum_core::doc::Op::Add { item: datum_core::doc::Item::Shape(datum_core::model::Shape { id: 0, name: String::new(), hole, material: 1, geom }) }).collect())).unwrap();
+    let dxf_out = json!({ "m": d.m, "path": null, "dirty": true, "undo": true, "redo": false, "created": created, "warnings": std::iter::once("Imported 1 shape and 2 holes from plate.dxf.".to_string()).chain(imp.warnings).collect::<Vec<_>>() });
     let out_m = |m: &datum_core::model::Model| json!({ "m": m, "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] });
     let fix = json!({
         "examples_list": examples::list(),
@@ -45,6 +50,7 @@ fn main() {
         "braced_results": sent(&datum_core::solve(&examples::get("braced").unwrap()).unwrap()),
         "braced_envelope": datum_core::cases::envelope(&examples::get("braced").unwrap()).unwrap(),
         "sections": datum_core::steel::library(),
+        "dxf_import": dxf_out,
         "fin3d": out("fin3d"),
         "fin3d_results": sent(&datum_core::solve(&examples::get("fin3d").unwrap()).unwrap()),
         "bracket3d_modes": sent(&datum_core::modes(&examples::get("bracket3d").unwrap(), 6).unwrap()),

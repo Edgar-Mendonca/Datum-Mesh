@@ -4,9 +4,8 @@
 //! plane.rs); this file only does the numbers.
 
 use crate::sparse::System;
-use faer::linalg::solvers::Solve;
 use faer::sparse::{SparseColMat, Triplet};
-use faer::{Mat, Side};
+use faer::Mat;
 use serde::Serialize;
 
 /// One mode: its frequency and its shape over every unknown (held ones zero), scaled so the
@@ -99,7 +98,7 @@ fn subspace(k: &System, m: &[(usize, usize, f64)], held: &[bool], count: usize, 
     // Start vectors grow from where B is large against K; for buckling that is |B|.
     let mdiag: Vec<f64> = mdiag.iter().map(|v| v.abs()).collect();
     let a = SparseColMat::<usize, f64>::try_new_from_triplets(nf, nf, &tri).map_err(|e| format!("Could not build the stiffness matrix: {e:?}"))?;
-    let llt = a.sp_cholesky(Side::Lower).map_err(|_| unsupported.to_string())?;
+    let llt = crate::order::Factor::new(&a, k.half).map_err(|_| unsupported.to_string())?;
     // Probe for a hidden zero pivot, as the static solver does.
     let mut probe = Mat::<f64>::zeros(nf, 1);
     for i in 0..nf {

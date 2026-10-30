@@ -2,9 +2,8 @@
 //! (held degrees of freedom are removed, springs and prescribed values handled by the caller), and
 //! a sparse Cholesky factorisation from faer (MIT) with a fill-reducing ordering.
 
-use faer::linalg::solvers::Solve;
 use faer::sparse::{SparseColMat, Triplet};
-use faer::{Mat, Side};
+use faer::Mat;
 
 /// A symmetric system K u = f with n unknowns, built from (row, col, value) entries; repeated
 /// entries add up.
@@ -109,7 +108,7 @@ impl System {
         }
         let a = SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &tri).map_err(|e| format!("Could not build the stiffness matrix: {e:?}"))?;
         let nonzeros = a.compute_nnz();
-        let llt = a.sp_cholesky(Side::Lower).map_err(|_| mechanism())?;
+        let llt = crate::order::Factor::new(&a, self.half).map_err(|_| mechanism())?;
         // Column 0 is the load; column 1 a probe load scaled by the diagonal, whose answer is about 1
         // in a compact model, larger in long chains of members, and enormous when rounding hid a zero
         // pivot (a mechanism).
