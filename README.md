@@ -45,7 +45,9 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 
 | Release | What arrives |
 | --- | --- |
-| 0.3.1–0.3.3 | 3D solids continued: a cutting plane in the 3D view, revolved solids, 3D heat and natural frequencies |
+| 0.3.1 | Sketch tools: round and bevel corners, combine shapes, slots, patterns of holes |
+| 0.3.2–0.3.4 | Revolved solids, a cutting plane in the 3D view, 3D heat and natural frequencies, DXF import |
+| 0.4 | STEP import of any 3D part (with an open mesher in the installer), then yielding, large deflection and contact |
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.
 

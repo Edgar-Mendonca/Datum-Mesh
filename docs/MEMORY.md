@@ -22,6 +22,7 @@ To show any engineer or student how a part or structure carries load, heat and v
 - **Different because:** trust you can see (benchmarks solved in the app, the equilibrium check, saying what was not verified); free and open (MIT, no licence server); simple (draw, load, solve, read); honest about its limits.
 - **Frames stay in Datum Mesh** (2D and 3D frames and trusses, with frequencies and buckling): they carry the parts engineers check and teach FEA well. They do **not** grow into building design: no design-code checks or code load combinations.
 - **Not:** a design-code checker, a CAD program, or a whole commercial suite on day one.
+- **In the spirit of** (agreed 2026-10-30): the analysis side of a structural program for frames, and a general finite-element program for parts; not CAD, not a pre-processor for other solvers. Simple parts are drawn here (2D sketch tools, extrude, revolve); complex ones come from real CAD as STEP (0.4). Plan: `docs/PLAN-0.3-0.4.md`.
 - **Leads to:** 3D parts (0.3: extruded and revolved, then any shape from CAD), beyond linear (0.4: yielding, large deflection, contact, through open solvers run as separate programs), heat and flow (0.5), validated 1.0 (validation report, user guide, signed installer).
 
 ---
@@ -151,6 +152,7 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.0 | Points moved onto arcs are moved back when a triangle would fold | A hole crossing the outline folded a sliver (found by the random parts) |
 | 0.2.1 | Axisymmetric solids share plane.rs: B and D carry a fourth (hoop) strain, used only by `Axi`; weights 2πr; edge forces and pressures are totals round the circle; nodes on the axis are held radially without a support; the equilibrium check sums axial forces only | One element code for plane and turned solids |
 | 0.2.1 | The automatic element size is also capped at √(area / (0.43 × 800)) (about 800 triangles) | The vessel's 10 mm wall got one element through it at a twenty-fifth of the part's height |
+| 0.3.0 | Datum Mesh does not become CAD or a pre-processor; sketch tools (0.3.1) before the cutting plane; Gmsh bundled in the installer from 0.4 (separate program; app itself stays under 5 MB, installer grows by Gmsh's size) | The user's answers 2026-10-30 (docs/PLAN-0.3-0.4.md) |
 | 0.3.0 | 3D solids are the 2D mesh swept through the thickness into wedges (18-node from quadratic, 6-node from linear), not a tetrahedral mesher | Robust (the 2D mesher's quality), no new mesher, exact layers through the thickness; arbitrary 3D shapes wait for an outside mesher (0.4+) |
 | 0.3.0 | End faces are a target of their own (`Target::End { front }`); side faces are the part's edges | No face picking in 3D needed to load a solid; old files unchanged |
 | 0.3.0 | The sparse system can store only its lower half (`System::lower`), and faer runs on every core (`rayon`, MIT/Apache) | A 3D solid of 178 000 unknowns took 22.7 s and 3.1 GB on one core; on four, 15 s; 90 000 take 6 s and 1.2 GB |
@@ -192,7 +194,9 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.2.3 | Buckling of frames (geometric stiffness, beams cut in 8, modal::buckling on the pencil B φ = μ K φ), truss bars as struts, benchmark 12 (54 checks) | ✅ |
 | 0.2.4 | 3D frames (space.rs 12-unknown beams and truss bars, sections Iy and J, doc ops in 3D and Repeat), working planes (plane3.ts), three.js 3D view (view3d.tsx), benchmark 13 (69 checks) | ✅ |
 | 0.3.0 | 3D solids by extrusion: solid.rs (swept wedges, faces, supports, loads, stresses, surface for the window), `Target::End`, layers, half-stored sparse system, solver on every core, 200 000-unknown limit; window: 3D/Section, end-face buttons, contoured surface, legend, Results page; benchmark 15 (85 checks) | ✅ |
-| 0.3.1–0.3.3 | 3D view for solids (cutting plane, picking faces), revolve and symmetry (NAFEMS LE10), 3D heat and frequencies | 🔜 |
+| 0.3.1 | Sketch tools: fillet and chamfer corners, combine shapes (union, subtract, intersect), slots, polygons, offsets, patterns | 🔜 |
+| 0.3.2–0.3.4 | Revolve and symmetry (NAFEMS LE10), cutting plane and face picking in 3D, 3D heat and frequencies, DXF import | ⬜ |
+| 0.4.0 | STEP import, Gmsh bundled in the installer (separate program), 10-node tetrahedra | ⬜ |
 | later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 

@@ -51,31 +51,33 @@
   ],
   "roadmap": [
     {
-      "v": "0.3.1–0.3.3",
-      "title": "3D solids, continued",
+      "v": "0.3.1",
+      "title": "Sketch tools",
       "when": "Next",
       "items": [
-        "The 3D view for solids: a cutting plane through the part, and picking faces in 3D",
-        "Revolved solids (shafts, hubs, vessels) and symmetry faces; verified on NAFEMS LE10",
-        "Heat conduction and natural frequencies of 3D solids"
+        "Round (fillet) and bevel (chamfer) any corner of a section",
+        "Combine shapes: union, subtract and intersect, for slots, notches and cut-outs",
+        "Slots, rounded rectangles, regular polygons, offset outlines and patterns of holes"
       ]
     },
     {
-      "v": "0.3+",
-      "title": "Imports and links",
-      "when": "Later",
+      "v": "0.3.2–0.3.4",
+      "title": "3D solids, continued",
+      "when": "Soon",
       "items": [
-        "DXF import of outlines",
-        "Send results to Datum Calc and Datum Plot",
-        "First-use fixes on a clean Windows PC and a user guide in Help"
+        "Revolved solids (shafts, hubs, vessels) with symmetry faces; verified on NAFEMS LE10",
+        "A cutting plane through the part and picking faces in the 3D view",
+        "Heat conduction and natural frequencies of 3D solids",
+        "DXF import of section outlines"
       ]
     },
     {
       "v": "0.4",
-      "title": "Nonlinear",
+      "title": "Any 3D part, and beyond linear",
       "when": "Later",
       "items": [
-        "Plasticity, large deflection and contact, with open solvers run as separate programs"
+        "STEP import of any 3D part, meshed with an open mesher that comes in the installer",
+        "Yielding, large deflection and contact"
       ]
     },
     {
