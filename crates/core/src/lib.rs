@@ -16,7 +16,6 @@ pub mod materials;
 pub mod modal;
 pub mod mesh;
 pub mod model;
-mod order;
 pub mod plane;
 mod release;
 pub mod sections;

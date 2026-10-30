@@ -2,14 +2,11 @@
 
 ## 0.3.5 — 2026-10-30
 
-Sections from CAD, and large 3D solids solved sooner.
+Sections from CAD.
 
 **DXF**
 - Geometry › **DXF**: import a part's section drawn in CAD (ASCII DXF). Lines and arcs that meet end to end, polylines with their arcs, and circles become outlines; outlines inside others become holes; arcs stay arcs. Units come from the drawing or are picked when importing. Splines, ellipses, text and blocks are left out, and the import says how many. One step to undo.
 - File › Export › **Section as DXF**: the part's outline and holes as closed polylines and circles in millimetres, for CAD.
-
-**Quicker large 3D solves**
-- 3D solids with more than 20 000 unknowns are now ordered by nested dissection before the sparse Cholesky factorisation: a 90 000-unknown solid solves in about 8 s instead of 12 s on the same computer, with the same answers. Frames keep the minimum degree ordering, which suits them better.
 
 **Fixes**
 - Tools marked as planned no longer give release numbers that have passed.

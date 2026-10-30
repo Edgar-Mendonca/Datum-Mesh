@@ -59,7 +59,8 @@
       "when": "Next",
       "items": [
         "STEP import of any 3D part, meshed with an open mesher that comes in the installer",
-        "Yielding, large deflection and contact"
+        "Yielding, large deflection and contact",
+        "A quicker solver for large 3D models"
       ]
     },
     {
