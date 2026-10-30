@@ -10,12 +10,13 @@ import { C } from "./cmds";
 import * as D from "./dialogs";
 import { sharpCorners, corners } from "./sketch";
 
-export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["space", "3D frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"], ["solid", "3D solid (extruded)"]];
+export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["space", "3D frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"], ["solid", "3D solid (extruded or revolved)"]];
 
 /** A new support of a kind, with typical values. */
 export const defaultSupport = (k: string): SupportKind => {
   if (k === "spring") return { kind: "spring", kx: 1e7, ky: 1e7, kr: 0 };
   if (k === "temperature") return { kind: "temperature", t: 293.15 };
+  if (k === "hold") return { kind: "hold", x: true, y: true, z: false };
   return { kind: k } as SupportKind;
 };
 /** A new load of a kind, with typical values (frames in kN, parts smaller). */
@@ -35,7 +36,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
   }
 };
 
-export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature" };
+export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
 export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change" };
 
 const targetName = (m: Model, t: Target) => {
@@ -44,6 +45,7 @@ const targetName = (m: Model, t: Target) => {
   if (t.on === "edge") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}`;
   if (t.on === "point") return `Point ${fmt("coord", t.x)}, ${fmt("coord", t.y)}`;
   if (t.on === "end") return t.front ? "Front face" : "Back face";
+  if (t.on === "line") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}, line at ${num(t.at * 100, 3)} %`;
   return "Whole model";
 };
 export const itemName = (m: Model, id: number): string => {
@@ -200,7 +202,8 @@ const EdgeInsp = (p: { m: Model; e: { shape: number; edge: number } }) => {
 
 const SupportInsp = (p: { s: Support; m: Model }) => {
   const k = () => p.s.kind;
-  const kinds = (): string[] => p.s.at.on === "end" ? ["fixed", "roller", "symmetry"] : p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : isFrame(p.m.analysis) ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
+  const sol = () => p.m.analysis === "solid";
+  const kinds = (): string[] => p.s.at.on === "line" ? ["fixed", "hold"] : p.s.at.on === "end" ? ["fixed", "roller", "symmetry", "hold"] : p.s.at.on === "edge" ? (p.m.analysis === "heat" ? ["temperature"] : sol() ? ["fixed", "pinned", "roller", "symmetry", "hold"] : ["fixed", "pinned", "roller", "symmetry", "temperature"]) : p.m.analysis === "heat" ? ["temperature"] : isFrame(p.m.analysis) ? ["fixed", "pinned", "rollerx", "rollery", "spring"] : ["fixed", "pinned", "rollerx", "rollery"];
   const put = (kind: SupportKind) => set("Support", { ...p.s, kind });
   return <>
     <Row label="On"><span>{targetName(p.m, p.s.at)}</span></Row>
@@ -212,7 +215,13 @@ const SupportInsp = (p: { s: Support; m: Model }) => {
       <NumField label={p.m.analysis === "space" ? "Turning about z" : "Rotation"} q="rspring" v={sp.kr} min={0} set={kr => put({ ...sp, kr })} />
     </>; }}</Show>
     <Show when={k().kind === "temperature"}><NumField label="Temperature" q="temp" v={(k() as any).t} set={t => put({ kind: "temperature", t })} /></Show>
-    <p class="muted small">{({ fixed: "Holds the point still; beams cannot turn there either.", pinned: "Holds the point still but lets it turn.", rollerx: "Free to slide along x; held in y.", rollery: "Free to slide along y; held in x.", roller: "Free to slide along the edge; held across it.", symmetry: "A plane of symmetry: model half the part and hold the cut edge across.", spring: p.m.analysis === "space" ? "Springs to the ground along x, y and z and turning about each." : "Springs to the ground in x, y and rotation.", temperature: "Holds the edge at this temperature." } as Record<string, string>)[k().kind]}</p>
+    <Show when={k().kind === "hold"}>{_ => { const h = k() as Extract<SupportKind, { kind: "hold" }>; return <div class="cks">
+      {(["x", "y", "z"] as const).map(a => <label class="chk"><input type="checkbox" checked={h[a]} onChange={e => { const v = { ...h, [a]: e.currentTarget.checked }; if (v.x || v.y || v.z) put(v); else e.currentTarget.checked = true; }} />Hold {a}</label>)}</div>; }}</Show>
+    <Show when={sol() && (p.s.at.on === "edge" || p.s.at.on === "line")}>{_ => { const at = p.s.at as any; return <>
+      <Row label="Where"><Choice v={at.on} set={v => set("Support", { ...p.s, at: v === "line" ? { on: "line", shape: at.shape, edge: at.edge, at: 0.5 } : { on: "edge", shape: at.shape, edge: at.edge }, kind: v === "line" && !["fixed", "hold"].includes(k().kind) ? defaultSupport("hold") : k() })} opts={[["edge", "The whole side face"], ["line", "A line along it"]]} /></Row>
+      <Show when={at.on === "line"}><div class="iprow"><label>Line at<span class="unit">%</span></label><input class="mono" value={num(at.at * 100, 4)} onChange={numIn(v => v >= 0 && v <= 100 && set("Support", { ...p.s, at: { ...at, at: v / 100 } }), () => num(at.at * 100, 4))} /><span class="hint">of the way {p.m.revolve ? "round the turn" : "through the thickness"} (50 % is the middle; it goes to the nearest layer of nodes).</span></div></Show>
+    </>; }}</Show>
+    <p class="muted small">{({ fixed: "Holds the point still; beams cannot turn there either.", pinned: "Holds the point still but lets it turn.", rollerx: "Free to slide along x; held in y.", rollery: "Free to slide along y; held in x.", roller: "Free to slide along the edge; held across it.", symmetry: "A plane of symmetry: model half the part and hold the cut edge across.", hold: "Holds only the ticked directions (global x, y, z); the others are free.", spring: p.m.analysis === "space" ? "Springs to the ground along x, y and z and turning about each." : "Springs to the ground in x, y and rotation.", temperature: "Holds the edge at this temperature." } as Record<string, string>)[k().kind]}</p>
   </>;
 };
 
@@ -258,13 +267,15 @@ const ModelInsp = (p: { m: Model }) => {
     <Row label="Analysis"><Choice v={p.m.analysis} set={v => settings({ analysis: v })} opts={ANALYSES} /></Row>
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
     <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
-    <Show when={p.m.analysis === "stress" || p.m.analysis === "heat" || p.m.analysis === "solid"}><NumField label={p.m.analysis === "solid" ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
+    <Show when={p.m.analysis === "solid"}><Row label="Solid"><Choice v={p.m.revolve ? "revolve" : "extrude"} set={v => settings({ revolve: v === "revolve" ? Math.PI * 2 : 0 })} opts={[["extrude", "Extruded along z"], ["revolve", "Revolved about the y axis"]]} /></Row>
+      <Show when={p.m.revolve}><div class="iprow"><label>Turned through<span class="unit">°</span></label><input class="mono" value={num((p.m.revolve ?? 0) * 180 / Math.PI, 6)} onChange={numIn(v => v > 0 && v <= 360 && settings({ revolve: v * Math.PI / 180 }), () => num((p.m.revolve ?? 0) * 180 / Math.PI, 6))} /><span class="hint">360° for the whole part; less for a sector, with symmetry on its two cut faces (the back and front faces). The section is drawn right of the y axis (x is the radius).</span></div></Show></Show>
+    <Show when={p.m.analysis === "stress" || p.m.analysis === "heat" || (p.m.analysis === "solid" && !p.m.revolve)}><NumField label={p.m.analysis === "solid" ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
     <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
     <Show when={!isFrame(p.m.analysis)}>
       <h4>Mesh<Help k="mesh" /></h4>
       <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part, finer for thin parts)." />
       <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>
-      <Show when={p.m.analysis === "solid"}><div class="iprow"><label>Layers through the thickness</label><input class="mono" value={p.m.mesh.layers || "auto"} onChange={numIn(v => v >= 0 && v <= 40 && Number.isInteger(v) && settings({ mesh: { ...p.m.mesh, layers: v } }), () => p.m.mesh.layers || "auto")} /><span class="hint">0 = automatic (about one element size each). The 2D mesh is swept through the thickness in layers of wedges.</span></div></Show>
+      <Show when={p.m.analysis === "solid"}><div class="iprow"><label>Layers {p.m.revolve ? "round the turn" : "through the thickness"}</label><input class="mono" value={p.m.mesh.layers || "auto"} onChange={numIn(v => v >= 0 && v <= 128 && Number.isInteger(v) && settings({ mesh: { ...p.m.mesh, layers: v } }), () => p.m.mesh.layers || "auto")} /><span class="hint">0 = automatic (about one element size each{p.m.revolve ? ", at most 22.5° each" : ""}). The 2D mesh is swept {p.m.revolve ? "round the turn" : "through the thickness"} in layers of wedges.</span></div></Show>
       <div class="iprow"><label>Smallest angle<span class="unit">°</span></label><input class="mono" value={p.m.mesh.min_angle} onChange={numIn(v => v >= 5 && v <= 33 && settings({ mesh: { ...p.m.mesh, min_angle: v } }), () => p.m.mesh.min_angle)} /><span class="hint">5° to 33°; 25° is a good balance.</span></div>
     </Show>
     <Row label="Notes"><textarea rows="4" value={p.m.notes} onChange={e => act({ SetMeta: { name: p.m.name, notes: e.currentTarget.value } })} /></Row>

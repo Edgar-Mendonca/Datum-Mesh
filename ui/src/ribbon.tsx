@@ -173,7 +173,7 @@ export const Ribbon = () => {
       <Show when={tab() === "loads"}>
         <Show when={!heat()}>
           <G l="Supports" h="supports"><T big i="fixed" l="Fixed" t="sup:fixed" /><T big i="pinned" l="Pinned" t="sup:pinned" />
-            <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /></>}><T i="roller" l="Roller (along x)" t="sup:rollerx" /><T i="roller" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
+            <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /><Show when={solid3()}><T i="roller" l="Hold Directions" t="sup:hold" title="Hold only chosen directions (x, y, z) of a face; set them in the Inspector, or make it a line along the face" /></Show></>}><T i="roller" l="Roller (along x)" t="sup:rollerx" /><T i="roller" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
           <G l="Loads" h="loads"><T big i="force" l="Force" t="load:force" />
             <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><Show when={m()?.analysis !== "axi" && !solid3()}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
               <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /></S></Show></G>

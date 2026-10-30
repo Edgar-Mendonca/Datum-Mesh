@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.2 — 2026-10-30
+
+Revolved 3D solids, a cutting plane through the results, and faces picked in 3D.
+
+**Revolved solids**
+- A 3D solid can now be **revolved** about the y axis instead of extruded (Inspector, with nothing selected): shafts, hubs, discs and vessels from their half-section, drawn right of the axis.
+- Turn it a full 360°, or a sector (90°, say) with symmetry on its two cut faces, which are then the back and front faces. The section can reach the axis: the part is solid through its middle.
+- New example: the pressure vessel revolved a quarter turn.
+
+**Supports**
+- **Held directions**: hold only x, y or z of a face (Loads › Hold Directions, or a support's Inspector).
+- A support can be a **line along a face** at any fraction of the way through (Inspector › Where), as NAFEMS LE10 asks for.
+
+**3D view**
+- **Click a face** in the 3D view to put the support or load picked on it: a side face, or the back or front face.
+- **Cutting plane**: once solved, cut across x, y or z (under the view) and slide the plane through the part; the inside is coloured by the result shown.
+
+**Trust**
+- Help › Verification: 105 checks, all passing. New: benchmark 17, a closed-end thick cylinder revolved a quarter turn and a full turn against Lamé (hoop stress 0.2 %, axial 0.7 %, bore movement 0.007 %), a round bar through the axis squeezed end to end (exact to 1 part in 10¹³), and **NAFEMS LE10**, the thick plate under pressure (σyy at D within 1.4 % of −5.38 MPa).
+- Random 3D solids now include revolved ones (some through the axis, some a full turn), held directions and line supports: all 60 solve with their reactions balancing the loads, or say why they cannot.
+
 ## 0.3.1 — 2026-10-30
 
 Sketch tools: shape a part's section with rounds, bevels, cut-outs and patterns before it is solved.

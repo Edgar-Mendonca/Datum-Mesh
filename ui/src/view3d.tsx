@@ -16,7 +16,7 @@ import { defaultLoad, defaultSupport } from "./panels";
 import { fmt, unit } from "./units";
 import { setPlane, fit3d } from "./plane3";
 import { C } from "./cmds";
-import { P3, at3, span3, dlen, deform3, vals, q3, range3 } from "./space3";
+import { P3, at3, span3, dlen, deform3, vals, q3, range3, cut } from "./space3";
 import { modeAmp } from "./modes";
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
@@ -73,10 +73,14 @@ export const View3D = () => {
   const buildSolid = (m: Model) => {
     const ink = css("--text"), green = css("--green"), load = css("--blue2"), accent = css("--blue");
     scene.background = new THREE.Color(css("--bg2"));
-    const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4);
+    const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4), rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
     const bounds = m.shapes.flatMap(s => outline(s.geom, tol));
-    const size = Math.max(t, ...(bounds.length ? [Math.max(...bounds.map(p => p[0])) - Math.min(...bounds.map(p => p[0])), Math.max(...bounds.map(p => p[1])) - Math.min(...bounds.map(p => p[1]))] : [1e-3]));
+    const size = Math.max(rev ? 0 : t, ...(bounds.length ? [Math.max(...bounds.map(p => p[0])) - Math.min(...bounds.map(p => p[0])), Math.max(...bounds.map(p => p[1])) - Math.min(...bounds.map(p => p[1]))] : [1e-3]));
     world.add(new THREE.AxesHelper(size * 0.2));
+    renderer.localClippingEnabled = false;
+    /** A section point a fraction f of the way along the sweep, in 3D. */
+    const sweep = (p: number[], f: number): P3 => rev ? [p[0] * Math.cos(rev * f), p[1], p[0] * Math.sin(rev * f)] : [p[0], p[1], t * f];
+    const loop = (pts: number[], ps: number[][], f: number) => { for (let i = 0; i + 1 < ps.length; i++) pts.push(...sweep(ps[i], f), ...sweep(ps[i + 1], f)); };
     const r = solidRes();
     if (r && r.surface.nodes.length) {
       const fd = curField(), fld = r.fields.find(f => f.key === fd.key) ?? r.fields[0];
@@ -95,36 +99,81 @@ export const View3D = () => {
       g.setAttribute("color", new THREE.BufferAttribute(col, 3));
       g.setIndex(r.surface.tris.flat());
       g.computeVertexNormals();
-      world.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
-      if (show().mesh) world.add(new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: new THREE.Color(ink), transparent: true, opacity: 0.18 })));
+      // The cutting plane (0.3.2): the part beyond it hidden, the inside drawn on the plane.
+      const ct = cut(), vol = r.volume, ax = { x: 0, y: 1, z: 2, off: -1 }[ct.axis];
+      let clip: THREE.Plane[] = [];
+      if (vol && ax >= 0) {
+        const fi = r.fields.indexOf(fld), q = vol.nodes.map((p, i) => [p[0] + vol.disp[i][0] * solidF, p[1] + vol.disp[i][1] * solidF, p[2] + vol.disp[i][2] * solidF]);
+        let lo = Infinity, hi = -Infinity;
+        for (const p of q) { lo = Math.min(lo, p[ax]); hi = Math.max(hi, p[ax]); }
+        const c = lo + (hi - lo) * Math.min(0.999, Math.max(0.001, ct.at)), nrm = new THREE.Vector3(); nrm.setComponent(ax, -1);
+        clip = [new THREE.Plane(nrm, c)];
+        renderer.localClippingEnabled = true;
+        const vs = vol.v[fi] ?? [], cp: number[] = [], cc: number[] = [];
+        const colour = (v: number) => cs[Math.max(0, Math.min(BANDS - 1, Math.floor((v - rg[0]) / ((rg[1] - rg[0]) || 1) * BANDS)))];
+        const put = (i: number, j: number) => { const a = q[i][ax] - c, b = q[j][ax] - c, s2 = a / (a - b); for (let k = 0; k < 3; k++) cp.push(q[i][k] + (q[j][k] - q[i][k]) * s2); const col = colour(vs[i] + (vs[j] - vs[i]) * s2); cc.push(col.r, col.g, col.b); };
+        for (const tt of vol.tets) {
+          const up = tt.filter(i => q[i][ax] > c), dn = tt.filter(i => q[i][ax] <= c);
+          if (up.length === 0 || dn.length === 0) continue;
+          if (up.length === 2) { put(up[0], dn[0]); put(up[0], dn[1]); put(up[1], dn[1]); put(up[0], dn[0]); put(up[1], dn[1]); put(up[1], dn[0]); }
+          else { const [one, rest] = up.length === 1 ? [up[0], dn] : [dn[0], up]; for (const k of rest) put(one, k); }
+        }
+        if (cp.length) {
+          const cg = new THREE.BufferGeometry();
+          cg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(cp), 3));
+          cg.setAttribute("color", new THREE.BufferAttribute(new Float32Array(cc), 3));
+          world.add(new THREE.Mesh(cg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+        }
+      }
+      const surf = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, clippingPlanes: clip }));
+      surf.userData.pick = true;
+      world.add(surf);
+      if (show().mesh) world.add(new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: new THREE.Color(ink), transparent: true, opacity: 0.18, clippingPlanes: clip })));
       const pts: number[] = [];
       for (const [a, b] of r.surface.lines) pts.push(pos[3 * a], pos[3 * a + 1], pos[3 * a + 2], pos[3 * b], pos[3 * b + 1], pos[3 * b + 2]);
-      if (pts.length) fat(pts, null, ink, 1.5);
-    } else if (m.shapes.some(s => !s.hole) && t > 0) {
-      // The part as it will be: each solid shape with the holes inside it, extruded.
+      if (pts.length) { const l = fat(pts, null, ink, 1.5), lm = l.material as LineMaterial; lm.clippingPlanes = clip; lm.clipping = clip.length > 0; }
+    } else if (m.shapes.some(s => !s.hole) && (t > 0 || rev > 0)) {
+      // The part as it will be: each solid shape with the holes inside it, extruded or revolved.
       const holes = m.shapes.filter(s => s.hole).map(s => outline(s.geom, tol));
+      const sky = () => new THREE.MeshLambertMaterial({ color: new THREE.Color(css("--sky")), side: THREE.DoubleSide });
+      const part = (g: THREE.BufferGeometry) => { const o = new THREE.Mesh(g, sky()); o.userData.pick = true; world.add(o); return o; };
       for (const s of m.shapes.filter(x => !x.hole)) {
         const o = outline(s.geom, tol), sh = new THREE.Shape(o.map(p => new THREE.Vector2(p[0], p[1])));
-        for (const h of holes) if (h.length && inside(o, h[0])) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
-        const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 24 });
-        world.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(css("--sky")), side: THREE.DoubleSide })));
-        world.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: new THREE.Color(ink) })));
+        const inner = holes.filter(h => h.length && inside(o, h[0]));
+        for (const h of inner) sh.holes.push(new THREE.Path(h.map(p => new THREE.Vector2(p[0], p[1]))));
+        if (!rev) {
+          const g = new THREE.ExtrudeGeometry(sh, { depth: t, bevelEnabled: false, curveSegments: 24 });
+          part(g);
+          world.add(new THREE.LineSegments(new THREE.EdgesGeometry(g, 25), new THREE.LineBasicMaterial({ color: new THREE.Color(ink) })));
+          continue;
+        }
+        // Revolved: each outline (and hole) turned about y, and the section at both cut faces.
+        const segs = Math.max(4, Math.ceil(rev / (Math.PI / 48)));
+        for (const ring of [o, ...inner]) part(new THREE.LatheGeometry([...ring, ring[0]].map(p => new THREE.Vector2(Math.max(0, p[0]), p[1])), segs, Math.PI / 2 - rev, rev));
+        if (!full) for (const a of [0, rev]) { const cap = part(new THREE.ShapeGeometry(sh, 24)); cap.rotation.y = -a; }
       }
+      const pts: number[] = [];
+      for (const s of m.shapes) for (const f of full ? [0, 0.5] : [0, 1]) loop(pts, [...outline(s.geom, tol), outline(s.geom, tol)[0]], f);
+      if (pts.length) fat(pts, null, ink, 1.2);
     }
     // Supported and loaded faces outlined: green for supports, crimson for loads.
     const selSet = new Set(sel());
     const faceLines = (at: Target, colour: string) => {
       const pts: number[] = [];
-      const loop = (ps: [number, number][], z: number) => { for (let i = 0; i + 1 < ps.length; i++) pts.push(ps[i][0], ps[i][1], z, ps[i + 1][0], ps[i + 1][1], z); };
-      if (at.on === "edge") {
+      if (at.on === "edge" || at.on === "line") {
         const s = m.shapes.find(x => x.id === at.shape); if (!s) return;
         const ps = edgePts(s.geom, at.edge, tol) as [number, number][];
-        loop(ps, 0); loop(ps, t);
-        for (const p of [ps[0], ps[ps.length - 1]]) pts.push(p[0], p[1], 0, p[0], p[1], t);
+        if (at.on === "line") loop(pts, ps, at.at);
+        else {
+          for (const f of full ? [0] : [0, 1]) loop(pts, ps, f);
+          // The face's ends swept along (straight for an extrusion, round for a turn).
+          const n = rev ? Math.max(2, Math.ceil(rev / (Math.PI / 48))) : 1;
+          for (const p of [ps[0], ps[ps.length - 1]]) for (let i = 0; i < n; i++) pts.push(...sweep(p, i / n), ...sweep(p, (i + 1) / n));
+        }
       } else if (at.on === "end") {
-        for (const s of m.shapes) { const o = outline(s.geom, tol) as [number, number][]; loop([...o, o[0]], at.front ? t : 0); }
+        for (const s of m.shapes) { const o = outline(s.geom, tol) as [number, number][]; loop(pts, [...o, o[0]], at.front ? 1 : 0); }
       }
-      if (pts.length) fat(pts, null, colour, 3.5);
+      if (pts.length) fat(pts, null, colour, at.on === "line" ? 5 : 3.5);
     };
     for (const s of m.supports) faceLines(s.at, selSet.has(s.id) ? accent : green);
     for (const l of m.loads) faceLines(l.at, selSet.has(l.id) ? accent : load);
@@ -231,7 +280,10 @@ export const View3D = () => {
     const m = model(); if (!m) return;
     const box = new THREE.Box3(); m.nodes.forEach(n => box.expandByPoint(new THREE.Vector3(n.x, n.y, n.z ?? 0)));
     // A solid: its outline at both ends of the extrusion.
-    if (m.analysis === "solid") for (const s of m.shapes) for (const p of outline(s.geom, Infinity)) for (const z of [0, m.thickness]) box.expandByPoint(new THREE.Vector3(p[0], p[1], z));
+    if (m.analysis === "solid") for (const s of m.shapes) for (const p of outline(s.geom, m.revolve ? 1e-3 : Infinity)) {
+      if (m.revolve) for (let i = 0; i <= 16; i++) { const a = m.revolve * i / 16; box.expandByPoint(new THREE.Vector3(p[0] * Math.cos(a), p[1], p[0] * Math.sin(a))); }
+      else for (const z of [0, m.thickness]) box.expandByPoint(new THREE.Vector3(p[0], p[1], z));
+    }
     if (box.isEmpty()) return;
     const c = box.getCenter(new THREE.Vector3()), rad = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
     const dir = from ? new THREE.Vector3(...from).normalize() : keepDir && controls ? camera.position.clone().sub(controls.target).normalize() : new THREE.Vector3(1, 0.75, 1.3).normalize();
@@ -285,8 +337,13 @@ export const View3D = () => {
     if (moved) return;
     const rc = host.getBoundingClientRect(), t = tool();
     if (model()?.analysis === "solid") {
-      if (t === "select") setSel([]);
-      else toast("Put it on a face: an edge in Section (its side face), or the back or front face with the buttons above.");
+      if (t === "select") { setSel([]); return; }
+      const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
+      const ok = (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction"].includes(t);
+      if (!at || !ok) { toast(ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
+      const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(at.on === "end" && t === "sup:pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
+      const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
+      if (o?.created.length) setSel(o.created);
       return;
     }
     const h = pick(e.clientX - rc.left, e.clientY - rc.top);
@@ -307,6 +364,29 @@ export const View3D = () => {
     // Drawing tools draw on a plane.
     setPlane("xy");
     toast("Members are drawn on a plane: Front (x-y) is open now; pick Side or Plan above, and the depth.", true);
+  };
+  /** The face of a solid under the pointer (0.3.2): the back or front face, or the side face of the
+   * section edge nearest the point hit. */
+  const pickFace = (x: number, y: number): Target | null => {
+    const m = model(); if (!m) return null;
+    const [w, h] = size(), ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
+    const hit = ray.intersectObjects(world.children.filter(o => o.userData.pick), false)[0]; if (!hit) return null;
+    const p = hit.point, rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
+    const u = rev ? Math.hypot(p.x, p.z) : p.x, v = p.y;
+    const tol = Math.max(1e-6, (m.grid || 0.005) / 4);
+    const span = Math.max(1e-6, ...m.shapes.flatMap(s => outline(s.geom, Infinity).map(q => Math.hypot(q[0], q[1]))));
+    // How far the hit is from each end face.
+    const th = rev ? ((Math.atan2(p.z, p.x) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) : 0;
+    const ends = full ? [Infinity, Infinity] : rev ? [u * Math.sin(Math.min(th, Math.PI / 2)), u * Math.abs(Math.sin(Math.min(Math.abs(rev - th), Math.PI / 2)))] : [Math.abs(p.z), Math.abs(p.z - m.thickness)];
+    let best: Target | null = null, bd = Infinity;
+    for (const s of m.shapes) for (let e = 0; e < (s.geom.kind === "circle" ? 1 : s.geom.pts.length); e++) {
+      const ps = edgePts(s.geom, e, tol);
+      for (let i = 0; i + 1 < ps.length; i++) { const [d] = segDist([u, v], ps[i] as [number, number], ps[i + 1] as [number, number]); if (d < bd) { bd = d; best = { on: "edge", shape: s.id, edge: e }; } }
+    }
+    const k = ends[0] < ends[1] ? 0 : 1;
+    if (ends[k] < Math.min(bd, span * 0.02)) return { on: "end", front: k === 1 };
+    return best;
   };
   // The probe on a solid: the surface node nearest the pointer.
   const [probe3, setProbe3] = createSignal<{ i: number } | null>(null);
@@ -337,6 +417,8 @@ export const View3D = () => {
     });
     ro.observe(host);
     fit3d.run = () => fit(true);
+    // For the UI checks: where a 3D point is on the screen.
+    (window as any).__screen3 = screen;
     fit();
     onCleanup(() => { ro.disconnect(); controls?.dispose(); clear(); renderer.dispose(); renderer.domElement.remove(); if (frame) cancelAnimationFrame(frame); fit3d.run = null; });
   });

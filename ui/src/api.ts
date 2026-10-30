@@ -21,10 +21,10 @@ export interface Section { id: number; name: string; shape: SectionShape }
 export interface Material { id: number; name: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
 export type Geom = { kind: "poly"; pts: Pt[]; bulge: number[] } | { kind: "circle"; c: Pt; r: number };
 export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom }
-export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean };
+export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number };
 export type SupportKind =
   | { kind: "fixed" } | { kind: "pinned" } | { kind: "rollerx" } | { kind: "rollery" } | { kind: "roller" } | { kind: "symmetry" }
-  | { kind: "spring"; kx: number; ky: number; kr: number; kz?: number; krx?: number; kry?: number } | { kind: "temperature"; t: number };
+  | { kind: "spring"; kx: number; ky: number; kr: number; kz?: number; krx?: number; kry?: number } | { kind: "temperature"; t: number } | { kind: "hold"; x: boolean; y: boolean; z: boolean };
 export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number; fz?: number } | { kind: "moment"; m: number; mx?: number; my?: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "z" | "local" }
@@ -33,7 +33,7 @@ export type LoadKind =
 export interface Load { id: number; at: Target; kind: LoadKind }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number;
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number;
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }
@@ -93,6 +93,8 @@ export interface SolidResults {
   kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[];
   reactions: { support: number; f: P3 }[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[];
   elements: number; nodes: number; layers: number; order: number; size: number; quality: Quality;
+  /** Every node, its movement and field values (in the order of `fields`), and tetrahedra: for the cutting plane. */
+  volume?: { nodes: P3[]; disp: P3[]; tets: [number, number, number, number][]; v: number[][] };
 }
 export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults | SolidResults;
 export type PartResults = PlaneResults | HeatResults;

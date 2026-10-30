@@ -27,6 +27,7 @@ pub fn list() -> Vec<Example> {
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
+        e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
@@ -220,6 +221,23 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             let q = (std::f64::consts::FRAC_PI_8).tan();
             let s = d.apply(shape(poly(&[[100.0, 0.0], [110.0, 0.0], [110.0, 200.0], [0.0, 310.0], [0.0, 300.0], [100.0, 200.0]], &[(2, q), (4, -q)]), false))?[0];
             d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Symmetry), load(edge(s, 4), LoadKind::Pressure { p: 2e6 }), load(edge(s, 5), LoadKind::Pressure { p: 2e6 })]))?;
+        }
+        "vessel3d" => {
+            d.m.notes = "The steel pressure vessel as a 3D solid: the half-section (inside radius 100 mm, wall 10 mm, a hemispherical head) revolved a quarter turn about the y axis, with symmetry on the two cut faces and the cut at y = 0; 2 MPa inside. The hoop stress in the cylinder is about pr/t ≈ 21 MPa, in the head about half, as in the axisymmetric example.".into();
+            d.m.grid = 5.0 * mm;
+            d.m.revolve = std::f64::consts::FRAC_PI_2;
+            let q = (std::f64::consts::FRAC_PI_8).tan();
+            let s = d.apply(shape(poly(&[[100.0, 0.0], [110.0, 0.0], [110.0, 200.0], [0.0, 310.0], [0.0, 300.0], [100.0, 200.0]], &[(2, q), (4, -q)]), false))?[0];
+            d.apply(Op::Batch(vec![
+                sup(edge(s, 0), SupportKind::Symmetry),
+                sup(Target::End { front: false }, SupportKind::Symmetry),
+                sup(Target::End { front: true }, SupportKind::Symmetry),
+                load(edge(s, 4), LoadKind::Pressure { p: 2e6 }),
+                load(edge(s, 5), LoadKind::Pressure { p: 2e6 }),
+            ]))?;
+            // 5 mm elements in the section, six quadratic layers (15° each) round the quarter turn.
+            d.m.mesh.size = 5.0 * mm;
+            d.m.mesh.layers = 6;
         }
         "hotplate" => {
             d.m.notes = "A 200 × 60 mm steel plate, 10 mm thick, with a 20 mm hole. The left edge is welded to a cool wall at 20 °C; the right edge is heated to 220 °C. Solve finds the temperatures first, then the stress from the plate's growth held back at the wall and bent round the hole.".into();

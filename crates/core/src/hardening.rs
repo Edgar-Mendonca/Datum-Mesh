@@ -79,7 +79,7 @@ mod tests {
                 n.x = if r.below(4) == 0 { f64::NAN } else { r.f(-3.0, 3.0) };
                 Op::Set { item: Item::Node(n) }
             }
-            _ => Op::SetSettings { s: Settings { analysis: [Analysis::Frame, Analysis::Stress, Analysis::Heat][r.below(3)], units: if r.below(5) == 0 { "x".into() } else { "US".into() }, grid: r.f(-0.1, 1.0), thickness: 0.01, mesh: m.mesh.clone(), t_ref: if r.below(4) == 0 { Some(r.f(250.0, 400.0)) } else { None } } },
+            _ => Op::SetSettings { s: Settings { analysis: [Analysis::Frame, Analysis::Stress, Analysis::Heat][r.below(3)], units: if r.below(5) == 0 { "x".into() } else { "US".into() }, grid: r.f(-0.1, 1.0), thickness: 0.01, mesh: m.mesh.clone(), t_ref: if r.below(4) == 0 { Some(r.f(250.0, 400.0)) } else { None }, revolve: if r.below(4) == 0 { Some(r.f(-1.0, 7.0)) } else { None } } },
         }
     }
 
@@ -305,28 +305,39 @@ mod tests {
 
     #[test]
     fn random_solids_solve_or_say_why_and_balance() {
-        // Random extruded parts: a plate or a disc with holes, any thickness, linear or quadratic,
-        // supports and loads on edges and on the end faces, gravity. Solving never panics; when it
+        // Random extruded and revolved parts (0.3.2: a third revolved, some touching the axis,
+        // some a full turn): a plate or a disc with holes, any thickness, linear or quadratic,
+        // supports (held directions and lines too) and loads on edges and on the end faces, gravity. Solving never panics; when it
         // answers, loads and reactions balance in all six sums and the surface is well formed.
         let mut solved = 0;
-        for seed in 1..=40u64 {
+        for seed in 1..=60u64 {
             let mut r = Rng(seed.wrapping_mul(0x2545_F491_4F6C_DD1D) ^ 0x50_11D);
             let mut d = Doc::new(Model::new(Analysis::Solid));
             let (w, h) = (r.f(0.05, 1.0), r.f(0.05, 1.0));
-            let base = if r.below(3) == 0 { Geom::Circle { c: [0.0, 0.0], r: w / 2.0 } } else { Geom::rect(-w / 2.0, -h / 2.0, w / 2.0, h / 2.0) };
+            let rev = r.below(3) == 0;
+            // A revolved section sits right of the axis, on it or a little way off.
+            let x0 = if rev { if r.below(2) == 0 { w / 2.0 } else { w / 2.0 + r.f(0.0, 0.3) } } else { 0.0 };
+            let base = if r.below(3) == 0 { Geom::Circle { c: [x0 + if rev { 0.001 } else { 0.0 }, 0.0], r: w / 2.0 } } else { Geom::rect(x0 - w / 2.0, -h / 2.0, x0 + w / 2.0, h / 2.0) };
             let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: base, ..Shape::default() }) }).unwrap()[0];
             for _ in 0..r.below(3) {
-                let c = [r.f(-w / 3.0, w / 3.0), r.f(-h / 3.0, h / 3.0)];
+                let c = [x0 + r.f(-w / 3.0, w / 3.0), r.f(-h / 3.0, h / 3.0)];
                 let _ = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c, r: r.f(0.002, w.min(h) / 5.0) }, ..Shape::default() }) });
             }
             d.m.thickness = r.f(0.005, 0.3);
+            if rev {
+                d.m.revolve = [std::f64::consts::FRAC_PI_2, std::f64::consts::PI, std::f64::consts::TAU, r.f(0.2, 6.2)][r.below(4)];
+                d.m.mesh.layers = 2 + r.below(10) as u32;
+            }
             d.m.mesh.order = if r.below(4) == 0 { 1 } else { 2 };
             d.m.mesh.size = w.max(h).max(d.m.thickness) / r.f(3.0, 6.0);
             let edges = d.m.shape(s).unwrap().geom.edges();
             let target = |r: &mut Rng| if r.below(3) == 0 { Target::End { front: r.below(2) == 0 } } else { Target::Edge { shape: s, edge: r.below(edges) as u32 } };
             for _ in 0..1 + r.below(3) {
-                let at = target(&mut r);
-                let kind = [SupportKind::Fixed, SupportKind::Fixed, SupportKind::Roller, SupportKind::Symmetry, SupportKind::Pinned][r.below(5)].clone();
+                let mut at = target(&mut r);
+                if let (Target::Edge { shape, edge }, 0) = (&at, r.below(4)) {
+                    at = Target::Line { shape: *shape, edge: *edge, at: r.f(0.0, 1.0) };
+                }
+                let kind = [SupportKind::Fixed, SupportKind::Fixed, SupportKind::Roller, SupportKind::Symmetry, SupportKind::Pinned, SupportKind::Hold { x: r.below(2) == 0, y: r.below(2) == 0, z: true }][r.below(6)].clone();
                 let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at, kind }) });
             }
             for _ in 0..1 + r.below(3) {
@@ -347,8 +358,10 @@ mod tests {
             assert!(res.imbalance < 1e-6 || barely, "seed {seed}: imbalance {:e} {:?} {:?}", res.imbalance, res.applied, res.reacted);
             assert!(res.surface.tris.iter().flatten().all(|&i| (i as usize) < res.surface.nodes.len()), "seed {seed}");
             assert!(res.fields.iter().all(|f| f.v.len() == res.surface.nodes.len() && f.v.iter().all(|v| v.is_finite())), "seed {seed}");
+            let vol = &res.volume;
+            assert!(vol.tets.iter().flatten().all(|&i| (i as usize) < vol.nodes.len()) && vol.v.iter().all(|f| f.len() == vol.nodes.len() && f.iter().all(|v| v.is_finite())), "seed {seed}: volume");
         }
-        assert!(solved >= 20, "only {solved} random solids solved");
+        assert!(solved >= 30, "only {solved} random solids solved");
     }
 
     #[test]

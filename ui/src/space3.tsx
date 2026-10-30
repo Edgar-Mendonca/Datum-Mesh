@@ -72,13 +72,14 @@ export const PlaneBar = () => {
     const o = await act({ Add: { item: { [kind]: { id: 0, at: { on: "end", front }, kind: val } } } });
     if (o?.created.length) setSel(o.created);
   };
+  const full = () => (model()?.revolve ?? 0) >= Math.PI * 2 - 1e-9;
   const placing = () => (tool().startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(tool())) || ["load:pressure", "load:traction"].includes(tool());
   return (<>
     <Show when={solid()}>
       <div class="planebar">
         <span class="seg"><button classList={{ on: plane() === "3d" }} title="The solid in 3D: turn it with the left button, pan with the right, zoom with the wheel" onClick={() => { setPlane("3d"); }}>3D</button><button classList={{ on: plane() !== "3d" }} title="The part's section (x-y), drawn and edited as a plane part; it is extruded along z by the thickness" onClick={() => setPlane("xy")}>Section</button></span>
-        <span class="muted">extruded {fmt("len", model()?.thickness ?? 0)} along z</span>
-        <Show when={placing()}><span class="grow" /><span class="muted">Put it on</span><button class="btn sm" onClick={() => onEnd(false)} title="The face at z = 0">the back face</button><button class="btn sm" onClick={() => onEnd(true)} title="The face at z = thickness">the front face</button><span class="muted">or click an edge in Section (its side face)</span></Show>
+        <span class="muted">{model()?.revolve ? `revolved ${num(model()!.revolve! * 180 / Math.PI, 4)}° about the y axis` : `extruded ${fmt("len", model()?.thickness ?? 0)} along z`}</span>
+        <Show when={placing()}><span class="grow" /><span class="muted">Click a face in 3D, or put it on</span><Show when={!full()}><button class="btn sm" onClick={() => onEnd(false)} title={model()?.revolve ? "The cut face where the turn starts" : "The face at z = 0"}>the back face</button><button class="btn sm" onClick={() => onEnd(true)} title={model()?.revolve ? "The cut face where the turn ends" : "The face at z = thickness"}>the front face</button></Show><span class="muted">or an edge in Section</span></Show>
       </div>
     </Show>
     <Show when={space()}>
@@ -95,8 +96,13 @@ export const PlaneBar = () => {
   </>);
 };
 
+/** The cutting plane through a solved solid (0.3.2): across x, y or z, a fraction of the way
+ * across the part; "off" shows the whole part. */
+export type CutAxis = "off" | "x" | "y" | "z";
+export const [cut, setCut] = createSignal<{ axis: CutAxis; at: number }>({ axis: "off", at: 0.5 });
+
 /** Under the 3D view of a solved 3D solid: the result shown and its colours, the deformed shape,
- * the equilibrium check. */
+ * the cutting plane, the equilibrium check. */
 export const SolidLegend = () => {
   const r = () => solidRes(), fd = () => curField();
   const fld = () => r()?.fields.find(f => f.key === fd().key);
@@ -111,6 +117,8 @@ export const SolidLegend = () => {
         <ColourBar d={fd()} range={fld() ? rangeOf(fd(), fld()!.v) : null} colours={cols()} />
         <div><b>Deformed shape</b><span>{show().deformed && dmax() > 0 ? <>largest {fmt("len", r()!.fields.find(f => f.key === "umag")!.max)}</> : "off"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
+        <Show when={r()!.volume}><div><b>Cut</b><span class="seg">{(["off", "x", "y", "z"] as CutAxis[]).map(a => <button classList={{ on: cut().axis === a }} title={a === "off" ? "The whole part" : `Cut across ${a}: the part beyond the plane is hidden and the inside shown`} onClick={() => setCut({ ...cut(), axis: a })}>{a === "off" ? "Off" : a}</button>)}</span>
+          <Show when={cut().axis !== "off"}><input type="range" min="0" max="1" step="0.01" value={cut().at} onInput={e => setCut({ ...cut(), at: +e.currentTarget.value })} title="Where the plane cuts, across the part" /></Show></div></Show>
         <div><b>Mesh</b><span>{r()!.elements.toLocaleString()} {r()!.order === 2 ? "18-node" : "6-node"} wedges, {r()!.layers} {r()!.layers === 1 ? "layer" : "layers"}</span></div>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
       </div>

@@ -460,7 +460,7 @@ export const Canvas = () => {
   const edgePath = (e: { shape: number; edge: number }) => { const s = m()?.shapes.find(x => x.id === e.shape); if (!s) return ""; return edgePts(s.geom, e.edge, 3 / scale()).map((p, i) => `${i ? "L" : "M"}${S(p).join(" ")}`).join(""); };
   const memberEnds = (mb: Member): [Pt, Pt] | null => { const a = np().get(mb.a), b = np().get(mb.b); return a && b ? [S(a), S(b)] : null; };
   const supportsAtNodes = () => (m()?.supports ?? []).filter(s => s.at.on === "node" || s.at.on === "point");
-  const supportsOnEdges = () => (m()?.supports ?? []).filter(s => s.at.on === "edge");
+  const supportsOnEdges = () => (m()?.supports ?? []).filter(s => s.at.on === "edge" || s.at.on === "line");
   const supAt = (s: Support): Pt | null => s.at.on === "node" ? (np().get(s.at.id) ?? null) : s.at.on === "point" ? [s.at.x, s.at.y] : null;
   const gravity = () => (m()?.loads ?? []).filter(l => l.kind.kind === "gravity" || l.kind.kind === "heat" || l.kind.kind === "warming");
   const labels = createMemo(() => (m() ? labelled(m()!) : new Set<number>()));

@@ -807,6 +807,101 @@ fn solids() -> Vec<Check> {
     out
 }
 
+/// Benchmark 17 (0.3.2): revolved 3D solids against Lamé and statics, and NAFEMS LE10.
+fn revolved() -> Vec<Check> {
+    use std::f64::consts::{FRAC_PI_2, TAU};
+    let mut out = vec![];
+    let e = 200e9;
+    let face = |d: &mut Doc, front: bool, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at: Target::End { front }, kind })); };
+    let line = |d: &mut Doc, shape: u32, edge: u32, at: f64, h: [bool; 3]| { add_id(d, Item::Support(Support { id: 0, at: Target::Line { shape, edge, at }, kind: SupportKind::Hold { x: h[0], y: h[1], z: h[2] } })); };
+    // A closed-end thick cylinder: the wall's section revolved, a slice of it held on its lower
+    // face and pulled on its upper by the end cap's load. Lamé, with the uniform axial stress of
+    // closed ends.
+    let (a, b, h, p, nu) = (0.1, 0.2, 0.05, 100e6, 0.3);
+    let k = a * a / (b * b - a * a);
+    let (hoop, axial) = (p * k * (1.0 + b * b / (a * a)), p * k);
+    let bore = a / e * (hoop - nu * (-p + axial));
+    let src = "Lamé thick-cylinder equations, closed ends";
+    for (name, turn) in [("Closed-end thick cylinder, revolved a quarter turn", FRAC_PI_2), ("Closed-end thick cylinder, revolved a full turn", TAU)] {
+        let (mut d, ids) = part(Analysis::Solid, e, nu, vec![(Geom::rect(a, 0.0, b, h), false)]);
+        let s = ids[0];
+        d.m.revolve = turn;
+        edge_support(&mut d, s, 0, SupportKind::Symmetry);
+        if turn < TAU {
+            face(&mut d, false, SupportKind::Symmetry);
+            face(&mut d, true, SupportKind::Symmetry);
+        } else {
+            // Round a full turn nothing stops it turning or sliding sideways: hold the movement
+            // round the turn on two lines a quarter turn apart (zero in the exact answer).
+            line(&mut d, s, 0, 0.0, [false, false, true]);
+            line(&mut d, s, 0, 0.25, [true, false, false]);
+        }
+        edge_load(&mut d, s, 3, LoadKind::Pressure { p });
+        edge_load(&mut d, s, 2, LoadKind::Traction { fx: 0.0, fy: axial, total: false, fz: 0.0 });
+        d.m.mesh.size = 0.0125;
+        d.m.mesh.layers = if turn < TAU { 6 } else { 16 };
+        let r = crate::solid::solve(&d.m).expect("revolved solid");
+        out.push(check(17, name, "Hoop stress at the bore p(b²+a²)/(b²−a²)", "stress", hoop, at_solid(&r, "sz", [a, h / 2.0, 0.0]), 1e-2, src));
+        out.push(check(17, name, "Axial stress pa²/(b²−a²)", "stress", axial, at_solid(&r, "sy", [a, h / 2.0, 0.0]), 1e-2, src));
+        out.push(check(17, name, "Bore radial movement", "len", bore, at_solid(&r, "ux", [a, h / 2.0, 0.0]), 1e-3, src));
+    }
+    // A round bar through the axis squeezed end to end: uniform stress, and the sides bulge by
+    // ν p R / E.
+    let (rr, l, p) = (0.05, 0.2, 50e6);
+    let (mut d, ids) = part(Analysis::Solid, e, nu, vec![(Geom::rect(0.0, 0.0, rr, l), false)]);
+    let s = ids[0];
+    d.m.revolve = TAU;
+    edge_support(&mut d, s, 0, SupportKind::Symmetry);
+    line(&mut d, s, 0, 0.0, [false, false, true]);
+    line(&mut d, s, 0, 0.25, [true, false, false]);
+    edge_load(&mut d, s, 2, LoadKind::Pressure { p });
+    d.m.mesh.size = 0.025;
+    d.m.mesh.layers = 16;
+    let r = crate::solid::solve(&d.m).expect("revolved bar");
+    let name = "Round bar through the axis, squeezed (a full turn)";
+    out.push(check(17, name, "Axial stress −p, everywhere", "stress", -p, r.field("sy").min, 1e-6, "Statics: a uniform stress"));
+    out.push(check(17, name, "Axial stress −p, everywhere", "stress", -p, r.field("sy").max, 1e-6, "Statics: a uniform stress"));
+    out.push(check(17, name, "End movement −pL/E", "len", -p * l / e, at_solid(&r, "uy", [0.0, l, 0.0]), 1e-6, "Hooke's law"));
+    out.push(check(17, name, "Side bulge νpR/E", "len", nu * p * rr / e, at_solid(&r, "ux", [rr, l / 2.0, 0.0]), 1e-6, "Hooke's law"));
+    out.extend(le10());
+    out
+}
+
+/// NAFEMS LE10: a thick plate, a quarter of an elliptic ring 0.6 m thick, under 1 MPa on its top
+/// face; held along x and y on its outer curved face and vertically along that face's middle
+/// line. The target is σyy = −5.38 MPa at D, the inner edge on the x axis, on the top face.
+fn le10() -> Vec<Check> {
+    let (size, near, layers) = (0.2, 0.1, 4);
+    let n = 48;
+    let ell = |ax: f64, ay: f64, t: f64| [ax * t.cos(), ay * t.sin()];
+    let mut pts = vec![[2.0, 0.0]];
+    for i in 0..=n {
+        pts.push(ell(3.25, 2.75, std::f64::consts::FRAC_PI_2 * i as f64 / n as f64));
+    }
+    for i in (1..=n).rev() {
+        pts.push(ell(2.0, 1.0, std::f64::consts::FRAC_PI_2 * i as f64 / n as f64));
+    }
+    let k = pts.len();
+    let (mut d, ids) = part(Analysis::Solid, 210e9, 0.3, vec![(Geom::Poly { pts, bulge: vec![0.0; k] }, false)]);
+    let s = ids[0];
+    d.m.thickness = 0.6;
+    // Edge 0: D–C on y = 0; edges 1–n: the outer ellipse; n + 1: B–A on x = 0; the rest: inner.
+    edge_support(&mut d, s, 0, SupportKind::Symmetry);
+    edge_support(&mut d, s, n as u32 + 1, SupportKind::Symmetry);
+    for e in 1..=n as u32 {
+        add_id(&mut d, Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: e }, kind: SupportKind::Hold { x: true, y: true, z: false } }));
+        add_id(&mut d, Item::Support(Support { id: 0, at: Target::Line { shape: s, edge: e, at: 0.5 }, kind: SupportKind::Hold { x: false, y: false, z: true } }));
+    }
+    add_id(&mut d, Item::Load(Load { id: 0, at: Target::End { front: true }, kind: LoadKind::Pressure { p: 1e6 } }));
+    d.m.mesh.size = size;
+    d.m.mesh.layers = layers;
+    for e in n as u32 + 2..k as u32 {
+        d.m.mesh.refine.push(Refine { at: Target::Edge { shape: s, edge: e }, size: near });
+    }
+    let r = crate::solid::solve(&d.m).expect("LE10");
+    vec![check(17, "NAFEMS LE10: thick plate under pressure", "σyy at D (inner edge, top face)", "stress", -5.38e6, at_solid(&r, "sy", [2.0, 0.0, 0.6]), 2e-2, "NAFEMS LE10 (Linear elastic benchmarks, 1990)")]
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -872,6 +967,7 @@ pub fn run() -> Vec<Check> {
     v.extend(space_dynamics());
     v.extend(solids());
     v.extend(sketch());
+    v.extend(revolved());
     v
 }
 
@@ -889,7 +985,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=16 {
+        for b in 1..=17 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -979,6 +1075,8 @@ pub fn timings() -> Vec<Timing> {
     b3f.thickness = 0.015;
     b3f.mesh.layers = 0;
     time("L-bracket in 3D, 15 deep, fine mesh: mesh and solve", 10_000.0, &mut || crate::solid::solve(&b3f).unwrap().stats.equations);
+    let v3 = crate::examples::get("vessel3d").unwrap();
+    time("Vessel in 3D (revolved) example: mesh and solve", 2000.0, &mut || crate::solid::solve(&v3).unwrap().stats.equations);
     let tall = building(10, 12, 8);
     time("3D building frame, 10 × 8 bays, 12 storeys: solve", 10_000.0, &mut || crate::space::solve(&tall).unwrap().stats.equations);
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);

@@ -32,6 +32,17 @@ pub struct Surface {
     pub lines: Vec<[u32; 2]>,
 }
 
+/// The whole solid for the cutting plane (0.3.2): every node, its displacement and its value of
+/// each field (in the order of `fields`), and the elements cut into tetrahedra on their corner
+/// nodes (quadratic wedges first split into eight), so the window can slice it anywhere.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Volume {
+    pub nodes: Vec<[f64; 3]>,
+    pub disp: Vec<[f64; 3]>,
+    pub tets: Vec<[u32; 4]>,
+    pub v: Vec<Vec<f64>>,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct SolidReaction {
     pub support: u32,
@@ -61,6 +72,7 @@ pub struct SolidResults {
     pub order: u8,
     pub size: f64,
     pub quality: Quality,
+    pub volume: Volume,
 }
 
 impl SolidResults {
@@ -73,12 +85,18 @@ impl SolidResults {
 /// 100 000 take about 6 s and 1.2 GB, docs/verification).
 pub const MAX_UNKNOWNS: usize = 200_000;
 
-/// The swept mesh: 2D nodes repeated on every level through the thickness.
+/// The swept mesh: 2D nodes repeated on every level through the thickness (extruded) or round
+/// the turn (revolved, 0.3.2). A revolved part's nodes on the axis are one node on every level,
+/// and a full turn's last level is its first.
 pub(crate) struct Swept {
     pub ms: Mesh,
     pub order: usize,
     pub levels: usize,
-    pub z: Vec<f64>,
+    /// The solid's node for each 2D node on each level (level × n2 + i).
+    pub map: Vec<usize>,
+    pub pos: Vec<[f64; 3]>,
+    /// The revolve angle (0: extruded).
+    pub revolve: f64,
 }
 
 impl Swept {
@@ -86,14 +104,17 @@ impl Swept {
         self.ms.nodes.len()
     }
     pub fn node(&self, i: usize, level: usize) -> usize {
-        level * self.n2() + i
+        self.map[level * self.n2() + i]
     }
     pub fn at(&self, n: usize) -> [f64; 3] {
-        let (lv, i) = (n / self.n2(), n % self.n2());
-        [self.ms.nodes[i][0], self.ms.nodes[i][1], self.z[lv]]
+        self.pos[n]
     }
     pub fn count(&self) -> usize {
-        self.n2() * self.levels
+        self.pos.len()
+    }
+    /// Does the part have back and front faces (not a full turn)?
+    pub fn has_ends(&self) -> bool {
+        self.revolve < std::f64::consts::TAU - 1e-9
     }
     /// The nodes of the element on triangle `k` in layer `l`: the triangle's nodes on each level
     /// of the layer, bottom first.
@@ -107,17 +128,52 @@ impl Swept {
 pub(crate) fn sweep(m: &Model) -> Result<Swept, String> {
     let ms = mesh::mesh(m)?;
     let order = ms.order as usize;
-    let t = m.thickness;
-    // Layers: about one element size each (quadratic), two per size for linear wedges, which are
-    // stiff in bending; set in the mesh settings to override.
-    let layers = if m.mesh.layers > 0 { m.mesh.layers as usize } else if order == 2 { (t / ms.size).ceil().clamp(1.0, 40.0) as usize } else { (2.0 * t / ms.size).ceil().clamp(2.0, 80.0) as usize };
-    let levels = layers * order + 1;
-    let unknowns = 3 * ms.nodes.len() * levels;
-    if unknowns > MAX_UNKNOWNS {
-        return Err(format!("This 3D mesh would have {} unknowns, more than the {} a desktop solve keeps to (it would need several GB of memory and minutes). Use a larger element size or fewer layers through the thickness (Inspector, with nothing selected, under Mesh).", unknowns, MAX_UNKNOWNS));
+    let (t, rev) = (m.thickness, m.revolve);
+    let rmax = ms.nodes.iter().map(|p| p[0]).fold(0.0, f64::max);
+    if rev > 0.0 {
+        let span = ms.nodes.iter().map(|p| p[0].abs().max(p[1].abs())).fold(0.0, f64::max).max(1e-12);
+        if ms.nodes.iter().any(|p| p[0] < -1e-9 * span) {
+            return Err("A revolved part is drawn right of the y axis (x ≥ 0), its axis of turning; move the section or cut it at the axis.".into());
+        }
     }
-    let z = (0..levels).map(|k| t * k as f64 / (levels - 1) as f64).collect();
-    Ok(Swept { ms, order, levels, z })
+    // Layers: about one element size each (quadratic), two per size for linear wedges, which are
+    // stiff in bending; round a turn, also at most 22.5° each (7.5° for linear) so the curved
+    // faces stay true. Set in the mesh settings to override.
+    let length = if rev > 0.0 { rev * rmax } else { t };
+    let layers = if m.mesh.layers > 0 {
+        m.mesh.layers as usize
+    } else if order == 2 {
+        let by_angle = if rev > 0.0 { (rev / (std::f64::consts::PI / 8.0)).ceil() } else { 1.0 };
+        (length / ms.size).ceil().max(by_angle).clamp(1.0, 64.0) as usize
+    } else {
+        let by_angle = if rev > 0.0 { (rev / (std::f64::consts::PI / 24.0)).ceil() } else { 2.0 };
+        (2.0 * length / ms.size).ceil().max(by_angle).clamp(2.0, 128.0) as usize
+    };
+    let levels = layers * order + 1;
+    let n2 = ms.nodes.len();
+    let full = rev >= std::f64::consts::TAU - 1e-9;
+    let tol = 1e-9 * rmax.max(1e-12);
+    let mut map = vec![0; n2 * levels];
+    let mut pos = vec![];
+    for lv in 0..levels {
+        let f = lv as f64 / (levels - 1) as f64;
+        for (i, p) in ms.nodes.iter().enumerate() {
+            let same = if rev > 0.0 && lv > 0 && (p[0].abs() < tol || (full && lv == levels - 1)) { Some(map[i]) } else { None };
+            map[lv * n2 + i] = match same {
+                Some(n) => n,
+                None => {
+                    let th = rev * f;
+                    pos.push(if rev > 0.0 { [p[0] * th.cos(), p[1], p[0] * th.sin()] } else { [p[0], p[1], t * f] });
+                    pos.len() - 1
+                }
+            };
+        }
+    }
+    let unknowns = 3 * pos.len();
+    if unknowns > MAX_UNKNOWNS {
+        return Err(format!("This 3D mesh would have {} unknowns, more than the {} a desktop solve keeps to (it would need several GB of memory and minutes). Use a larger element size or fewer layers (Inspector, with nothing selected, under Mesh).", unknowns, MAX_UNKNOWNS));
+    }
+    Ok(Swept { ms, order, levels, map, pos, revolve: rev })
 }
 
 /// Shape functions of a 3- or 6-node triangle at (ξ, η) and their derivatives.
@@ -299,22 +355,23 @@ fn face_points(sw: &Swept, f: &Face) -> Vec<([f64; 3], [f64; 3], Vec<(usize, f64
             let lv = if *front { sw.levels - 1 } else { 0 };
             for &(xi, eta, w) in &tri_rule(2) {
                 let (n, d) = tri_n(o, xi, eta);
-                let (mut p, mut a1, mut a2) = ([0.0; 3], [0.0; 2], [0.0; 2]);
+                let (mut p, mut a1, mut a2) = ([0.0; 3], [0.0; 3], [0.0; 3]);
                 let mut nodes = vec![];
                 for (j, &i) in tri.iter().enumerate() {
-                    let x = sw.ms.nodes[i as usize];
-                    p[0] += n[j] * x[0];
-                    p[1] += n[j] * x[1];
-                    a1[0] += d[j][0] * x[0];
-                    a1[1] += d[j][0] * x[1];
-                    a2[0] += d[j][1] * x[0];
-                    a2[1] += d[j][1] * x[1];
-                    nodes.push((sw.node(i as usize, lv), n[j]));
+                    let nd = sw.node(i as usize, lv);
+                    let x = sw.at(nd);
+                    for r in 0..3 {
+                        p[r] += n[j] * x[r];
+                        a1[r] += d[j][0] * x[r];
+                        a2[r] += d[j][1] * x[r];
+                    }
+                    nodes.push((nd, n[j]));
                 }
-                p[2] = sw.z[lv];
-                // Triangles run counter-clockwise: their area element points along +z.
-                let da = (a1[0] * a2[1] - a1[1] * a2[0]) * w;
-                out.push((p, [0.0, 0.0, if *front { da } else { -da }], nodes));
+                // Triangles run counter-clockwise: their area element points along the sweep
+                // (+z, or round the turn), outwards at the front, inwards at the back.
+                let a = [a1[1] * a2[2] - a1[2] * a2[1], a1[2] * a2[0] - a1[0] * a2[2], a1[0] * a2[1] - a1[1] * a2[0]];
+                let sg = if *front { w } else { -w };
+                out.push((p, a.map(|v| v * sg), nodes));
             }
         }
     }
@@ -326,9 +383,19 @@ fn faces<'a>(sw: &'a Swept, at: &Target) -> Vec<Face<'a>> {
     let layers = (sw.levels - 1) / sw.order;
     match at {
         Target::Edge { shape, edge } => sw.ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge).flat_map(|e| (0..layers).map(move |l| Face::Side(e, l))).collect(),
-        Target::End { front } => (0..sw.ms.tris.len()).map(|k| Face::End(k, *front)).collect(),
+        Target::End { front } if sw.has_ends() => (0..sw.ms.tris.len()).map(|k| Face::End(k, *front)).collect(),
         _ => vec![],
     }
+}
+
+/// The nodes of a line on a side face (`Target::Line`): the edge's nodes on the nearest level.
+fn line_nodes(sw: &Swept, at: &Target) -> Vec<usize> {
+    let Target::Line { shape, edge, at } = at else { return vec![] };
+    let lv = (at * (sw.levels - 1) as f64).round() as usize;
+    let mut v: Vec<usize> = sw.ms.edges.iter().filter(|e| e.shape == *shape && e.edge == *edge).flat_map(|e| if sw.order == 2 { vec![e.n[0], e.n[1], e.n[2]] } else { vec![e.n[0], e.n[2]] }).map(|i| sw.node(i as usize, lv.min(sw.levels - 1))).collect();
+    v.sort_unstable();
+    v.dedup();
+    v
 }
 
 /// Solve a 3D solid.
@@ -336,7 +403,7 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("This model is not a 3D solid.".into());
     }
-    if !(m.thickness > 0.0) {
+    if m.revolve == 0.0 && !(m.thickness > 0.0) {
         return Err("A 3D solid needs a thickness to extrude its outline by (Inspector, with nothing selected).".into());
     }
     let sw = sweep(m)?;
@@ -399,7 +466,11 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
                             let v = ke[(3 * i + a) * 3 * nd + 3 * j + b];
                             // Keep the lower triangle of the global matrix whichever way round the
                             // element numbers its nodes.
-                            if r >= c {
+                            if r == c && i != j {
+                                // Two element nodes that are one node of the solid (pinched on a
+                                // revolved part's axis): the pair's block counts both ways round.
+                                sys.add(r, c, 2.0 * v);
+                            } else if r >= c {
                                 sys.add(r, c, v);
                             } else {
                                 sys.add(c, r, v);
@@ -430,6 +501,9 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
                     LoadKind::Traction { fx, fy, fz, total: false } => Some([fx, fy, fz]),
                     _ => None,
                 };
+                if matches!(l.at, Target::End { .. }) && !sw.has_ends() {
+                    warnings.push("A part revolved a full turn has no back or front face; a load on one was left out.".into());
+                }
                 for f in faces(&sw, &l.at) {
                     for (_, nv, nodes) in face_points(&sw, &f) {
                         // Pressure pushes into the part, against the outward normal.
@@ -477,6 +551,16 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
         let mut nodes: Vec<(usize, [bool; 3])> = vec![];
         match (&s.kind, &s.at) {
             (SupportKind::Temperature { .. }, _) => continue,
+            (SupportKind::Fixed | SupportKind::Pinned | SupportKind::Hold { .. }, Target::Line { .. }) => {
+                let h = if let SupportKind::Hold { x, y, z } = s.kind { [x, y, z] } else { [true; 3] };
+                nodes.extend(line_nodes(&sw, &s.at).into_iter().map(|n| (n, h)));
+            }
+            (SupportKind::Hold { x, y, z }, Target::Edge { .. } | Target::End { .. }) => {
+                let mut ns: Vec<usize> = faces(&sw, &s.at).iter().flat_map(|f| face_points(&sw, f)).flat_map(|(_, _, ns)| ns.into_iter().map(|(n, _)| n)).collect();
+                ns.sort_unstable();
+                ns.dedup();
+                nodes.extend(ns.into_iter().map(|n| (n, [*x, *y, *z])));
+            }
             (k @ (SupportKind::Fixed | SupportKind::Pinned | SupportKind::Roller | SupportKind::Symmetry), Target::Edge { .. } | Target::End { .. }) => {
                 let fixed = matches!(k, SupportKind::Fixed | SupportKind::Pinned);
                 // Each face node with the normal averaged over the faces that meet there.
@@ -508,7 +592,10 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
                     }
                 }
             }
-            _ => warnings.push("Supports on 3D solids go on faces (edges or the back and front faces) and are fixed, pinned, roller or symmetry; one was left out.".into()),
+            _ => warnings.push("Supports on 3D solids go on faces (edges or the back and front faces) or lines on them, and are fixed, pinned, roller, symmetry or held directions; one was left out.".into()),
+        }
+        if nodes.is_empty() && !penalties.iter().any(|p| p.0 == s.id) && !matches!(s.kind, SupportKind::Temperature { .. }) {
+            warnings.push(if matches!(s.at, Target::End { .. }) { "A part revolved a full turn has no back or front face; a support on one was left out.".into() } else { "A support found no nodes of the solid to hold and was left out.".into() });
         }
         for (n, h) in &nodes {
             for c in 0..3 {
@@ -574,7 +661,12 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
             let (_, _, det0) = wedge(&xyz, o, 1.0 / 3.0, 1.0 / 3.0, 0.0);
             let vol = det0.abs();
             for (q, &(xi, eta, zeta)) in refs.iter().enumerate() {
-                let (gd, _, _) = wedge(&xyz, o, xi, eta, zeta);
+                let (mut gd, _, det) = wedge(&xyz, o, xi, eta, zeta);
+                if det.abs() < 1e-9 * vol {
+                    // A node on the axis of a revolved part: the element is pinched there, so read
+                    // the stress a little way in.
+                    gd = wedge(&xyz, o, xi + (1.0 / 3.0 - xi) * 0.02, eta + (1.0 / 3.0 - eta) * 0.02, zeta).0;
+                }
                 let mut e = [0.0; 6];
                 for (i, gi) in gd.iter().enumerate() {
                     let ui = [u[3 * en[i]], u[3 * en[i] + 1], u[3 * en[i] + 2]];
@@ -608,6 +700,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
         }
     }
     let (surface, ids) = surface(&sw);
+    let volume = Volume { nodes: sw.pos.clone(), disp: (0..nn).map(|n| [u[3 * n], u[3 * n + 1], u[3 * n + 2]]).collect(), tets: tets(&sw), v: all.clone() };
     let fields = KEYS
         .iter()
         .zip(all)
@@ -627,7 +720,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
     let disp = ids.iter().map(|&n| [u[3 * n], u[3 * n + 1], u[3 * n + 2]]).collect();
     let size = {
         let b = m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(1.0);
-        b.max(m.thickness)
+        if sw.revolve > 0.0 { b } else { b.max(m.thickness) }
     };
     let umax = (0..nn).map(|n| (u[3 * n].powi(2) + u[3 * n + 1].powi(2) + u[3 * n + 2].powi(2)).sqrt()).fold(0.0, f64::max);
     if umax > 0.1 * size {
@@ -654,7 +747,33 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
         order: o as u8,
         size: sw.ms.size,
         quality: sw.ms.quality.clone(),
+        volume,
     })
+}
+
+/// The solid cut into tetrahedra on corner nodes, for slicing: each linear wedge (a quadratic
+/// one's eight sub-wedges) into three. Tetrahedra pinched flat on a revolved part's axis are left
+/// out.
+fn tets(sw: &Swept) -> Vec<[u32; 4]> {
+    let mut out = vec![];
+    let layers = (sw.levels - 1) / sw.order;
+    for tri in &sw.ms.tris {
+        let subs: Vec<[u32; 3]> = if tri.len() == 6 { vec![[tri[0], tri[3], tri[5]], [tri[3], tri[1], tri[4]], [tri[5], tri[4], tri[2]], [tri[3], tri[4], tri[5]]] } else { vec![[tri[0], tri[1], tri[2]]] };
+        for l in 0..layers {
+            for a in 0..sw.order {
+                let (b, t) = (l * sw.order + a, l * sw.order + a + 1);
+                for p in &subs {
+                    let w = [sw.node(p[0] as usize, b), sw.node(p[1] as usize, b), sw.node(p[2] as usize, b), sw.node(p[0] as usize, t), sw.node(p[1] as usize, t), sw.node(p[2] as usize, t)];
+                    for q in [[w[0], w[1], w[2], w[3]], [w[1], w[2], w[3], w[4]], [w[2], w[3], w[4], w[5]]] {
+                        if (0..4).all(|i| (i + 1..4).all(|j| q[i] != q[j])) {
+                            out.push(q.map(|n| n as u32));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    out
 }
 
 /// The outer surface of the swept mesh: the end faces' triangles (quadratic ones split in four)
@@ -674,6 +793,9 @@ fn surface(sw: &Swept) -> (Surface, Vec<usize>) {
     for tri in &sw.ms.tris {
         let parts: Vec<[u32; 3]> = if tri.len() == 6 { vec![[tri[0], tri[3], tri[5]], [tri[3], tri[1], tri[4]], [tri[5], tri[4], tri[2]], [tri[3], tri[4], tri[5]]] } else { vec![[tri[0], tri[1], tri[2]]] };
         for p in parts {
+            if !sw.has_ends() {
+                break;
+            }
             let back = p.map(|i| idx(sw.node(i as usize, 0), &mut ids));
             tris.push([back[0], back[2], back[1]]);
             let front = p.map(|i| idx(sw.node(i as usize, last), &mut ids));
@@ -690,8 +812,8 @@ fn surface(sw: &Swept) -> (Surface, Vec<usize>) {
                 tris.push([q[0], q[2], q[3]]);
             }
         }
-        // The part's outline at both ends.
-        for lv in [0, last] {
+        // The part's outline at both ends (a full turn: at the start, and halfway round).
+        for lv in if sw.has_ends() { [0, last] } else { [0, last / 2] } {
             lines.push([idx(sw.node(e.n[0] as usize, lv), &mut ids), idx(sw.node(e.n[2] as usize, lv), &mut ids)]);
         }
     }

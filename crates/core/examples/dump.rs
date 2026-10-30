@@ -40,6 +40,8 @@ fn main() {
         "bracket3d": out("bracket3d"),
         "solid": out("blank-solid"),
         "bracket3d_results": sent(&datum_core::solve(&examples::get("bracket3d").unwrap()).unwrap()),
+        "vessel3d": out("vessel3d"),
+        "vessel3d_results": sent(&datum_core::solve(&examples::get("vessel3d").unwrap()).unwrap()),
         "space": out("blank-space"),
         "platform_results": sent(&datum_core::solve(&examples::get("platform").unwrap()).unwrap()),
         "vessel_results": sent(&datum_core::solve(&examples::get("vessel").unwrap()).unwrap()),

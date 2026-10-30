@@ -30,6 +30,9 @@ pub struct Settings {
     /// The stress-free temperature (K); left as it is when not given.
     #[serde(default)]
     pub t_ref: Option<f64>,
+    /// 3D solids: the angle to revolve through (0 = extrude); left as it is when not given.
+    #[serde(default)]
+    pub revolve: Option<f64>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -525,6 +528,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             }
             retarget(m, |t| match t {
                 Target::Edge { shape, edge } if *shape == a || *shape == b => Some(to.get(&(usize::from(*shape == b), *edge)).cloned().unwrap_or_default()),
+                Target::Line { shape, edge, at } if *shape == a || *shape == b => Some(to.get(&(usize::from(*shape == b), *edge)).map(|v| v.iter().map(|t| match t { Target::Edge { shape, edge } => Target::Line { shape: *shape, edge: *edge, at: *at }, t => t.clone() }).collect()).unwrap_or_default()),
                 _ => None,
             });
         }
@@ -560,9 +564,10 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     m.shapes.push(Shape { id, name, geom, ..s.clone() });
                     created.push(id);
                     // Supports and loads on its edges come along (turned with it).
-                    let on = |t: &Target| matches!(t, Target::Edge { shape, .. } if *shape == s.id);
+                    let on = |t: &Target| matches!(t, Target::Edge { shape, .. } | Target::Line { shape, .. } if *shape == s.id);
                     let moved = |t: &Target| match t {
                         Target::Edge { edge, .. } => Target::Edge { shape: id, edge: *edge },
+                        Target::Line { edge, at, .. } => Target::Line { shape: id, edge: *edge, at: *at },
                         t => t.clone(),
                     };
                     let sups: Vec<_> = m.supports.iter().filter(|x| on(&x.at)).cloned().collect();
@@ -604,6 +609,9 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             m.mesh = s.mesh;
             if let Some(t) = s.t_ref {
                 m.t_ref = t;
+            }
+            if let Some(r) = s.revolve {
+                m.revolve = r;
             }
         }
         Op::SetMeta { name, notes } => {
@@ -672,6 +680,7 @@ fn is_heat(k: &crate::model::SupportKind) -> bool {
 fn renumber(m: &mut Model, shape: u32, f: impl Fn(u32) -> Vec<u32>) {
     retarget(m, |t| match t {
         Target::Edge { shape: s, edge } if *s == shape => Some(f(*edge).into_iter().map(|e| Target::Edge { shape, edge: e }).collect()),
+        Target::Line { shape: s, edge, at } if *s == shape => Some(f(*edge).into_iter().map(|e| Target::Line { shape, edge: e, at: *at }).collect()),
         _ => None,
     });
 }
@@ -904,7 +913,7 @@ fn prune(m: &mut Model) {
     let alive = |t: &Target| match t {
         Target::Node { id } => nodes.contains(id),
         Target::Member { id } => members.contains(id),
-        Target::Edge { shape, edge } => edges.get(shape).is_some_and(|n| (*edge as usize) < *n),
+        Target::Edge { shape, edge } | Target::Line { shape, edge, .. } => edges.get(shape).is_some_and(|n| (*edge as usize) < *n),
         Target::Point { .. } | Target::Body | Target::End { .. } => true,
     };
     m.supports.retain(|s| alive(&s.at));

@@ -244,13 +244,13 @@ export const SolidResultsPage = (p: { r: SolidResults }) => {
   const sc = (k: number) => r().scale[k < 3 ? 0 : 1];
   const at = (q: number[]) => q.map(c => fmt("coord", c).split(" ")[0]).join(", ");
   const rows: [string, number, "force" | "moment"][] = [["Σ Fx", 0, "force"], ["Σ Fy", 1, "force"], ["Σ Fz", 2, "force"], ["Σ Mx about the origin", 3, "moment"], ["Σ My about the origin", 4, "moment"], ["Σ Mz about the origin", 5, "moment"]];
-  const supName = (id: number) => { const s = m().supports.find(x => x.id === id); if (!s) return "A support"; return s.at.on === "end" ? (s.at.front ? "Front face" : "Back face") : s.at.on === "edge" ? `${m().shapes.find(x => x.id === (s.at as any).shape)?.name ?? "Shape"}, edge ${(s.at as any).edge + 1}` : "A support"; };
+  const supName = (id: number) => { const s = m().supports.find(x => x.id === id); if (!s) return "A support"; return s.at.on === "end" ? (s.at.front ? "Front face" : "Back face") : s.at.on === "edge" || s.at.on === "line" ? `${m().shapes.find(x => x.id === (s.at as any).shape)?.name ?? "Shape"}, edge ${(s.at as any).edge + 1}${s.at.on === "line" ? `, line at ${num(s.at.at * 100, 3)} %` : ""}` : "A support"; };
   return <>
     <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
     <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
     <h2>Mesh</h2>
     <table class="tbl"><tbody>
-      <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} through {fmt("len", m().thickness)}; {r().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} {m().revolve ? `round ${num(m().revolve! * 180 / Math.PI, 4)}°` : `through ${fmt("len", m().thickness)}`}; {r().nodes.toLocaleString()} nodes</td></tr>
       <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></tbody></table>
     <h2>Largest and smallest values</h2>
     <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at ({unit("coord")})</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
@@ -268,6 +268,6 @@ export const SolidResultsPage = (p: { r: SolidResults }) => {
     <table class="tbl"><tbody>
       <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
       <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
-      <tr><td>Method</td><td>The section's triangle mesh swept through the thickness into wedges (triangle × line), linear elasticity; sparse Cholesky with a fill-reducing ordering, on every core</td></tr></tbody></table>
+      <tr><td>Method</td><td>The section's triangle mesh swept through the thickness (or round the turn) into wedges (triangle × line), linear elasticity; sparse Cholesky with a fill-reducing ordering, on every core</td></tr></tbody></table>
   </>;
 };

@@ -13,7 +13,7 @@
   "steps": [
     {
       "title": "Draw and mesh",
-      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes, shaped with rounds, bevels, cut-outs and patterns (extruded into a 3D solid if you like), on a grid with snap and rulers."
+      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes, shaped with rounds, bevels, cut-outs and patterns (extruded or revolved into a 3D solid if you like), on a grid with snap and rulers."
     },
     {
       "title": "Load and support",
@@ -33,15 +33,15 @@
     "Natural frequencies and mode shapes of frames and parts, moving on screen",
     "Buckling of frames: load factors and buckled shapes, with every squeezed truss bar checked as a strut",
     "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
-    "3D solids: a part's outline extruded by its thickness, solved in 3D and coloured by its stresses in a 3D view",
+    "3D solids: a part's section extruded or revolved (shafts, hubs, vessels), solved in 3D, coloured by its stresses in a 3D view, with a cutting plane to see inside and faces picked by clicking",
     "Sketch tools: round and bevel corners, union, subtract and intersect shapes with arcs kept true, slots, rounded rectangles, polygons, offsets and patterns of holes",
-    "Help › Verification: 94 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1, with mesh convergence and solve times",
+    "Help › Verification: 105 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Ten worked examples, from a portal frame and a roof truss to a steel platform in 3D and an L-bracket solid in 3D",
+    "Eleven worked examples, from a portal frame and a roof truss to a steel platform, an L-bracket and a pressure vessel in 3D",
     "Small and quick: a 3 MB installer, a window that starts light, and solve times recorded with every release"
   ],
   "screenshots": [
@@ -52,14 +52,23 @@
   ],
   "roadmap": [
     {
-      "v": "0.3.2–0.3.4",
-      "title": "3D solids, continued",
+      "v": "0.3.3",
+      "title": "Frames for everyday structural analysis",
       "when": "Next",
       "items": [
-        "Revolved solids (shafts, hubs, vessels) with symmetry faces; verified on NAFEMS LE10",
-        "A cutting plane through the part and picking faces in the 3D view",
+        "Load cases and load combinations, with results for each",
+        "Member end releases (hinges inside a frame)",
+        "Standard steel section tables"
+      ]
+    },
+    {
+      "v": "0.3.4–0.3.5",
+      "title": "3D solids, continued",
+      "when": "Soon",
+      "items": [
         "Heat conduction and natural frequencies of 3D solids",
-        "DXF import of section outlines"
+        "DXF import of section outlines",
+        "A quicker solver ordering for large 3D models"
       ]
     },
     {

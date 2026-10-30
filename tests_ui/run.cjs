@@ -42,10 +42,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
@@ -405,6 +405,36 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
   await open("blank-solid");
   check("a blank 3D solid asks for its section", (await p.textContent(".view3d")).includes("Draw the part's section"));
+  // 0.3.2: picking faces in 3D, revolved solids, held directions and lines, the cutting plane.
+  await open("bracket3d"); await p.waitForTimeout(300);
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(100);
+  const at3 = async q => { const v = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); const s = await p.evaluate(q => window.__screen3(q), q); return [v[0] + s[0], v[1] + s[1]]; };
+  let xy = await at3([10, 60, 10].map(v => v / 1000)); await p.mouse.click(xy[0], xy[1]); await p.waitForTimeout(200);
+  const pff = await lastOp();
+  check("clicking the front face in 3D puts the pressure on it", pff?.Add?.item?.Load?.at?.on === "end" && pff.Add.item.Load.at.front === true, JSON.stringify(pff));
+  xy = await at3([100, 10, 5].map(v => v / 1000)); await p.mouse.click(xy[0], xy[1]); await p.waitForTimeout(200);
+  const ps3 = await lastOp();
+  check("clicking a side face in 3D puts it on that edge's face", ps3?.Add?.item?.Load?.at?.on === "edge" && ps3.Add.item.Load.at.edge === 1, JSON.stringify(ps3));
+  await p.keyboard.press("Escape");
+  check("Loads offers Hold Directions for solids", (await p.$$('.ribbon button:has-text("Hold Directions")')).length === 1);
+  await open("vessel3d"); await p.waitForTimeout(300);
+  check("a revolved solid says so above the view", (await p.textContent(".planebar")).includes("revolved 90° about the y axis"));
+  await p.click('.tabs > button:text-is("Home")');
+  const rins = await p.textContent(".insp");
+  check("the Inspector offers extruded or revolved, the angle, and layers round the turn", rins.includes("Turned through") && rins.includes("Layers round the turn") && !rins.includes("Thickness (extruded"), rins.slice(0, 300));
+  await p.click(".tree .ti:has-text('Symmetry')"); await p.waitForTimeout(150);
+  check("a solid's support can hold chosen directions", (await p.$$eval(".insp select option", os => os.map(o => o.textContent))).includes("Held directions"));
+  await p.selectOption('.insp .iprow:has(> label:text-is("Where")) select', "line");
+  const wln = await lastOp();
+  check("a support on a face can become a line along it, halfway through", wln?.Set?.item?.Support?.at?.on === "line" && wln.Set.item.Support.at.at === 0.5, JSON.stringify(wln));
+  await p.evaluate(() => { window.__solveKey = "vessel3d_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(600);
+  await p.evaluate(() => { window.__solveKey = null; });
+  check("a solved revolved solid can be cut across x, y or z", (await p.$$eval(".legend .seg button", bs => bs.map(b => b.textContent))).join() === "Off,x,y,z");
+  await p.click('.legend .seg button:text-is("z")'); await p.waitForTimeout(300);
+  check("cutting shows a slider to move the plane", (await p.$$('.legend input[type=range][title^="Where the plane cuts"]')).length === 1);
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "vessel3d-cut.png") });
+  await p.click('.legend .seg button:text-is("Off")');
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

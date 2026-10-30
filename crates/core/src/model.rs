@@ -294,6 +294,9 @@ pub enum Target {
     /// 3D solids (0.3.0): the back face (z = 0) or the front face (z = thickness) of the extruded
     /// part; its side faces are its edges.
     End { front: bool },
+    /// 3D solids (0.3.2): a line on the side face of edge `edge` of shape `shape`, a fraction `at`
+    /// of the way through the thickness (or round the turn of a revolved part); for line supports.
+    Line { shape: u32, edge: u32, at: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -326,6 +329,8 @@ pub enum SupportKind {
     },
     /// Heat: a fixed temperature (K).
     Temperature { t: f64 },
+    /// 3D solids (0.3.2): hold the movements along the chosen global directions, the others free.
+    Hold { x: bool, y: bool, z: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -450,6 +455,9 @@ pub struct Model {
     pub grid: f64,
     /// Plane-stress thickness (m); plane strain uses 1 m.
     pub thickness: f64,
+    /// 3D solids (0.3.2): 0 to extrude the section by the thickness, or the angle (radians, up to
+    /// 2π) to revolve it through about the y axis (the section drawn right of the axis).
+    pub revolve: f64,
     /// The temperature at which the part is free of thermal stress (K), for thermal stress.
     pub t_ref: f64,
     pub nodes: Vec<Node>,
@@ -474,6 +482,7 @@ impl Default for Model {
             units: "SI".into(),
             grid: 0.5,
             thickness: 0.01,
+            revolve: 0.0,
             t_ref: 293.15,
             nodes: vec![],
             members: vec![],
@@ -569,6 +578,9 @@ impl Model {
         }
         pos(self.grid, "The grid step")?;
         pos(self.thickness, "The thickness")?;
+        if !(self.revolve.is_finite() && (0.0..=std::f64::consts::TAU + 1e-9).contains(&self.revolve)) {
+            return Err("A revolved part turns through 0 to 360°.".into());
+        }
         fin(self.t_ref, "The stress-free temperature")?;
         if self.mesh.size < 0.0 || !self.mesh.size.is_finite() {
             return Err("The element size must be zero (automatic) or more.".into());
@@ -680,6 +692,15 @@ impl Model {
                 }
                 (SupportKind::Temperature { t }, _) => fin(*t, "A temperature")?,
                 (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. } | Target::End { .. }) => {}
+                (SupportKind::Hold { x, y, z }, _) => {
+                    if self.analysis != Analysis::Solid {
+                        return Err("Holding chosen directions is for 3D solids.".into());
+                    }
+                    if !(*x || *y || *z) {
+                        return Err("A hold needs at least one direction held.".into());
+                    }
+                }
+                (SupportKind::Roller | SupportKind::Symmetry, Target::Line { .. }) => return Err("Roller and symmetry supports go on faces; a line takes fixed, pinned or held directions.".into()),
                 (SupportKind::Roller | SupportKind::Symmetry, _) => return Err("Roller and symmetry supports go on edges.".into()),
                 (_, Target::Member { .. } | Target::Body) => return Err("Supports go on nodes, edges or points.".into()),
                 _ => {}
@@ -720,6 +741,12 @@ impl Model {
             Target::Body => Ok(()),
             Target::End { .. } if self.analysis == Analysis::Solid => Ok(()),
             Target::End { .. } => Err("The back and front faces belong to 3D solids.".into()),
+            Target::Line { shape, edge, at } if self.analysis == Analysis::Solid => match self.shape(*shape) {
+                Some(s) if (*edge as usize) < s.geom.edges() && (0.0..=1.0).contains(at) => Ok(()),
+                Some(_) if !(0.0..=1.0).contains(at) => Err("A line on a face lies 0 to 100 % of the way through.".into()),
+                _ => Err("That edge does not exist.".into()),
+            },
+            Target::Line { .. } => Err("Lines on faces belong to 3D solids.".into()),
         }
     }
 }
