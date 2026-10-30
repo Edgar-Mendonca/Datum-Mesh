@@ -3,7 +3,7 @@
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
 import { Show, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, parseNum } from "./api";
-import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel } from "./store";
+import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel, solvedFor } from "./store";
 import { defaultLoad, defaultSupport } from "./panels";
 import { palette, BANDS, curField, fieldsFor, rangeOf, ColourBar } from "./parts";
 import { fmt, unit, fromU, Q } from "./units";
@@ -53,6 +53,7 @@ export const SpaceLegend = () => {
     <Show when={r() && m()}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
+        <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div><b>Colour by</b><select class="fpick" value={q3()} onChange={e => setQ3(e.currentTarget.value as Q3)}>{Q3S.map(([k, l]) => <option value={k} selected={k === q3()}>{l}</option>)}</select></div>
         <Show when={range3()}>{rg => <span class="cbar"><span class="cb">{cols().map((c, k) => <i style={{ background: c }}><Show when={k % 3 === 0}><small>{q3() === "util" ? `${num((rg()[0] + (rg()[1] - rg()[0]) * k / BANDS) * 100, 2)}%` : num(+fmt(qd()[2], rg()[0] + (rg()[1] - rg()[0]) * k / BANDS, 3).split(" ")[0].replace("−", "-"), 3)}</small></Show></i>)}<b><small>{q3() === "util" ? `${num(rg()[1] * 100, 2)}%` : num(+fmt(qd()[2], rg()[1], 3).split(" ")[0].replace("−", "-"), 3)}</small></b></span><em>{q3() === "util" ? "" : unit(qd()[2])}</em></span>}</Show>
         <div><b>Deflected shape</b><span>{deform3(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deform3(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
@@ -112,6 +113,7 @@ export const SolidLegend = () => {
     <Show when={r() && model()?.analysis === "solid"}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
+        <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div><b>Result</b><select class="fpick" value={fd().key} onChange={e => C.show({ field: e.currentTarget.value })}>{fieldsFor("solid").map(f => <option value={f.key} selected={f.key === fd().key}>{f.name}</option>)}</select>
           <span>max {fmt(fd().q, fld()?.max ?? 0)} · min {fmt(fd().q, fld()?.min ?? 0)}</span></div>
         <ColourBar d={fd()} range={fld() ? rangeOf(fd(), fld()!.v) : null} colours={cols()} />

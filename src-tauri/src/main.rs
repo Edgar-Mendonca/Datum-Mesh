@@ -134,9 +134,22 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
 /// Solve the open model: frames and trusses, plane stress or strain, or heat conduction. Parts are
 /// meshed first. Runs off the window's thread.
 #[tauri::command]
-async fn solve(st: State<'_, St>) -> R<serde_json::Value> {
+async fn solve(st: State<'_, St>, which: Option<datum_core::cases::Which>) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::solve(&m).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || datum_core::solve_for(&m, which).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+}
+
+/// The largest and smallest member forces and reactions over every combination (0.3.3).
+#[tauri::command]
+async fn envelope(st: State<'_, St>) -> R<datum_core::cases::Envelope> {
+    let m = st.lock().doc.m.clone();
+    tauri::async_runtime::spawn_blocking(move || datum_core::cases::envelope(&m)).await.map_err(|e| e.to_string())?
+}
+
+/// The steel section tables (0.3.3).
+#[tauri::command]
+fn sections_library() -> Vec<datum_core::steel::LibSection> {
+    datum_core::steel::library()
 }
 
 /// Results with their long arrays packed small for the window (`datum_core::wire`).
@@ -153,9 +166,9 @@ async fn modes(st: State<'_, St>, count: usize) -> R<serde_json::Value> {
 
 /// The lowest buckling load factors and shapes of the open frame (0.2.3; 3D frames 0.2.6), sent as modes.
 #[tauri::command]
-async fn buckling(st: State<'_, St>, count: usize) -> R<serde_json::Value> {
+async fn buckling(st: State<'_, St>, count: usize, which: Option<datum_core::cases::Which>) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::buckling(&m, count).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+    tauri::async_runtime::spawn_blocking(move || datum_core::buckling_for(&m, count, which).map(|r| small(&r))).await.map_err(|e| e.to_string())?
 }
 
 /// Mesh the open part without solving it (the Mesh view and its statistics).
@@ -453,7 +466,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            state, apply, history, examples_list, new_model, section_props, solve, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

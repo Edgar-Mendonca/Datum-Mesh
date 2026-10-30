@@ -1,6 +1,6 @@
 // Window state: the open model, the selection, the drawing tool, menus, dialogs and messages.
 import { createSignal, batch, JSX } from "solid-js";
-import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, SpaceResults, SolidResults, Mesh, ModeResults } from "./api";
+import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, SpaceResults, SolidResults, Mesh, ModeResults, Load, Which } from "./api";
 
 export const [out, setOutRaw] = createSignal<Out | null>(null);
 export const model = (): Model | undefined => out()?.m;
@@ -78,8 +78,50 @@ export const [phase, setPhase] = createSignal(1);
 export const [meshed, setMeshed] = createSignal<Mesh | null>(null);
 export const [meshStale, setMeshStale] = createSignal(false);
 
+// ---------- load cases (0.3.3) ----------
+export const [activeRaw, setActiveRaw] = createSignal<Which | null>(null);
+/** The load case or combination shown and solved: the one picked if it still exists, else the
+ * first case; null when the model has no cases (every load together). */
+export const active = (): Which | null => {
+  const m = model(); if (!m || !m.cases?.length) return null;
+  const a = activeRaw();
+  if (a && (a.on === "case" ? m.cases.some(c => c.id === a.id) : (m.combos ?? []).some(c => c.id === a.id))) return a;
+  return { on: "case", id: m.cases[0].id };
+};
+/** Pick the case or combination to show; results for another one become out of date. */
+export const setActive = (w: Which | null) => { setActiveRaw(w); if (results()) setStale(true); };
+/** The case a load is in (its own if it exists, else the first). */
+export const caseOf = (m: Model, l: Load) => m.cases?.some(c => c.id === l.case) ? l.case! : (m.cases?.[0]?.id ?? 0);
+/** Is a load drawn under the case or combination picked? */
+export const shownLoad = (m: Model, l: Load) => {
+  const a = active(); if (!a) return true;
+  const c = caseOf(m, l);
+  return a.on === "case" ? c === a.id : (m.combos ?? []).find(x => x.id === a.id)?.parts.some(p => p.case === c) ?? true;
+};
+/** The case a new load goes in: the one picked, or a combination's first. */
+const newCase = () => {
+  const a = active(), m = model(); if (!a || !m) return 0;
+  return a.on === "case" ? a.id : (m.combos ?? []).find(x => x.id === a.id)?.parts[0]?.case ?? m.cases![0].id;
+};
+/** What a case or combination is called. */
+export const whichName = (m: Model, w: Which | null) => {
+  if (!w) return "All loads";
+  const cn = (id: number) => m.cases?.find(c => c.id === id)?.name ?? "?";
+  if (w.on === "case") return cn(w.id);
+  const c = m.combos?.find(x => x.id === w.id); if (!c) return "?";
+  return `${c.name}: ${c.parts.map(p => `${+p.f.toFixed(3)} × ${cn(p.case)}`).join(" + ") || "no cases yet"}`;
+};
+/** The case or combination the shown results are for. */
+export const [solvedFor, setSolvedFor] = createSignal<string>("");
+const withCase = (op: any): any => {
+  if (op?.Batch) return { Batch: op.Batch.map(withCase) };
+  const l = op?.Add?.item?.Load;
+  return l && l.case === undefined ? { Add: { item: { Load: { ...l, case: newCase() } } } } : op;
+};
+
 // ---------- editing ----------
 export const act = async (op: object, quiet = false): Promise<Out | null> => {
+  op = withCase(op);
   try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
   catch (e) { if (!quiet) toast(String(e)); return null; }
 };
@@ -88,7 +130,7 @@ export const call = async <T = any>(cmd: string, args?: object): Promise<T | und
 };
 export const loadOut = async (cmd: string, args?: object) => {
   const o = await call<Out | null>(cmd, args);
-  if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setModes(null); setModeOn(false); setModesStale(false); setOut(o); setBackstage(null); setView("model"); });
+  if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setActiveRaw(null); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setModes(null); setModeOn(false); setModesStale(false); setOut(o); setBackstage(null); setView("model"); });
   return o;
 };
 

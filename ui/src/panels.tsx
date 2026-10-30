@@ -2,7 +2,7 @@
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum, isFrame } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf } from "./store";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
 import { edgeCount, edgePts, outline, area } from "./geom";
@@ -139,6 +139,9 @@ const MemberInsp = (p: { b: Member; m: Model }) => {
       <Row label="Kind"><Choice v={p.b.kind} set={v => set("Member", { ...p.b, kind: v })} opts={[["beam", "Beam (bending and axial)"], ["truss", "Truss bar (axial only)"]]} /></Row>
       <Row label="Section"><Choice v={String(p.b.section)} set={v => set("Member", { ...p.b, section: +v })} opts={p.m.sections.map(s => [String(s.id), s.name])} /></Row>
       <Row label="Material"><Choice v={String(p.b.material)} set={v => set("Member", { ...p.b, material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row>
+      <Show when={p.b.kind === "beam"}><div class="cks">
+        <label class="chk" title="The member carries no bending moment at its start (a pinned connection)"><input type="checkbox" checked={p.b.hinge?.[0] ?? false} onChange={e => set("Member", { ...p.b, hinge: [e.currentTarget.checked, p.b.hinge?.[1] ?? false] })} />Hinge at the start</label>
+        <label class="chk" title="The member carries no bending moment at its end (a pinned connection)"><input type="checkbox" checked={p.b.hinge?.[1] ?? false} onChange={e => set("Member", { ...p.b, hinge: [p.b.hinge?.[0] ?? false, e.currentTarget.checked] })} />Hinge at the end</label></div></Show>
       <Show when={sp() && p.b.kind === "beam"}><div class="iprow"><label>Roll<span class="unit">°</span></label><input class="mono" value={num((p.b.roll ?? 0) * 180 / Math.PI)} onChange={numIn(v => set("Member", { ...p.b, roll: v * Math.PI / 180 }), () => num((p.b.roll ?? 0) * 180 / Math.PI))} /><span class="hint">Turns the section about the member. At 0 the depth h stands upright, or lies along z for a column.</span></div></Show>
       <table class="vmini"><tbody>
         <tr><td>Length</td><td class="r">{fmt("len", len())}</td></tr>
@@ -233,6 +236,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
   return <>
     <Row label="On"><span>{targetName(p.m, p.l.at)}</span></Row>
     <Row label="Kind"><span>{LOAD_NAMES[k().kind]}</span></Row>
+    <Show when={p.m.cases?.length}><Row label="Load case"><Choice v={String(caseOf(p.m, p.l))} set={v => set("Load", { ...p.l, case: +v })} opts={(p.m.cases ?? []).map(c => [String(c.id), c.name])} /></Row></Show>
     <Show when={k().kind === "force"}><NumField label="Fx" q="force" v={f("force").fx} set={fx => put({ ...f("force"), fx })} /><NumField label="Fy" q="force" v={f("force").fy} set={fy => put({ ...f("force"), fy })} hint={sp() ? undefined : "Up is positive."} /><Show when={sp()}><NumField label="Fz" q="force" v={f("force").fz ?? 0} set={fz => put({ ...f("force"), fz })} hint="Up (y) is positive; z points towards the front." /></Show></Show>
     <Show when={k().kind === "moment"}><Show when={sp()} fallback={<NumField label="M" q="moment" v={f("moment").m} set={m => put({ kind: "moment", m })} hint="Counter-clockwise is positive." />}>
       <NumField label="Mx" q="moment" v={f("moment").mx ?? 0} set={mx => put({ ...f("moment"), mx })} /><NumField label="My" q="moment" v={f("moment").my ?? 0} set={my => put({ ...f("moment"), my })} /><NumField label="Mz" q="moment" v={f("moment").m} set={m => put({ ...f("moment"), m })} hint="About the global axes, by the right-hand rule." /></Show></Show>

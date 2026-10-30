@@ -56,7 +56,7 @@ fn support(d: &mut Doc, x: f64, y: f64, kind: SupportKind) {
     add(d, Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind }) });
 }
 fn load(d: &mut Doc, at: Target, kind: LoadKind) {
-    add(d, Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+    add(d, Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) });
 }
 
 /// Benchmark 1: a cantilever with an end load. Beam theory: tip deflection PL³/3EI, root moment PL.
@@ -173,7 +173,7 @@ fn edge_support(d: &mut Doc, shape: u32, edge: u32, kind: SupportKind) {
     add_id(d, Item::Support(Support { id: 0, at: Target::Edge { shape, edge }, kind }));
 }
 fn edge_load(d: &mut Doc, shape: u32, edge: u32, kind: LoadKind) {
-    add_id(d, Item::Load(Load { id: 0, at: Target::Edge { shape, edge }, kind }));
+    add_id(d, Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape, edge }, kind }));
 }
 /// The value of a nodal field at the mesh node nearest a point.
 fn at(r: &plane::PlaneResults, key: &str, p: [f64; 2]) -> f64 {
@@ -392,7 +392,7 @@ fn thermal() -> Vec<Check> {
         for &k in sides {
             edge_support(&mut d, ids[0], k, SupportKind::Roller);
         }
-        add_id(&mut d, Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt } }));
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Warming { dt } }));
         d.m.mesh.size = 0.02;
         plane::solve(&d.m).expect("solves")
     };
@@ -421,7 +421,7 @@ fn thermal() -> Vec<Check> {
     member(&mut f, [0.0, 0.0], [4.0, 0.0], MemberKind::Beam);
     support(&mut f, 0.0, 0.0, SupportKind::Fixed);
     support(&mut f, 4.0, 0.0, SupportKind::Fixed);
-    add(&mut f, Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt } }) });
+    add(&mut f, Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Warming { dt } }) });
     let r = frame::solve(&f.m).expect("solves");
     out.push(check(9, "Beam fixed at both ends, warmed 50 K", "Axial force N = −EAαΔT", "force", -e * 0.02 * a * dt, r.members[0].n[0], 1e-9, src));
     out
@@ -478,7 +478,7 @@ fn axisymmetric() -> Vec<Check> {
     let (mut d, ids) = part(Analysis::Axi, e, nu, vec![(Geom::rect(0.05, 0.0, 0.08, 0.1), false)]);
     d.m.materials[0].alpha = 12e-6;
     edge_support(&mut d, ids[0], 0, SupportKind::Roller);
-    add_id(&mut d, Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt: 80.0 } }));
+    add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Warming { dt: 80.0 } }));
     d.m.mesh.size = 0.01;
     let r = plane::solve(&d.m).expect("solves");
     let src = "Thermoelasticity: free, even warming";
@@ -550,7 +550,7 @@ fn buckling() -> Vec<Check> {
             support(&mut d, 0.0, l, t);
         }
         if warm != 0.0 {
-            add(&mut d, Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt: warm } }) });
+            add(&mut d, Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Warming { dt: warm } }) });
         } else {
             let top = node(&d, 0.0, l);
             load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
@@ -892,7 +892,7 @@ fn le10() -> Vec<Check> {
         add_id(&mut d, Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: e }, kind: SupportKind::Hold { x: true, y: true, z: false } }));
         add_id(&mut d, Item::Support(Support { id: 0, at: Target::Line { shape: s, edge: e, at: 0.5 }, kind: SupportKind::Hold { x: false, y: false, z: true } }));
     }
-    add_id(&mut d, Item::Load(Load { id: 0, at: Target::End { front: true }, kind: LoadKind::Pressure { p: 1e6 } }));
+    add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::End { front: true }, kind: LoadKind::Pressure { p: 1e6 } }));
     d.m.mesh.size = size;
     d.m.mesh.layers = layers;
     for e in n as u32 + 2..k as u32 {
@@ -900,6 +900,114 @@ fn le10() -> Vec<Check> {
     }
     let r = crate::solid::solve(&d.m).expect("LE10");
     vec![check(17, "NAFEMS LE10: thick plate under pressure", "σyy at D (inner edge, top face)", "stress", -5.38e6, at_solid(&r, "sy", [2.0, 0.0, 0.6]), 2e-2, "NAFEMS LE10 (Linear elastic benchmarks, 1990)")]
+}
+
+/// Benchmark 18 (0.3.3): member end releases (hinges), load cases and combinations, and the steel
+/// section tables, against beam theory, statics, Euler and the tables' own values.
+fn frames_more() -> Vec<Check> {
+    use crate::cases::{envelope, Which};
+    use crate::model::{Case, Combo, Factor};
+    let mut out = vec![];
+    let (e, b, h) = (200e9, 0.1, 0.25f64);
+    let i = b * h.powi(3) / 12.0;
+    let hinge = |d: &mut Doc, k: usize, hg: [bool; 2]| {
+        let mut mb = d.m.members[k].clone();
+        mb.hinge = hg;
+        add(d, Op::Set { item: Item::Member(mb) });
+    };
+    let src = "Beam theory (Euler–Bernoulli)";
+    // A beam hinged at both ends between fixed supports carries its load as if simply supported.
+    let (l, w) = (6.0, 5e3);
+    let mut d = frame(e, SectionShape::Rect { b, h });
+    member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+    support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+    support(&mut d, l, 0.0, SupportKind::Fixed);
+    hinge(&mut d, 0, [true, true]);
+    let id = d.m.members[0].id;
+    load(&mut d, Target::Member { id }, LoadKind::Dist { w1: -w, w2: -w, dir: Dir::Y });
+    let r = frame::solve(&d.m).expect("solves");
+    let one = &r.members[0];
+    let name = "Beam hinged at both ends between fixed supports, uniform load";
+    out.push(check(18, name, "Largest moment wL²/8, as simply supported", "moment", w * l * l / 8.0, one.m.iter().cloned().fold(f64::MIN, f64::max), 1e-9, src));
+    out.push(check(18, name, "Midspan deflection 5wL⁴/384EI", "len", 5.0 * w * l.powi(4) / (384.0 * e * i), -one.d[frame::STATIONS / 2][1], 1e-9, src));
+    // Its natural frequency and, as a column, its buckling load: those of a pinned member.
+    let rho = d.m.materials[0].rho;
+    let f1 = std::f64::consts::PI.powi(2) / (std::f64::consts::TAU * l * l) * (e * i / (rho * b * h)).sqrt();
+    let md = frame::modes(&d.m, 1).expect("modes");
+    out.push(check(18, name, "Lowest natural frequency π²√(EI/ρA) / 2πL²", "hz", f1, md.modes[0].f, 1e-3, "Euler–Bernoulli beam vibration (Blevins, table 8-1)"));
+    let (lc, p) = (3.0, 10e3);
+    let mut c = frame(e, SectionShape::Rect { b, h });
+    member(&mut c, [0.0, 0.0], [0.0, lc], MemberKind::Beam);
+    support(&mut c, 0.0, 0.0, SupportKind::Fixed);
+    support(&mut c, 0.0, lc, SupportKind::RollerY);
+    hinge(&mut c, 0, [true, true]);
+    let top = node(&c, 0.0, lc);
+    load(&mut c, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+    let bk = frame::buckling(&c.m, 1).expect("buckling");
+    out.push(check(18, "Column hinged at both ends to fixed supports", "Load factor π²EI/L² / P", "ratio", std::f64::consts::PI.powi(2) * e * i / (lc * lc) / p, bk.modes[0].lambda, 1e-3, "Euler buckling (Timoshenko & Gere §2.1)"));
+    // A beam on a fixed support with a hinge partway (a Gerber beam): the span beyond the hinge is
+    // simply supported and hangs its reaction on the cantilever.
+    let (a, sb) = (2.0, 4.0);
+    let mut g = frame(e, SectionShape::Rect { b, h });
+    member(&mut g, [0.0, 0.0], [a, 0.0], MemberKind::Beam);
+    member(&mut g, [a, 0.0], [a + sb, 0.0], MemberKind::Beam);
+    support(&mut g, 0.0, 0.0, SupportKind::Fixed);
+    support(&mut g, a + sb, 0.0, SupportKind::RollerX);
+    hinge(&mut g, 1, [true, false]);
+    let id = g.m.members[1].id;
+    load(&mut g, Target::Member { id }, LoadKind::Dist { w1: -w, w2: -w, dir: Dir::Y });
+    let r = frame::solve(&g.m).expect("solves");
+    let (na, nc) = (node(&g, 0.0, 0.0), node(&g, a + sb, 0.0));
+    let ra = r.reactions.iter().find(|x| x.node == na).unwrap();
+    let rc = r.reactions.iter().find(|x| x.node == nc).unwrap();
+    let name = "Beam with a hinge partway (Gerber beam), uniform load beyond it";
+    out.push(check(18, name, "Reaction at the far support wb/2", "force", w * sb / 2.0, rc.fy, 1e-9, "Statics"));
+    out.push(check(18, name, "Moment at the fixed support (wb/2)·a", "moment", w * sb / 2.0 * a, ra.m.abs(), 1e-9, "Statics"));
+    // In 3D: hinged at both ends, loaded both ways: wL²/8 about both axes.
+    let mut s3 = space_frame(e, SectionShape::Rect { b, h });
+    member3(&mut s3, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+    support3(&mut s3, [0.0; 3], SupportKind::Fixed);
+    support3(&mut s3, [l, 0.0, 0.0], SupportKind::Fixed);
+    hinge(&mut s3, 0, [true, true]);
+    let id = s3.m.members[0].id;
+    load(&mut s3, Target::Member { id }, LoadKind::Dist { w1: -w, w2: -w, dir: Dir::Y });
+    load(&mut s3, Target::Member { id }, LoadKind::Dist { w1: -w, w2: -w, dir: Dir::Z });
+    let r = crate::space::solve(&s3.m).expect("solves");
+    let big = |v: &[f64]| v.iter().fold(0.0f64, |a, x| a.max(x.abs()));
+    let name = "3D beam hinged at both ends, loaded across both ways";
+    out.push(check(18, name, "Largest Mz wL²/8", "moment", w * l * l / 8.0, big(&r.members[0].mz), 1e-9, src));
+    out.push(check(18, name, "Largest My wL²/8", "moment", w * l * l / 8.0, big(&r.members[0].my), 1e-9, src));
+    // Load cases and combinations: a cantilever with a dead and an imposed load at its tip.
+    let (pg, pq) = (10e3, 5e3);
+    let mut k = frame(e, SectionShape::Rect { b, h });
+    member(&mut k, [0.0, 0.0], [lc, 0.0], MemberKind::Beam);
+    support(&mut k, 0.0, 0.0, SupportKind::Fixed);
+    let gid = k.apply(Op::Add { item: Item::Case(Case { id: 0, name: "Dead".into() }) }).expect("case")[0];
+    let qid = k.apply(Op::Add { item: Item::Case(Case { id: 0, name: "Imposed".into() }) }).expect("case")[0];
+    let tip = node(&k, lc, 0.0);
+    for (case, p) in [(gid, pg), (qid, pq)] {
+        add(&mut k, Op::Add { item: Item::Load(Load { case, id: 0, at: Target::Node { id: tip }, kind: LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 } }) });
+    }
+    let uls = k.apply(Op::Add { item: Item::Combo(Combo { id: 0, name: "ULS".into(), parts: vec![Factor { case: gid, f: 1.35 }, Factor { case: qid, f: 1.5 }] }) }).expect("combo")[0];
+    add(&mut k, Op::Add { item: Item::Combo(Combo { id: 0, name: "SLS".into(), parts: vec![Factor { case: gid, f: 1.0 }, Factor { case: qid, f: 1.0 }] }) });
+    let Ok(crate::Results::Frame(r)) = crate::solve_for(&k.m, Some(Which::Combo { id: uls })) else { panic!("combination") };
+    let ti = k.m.nodes.iter().position(|n| n.id == tip).unwrap();
+    let pu = 1.35 * pg + 1.5 * pq;
+    let name = "Cantilever, dead and imposed tip loads, 1.35 G + 1.5 Q";
+    out.push(check(18, name, "Tip deflection (1.35 P_G + 1.5 P_Q) L³/3EI", "len", pu * lc.powi(3) / (3.0 * e * i), -r.disp[ti][1], 1e-9, "Beam theory, superposition"));
+    let Ok(crate::Results::Frame(rg)) = crate::solve_for(&k.m, Some(Which::Case { id: gid })) else { panic!("case") };
+    out.push(check(18, name, "Dead load alone: tip deflection P_G L³/3EI", "len", pg * lc.powi(3) / (3.0 * e * i), -rg.disp[ti][1], 1e-9, "Beam theory"));
+    let env = envelope(&k.m).expect("envelope");
+    out.push(check(18, name, "Envelope: largest moment (1.35 P_G + 1.5 P_Q) L", "moment", pu * lc, env.members[0].m, 1e-9, "Statics, the larger of the two combinations"));
+    // The section tables: second moments worked out from the dimensions against the tables.
+    let tsrc = "EN 10365 section tables (second moment of area)";
+    for (n, iy) in [("IPE 300", 8356e-8), ("HEA 200", 3692e-8), ("HEB 200", 5696e-8)] {
+        let p = crate::sections::props(&crate::steel::find(n).expect("section").shape).expect("props");
+        out.push(check(18, "Steel section tables, from the dimensions", Box::leak(format!("{n}: Iy, strong axis").into_boxed_str()), "inertia", iy, p.i, 1e-3, tsrc));
+    }
+    let worst = crate::steel::library().into_iter().map(|s| (crate::sections::props(&s.shape).expect("props").a, s)).max_by(|x, y| ((x.0 - x.1.table_area).abs() / x.1.table_area).total_cmp(&((y.0 - y.1.table_area).abs() / y.1.table_area))).expect("tables");
+    out.push(check(18, "Steel section tables, from the dimensions", Box::leak(format!("Area of {}, the furthest of all {} from its table", worst.1.name, crate::steel::library().len()).into_boxed_str()), "area", worst.1.table_area, worst.0, 5e-3, "EN 10365 section tables (area)"));
+    out
 }
 
 /// Every check, in the order of the brief's table.
@@ -968,6 +1076,7 @@ pub fn run() -> Vec<Check> {
     v.extend(solids());
     v.extend(sketch());
     v.extend(revolved());
+    v.extend(frames_more());
     v
 }
 
@@ -985,7 +1094,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=17 {
+        for b in 1..=18 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -1016,7 +1125,7 @@ pub fn building(nx: usize, ny: usize, nz: usize) -> Model {
     }
     let mut next = 100 + ((ny + 1) * (nz + 1) * (nx + 1)) as u32;
     let mut member = |m: &mut Model, a: u32, b: u32| {
-        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0 });
+        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0, hinge: [false; 2] });
         next += 1;
     };
     for j in 0..=ny {
@@ -1041,10 +1150,10 @@ pub fn building(nx: usize, ny: usize, nz: usize) -> Model {
             sid += 1;
         }
     }
-    m.loads.push(Load { id: sid, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 } });
+    m.loads.push(Load { case: 0, id: sid, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 } });
     sid += 1;
     for j in 1..=ny {
-        m.loads.push(Load { id: sid, at: Target::Node { id: id(0, j, 0) }, kind: LoadKind::Force { fx: 5e3, fy: 0.0, fz: 0.0 } });
+        m.loads.push(Load { case: 0, id: sid, at: Target::Node { id: id(0, j, 0) }, kind: LoadKind::Force { fx: 5e3, fy: 0.0, fz: 0.0 } });
         sid += 1;
     }
     m.next = sid;

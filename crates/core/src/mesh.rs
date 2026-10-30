@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn point_targets_become_nodes_and_sizes_are_respected() {
         let mut md = part(vec![(Geom::rect(0.0, 0.0, 1.0, 0.5), false)], 0.05, 1);
-        md.loads.push(crate::model::Load { id: 90, at: Target::Point { x: 0.3141, y: 0.2718 }, kind: crate::model::LoadKind::Force { fx: 1.0, fy: 0.0, fz: 0.0 } });
+        md.loads.push(crate::model::Load { case: 0, id: 90, at: Target::Point { x: 0.3141, y: 0.2718 }, kind: crate::model::LoadKind::Force { fx: 1.0, fy: 0.0, fz: 0.0 } });
         md.next = 91;
         let m = mesh(&md).unwrap();
         let (p, n) = m.points[0];

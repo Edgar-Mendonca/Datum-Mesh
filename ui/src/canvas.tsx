@@ -488,6 +488,8 @@ export const Canvas = () => {
         <For each={ghosts()}>{g => <line x1={S(g[0])[0]} y1={S(g[0])[1]} x2={S(g[1])[0]} y2={S(g[1])[1]} class="ghost" />}</For>
         <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id) }} data-id={mb.id}>
           <line x1={e()[0][0]} y1={e()[0][1]} x2={e()[1][0]} y2={e()[1][1]} />
+          <Show when={mb.kind === "beam" && mb.hinge?.[0]}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} r={3.5} class="hinge" /></Show>
+          <Show when={mb.kind === "beam" && mb.hinge?.[1]}><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} r={3.5} class="hinge" /></Show>
           <Show when={mb.kind === "truss"}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * 0.06} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * 0.06} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * 0.06} r={2.5} class="pin" /></Show>
         </g>}</Show>}</For>
         <ResultsLayer />

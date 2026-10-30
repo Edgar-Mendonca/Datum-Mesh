@@ -22,6 +22,7 @@ pub fn list() -> Vec<Example> {
         e("blank-solid", "Blank 3D solid", "Draw a part's outline; it is extruded by its thickness into a 3D solid.", Analysis::Solid),
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
+        e("braced", "Braced frame", "A two-storey steel frame: HEB columns, IPE beams pinned at their ends, one braced bay, and dead, imposed and wind load cases with combinations.", Analysis::Frame),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
@@ -38,7 +39,7 @@ fn sup(at: Target, kind: SupportKind) -> Op {
     Op::Add { item: Item::Support(Support { id: 0, at, kind }) }
 }
 fn load(at: Target, kind: LoadKind) -> Op {
-    Op::Add { item: Item::Load(Load { id: 0, at, kind }) }
+    Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) }
 }
 fn shape(geom: Geom, hole: bool) -> Op {
     Op::Add { item: Item::Shape(Shape { material: 1, geom, hole, ..Shape::default() }) }
@@ -135,6 +136,46 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             ops.push(load(member(d, p[1], p[2]), LoadKind::Dist { w1: -6e3, w2: -6e3, dir: Dir::Y }));
             ops.push(load(member(d, p[2], p[3]), LoadKind::Dist { w1: -6e3, w2: -6e3, dir: Dir::Y }));
             d.apply(Op::Batch(ops))?;
+        }
+        "braced" => {
+            d.m.notes = "Two storeys of 3.5 m and two bays of 6 m. Columns HEB 200, continuous; floor and roof beams IPE 300, pinned to the columns at both ends (simple connections); the left bay braced with 30 mm round bars. Pinned bases. Load cases: dead (8 kN/m on the floor, 5 kN/m on the roof), imposed (10 and 3 kN/m) and wind from the left (12 kN and 6 kN at the floors). The combinations' factors are an example only: use your own.".into();
+            let sec = |d: &mut Doc, name: &str, shape: crate::model::SectionShape| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Section(crate::model::Section { id: 0, name: name.into(), shape }) })?[0]) };
+            let col = sec(d, "HEB 200", crate::steel::find("HEB 200").ok_or("table")?.shape)?;
+            let beam = sec(d, "IPE 300", crate::steel::find("IPE 300").ok_or("table")?.shape)?;
+            let rod = sec(d, "Round bar 30", crate::model::SectionShape::Circle { d: 0.03 })?;
+            let (xs, ys) = ([0.0, 6.0, 12.0], [0.0, 3.5, 7.0]);
+            let add = |d: &mut Doc, a: [f64; 2], b: [f64; 2], kind: MemberKind, section: u32| d.apply(Op::AddMember { from: a, to: b, kind, section: Some(section), material: None, z: [0.0; 2] }).map(|_| ());
+            for x in xs {
+                add(d, [x, 0.0], [x, 3.5], MemberKind::Beam, col)?;
+                add(d, [x, 3.5], [x, 7.0], MemberKind::Beam, col)?;
+            }
+            for y in [3.5, 7.0] {
+                add(d, [0.0, y], [6.0, y], MemberKind::Beam, beam)?;
+                add(d, [6.0, y], [12.0, y], MemberKind::Beam, beam)?;
+            }
+            add(d, [0.0, 0.0], [6.0, 3.5], MemberKind::Truss, rod)?;
+            add(d, [0.0, 3.5], [6.0, 7.0], MemberKind::Truss, rod)?;
+            d.apply(Op::Delete { ids: vec![2] })?;
+            // The beams are pinned to the columns.
+            let beams: Vec<crate::model::Member> = d.m.members.iter().filter(|b| b.section == beam).cloned().collect();
+            d.apply(Op::Batch(beams.into_iter().map(|b| Op::Set { item: Item::Member(crate::model::Member { hinge: [true, true], ..b }) }).collect()))?;
+            let mut ops: Vec<Op> = xs.iter().map(|x| sup(node(d, *x, ys[0]), SupportKind::Pinned)).collect();
+            d.apply(Op::Batch(std::mem::take(&mut ops)))?;
+            let case = |d: &mut Doc, name: &str| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Case(crate::model::Case { id: 0, name: name.into() }) })?[0]) };
+            let (g, q, w) = (case(d, "Dead")?, case(d, "Imposed")?, case(d, "Wind")?);
+            let mut on = |c: u32, at: Target, kind: LoadKind| ops.push(Op::Add { item: Item::Load(Load { case: c, id: 0, at, kind }) });
+            for (y, dead, imposed) in [(3.5, 8e3, 10e3), (7.0, 5e3, 3e3)] {
+                for (a, b) in [([0.0, y], [6.0, y]), ([6.0, y], [12.0, y])] {
+                    let t = member(d, a, b);
+                    on(g, t.clone(), LoadKind::Dist { w1: -dead, w2: -dead, dir: Dir::Y });
+                    on(q, t, LoadKind::Dist { w1: -imposed, w2: -imposed, dir: Dir::Y });
+                }
+            }
+            on(w, node(d, 0.0, 3.5), LoadKind::Force { fx: 12e3, fy: 0.0, fz: 0.0 });
+            on(w, node(d, 0.0, 7.0), LoadKind::Force { fx: 6e3, fy: 0.0, fz: 0.0 });
+            d.apply(Op::Batch(ops))?;
+            let combo = |name: &str, parts: &[(u32, f64)]| Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: name.into(), parts: parts.iter().map(|&(case, f)| crate::model::Factor { case, f }).collect() }) };
+            d.apply(Op::Batch(vec![combo("Combination 1", &[(g, 1.35), (q, 1.5)]), combo("Combination 2", &[(g, 1.0), (w, 1.5)]), combo("Combination 3", &[(g, 1.35), (q, 1.5), (w, 0.9)])]))?;
         }
         "truss" => {
             d.m.notes = "A 12 m Pratt truss, 2 m deep, six 2 m panels; pinned at the left, on a roller at the right; 10 kN at each top-chord joint.".into();

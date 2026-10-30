@@ -838,7 +838,7 @@ mod tests {
         for at in [Target::Edge { shape: s, edge: 3 }, Target::Edge { shape: s, edge: 0 }, Target::End { front: false }] {
             d.apply(Op::Add { item: Item::Support(Support { id: 0, at, kind: SupportKind::Roller }) }).unwrap();
         }
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -20e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -20e6 } }) }).unwrap();
         let r = solve(&d.m).unwrap();
         assert!((r.field("sx").max - 20e6).abs() < 1e-6 * 20e6 && (r.field("sx").min - 20e6).abs() < 1e-6 * 20e6, "{} {}", r.field("sx").min, r.field("sx").max);
         assert!(r.imbalance < 1e-9 && r.order == 1 && r.layers >= 2);
@@ -862,7 +862,7 @@ mod tests {
         let mut d = Doc::new(Model::new(Analysis::Solid));
         let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.2, 0.1), ..Shape::default() }) }).unwrap()[0];
         d.m.thickness = 0.02;
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
         assert!(solve(&d.m).unwrap_err().contains("turn about any axis"));
         // Too fine a mesh is refused before it uses the memory.
         d.m.mesh.size = 0.0005;

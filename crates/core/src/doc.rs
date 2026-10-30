@@ -3,7 +3,7 @@
 //! leaves the model exactly as it was (Plan's pattern: ops in, whole-model snapshots for undo).
 
 use crate::sketch::{How, Make};
-use crate::model::{dist3, Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
+use crate::model::{Case, Combo, dist3, Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -17,6 +17,9 @@ pub enum Item {
     Material(Material),
     Support(Support),
     Load(Load),
+    /// Load cases and combinations (0.3.3).
+    Case(Case),
+    Combo(Combo),
 }
 
 /// The model-wide settings, edited together.
@@ -252,6 +255,24 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     x.id = id;
                     m.loads.push(x);
                 }
+                Item::Case(mut x) => {
+                    x.id = id;
+                    if x.name.trim().is_empty() {
+                        x.name = format!("Case {}", m.cases.len() + 1);
+                    }
+                    // The loads so far were in the one implicit case: they join the first case.
+                    if m.cases.is_empty() {
+                        m.loads.iter_mut().for_each(|l| l.case = id);
+                    }
+                    m.cases.push(x);
+                }
+                Item::Combo(mut x) => {
+                    x.id = id;
+                    if x.name.trim().is_empty() {
+                        x.name = format!("Combination {}", m.combos.len() + 1);
+                    }
+                    m.combos.push(x);
+                }
             }
         }
         Op::Set { item } => {
@@ -273,6 +294,8 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Material(x) => put(&mut m.materials, |y| y.id, x)?,
                 Item::Support(x) => put(&mut m.supports, |y| y.id, x)?,
                 Item::Load(x) => put(&mut m.loads, |y| y.id, x)?,
+                Item::Case(x) => put(&mut m.cases, |y| y.id, x)?,
+                Item::Combo(x) => put(&mut m.combos, |y| y.id, x)?,
             }
         }
         Op::AddMember { from, to, kind, section, material, z } => {
@@ -288,7 +311,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let a = node_at(m, from, created);
             let b = node_at(m, to, created);
             let id = fresh(m);
-            m.members.push(Member { id, a, b, kind, section, material, roll: 0.0 });
+            m.members.push(Member { id, a, b, kind, section, material, roll: 0.0, hinge: [false; 2] });
             created.push(id);
         }
         Op::JoinCrossings { ids } => {
@@ -387,7 +410,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                         let (a, c) = (prev[&n], now[&n]);
                         if a != c && !m.members.iter().any(|x| (x.a == a && x.b == c) || (x.a == c && x.b == a)) {
                             let id = fresh(m);
-                            m.members.push(Member { id, a, b: c, kind, section: sec, material: mat, roll: 0.0 });
+                            m.members.push(Member { id, a, b: c, kind, section: sec, material: mat, roll: 0.0, hinge: [false; 2] });
                             created.push(id);
                         }
                     }
@@ -450,6 +473,17 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             m.sections.retain(|x| !set.contains(&x.id));
             m.materials.retain(|x| !set.contains(&x.id));
             m.supports.retain(|x| !set.contains(&x.id));
+            // A deleted load case takes its loads with it, and leaves the combinations.
+            let gone: Vec<u32> = m.cases.iter().filter(|c| set.contains(&c.id)).map(|c| c.id).collect();
+            if !gone.is_empty() {
+                let mm = m.clone();
+                m.loads.retain(|l| !gone.contains(&mm.case_of(l)));
+                m.cases.retain(|c| !gone.contains(&c.id));
+                for c in m.combos.iter_mut() {
+                    c.parts.retain(|p| !gone.contains(&p.case));
+                }
+            }
+            m.combos.retain(|x| !set.contains(&x.id));
             m.loads.retain(|x| !set.contains(&x.id));
         }
         Op::InsertCorner { shape, edge } => {
@@ -717,7 +751,7 @@ fn retarget(m: &mut Model, f: impl Fn(&Target) -> Option<Vec<Target>>) {
                 kind = LoadKind::Bearing { fx: fx / n as f64, fy: fy / n as f64 };
             }
             let id = if k == 0 { x.id } else { fresh(m) };
-            loads.push(crate::model::Load { id, at, kind });
+            loads.push(crate::model::Load { id, at, kind, case: x.case });
         }
     }
     m.loads = loads;
@@ -887,20 +921,22 @@ fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
         let b = m.members[i].clone();
         let nid = fresh(m);
         m.members[i].b = n;
-        m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material, roll: b.roll });
+        // A hinge at the far end goes with the far piece.
+        m.members[i].hinge[1] = false;
+        m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material, roll: b.roll, hinge: [false, b.hinge[1]] });
         let mut extra = vec![];
         for l in m.loads.iter_mut() {
             if let (Target::Member { id }, LoadKind::Dist { w1, w2, dir }) = (&l.at, &mut l.kind) {
                 if *id == b.id {
                     let wt = *w1 + (*w2 - *w1) * t;
-                    extra.push((LoadKind::Dist { w1: wt, w2: *w2, dir: *dir }, nid));
+                    extra.push((LoadKind::Dist { w1: wt, w2: *w2, dir: *dir }, nid, l.case));
                     *w2 = wt;
                 }
             }
         }
-        for (kind, mid) in extra {
+        for (kind, mid, case) in extra {
             let id = fresh(m);
-            m.loads.push(crate::model::Load { id, at: Target::Member { id: mid }, kind });
+            m.loads.push(crate::model::Load { id, at: Target::Member { id: mid }, kind, case });
         }
     }
 }
@@ -935,7 +971,7 @@ mod tests {
         assert_eq!(c2.len(), 2, "the corner node is shared");
         assert_eq!(d.m.nodes.len(), 3);
         let top = c[1];
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 } }) }).unwrap();
         d.apply(Op::Delete { ids: vec![top] }).unwrap();
         assert!(d.m.members.is_empty() && d.m.loads.is_empty());
         assert!(d.undo());
@@ -972,7 +1008,7 @@ mod tests {
         d.apply(Op::AddMember { from: [0.0, 3.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
         assert_eq!((d.m.nodes.len(), d.m.members.len()), (4, 2), "drawn apart, as X-bracing usually is");
         let first = d.m.members[0].id;
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Member { id: first }, kind: LoadKind::Dist { w1: -1e3, w2: -3e3, dir: crate::model::Dir::Y } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Member { id: first }, kind: LoadKind::Dist { w1: -1e3, w2: -3e3, dir: crate::model::Dir::Y } }) }).unwrap();
         let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).collect();
         let made = d.apply(Op::JoinCrossings { ids }).unwrap();
         assert_eq!(made.len(), 1);
@@ -1007,7 +1043,7 @@ mod tests {
     fn editing_a_polygon_drops_loads_on_edges_it_lost() {
         let mut d = Doc::new(Model::new(Analysis::Stress));
         let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.1, 0.05), ..Shape::default() }) }).unwrap()[0];
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
         let mut sh = d.m.shape(s).unwrap().clone();
         sh.geom = Geom::Poly { pts: vec![[0.0, 0.0], [0.1, 0.0], [0.0, 0.1]], bulge: vec![0.0; 3] };
         d.apply(Op::Set { item: Item::Shape(sh) }).unwrap();
@@ -1028,7 +1064,7 @@ mod tests {
         let mut d = Doc::new(Model::new(Analysis::Frame));
         member(&mut d, [0.0, 0.0], [6.0, 0.0]);
         let beam = d.m.members[0].id;
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Member { id: beam }, kind: LoadKind::Dist { w1: -2.0, w2: -8.0, dir: crate::model::Dir::Y } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Member { id: beam }, kind: LoadKind::Dist { w1: -2.0, w2: -8.0, dir: crate::model::Dir::Y } }) }).unwrap();
         member(&mut d, [3.0, 0.0], [3.0, -3.0]);
         assert_eq!(d.m.members.len(), 3, "the beam is split at the column");
         let mid = node_id(&d, 3.0, 0.0);
@@ -1077,7 +1113,7 @@ mod tests {
         let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.1, 0.05), ..Shape::default() }) }).unwrap()[0];
         // Fixed on the left edge (3), pressure on the right edge (1).
         d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Fixed }) }).unwrap();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
         // A corner in the bottom edge (0): the right edge becomes 2, the left 4.
         d.apply(Op::InsertCorner { shape: s, edge: 0 }).unwrap();
         assert_eq!(d.m.loads[0].at, Target::Edge { shape: s, edge: 2 });
@@ -1155,7 +1191,7 @@ mod tests {
         let mut d = Doc::new(Model::new(Analysis::Stress));
         let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.1, 0.05), ..Shape::default() }) }).unwrap()[0];
         d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Fixed }) }).unwrap();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
         // Rounding the two right-hand corners (1 and 2): the right edge becomes 2, the left 5.
         d.apply(Op::Fillet { shape: s, corners: vec![2, 1], r: 0.01 }).unwrap();
         assert_eq!(d.m.shapes[0].geom.edges(), 6);

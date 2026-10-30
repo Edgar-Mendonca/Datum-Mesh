@@ -26,6 +26,7 @@
   ],
   "highlights": [
     "Parts meshed automatically into quality triangles, finer where you ask, and solved in plane stress, plane strain or heat conduction",
+    "Frames for everyday structural analysis: load cases and combinations with an envelope of every member's forces, hinged member ends, and European steel section tables (IPE, HEA, HEB)",
     "Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; hover anywhere to read values",
     "An equilibrium check after every solve (a heat balance for heat models): the reactions are added up against the loads",
     "Thermal stress: temperatures solved on the same mesh, then the stress they cause; uniform temperature changes in frames and parts",
@@ -35,13 +36,13 @@
     "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
     "3D solids: a part's section extruded or revolved (shafts, hubs, vessels), solved in 3D, coloured by its stresses in a 3D view, with a cutting plane to see inside and faces picked by clicking",
     "Sketch tools: round and bevel corners, union, subtract and intersect shapes with arcs kept true, slots, rounded rectangles, polygons, offsets and patterns of holes",
-    "Help › Verification: 105 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
+    "Help › Verification: 120 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1 and LE10, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
     "A printed report: the model, mesh, materials, loads, contour pictures with scales, the largest values, reactions and the equilibrium check",
     "SI or US units shown everywhere; files keep SI, so switching never rounds anything",
-    "Eleven worked examples, from a portal frame and a roof truss to a steel platform, an L-bracket and a pressure vessel in 3D",
+    "Twelve worked examples, from a portal frame, a roof truss and a braced steel frame with load cases to a steel platform, an L-bracket and a pressure vessel in 3D",
     "Small and quick: a 3 MB installer, a window that starts light, and solve times recorded with every release"
   ],
   "screenshots": [
@@ -52,23 +53,23 @@
   ],
   "roadmap": [
     {
-      "v": "0.3.3",
-      "title": "Frames for everyday structural analysis",
-      "when": "Next",
-      "items": [
-        "Load cases and load combinations, with results for each",
-        "Member end releases (hinges inside a frame)",
-        "Standard steel section tables"
-      ]
-    },
-    {
       "v": "0.3.4–0.3.5",
       "title": "3D solids, continued",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Heat conduction and natural frequencies of 3D solids",
         "DXF import of section outlines",
         "A quicker solver ordering for large 3D models"
+      ]
+    },
+    {
+      "v": "later",
+      "title": "Frames, continued",
+      "when": "Later",
+      "items": [
+        "Second-order (P-delta) analysis",
+        "Plates and shells for slabs and walls",
+        "Response spectrum analysis"
       ]
     },
     {

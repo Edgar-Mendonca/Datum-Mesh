@@ -5,7 +5,7 @@
 // results tables and the mesh statistics. The engine computes every value; this only draws them.
 import { For, Show, createMemo, createEffect } from "solid-js";
 import { Pt, Mesh, PartResults, PlaneResults, HeatResults, Field, Model, num, clean } from "./api";
-import { model, partRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel, modes, modeSel, modeOn, phase, modesStale } from "./store";
+import { model, partRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel, modes, modeSel, modeOn, phase, modesStale, solvedFor } from "./store";
 import { modeAmp } from "./modes";
 import { toS, scale, pan } from "./canvas";
 import { Q, fmt, unit } from "./units";
@@ -337,6 +337,7 @@ export const PartLegend = () => {
     <Show when={r() && view() !== "mesh" && !modeOn()}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={() => import("./cmds").then(c => c.C.solve())}>Solve again (F5)</button></div></Show>
+        <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div class="lrow">
           <select class="fpick" value={d().key} onChange={e => setShow({ ...show(), field: e.currentTarget.value })} title="The result to colour the part by">
             <For each={fieldsFor(r()!.kind === "heat" ? "heat" : model()!.analysis)}>{f => <option value={f.key} selected={f.key === d().key}>{f.name}</option>}</For>

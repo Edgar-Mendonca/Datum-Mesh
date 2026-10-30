@@ -755,7 +755,7 @@ mod tests {
         for (e, k) in [(3, SupportKind::Roller), (0, SupportKind::Roller)] {
             d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: e }, kind: k }) }).unwrap();
         }
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -50e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -50e6 } }) }).unwrap();
         d.m.mesh.order = order;
         d.m.mesh.size = size;
         d
@@ -785,7 +785,7 @@ mod tests {
         d.m.thickness = 0.01;
         let s = d.m.shapes[0].id;
         d.m.loads.clear();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Traction { fx: 1.5e3, fy: 0.0, total: true, fz: 0.0 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Traction { fx: 1.5e3, fy: 0.0, total: true, fz: 0.0 } }) }).unwrap();
         let r = solve(&d.m).unwrap();
         assert!((r.applied[0] - 1.5e3).abs() < 1e-9 * 1.5e3, "{}", r.applied[0]);
         // Per length: 2 kN/m on a 0.1 m edge is 200 N.
@@ -808,7 +808,7 @@ mod tests {
         let hole = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c: [0.05, 0.06], r: 0.015 }, ..Shape::default() }) }).unwrap()[0];
         let s = d.m.shapes[0].id;
         d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 0 }, kind: SupportKind::Fixed }) }).unwrap();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: hole, edge: 0 }, kind: LoadKind::Bearing { fx: 0.0, fy: 1e4 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: hole, edge: 0 }, kind: LoadKind::Bearing { fx: 0.0, fy: 1e4 } }) }).unwrap();
         d.m.mesh.size = 0.005;
         let r = solve(&d.m).unwrap();
         assert!((r.applied[1] - 1e4).abs() < 1e-9 * 1e4 && r.applied[0].abs() < 1e-6 * 1e4, "{:?}", r.applied);
@@ -835,7 +835,7 @@ mod tests {
         for e in [3, 0] {
             d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: e }, kind: SupportKind::Roller }) }).unwrap();
         }
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -10e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -10e6 } }) }).unwrap();
         d.m.mesh.size = 0.02;
         let r = solve(&d.m).unwrap();
         let s1 = r.field("s1");

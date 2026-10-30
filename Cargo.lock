@@ -583,7 +583,7 @@ dependencies = [
 
 [[package]]
 name = "datum-core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "faer",
  "i_overlay",
@@ -594,7 +594,7 @@ dependencies = [
 
 [[package]]
 name = "datum-mesh"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "chrono",
  "datum-core",

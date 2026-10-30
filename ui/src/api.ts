@@ -12,10 +12,10 @@ export type Analysis = "frame" | "stress" | "strain" | "heat" | "axi" | "space" 
 /** Frames and trusses: in the plane, or in space (0.2.4). */
 export const isFrame = (a?: Analysis) => a === undefined || a === "frame" || a === "space";
 export interface Node { id: number; x: number; y: number; z?: number }
-export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number; roll?: number }
+export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number; roll?: number; hinge?: [boolean, boolean] }
 export type SectionShape =
   | { kind: "rect"; b: number; h: number } | { kind: "circle"; d: number } | { kind: "tube"; d: number; t: number } | { kind: "box"; b: number; h: number; t: number }
-  | { kind: "i"; h: number; b: number; tw: number; tf: number } | { kind: "channel"; h: number; b: number; tw: number; tf: number }
+  | { kind: "i"; h: number; b: number; tw: number; tf: number; r?: number } | { kind: "channel"; h: number; b: number; tw: number; tf: number }
   | { kind: "angle"; h: number; b: number; t: number } | { kind: "custom"; a: number; i: number; c: number; iy?: number; j?: number };
 export interface Section { id: number; name: string; shape: SectionShape }
 export interface Material { id: number; name: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
@@ -30,10 +30,16 @@ export type LoadKind =
   | { kind: "force"; fx: number; fy: number; fz?: number } | { kind: "moment"; m: number; mx?: number; my?: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "z" | "local" }
   | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean; fz?: number } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
   | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number };
-export interface Load { id: number; at: Target; kind: LoadKind }
+export interface Load { id: number; at: Target; kind: LoadKind; case?: number }
+/** Load cases and combinations (0.3.3). */
+export interface Case { id: number; name: string }
+export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
+export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
+export interface Envelope { over: string[]; members: { id: number; n_max: number; n_min: number; v: number; m: number; t: number; deflection: number; util: number; governs: string }[]; reactions: { node: number; max: number[]; min: number[] }[]; warnings: string[] }
+export interface LibSection { name: string; family: string; shape: SectionShape; table_area: number }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number;
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; cases?: Case[]; combos?: Combo[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }

@@ -14,6 +14,7 @@
 use crate::frame::STATIONS;
 use crate::model::{dist3, Dir, LoadKind, MemberKind, Model, SupportKind, Target};
 use crate::sections;
+use crate::release::Release;
 use crate::sparse::{Stats, System};
 use serde::Serialize;
 
@@ -86,6 +87,39 @@ struct Elem {
     rho_a: f64,
     rho_ip: f64,
     eimin: f64,
+    /// Hinges at the start and end (beams): bending released both ways, twisting still carried,
+    /// except where the node has no beam holding it rigidly (`twist`: a ball joint there).
+    hinge: [bool; 2],
+    twist: [bool; 2],
+}
+
+/// The condensation of a hinged beam (0.3.3), or None.
+fn released(e: &Elem) -> Option<Release<12>> {
+    if e.kind != MemberKind::Beam || !(e.hinge[0] || e.hinge[1]) {
+        return None;
+    }
+    let mut rel = vec![];
+    if e.hinge[0] {
+        rel.extend(if e.twist[0] { &[3, 4, 5][..] } else { &[4, 5][..] });
+    }
+    if e.hinge[1] {
+        rel.extend(if e.twist[1] { &[9, 10, 11][..] } else { &[10, 11][..] });
+    }
+    Some(Release::new(&k_local(e), &equivalent(e), &rel))
+}
+fn cond(e: &Elem, k: [[f64; 12]; 12]) -> [[f64; 12]; 12] {
+    released(e).map_or(k, |r| r.mat(&k))
+}
+fn cond_load(e: &Elem) -> [f64; 12] {
+    let f = equivalent(e);
+    released(e).map_or(f, |r| r.load(&f))
+}
+/// The member's local end movements (θx, θy, θz in local axes), its hinged ends' own included.
+fn ends_of(e: &Elem, u: &[f64], loaded: bool) -> [f64; 12] {
+    let g = |n: usize, o: usize| to_local(e, [u[6 * n + o], u[6 * n + o + 1], u[6 * n + o + 2]]);
+    let (ta, ra, tb, rb) = (g(e.a, 0), g(e.a, 3), g(e.b, 0), g(e.b, 3));
+    let ul = [ta[0], ta[1], ta[2], ra[0], ra[1], ra[2], tb[0], tb[1], tb[2], rb[0], rb[1], rb[2]];
+    released(e).map_or(ul, |r| r.full(&ul, loaded))
 }
 
 fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -232,6 +266,7 @@ fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
             c.a = if k == 0 { e.a } else { first + k - 1 };
             c.b = if k == pieces - 1 { e.b } else { first + k };
             c.l = e.l / pieces as f64;
+            c.hinge = [k == 0 && e.hinge[0], k == pieces - 1 && e.hinge[1]];
             for j in 0..3 {
                 let (q1, q2) = (p[2 * j], p[2 * j + 1]);
                 c.p[2 * j] = q1 + (q2 - q1) * s0;
@@ -260,7 +295,7 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
         let gm = mat.e / (2.0 * (1.0 + mat.nu));
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy) };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2] };
         let w = to_local(&e, [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1], mat.rho * pr.a * g[2]]);
         e.p = [w[0], w[0], w[1], w[1], w[2], w[2]];
         elems.push(e);
@@ -309,9 +344,28 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             applied[3 + k] += f[3 + k] + mo[k];
         }
     };
+    // Which nodes a beam holds rigidly; a hinged end at a node none does is a ball joint, free to
+    // twist too (unless both ends would be: then the member keeps its twisting, as nothing turns
+    // it at either end).
+    let mut has_beam = vec![false; nt];
+    let mut has_member = vec![false; nt];
     for e in &parts {
-        scatter(e, &k_local(e), |i, j, v| sys.add(i, j, v));
-        let f = equivalent(e);
+        for n in [e.a, e.b] {
+            has_member[n] = true;
+            has_beam[n] |= e.kind == MemberKind::Beam && !((n == e.a && e.hinge[0]) || (n == e.b && e.hinge[1]));
+        }
+    }
+    for e in parts.iter_mut() {
+        let t = [e.hinge[0] && !has_beam[e.a], e.hinge[1] && !has_beam[e.b]];
+        e.twist = if t[0] && t[1] { [false; 2] } else { t };
+    }
+    // The whole members (for their results) take their end pieces' joints.
+    for (e, sp) in elems.iter_mut().zip(&spans) {
+        e.twist = [parts[sp.start].twist[0], parts[sp.end - 1].twist[1]];
+    }
+    for e in &parts {
+        scatter(e, &cond(e, k_local(e)), |i, j, v| sys.add(i, j, v));
+        let f = cond_load(e);
         let (fa, ma) = (to_global(e, [f[0], f[1], f[2]]), to_global(e, [f[3], f[4], f[5]]));
         let (fb, mb) = (to_global(e, [f[6], f[7], f[8]]), to_global(e, [f[9], f[10], f[11]]));
         add_load(&mut sys, e.a, [fa[0], fa[1], fa[2], ma[0], ma[1], ma[2]]);
@@ -347,14 +401,6 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         }
     }
     // Rotations of nodes no beam holds are not unknowns; a node no member reaches has none.
-    let mut has_beam = vec![false; nt];
-    let mut has_member = vec![false; nt];
-    for e in &parts {
-        for n in [e.a, e.b] {
-            has_member[n] = true;
-            has_beam[n] |= e.kind == MemberKind::Beam;
-        }
-    }
     let mut free_rot = vec![false; nt];
     for i in 0..nn {
         if !has_beam[i] {
@@ -451,9 +497,7 @@ fn span(m: &Model) -> f64 {
 }
 
 fn member_result(e: &Elem, u: &[f64]) -> SpaceMember {
-    let g = |n: usize, o: usize| to_local(e, [u[6 * n + o], u[6 * n + o + 1], u[6 * n + o + 2]]);
-    let (ta, ra, tb, rb) = (g(e.a, 0), g(e.a, 3), g(e.b, 0), g(e.b, 3));
-    let ul = [ta[0], ta[1], ta[2], ra[0], ra[1], ra[2], tb[0], tb[1], tb[2], rb[0], rb[1], rb[2]];
+    let ul = ends_of(e, u, true);
     let k = k_local(e);
     let eq = equivalent(e);
     let f: Vec<f64> = (0..12).map(|i| (0..12).map(|j| k[i][j] * ul[j]).sum::<f64>() - eq[i]).collect();
@@ -568,8 +612,8 @@ fn shape_along(pieces: &[Elem], u: &[f64]) -> Vec<[f64; 3]> {
             let t = k as f64 / (STATIONS - 1) as f64 * np as f64;
             let i = (t.floor() as usize).min(np - 1);
             let (e, s) = (&pieces[i], t - i as f64);
-            let g = |n: usize, o: usize| to_local(e, [u[6 * n + o], u[6 * n + o + 1], u[6 * n + o + 2]]);
-            let (ta, ra, tb, rb) = (g(e.a, 0), g(e.a, 3), g(e.b, 0), g(e.b, 3));
+            let ul = ends_of(e, u, false);
+            let (ta, ra, tb, rb) = ([ul[0], ul[1], ul[2]], [ul[3], ul[4], ul[5]], [ul[6], ul[7], ul[8]], [ul[9], ul[10], ul[11]]);
             let lin = |a: f64, b: f64| a * (1.0 - s) + b * s;
             let (v, w) = if e.kind == MemberKind::Beam {
                 let (h1, h2, h3, h4) = (1.0 - 3.0 * s * s + 2.0 * s.powi(3), e.l * (s - 2.0 * s * s + s.powi(3)), 3.0 * s * s - 2.0 * s.powi(3), e.l * (-s * s + s.powi(3)));
@@ -632,7 +676,7 @@ pub fn modes(m: &Model, count: usize) -> Result<SpaceModes, String> {
     let asm = assemble(m, crate::frame::SPLIT)?;
     let mut mass = vec![];
     for e in &asm.parts {
-        triplets(e, &m_local(e), &mut mass);
+        triplets(e, &cond(e, m_local(e)), &mut mass);
     }
     let (found, iterations) = crate::modal::lowest(&asm.sys, &mass, &asm.held, count)?;
     let modes = found
@@ -655,16 +699,14 @@ pub fn buckling(m: &Model, count: usize) -> Result<SpaceBuckling, String> {
     }
     let (u, _) = asm.sys.solve(&asm.held, &vec![0.0; asm.sys.n])?;
     let axial = |e: &Elem| {
-        let g = |n: usize, o: usize| to_local(e, [u[6 * n + o], u[6 * n + o + 1], u[6 * n + o + 2]]);
-        let (ta, ra, tb, rb) = (g(e.a, 0), g(e.a, 3), g(e.b, 0), g(e.b, 3));
-        let ul = [ta[0], ta[1], ta[2], ra[0], ra[1], ra[2], tb[0], tb[1], tb[2], rb[0], rb[1], rb[2]];
+        let ul = ends_of(e, &u, true);
         let (k, eq) = (k_local(e), equivalent(e));
         let end = |i: usize| (0..12).map(|j| k[i][j] * ul[j]).sum::<f64>() - eq[i];
         (-end(0) + end(6)) / 2.0
     };
     let mut g = vec![];
     for e in &asm.parts {
-        triplets(e, &kg_local(e, axial(e)), &mut g);
+        triplets(e, &cond(e, kg_local(e, axial(e))), &mut g);
     }
     let bars: Vec<crate::frame::BarBuckle> = asm
         .elems

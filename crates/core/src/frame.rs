@@ -10,6 +10,7 @@
 
 use crate::model::{Dir, LoadKind, MemberKind, Model, SupportKind, Target};
 use crate::sections;
+use crate::release::Release;
 use crate::sparse::{Stats, System};
 use serde::Serialize;
 
@@ -97,6 +98,34 @@ pub(crate) struct Elem {
     at: f64,
     /// Mass per length ρA (kg/m), for natural frequencies.
     rho_a: f64,
+    /// Hinges at the start and end (beams).
+    hinge: [bool; 2],
+}
+
+/// The condensation of a hinged beam (0.3.3), or None.
+fn released(e: &Elem) -> Option<Release<6>> {
+    if e.kind != MemberKind::Beam || !(e.hinge[0] || e.hinge[1]) {
+        return None;
+    }
+    let rel: Vec<usize> = [(e.hinge[0], 2), (e.hinge[1], 5)].iter().filter(|x| x.0).map(|x| x.1).collect();
+    Some(Release::new(&k_local(e), &equivalent(e), &rel))
+}
+/// A local matrix with the hinges condensed out.
+fn cond(e: &Elem, k: [[f64; 6]; 6]) -> [[f64; 6]; 6] {
+    released(e).map_or(k, |r| r.mat(&k))
+}
+/// The member's own end loads with the hinges condensed out.
+fn cond_load(e: &Elem) -> [f64; 6] {
+    let f = equivalent(e);
+    released(e).map_or(f, |r| r.load(&f))
+}
+/// The member's local end movements, its hinged ends' own rotations included.
+fn ends_of(e: &Elem, ul: [f64; 6], loaded: bool) -> [f64; 6] {
+    released(e).map_or(ul, |r| r.full(&ul, loaded))
+}
+/// Does the member hold the node's rotation at this end (a beam end without a hinge)?
+fn holds_turn(e: &Elem, n: usize) -> bool {
+    e.kind == MemberKind::Beam && !((n == e.a && e.hinge[0]) || (n == e.b && e.hinge[1]))
 }
 
 /// The 6×6 stiffness in local axes (dofs u_a, v_a, θ_a, u_b, v_b, θ_b).
@@ -189,6 +218,7 @@ fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
             c.a = if k == 0 { e.a } else { first + k - 1 };
             c.b = if k == pieces - 1 { e.b } else { first + k };
             c.l = e.l / pieces as f64;
+            c.hinge = [k == 0 && e.hinge[0], k == pieces - 1 && e.hinge[1]];
             c.p = [p1 + (p2 - p1) * s0, p1 + (p2 - p1) * s1, q1 + (q2 - q1) * s0, q1 + (q2 - q1) * s1];
             c
         })
@@ -268,7 +298,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let sec = m.section(mb.section).ok_or("A member's section is missing.")?;
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a, hinge: mb.hinge };
         // Self-weight: ρ A g per length, resolved into the member's axes.
         let w = [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1]];
         let (wx, wy) = (e.c * w[0] + e.s * w[1], -e.s * w[0] + e.c * w[1]);
@@ -324,8 +354,8 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     };
     for e in &parts {
         // Global stiffness T' k T, with T the block rotation.
-        scatter(e, &k_local(e), |i, j, v| sys.add(i, j, v));
-        let f = equivalent(e);
+        scatter(e, &cond(e, k_local(e)), |i, j, v| sys.add(i, j, v));
+        let f = cond_load(e);
         add_load(&mut sys, e.a, unrot(e, [f[0], f[1], f[2]]));
         add_load(&mut sys, e.b, unrot(e, [f[3], f[4], f[5]]));
     }
@@ -365,7 +395,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     for e in &parts {
         for n in [e.a, e.b] {
             has_member[n] = true;
-            has_beam[n] |= e.kind == MemberKind::Beam;
+            has_beam[n] |= holds_turn(e, n);
         }
     }
     let mut free_rot = vec![false; nt];
@@ -503,7 +533,7 @@ pub fn modes(m: &Model, count: usize) -> Result<FrameModes, String> {
     let Assembly { sys, held, elems, parts, spans, free_rot, has_beam, .. } = assemble(m, SPLIT)?;
     let mut mass = vec![];
     for e in &parts {
-        scatter(e, &m_local(e), |i, j, v| mass.push((i, j, v)));
+        scatter(e, &cond(e, m_local(e)), |i, j, v| mass.push((i, j, v)));
     }
     let (found, iterations) = crate::modal::lowest(&sys, &mass, &held, count)?;
     let nn = m.nodes.len();
@@ -529,8 +559,9 @@ fn shape_along(pieces: &[Elem], u: &[f64]) -> Vec<[f64; 2]> {
             let t = k as f64 / (STATIONS - 1) as f64 * np as f64;
             let e = &pieces[(t.floor() as usize).min(np - 1)];
             let s = t - (t.floor()).min(np as f64 - 1.0);
-            let la = rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]);
-            let lb = rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]);
+            let (la, lb) = (rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]), rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]));
+            let full = ends_of(e, [la[0], la[1], la[2], lb[0], lb[1], lb[2]], false);
+            let (la, lb) = ([full[0], full[1], full[2]], [full[3], full[4], full[5]]);
             let ux = la[0] * (1.0 - s) + lb[0] * s;
             let vy = if e.kind == MemberKind::Beam {
                 let (h1, h2, h3, h4) = (1.0 - 3.0 * s * s + 2.0 * s.powi(3), e.l * (s - 2.0 * s * s + s.powi(3)), 3.0 * s * s - 2.0 * s.powi(3), e.l * (-s * s + s.powi(3)));
@@ -584,14 +615,14 @@ pub fn buckling(m: &Model, count: usize) -> Result<FrameBuckling, String> {
     let (u, _) = sys.solve(&held, &vec![0.0; sys.n])?;
     let axial = |e: &Elem| {
         let (la, lb) = (rot(e, [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]]), rot(e, [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]]));
-        let ul = [la[0], la[1], la[2], lb[0], lb[1], lb[2]];
+        let ul = ends_of(e, [la[0], la[1], la[2], lb[0], lb[1], lb[2]], true);
         let (k, eq) = (k_local(e), equivalent(e));
         let end = |i: usize| (0..6).map(|j| k[i][j] * ul[j]).sum::<f64>() - eq[i];
         (-end(0) + end(3)) / 2.0
     };
     let mut g = vec![];
     for e in &parts {
-        scatter(e, &kg_local(e, axial(e)), |i, j, v| g.push((i, j, v)));
+        scatter(e, &cond(e, kg_local(e, axial(e))), |i, j, v| g.push((i, j, v)));
     }
     let bars: Vec<BarBuckle> = elems
         .iter()
@@ -658,7 +689,7 @@ fn member_result(e: &Elem, u: &[f64]) -> MemberResult {
     let ga = [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]];
     let gb = [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]];
     let (la, lb) = (rot(e, ga), rot(e, gb));
-    let ul = [la[0], la[1], la[2], lb[0], lb[1], lb[2]];
+    let ul = ends_of(e, [la[0], la[1], la[2], lb[0], lb[1], lb[2]], true);
     let k = k_local(e);
     let eq = equivalent(e);
     let mut ends = [0.0; 6];
@@ -723,7 +754,7 @@ mod tests {
         d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind }) }).unwrap();
     }
     fn load(d: &mut Doc, at: Target, kind: LoadKind) {
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) }).unwrap();
     }
 
     #[test]

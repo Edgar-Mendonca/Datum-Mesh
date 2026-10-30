@@ -42,15 +42,17 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
           if (c === "materials_library") return f.library;
+          if (c === "envelope") return f.braced_envelope;
+          if (c === "sections_library") return f.sections;
           if (c in m) return m[c];
           return null;
         },
@@ -435,6 +437,58 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("cutting shows a slider to move the plane", (await p.$$('.legend input[type=range][title^="Where the plane cuts"]')).length === 1);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "vessel3d-cut.png") });
   await p.click('.legend .seg button:text-is("Off")');
+  // 0.3.3: load cases and combinations, hinges, the envelope, the section tables.
+  await open("braced"); await p.waitForTimeout(200);
+  const bm = fix.braced.m, [cg, cq, cw] = bm.cases;
+  const drawn = async () => p.$$eval(".dsvg .lg, .dsvg g.load", els => els.length).catch(() => -1);
+  await p.click('.tabs > button:text-is("Loads")'); await p.waitForTimeout(100);
+  const picks = await p.$$eval(".casepick option", os => os.map(o => o.textContent));
+  check("the Loads tab picks a load case or a combination", picks.join() === "Dead,Imposed,Wind,Combination 1,Combination 2,Combination 3", picks.join());
+  const nDead = await drawn();
+  await p.selectOption(".casepick", `case:${cw.id}`); await p.waitForTimeout(150);
+  const nWind = await drawn();
+  check("only the picked case's loads are drawn", nDead > 0 && nWind > 0 && nWind < nDead, `${nDead} → ${nWind}`);
+  await p.click('.tabs > button:text-is("Geometry")'); await p.click('.tabs > button:text-is("Loads")');
+  await p.click('.ribbon button:has-text("Force")'); await p.waitForTimeout(100);
+  const nd = await center(`.dsvg [data-id="${bm.nodes[4].id}"]`).catch(() => null);
+  if (nd) { await p.mouse.click(nd[0], nd[1]); await p.waitForTimeout(150); }
+  const nl = await lastOp();
+  check("a new load goes into the picked case", nl?.Add?.item?.Load?.case === cw.id, JSON.stringify(nl));
+  await p.keyboard.press("Escape");
+  await p.selectOption(".casepick", `combo:${bm.combos[0].id}`); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__solveKey = "braced_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__solveKey = null; });
+  const sc = await p.evaluate(() => window.__calls.filter(c => c[0] === "solve").slice(-1)[0][1]);
+  check("Solve solves the picked combination", sc?.which?.on === "combo" && sc.which.id === bm.combos[0].id, JSON.stringify(sc));
+  check("the legend says which combination the results are for", (await p.textContent(".legend")).includes("Combination 1: 1.35 × Dead + 1.5 × Imposed"));
+  await p.click('.ribbon button:has-text("Envelope")'); await p.waitForTimeout(250);
+  const ev = await p.textContent(".dlg");
+  check("the envelope lists each member's extremes and the combination that governs", ev.includes("Over 3 combinations") && ev.includes("Governed by") && ev.includes("Combination 3"), ev.slice(0, 200));
+  await p.keyboard.press("Escape");
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Cases and Combinations")'); await p.waitForTimeout(150);
+  check("the cases dialog lists cases and each combination's factors", (await p.$$(".dlg .tbl.cases")).length === 2 && (await p.$$(".dlg input.fac")).length === bm.combos.length * bm.cases.length);
+  await p.fill(`.dlg .tbl.cases >> nth=1 >> tbody tr >> nth=0 >> input.fac >> nth=2`, "0.6"); await p.keyboard.press("Tab"); await p.waitForTimeout(150);
+  const cf = (await ops()).reverse().find(o => o.Set?.item?.Combo);
+  check("typing a factor puts that case into the combination", cf?.Set?.item?.Combo?.parts.some(x => x.case === cw.id && x.f === 0.6), JSON.stringify(cf));
+  await p.keyboard.press("Escape");
+  const bmem = bm.members.find(x => x.hinge?.[0]);
+  check("hinged beam ends are drawn as small circles", (await p.$$(".dsvg circle.hinge")).length === bm.members.filter(x => x.hinge?.[0]).length * 2);
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(100);
+  await p.click(`.dsvg [data-id="${bmem.id}"] line`, { force: true }).catch(() => {}); await p.waitForTimeout(150);
+  const ih = await p.textContent(".insp");
+  check("a beam's Inspector has its hinges", ih.includes("Hinge at the start") && ih.includes("Hinge at the end"));
+  await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button[title="Sections"]'); await p.waitForTimeout(200);
+  await p.click('.dlg button:has-text("From the tables")'); await p.waitForTimeout(250);
+  const tbl = `.dlg:has(header:has-text("Steel section tables"))`;
+  const tb = await p.textContent(tbl);
+  check("the section tables list IPE, HEA and HEB with their properties", tb.includes("IPE 300") && tb.includes("HEA 100") && tb.includes("HEB 600") && tb.includes("Root radius"));
+  await p.fill(`${tbl} .mlist input`, "heb300"); await p.waitForTimeout(100);
+  await p.click(`${tbl} .mlist button:text-is("HEB 300")`); await p.click(`${tbl} button:text-is("Add to the model")`); await p.waitForTimeout(200);
+  const ts = await lastOp();
+  check("adding a table section adds it with its root radius", ts?.Add?.item?.Section?.name === "HEB 300" && Math.abs(ts.Add.item.Section.shape.r - 0.027) < 1e-12, JSON.stringify(ts));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  check("Escape closes the dialog left open under a closed one (0.3.3 bug: focus was lost)", (await p.$$(".ov")).length === 0);
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

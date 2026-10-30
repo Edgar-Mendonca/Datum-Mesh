@@ -4,7 +4,7 @@
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Pt, MemberResult, Model, FrameResults, SpaceResults, SolidResults, num, clean, isFrame } from "./api";
 import { fieldsFor } from "./parts";
-import { frameRes as results, partRes, spaceRes, solidRes, stale, show, model, cursor, setView, sel, setSel, modeOn } from "./store";
+import { frameRes as results, partRes, spaceRes, solidRes, stale, show, model, cursor, setView, sel, setSel, modeOn, solvedFor } from "./store";
 import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
 import { C, imbalanceOf } from "./cmds";
@@ -127,6 +127,7 @@ export const ResultsLegend = () => {
     <Show when={r() && m()?.analysis === "frame" && !modeOn()}>
       <div class="legend">
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
+        <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <Show when={diagInfo()}>{d => <div><b>{d().name}</b><span>max {fmt(d().q, clean(d().max, d().big))} · min {fmt(d().q, clean(d().min, d().big))}</span><small>{show().diagram === "m" ? "Drawn on the tension side." : "Positive drawn on the member's left side (looking from start to end); tension positive."}</small></div>}</Show>
         <Show when={show().deformed}><div><b>Deflected shape</b><span>{deformFactor(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deformFactor(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>

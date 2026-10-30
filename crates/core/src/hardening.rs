@@ -44,7 +44,12 @@ mod tests {
             _ => Target::Body,
         };
         let shape = |r: &mut Rng, m: &Model| if m.shapes.is_empty() || r.below(8) == 0 { r.id(m) } else { m.shapes[r.below(m.shapes.len())].id };
-        match r.below(16) {
+        match r.below(18) {
+            16 => Op::Add { item: Item::Case(crate::model::Case { id: 0, name: if r.below(4) == 0 { " ".into() } else { "Dead".into() } }) },
+            17 => {
+                let parts = (0..r.below(3)).map(|_| crate::model::Factor { case: if m.cases.is_empty() || r.below(5) == 0 { r.below(500) as u32 } else { m.cases[r.below(m.cases.len())].id }, f: r.f(-1.0, 2.0) }).collect();
+                Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: "ULS".into(), parts }) }
+            }
             12 => {
                 let (s, cs) = (shape(r, m), (0..r.below(4)).map(|_| r.below(7) as u32).collect());
                 if r.below(2) == 0 { Op::Fillet { shape: s, corners: cs, r: r.f(-0.1, 1.0) } } else { Op::Chamfer { shape: s, corners: cs, d: r.f(-0.1, 1.0) } }
@@ -70,7 +75,7 @@ mod tests {
                 Op::Add { item: Item::Shape(Shape { material: 1, hole: r.below(3) == 0, geom: g, ..Shape::default() }) }
             }
             5 => Op::Add { item: Item::Support(Support { id: 0, at: target(r, m), kind: [SupportKind::Fixed, SupportKind::Pinned, SupportKind::RollerX, SupportKind::Roller, SupportKind::Spring { kx: r.f(-1.0, 1e6), ky: 0.0, kr: 0.0, kz: 0.0, krx: 0.0, kry: 0.0 }, SupportKind::Temperature { t: 300.0 }][r.below(6)].clone() }) },
-            6 => Op::Add { item: Item::Load(Load { id: 0, at: target(r, m), kind: [LoadKind::Force { fx: 1.0, fy: -2.0, fz: 0.0 }, LoadKind::Moment { m: 3.0, mx: 0.0, my: 0.0 }, LoadKind::Dist { w1: 1.0, w2: 2.0, dir: Dir::Local }, LoadKind::Pressure { p: 1e5 }, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }, LoadKind::Convection { h: r.f(-5.0, 50.0), t_inf: 290.0 }][r.below(6)].clone() }) },
+            6 => Op::Add { item: Item::Load(Load { case: 0, id: 0, at: target(r, m), kind: [LoadKind::Force { fx: 1.0, fy: -2.0, fz: 0.0 }, LoadKind::Moment { m: 3.0, mx: 0.0, my: 0.0 }, LoadKind::Dist { w1: 1.0, w2: 2.0, dir: Dir::Local }, LoadKind::Pressure { p: 1e5 }, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }, LoadKind::Convection { h: r.f(-5.0, 50.0), t_inf: 290.0 }][r.below(6)].clone() }) },
             7 => Op::Move { ids: vec![r.id(m), r.id(m)], dx: r.f(-1.0, 1.0).round(), dy: 0.5, dz: 0.0 },
             8 => Op::Delete { ids: vec![r.id(m)] },
             9 => if r.below(2) == 0 { Op::Delete { ids: vec![r.id(m)] } } else { Op::JoinCrossings { ids: m.members.iter().map(|b| b.id).collect() } },
@@ -99,7 +104,7 @@ mod tests {
             Op::Set { item: Item::Node(Node { id: 999, x: 0.0, y: 0.0, z: 0.0 }) },
             Op::Delete { ids: vec![1] },
             Op::Add { item: Item::Support(Support { id: 0, at: Target::Member { id: d.m.members[0].id }, kind: SupportKind::Fixed }) },
-            Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: n }, kind: LoadKind::Pressure { p: 1.0 } }) },
+            Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: n }, kind: LoadKind::Pressure { p: 1.0 } }) },
             Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::Poly { pts: vec![[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]], bulge: vec![0.0; 3] }, ..Shape::default() }) },
             Op::SetMeta { name: "  ".into(), notes: String::new() },
             // A batch that fails half way must undo its first half too.
@@ -211,6 +216,12 @@ mod tests {
                     let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: SupportKind::Fixed }) });
                 }
             }
+            // Hinges on some member ends (0.3.3).
+            for mb in d.m.members.clone() {
+                if r.below(4) == 0 {
+                    let _ = d.apply(Op::Set { item: Item::Member(crate::model::Member { hinge: [r.below(2) == 0, r.below(2) == 0], ..mb }) });
+                }
+            }
             // Buckling never panics; when it answers, the factors are positive and rising.
             if let Ok(b) = crate::frame::buckling(&d.m, 3) {
                 assert!(b.modes.iter().all(|x| x.lambda > 0.0) && b.modes.windows(2).all(|w| w[1].lambda >= w[0].lambda * (1.0 - 1e-6)), "seed {seed}: {:?}", b.modes.iter().map(|x| x.lambda).collect::<Vec<_>>());
@@ -259,6 +270,8 @@ mod tests {
             let mut ms = d.m.members.clone();
             for mb in ms.iter_mut() {
                 mb.roll = r.f(-3.0, 3.0);
+                // Some hinged ends (0.3.3).
+                mb.hinge = if r.below(6) == 0 { [r.below(2) == 0, r.below(2) == 0] } else { [false; 2] };
                 let _ = d.apply(Op::Set { item: Item::Member(mb.clone()) });
             }
             for _ in 0..(1 + r.below(3)) {
@@ -278,7 +291,7 @@ mod tests {
                     LoadKind::Gravity { .. } => Target::Body,
                     _ => Target::Node { id: d.m.nodes[r.below(d.m.nodes.len())].id },
                 };
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) });
             }
             // Frequencies and buckling never panic; when they answer, they rise.
             if let Ok(f) = crate::space::modes(&d.m, 3) {
@@ -347,10 +360,10 @@ mod tests {
                     1 => LoadKind::Traction { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), total: true, fz: r.f(-1e4, 1e4) },
                     _ => LoadKind::Traction { fx: 0.0, fy: r.f(-1e5, 1e5), total: false, fz: r.f(-1e5, 1e5) },
                 };
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) });
             }
             if r.below(3) == 0 {
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: r.f(-5.0, 5.0) } }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: r.f(-5.0, 5.0) } }) });
             }
             let Ok(res) = crate::solid::solve(&d.m) else { continue };
             solved += 1;
@@ -408,14 +421,14 @@ mod tests {
                     (_, 3) => LoadKind::Bearing { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4) },
                     _ => LoadKind::Traction { fx: r.f(-1e5, 1e5), fy: 0.0, total: false, fz: 0.0 },
                 };
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at, kind }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) });
             }
             if r.below(3) == 0 {
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Point { x: r.f(-w, w) / 2.0, y: r.f(-h, h) / 2.0 }, kind: LoadKind::Force { fx: 1e3, fy: -1e3, fz: 0.0 } }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Point { x: r.f(-w, w) / 2.0, y: r.f(-h, h) / 2.0 }, kind: LoadKind::Force { fx: 1e3, fy: -1e3, fz: 0.0 } }) });
             }
             if analysis != Analysis::Heat && r.below(3) == 0 {
                 // Thermal stress: a uniform change, or fixed temperatures solved first.
-                let _ = d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Body, kind: LoadKind::Warming { dt: r.f(-100.0, 100.0) } }) });
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Warming { dt: r.f(-100.0, 100.0) } }) });
                 if r.below(2) == 0 {
                     let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: r.below(edges as usize) as u32 }, kind: SupportKind::Temperature { t: r.f(250.0, 500.0) } }) });
                 }
@@ -457,7 +470,7 @@ mod tests {
         let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 1.0, 1.0), ..Shape::default() }) }).unwrap()[0];
         d.apply(Op::Add { item: Item::Shape(Shape { material: 1, hole: true, geom: Geom::Circle { c: [0.5, 0.5], r: 0.1 }, ..Shape::default() }) }).unwrap();
         d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Fixed }) }).unwrap();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -1e6 } }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: -1e6 } }) }).unwrap();
         d.m.mesh.size = 0.0095;
         let t = std::time::Instant::now();
         let r = crate::plane::solve(&d.m).unwrap();
@@ -483,7 +496,7 @@ mod tests {
         let bottom: Vec<u32> = d.m.nodes.iter().filter(|n| n.y == 0.0).map(|n| n.id).collect();
         let top = d.m.nodes.iter().find(|n| n.y == 60.0 && n.x == 60.0).unwrap().id;
         let mut ops: Vec<Op> = bottom.iter().map(|id| Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: *id }, kind: SupportKind::Fixed }) }).collect();
-        ops.push(Op::Add { item: Item::Load(Load { id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 } }) });
+        ops.push(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: top }, kind: LoadKind::Force { fx: 1e3, fy: 0.0, fz: 0.0 } }) });
         d.apply(Op::Batch(ops)).unwrap();
         let t = std::time::Instant::now();
         let r = crate::frame::solve(&d.m).unwrap();
@@ -562,5 +575,60 @@ mod tests {
             }
         }
         assert!(tried > 100, "{tried}");
+    }
+
+    #[test]
+    fn combinations_add_up_their_cases_and_the_envelope_never_panics() {
+        // Random frames with two or three load cases: a combination's results equal its cases'
+        // results times their factors, added up (the solve is linear), and the envelope covers
+        // every combination.
+        use crate::cases::{envelope, Which};
+        let mut tried = 0;
+        for seed in 1..=60u64 {
+            let mut r = Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xCA5E);
+            let mut d = Doc::new(Model::new(if r.below(2) == 0 { Analysis::Frame } else { Analysis::Space }));
+            let n = 2 + r.below(4);
+            let pts: Vec<[f64; 2]> = (0..=n).map(|i| [i as f64 * 2.0, if i % 2 == 0 { 0.0 } else { r.f(0.5, 2.0) }]).collect();
+            for w in pts.windows(2) {
+                let _ = d.apply(Op::AddMember { from: w[0], to: w[1], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] });
+            }
+            let ids: Vec<u32> = d.m.nodes.iter().map(|x| x.id).collect();
+            for &id in [ids[0], *ids.last().unwrap()].iter() {
+                let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind: SupportKind::Fixed }) });
+            }
+            let cases: Vec<u32> = (0..2 + r.below(2)).map(|_| d.apply(Op::Add { item: Item::Case(crate::model::Case { id: 0, name: String::new() }) }).unwrap()[0]).collect();
+            for &c in &cases {
+                for _ in 0..1 + r.below(3) {
+                    let at = Target::Node { id: ids[r.below(ids.len())] };
+                    let _ = d.apply(Op::Add { item: Item::Load(Load { case: c, id: 0, at, kind: LoadKind::Force { fx: r.f(-1e4, 1e4), fy: r.f(-1e4, 1e4), fz: if d.m.analysis == Analysis::Space { r.f(-1e4, 1e4) } else { 0.0 } } }) });
+                }
+            }
+            let factors: Vec<f64> = cases.iter().map(|_| r.f(-1.0, 2.0)).collect();
+            let combo = d.apply(Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: String::new(), parts: cases.iter().zip(&factors).map(|(c, f)| crate::model::Factor { case: *c, f: *f }).collect() }) }).unwrap()[0];
+            let disp = |w: Which| -> Option<Vec<f64>> {
+                match crate::solve_for(&d.m, Some(w)).ok()? {
+                    crate::Results::Frame(x) => Some(x.disp.iter().flat_map(|v| v.to_vec()).collect()),
+                    crate::Results::Space(x) => Some(x.disp.iter().flat_map(|v| v.to_vec()).collect()),
+                    _ => None,
+                }
+            };
+            let Some(all) = disp(Which::Combo { id: combo }) else { continue };
+            let mut sum = vec![0.0; all.len()];
+            for (c, f) in cases.iter().zip(&factors) {
+                let one = disp(Which::Case { id: *c }).unwrap();
+                for k in 0..sum.len() {
+                    sum[k] += f * one[k];
+                }
+            }
+            let big = all.iter().fold(1e-30f64, |a, v| a.max(v.abs()));
+            assert!(all.iter().zip(&sum).all(|(a, b)| (a - b).abs() < 1e-9 * big), "seed {seed}");
+            let env = envelope(&d.m).unwrap();
+            assert_eq!(env.over.len(), 1);
+            tried += 1;
+            // Deleting a case takes its loads and leaves the combination without it.
+            d.apply(Op::Delete { ids: vec![cases[0]] }).unwrap();
+            assert!(d.m.loads.iter().all(|l| d.m.case_of(l) != cases[0]) && d.m.combos[0].parts.iter().all(|p| p.case != cases[0]), "seed {seed}");
+        }
+        assert!(tried >= 40, "{tried}");
     }
 }

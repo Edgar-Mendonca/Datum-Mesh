@@ -6,7 +6,7 @@
 // are drawn faint and cannot be picked; the 3D view shows everything.
 import { createMemo, createSignal } from "solid-js";
 import { Model, Node, Load, Pt, isFrame } from "./api";
-import { model } from "./store";
+import { model, shownLoad } from "./store";
 
 export type Plane = "3d" | "xy" | "zy" | "xz";
 /** What the model view shows for a 3D frame: the 3D view or a working plane. */
@@ -54,7 +54,10 @@ const inPlane = (v: [number, number, number]): [number, number, number] => proj(
  * their in-plane parts. Otherwise the model itself.
  */
 export const planeModel = createMemo((): Model | undefined => {
-  const m = model(); if (!m || !onPlane()) return m;
+  const m0 = model(); if (!m0) return m0;
+  // Only the loads of the case or combination picked (0.3.3).
+  const m = m0.cases?.length ? { ...m0, loads: m0.loads.filter(l => shownLoad(m0, l)) } : m0;
+  if (!onPlane()) return m;
   const nodes = m.nodes.filter(onIt).map(n => { const [u, v] = proj(xyz(n)); return { ...n, x: u, y: v, z: 0 }; });
   const ids = new Set(nodes.map(n => n.id));
   const members = m.members.filter(b => ids.has(b.a) && ids.has(b.b));

@@ -1,7 +1,7 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
 import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame, isBuckle } from "./api";
-import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn } from "./store";
+import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn , active, whichName, setSolvedFor } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
 import { defaultLoad } from "./panels";
@@ -26,7 +26,8 @@ export const C = {
     const m = model(); if (!m) return;
     setSolving(true);
     try {
-      const r = fromWire(await invoke("solve")), first = !results();
+      const w = active(), r = fromWire(await invoke("solve", { which: w })), first = !results();
+      setSolvedFor(w ? whichName(m, w) : "");
       batch(() => {
         setResults(r); setStale(false); setTab("results"); setModeOn(false);
         if (r.kind === "plane" || r.kind === "heat") { fieldAfterSolve(r.kind === "heat" ? "heat" : m.analysis); setMeshed(null); setMeshStale(false); if (view() === "mesh") setView("model"); }
@@ -37,7 +38,7 @@ export const C = {
       const bad = r.imbalance > 1e-6, ms = r.stats.ms < 1 ? "under 1 ms" : r.stats.ms < 2000 ? `${Math.round(r.stats.ms)} ms` : `${(r.stats.ms / 1000).toFixed(1)} s`;
       const what = r.kind === "frame" || r.kind === "space" ? `${r.stats.equations} equations` : r.kind === "solid" ? `${r.elements.toLocaleString()} elements in ${r.layers} ${r.layers === 1 ? "layer" : "layers"}, ${r.stats.equations.toLocaleString()} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
       const bal = r.kind === "heat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : "Reactions balance the loads.";
-      toast(r.warnings.length ? r.warnings.join(" ") : `Solved: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
+      toast(r.warnings.length ? r.warnings.join(" ") : `Solved${w ? ` (${whichName(m, w)})` : ""}: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
     } catch (e) { setResults(null); toast(String(e)); }
     finally { setSolving(false); }
   },
@@ -58,7 +59,7 @@ export const C = {
     const m = model(); if (!m || solving()) return;
     setSolving(true);
     try {
-      const r = modesFromWire(await invoke("buckling", { count }));
+      const r = modesFromWire(await invoke("buckling", { count, which: active() }));
       if (!isBuckle(r)) return;
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
       const low = Math.min(r.modes[0]?.lambda ?? Infinity, ...r.bars.map(b => b.lambda));
@@ -123,7 +124,7 @@ export const ALL_CMDS: [string, () => void, string?][] = [
   ["Draw a rectangle", () => C.tool("rect")], ["Draw a circle", () => C.tool("circle")], ["Draw a polygon", () => C.tool("poly")], ["Cut a rectangular hole", () => C.tool("hrect")], ["Cut a round hole", () => C.tool("hcircle")],
   ["Slot", () => K.makeShape("slot")], ["Rounded rectangle", () => K.makeShape("rounded")], ["Regular polygon (hexagon, …)", () => K.makeShape("polygon")], ["Round corners (fillet)", () => K.corners(true)], ["Bevel corners (chamfer)", () => K.corners(false)],
   ["Union: join two shapes", () => K.combine("union")], ["Subtract: cut one shape out of another", () => K.combine("subtract")], ["Intersect: keep where two shapes overlap", () => K.combine("intersect")], ["Offset an outline", K.offset], ["Linear pattern of shapes", () => K.pattern(false)], ["Circular pattern of holes", () => K.pattern(true)],
-  ["Sections", () => D.sections()], ["Materials", () => D.materials()],
+  ["Sections", () => D.sections()], ["Steel section tables (IPE, HEA, HEB)", () => import("./cases").then(c => c.sectionTables())], ["Load cases and combinations", () => import("./cases").then(c => c.casesDialog())], ["Envelope over all combinations", () => import("./cases").then(c => c.envelope())], ["Materials", () => D.materials()],
   ["Fixed support", () => C.tool("sup:fixed")], ["Pinned support", () => C.tool("sup:pinned")], ["Roller support", () => C.tool(isFrame(model()?.analysis) ? "sup:rollerx" : "sup:roller")], ["Spring support", () => C.tool("sup:spring")], ["Symmetry", () => C.tool("sup:symmetry")], ["Hold chosen directions of a face (3D solids)", () => C.tool("sup:hold")],
   ["Force", () => C.tool("load:force")], ["Moment", () => C.tool("load:moment")], ["Distributed load", () => C.tool("load:dist")], ["Pressure", () => C.tool("load:pressure")], ["Edge force", () => C.tool("load:traction")], ["Pin load (bearing in a hole)", () => C.tool("load:bearing")], ["Gravity (self-weight)", () => C.body("gravity")],
   ["Fixed temperature", () => C.tool("sup:temperature")], ["Heat flux", () => C.tool("load:flux")], ["Convection", () => C.tool("load:convection")], ["Heat generation", () => C.body("heat")], ["Temperature change (thermal stress)", () => C.body("warming")],

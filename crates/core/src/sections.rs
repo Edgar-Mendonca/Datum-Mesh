@@ -38,6 +38,23 @@ fn rect_j(b: f64, h: f64) -> f64 {
     a * b.powi(3) * (1.0 / 3.0 - 0.21 * b / a * (1.0 - b.powi(4) / (12.0 * a.powi(4))))
 }
 
+/// One root fillet of radius r (a square of side r less a quarter circle centred at its far
+/// corner): its area, its centroid's distance from the two faces it lies against, and its second
+/// moment about its own centroid (the same both ways).
+fn fillet(r: f64) -> (f64, f64, f64) {
+    if r == 0.0 {
+        return (0.0, 0.0, 0.0);
+    }
+    let pi = std::f64::consts::PI;
+    let (aq, cq) = (pi * r * r / 4.0, r - 4.0 * r / (3.0 * pi));
+    let a = r * r - aq;
+    let c = (r * r * r / 2.0 - aq * cq) / a;
+    // About the face: the square's r⁴/3, less the quarter circle's (about its own centroid, then moved).
+    let iq = pi * r.powi(4) / 16.0 - aq * (4.0 * r / (3.0 * pi)).powi(2);
+    let i_face = r.powi(4) / 3.0 - (iq + aq * cq * cq);
+    (a, c, i_face - a * c * c)
+}
+
 /// The properties of a section shape, or why the dimensions do not make a section.
 pub fn props(s: &SectionShape) -> Result<Props, String> {
     use SectionShape::*;
@@ -46,7 +63,7 @@ pub fn props(s: &SectionShape) -> Result<Props, String> {
         Circle { d } => vec![*d],
         Tube { d, t } => vec![*d, *t],
         Box { b, h, t } => vec![*b, *h, *t],
-        I { h, b, tw, tf } | Channel { h, b, tw, tf } => vec![*h, *b, *tw, *tf],
+        I { h, b, tw, tf, .. } | Channel { h, b, tw, tf } => vec![*h, *b, *tw, *tf],
         Angle { h, b, t } => vec![*h, *b, *t],
         Custom { a, i, c, .. } => vec![*a, *i, *c],
     };
@@ -77,9 +94,13 @@ pub fn props(s: &SectionShape) -> Result<Props, String> {
             let j = 2.0 * t * (b - t).powi(2) * (h - t).powi(2) / (b + h - 2.0 * t);
             Props { a: b * h - bi * hi, i: (b * h.powi(3) - bi * hi.powi(3)) / 12.0, c: h / 2.0, iy: (h * b.powi(3) - hi * bi.powi(3)) / 12.0, cy: b / 2.0, j }
         }
-        I { h, b, tw, tf } | Channel { h, b, tw, tf } => {
+        I { h, b, tw, tf, .. } | Channel { h, b, tw, tf } => {
             if 2.0 * tf >= h || tw >= b {
                 return Err("the flanges and web do not fit the depth and width".into());
+            }
+            let r = if let I { r, .. } = *s { r } else { 0.0 };
+            if !(r.is_finite() && r >= 0.0) || 2.0 * (tf + r) >= h || tw + 2.0 * r >= b {
+                return Err("the root radius does not fit between the flanges and the web".into());
             }
             let hw = h - 2.0 * tf;
             let a = 2.0 * b * tf + hw * tw;
@@ -92,7 +113,12 @@ pub fn props(s: &SectionShape) -> Result<Props, String> {
                 let x = (2.0 * b * tf * b / 2.0 + hw * tw * tw / 2.0) / a;
                 (2.0 * (tf * b.powi(3) / 12.0 + b * tf * (b / 2.0 - x).powi(2)) + hw * tw.powi(3) / 12.0 + hw * tw * (tw / 2.0 - x).powi(2), x.max(b - x))
             };
-            Props { a, i: (b * h.powi(3) - (b - tw) * hw.powi(3)) / 12.0, c: h / 2.0, iy, cy, j }
+            let i = (b * h.powi(3) - (b - tw) * hw.powi(3)) / 12.0;
+            // Rolled sections (0.3.3): the four fillets where the web meets the flanges, each a
+            // square of side r less a quarter circle, at their own distances from both axes.
+            let (fa, fc, fi) = fillet(r);
+            let (dy, dx) = (h / 2.0 - tf - fc, tw / 2.0 + fc);
+            Props { a: a + 4.0 * fa, i: i + 4.0 * (fi + fa * dy * dy), c: h / 2.0, iy: iy + 4.0 * (fi + fa * dx * dx), cy, j }
         }
         Angle { h, b, t } => {
             if t >= h || t >= b {
@@ -137,7 +163,7 @@ mod tests {
         let c = props(&Circle { d: 0.05 }).unwrap();
         assert!(close(c.i, std::f64::consts::PI * 0.05f64.powi(4) / 64.0));
         // An I-section equals the outer rectangle minus the two side voids.
-        let i = props(&I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }).unwrap();
+        let i = props(&I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107, r: 0.0 }).unwrap();
         let outer = 0.15 * 0.3f64.powi(3) / 12.0;
         let voids = (0.15 - 0.0071) * (0.3 - 2.0 * 0.0107f64).powi(3) / 12.0;
         assert!(close(i.i, outer - voids));
@@ -169,7 +195,7 @@ mod tests {
         let bx = props(&Box { b: 0.2, h: 0.2, t: 0.002 }).unwrap();
         assert!((bx.j / (0.198f64.powi(3) * 0.002) - 1.0).abs() < 1e-9);
         // An I: Iy from the two flanges and the web; J = Σ b t³/3.
-        let i = props(&I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }).unwrap();
+        let i = props(&I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107, r: 0.0 }).unwrap();
         assert!(close(i.iy, 2.0 * 0.0107 * 0.15f64.powi(3) / 12.0 + (0.3 - 0.0214) * 0.0071f64.powi(3) / 12.0));
         assert!(close(i.j, (2.0 * 0.15 * 0.0107f64.powi(3) + (0.3 - 0.0214) * 0.0071f64.powi(3)) / 3.0));
         // Custom without the 3D values: a round bar's.
@@ -181,7 +207,7 @@ mod tests {
     fn impossible_sections_are_refused() {
         assert!(props(&Rect { b: 0.0, h: 0.2 }).is_err());
         assert!(props(&Tube { d: 0.1, t: 0.05 }).is_err());
-        assert!(props(&I { h: 0.1, b: 0.1, tw: 0.2, tf: 0.01 }).is_err());
+        assert!(props(&I { h: 0.1, b: 0.1, tw: 0.2, tf: 0.01, r: 0.0 }).is_err());
         assert!(props(&Custom { a: 1.0, i: f64::NAN, c: 1.0, iy: 0.0, j: 0.0 }).is_err());
         assert!(props(&Custom { a: 1.0, i: 1.0, c: 1.0, iy: -1.0, j: 0.0 }).is_err());
     }

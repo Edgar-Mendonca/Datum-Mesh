@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.3.3 — 2026-10-30
+
+Frames for everyday structural analysis: load cases and combinations, hinges, steel section tables.
+
+**Load cases and combinations**
+- Loads › **Cases and Combinations**: name load cases (dead, imposed, wind, …) and build combinations of them, each case times your own factor. The loads already drawn go into the first case.
+- Pick a case or a combination on the Loads tab: only its loads are drawn, new loads go into the picked case, and Solve (and Buckling) solve it. The legend says which one the results are for. A load's case can be changed in the Inspector.
+- Results › **Envelope**: every combination solved in turn, with each member's largest and smallest axial force, its largest shear, moment, twisting and deflection, its largest utilisation and the combination that gives it, and the range of every reaction.
+- Datum Mesh does not apply a design code: the factors are yours.
+
+**Hinges**
+- A beam can have a **hinge** at either end (Inspector): it carries no bending moment there, as in a pinned beam-to-column connection. In 3D both bending moments are released; twisting is still carried, unless no rigid beam holds the node (a ball joint). Hinges act in the static solve, natural frequencies and buckling, and are drawn as small circles.
+
+**Steel section tables**
+- Sections › **From the tables**: European rolled IPE, HEA and HEB sections (56 sizes, EN 10365 nominal dimensions). Their properties are worked out from the dimensions with the root fillets (a new root radius for I-sections), and agree with the tables.
+
+**Examples and fixes**
+- New example: a two-storey braced steel frame with HEB columns, IPE beams pinned at their ends, a braced bay, three load cases and three combinations.
+- Escape closes a dialog left open under one that has just closed (focus was lost).
+
+**Trust**
+- Help › Verification: 120 checks, all passing. New: benchmark 18, a beam hinged at both ends between fixed supports (simply supported: wL²/8, 5wL⁴/384EI, its natural frequency and, as a column, π²EI/L²), a beam with a hinge partway (statics), a 3D beam hinged both ways, a combination 1.35 G + 1.5 Q and its envelope against superposition, and the tables' second moments (IPE 300, HEA 200, HEB 200, within 0.01 %) and areas (all 56 within 0.5 %).
+- Random frames now have hinges, and random load cases always add up: a combination's results equal its cases' results times their factors, in 2D and 3D.
+
 ## 0.3.2 — 2026-10-30
 
 Revolved 3D solids, a cutting plane through the results, and faces picked in 3D.

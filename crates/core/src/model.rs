@@ -75,6 +75,9 @@ pub struct Member {
     /// lying as level as it can (0.2.4).
     #[serde(default)]
     pub roll: f64,
+    /// Beams (0.3.3): a hinge at the start or end, where the member carries no bending moment.
+    #[serde(default)]
+    pub hinge: [bool; 2],
 }
 
 impl Node {
@@ -100,8 +103,16 @@ pub enum SectionShape {
     Tube { d: f64, t: f64 },
     /// Rectangular hollow section.
     Box { b: f64, h: f64, t: f64 },
-    /// Doubly symmetric I: depth, flange width, web and flange thickness.
-    I { h: f64, b: f64, tw: f64, tf: f64 },
+    /// Doubly symmetric I: depth, flange width, web and flange thickness, and the root radius
+    /// where web meets flange (0.3.3; 0 for welded sections).
+    I {
+        h: f64,
+        b: f64,
+        tw: f64,
+        tf: f64,
+        #[serde(default)]
+        r: f64,
+    },
     /// Channel (bending about its strong axis).
     Channel { h: f64, b: f64, tw: f64, tf: f64 },
     /// Equal or unequal angle, legs h (in the plane) and b, thickness t, bent about the axis parallel to b.
@@ -413,6 +424,29 @@ pub struct Load {
     pub id: u32,
     pub at: Target,
     pub kind: LoadKind,
+    /// The load case it belongs to (0.3.3); one that does not exist means the first case.
+    #[serde(default)]
+    pub case: u32,
+}
+
+/// A load case (0.3.3): a named set of loads (dead, imposed, wind, …).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Case {
+    pub id: u32,
+    pub name: String,
+}
+
+/// A load combination (0.3.3): load cases times factors, added up.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Combo {
+    pub id: u32,
+    pub name: String,
+    pub parts: Vec<Factor>,
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Factor {
+    pub case: u32,
+    pub f: f64,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -468,6 +502,9 @@ pub struct Model {
     pub supports: Vec<Support>,
     pub loads: Vec<Load>,
     pub mesh: MeshSettings,
+    /// Load cases and combinations (0.3.3). No cases: every load is in one case.
+    pub cases: Vec<Case>,
+    pub combos: Vec<Combo>,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -492,6 +529,8 @@ impl Default for Model {
             supports: vec![],
             loads: vec![],
             mesh: MeshSettings::default(),
+            cases: vec![],
+            combos: vec![],
             next: 1,
         }
     }
@@ -502,7 +541,7 @@ impl Model {
     pub fn new(analysis: Analysis) -> Model {
         let mut m = Model { analysis, ..Default::default() };
         m.materials.push(Material::steel(1));
-        m.sections.push(Section { id: 2, name: "I 300 × 150".into(), shape: SectionShape::I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 } });
+        m.sections.push(Section { id: 2, name: "I 300 × 150".into(), shape: SectionShape::I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107, r: 0.0 } });
         m.next = 3;
         if analysis.is_plane() {
             m.grid = 0.005;
@@ -513,6 +552,15 @@ impl Model {
         m
     }
 
+    /// The load case a load is in: its own if it exists, else the first.
+    pub fn case_of(&self, l: &Load) -> u32 {
+        if self.cases.iter().any(|c| c.id == l.case) {
+            l.case
+        } else {
+            self.cases.first().map_or(0, |c| c.id)
+        }
+    }
+
     pub fn max_id(&self) -> u32 {
         self.nodes.iter().map(|x| x.id)
             .chain(self.members.iter().map(|x| x.id))
@@ -520,6 +568,8 @@ impl Model {
             .chain(self.sections.iter().map(|x| x.id))
             .chain(self.materials.iter().map(|x| x.id))
             .chain(self.supports.iter().map(|x| x.id))
+            .chain(self.cases.iter().map(|x| x.id))
+            .chain(self.combos.iter().map(|x| x.id))
             .chain(self.loads.iter().map(|x| x.id))
             .max()
             .unwrap_or(0)
@@ -568,7 +618,7 @@ impl Model {
         let fin = |v: f64, what: &str| if v.is_finite() { Ok(()) } else { Err(format!("{what} must be a number.")) };
         let pos = |v: f64, what: &str| if v.is_finite() && v > 0.0 { Ok(()) } else { Err(format!("{what} must be greater than zero.")) };
         let mut ids = std::collections::HashSet::new();
-        for id in self.nodes.iter().map(|x| x.id).chain(self.members.iter().map(|x| x.id)).chain(self.shapes.iter().map(|x| x.id)).chain(self.sections.iter().map(|x| x.id)).chain(self.materials.iter().map(|x| x.id)).chain(self.supports.iter().map(|x| x.id)).chain(self.loads.iter().map(|x| x.id)) {
+        for id in self.nodes.iter().map(|x| x.id).chain(self.members.iter().map(|x| x.id)).chain(self.shapes.iter().map(|x| x.id)).chain(self.sections.iter().map(|x| x.id)).chain(self.materials.iter().map(|x| x.id)).chain(self.supports.iter().map(|x| x.id)).chain(self.loads.iter().map(|x| x.id)).chain(self.cases.iter().map(|x| x.id)).chain(self.combos.iter().map(|x| x.id)) {
             if id == 0 || !ids.insert(id) {
                 return Err("Two items share an id.".into());
             }
@@ -706,6 +756,22 @@ impl Model {
                 _ => {}
             }
         }
+        for c in &self.cases {
+            if c.name.trim().is_empty() {
+                return Err("A load case needs a name.".into());
+            }
+        }
+        for c in &self.combos {
+            if c.name.trim().is_empty() {
+                return Err("A combination needs a name.".into());
+            }
+            for p in &c.parts {
+                if !self.cases.iter().any(|x| x.id == p.case) {
+                    return Err("A combination uses a load case that does not exist.".into());
+                }
+                fin(p.f, "A combination's factor")?;
+            }
+        }
         for l in &self.loads {
             self.target_ok(&l.at)?;
             let ok = match (&l.kind, &l.at) {
@@ -758,7 +824,7 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
     let mut v = migrate(v)?;
     let mut warn = vec![];
     // Read lists item by item so one bad item does not lose the rest.
-    let lists = ["nodes", "members", "shapes", "sections", "materials", "supports", "loads"];
+    let lists = ["nodes", "members", "shapes", "sections", "materials", "supports", "loads", "cases", "combos"];
     let mut keep: Vec<(String, Vec<Value>)> = vec![];
     if let Some(o) = v.as_object_mut() {
         for k in lists {
@@ -801,6 +867,8 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
             "materials" => m.materials = read(a, "materials", &mut warn),
             "supports" => m.supports = read(a, "supports", &mut warn),
             "loads" => m.loads = read(a, "loads", &mut warn),
+            "cases" => m.cases = read(a, "load cases", &mut warn),
+            "combos" => m.combos = read(a, "combinations", &mut warn),
             _ => {}
         }
     }
@@ -848,7 +916,22 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     m.shapes.iter_mut().for_each(|x| fix(&mut x.id));
     m.supports.iter_mut().for_each(|x| fix(&mut x.id));
     m.loads.iter_mut().for_each(|x| fix(&mut x.id));
+    let old: Vec<u32> = m.cases.iter().map(|c| c.id).collect();
+    m.cases.iter_mut().for_each(|x| fix(&mut x.id));
+    m.combos.iter_mut().for_each(|x| fix(&mut x.id));
     m.next = next;
+    // Combinations keep only cases that exist (renumbered cases are not guessed at), and names.
+    let renamed: Vec<u32> = old.iter().zip(&m.cases).filter(|(a, c)| **a != c.id).map(|(a, _)| *a).collect();
+    let cases: Vec<u32> = m.cases.iter().map(|c| c.id).collect();
+    for c in m.cases.iter_mut().filter(|c| c.name.trim().is_empty()) {
+        c.name = "Load case".into();
+    }
+    for c in m.combos.iter_mut() {
+        c.parts.retain(|p| cases.contains(&p.case) && !renamed.contains(&p.case) && p.f.is_finite());
+        if c.name.trim().is_empty() {
+            c.name = "Combination".into();
+        }
+    }
     // Nodes with bad coordinates go, and so does what hangs on them; nodes at one place become one.
     m.nodes.retain(|n| n.x.is_finite() && n.y.is_finite());
     let before = m.nodes.len();

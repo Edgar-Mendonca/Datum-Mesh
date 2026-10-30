@@ -9,7 +9,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { Model, SpaceMember, Target, clean } from "./api";
-import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes } from "./store";
+import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
 import { palette, BANDS, curField, rangeOf } from "./parts";
 import { outline, edgePts, inside } from "./geom";
 import { defaultLoad, defaultSupport } from "./panels";
@@ -176,7 +176,7 @@ export const View3D = () => {
       if (pts.length) fat(pts, null, colour, at.on === "line" ? 5 : 3.5);
     };
     for (const s of m.supports) faceLines(s.at, selSet.has(s.id) ? accent : green);
-    for (const l of m.loads) faceLines(l.at, selSet.has(l.id) ? accent : load);
+    for (const l of m.loads.filter(x => shownLoad(m, x))) faceLines(l.at, selSet.has(l.id) ? accent : load);
     draw();
   };
 
@@ -257,7 +257,7 @@ export const View3D = () => {
       world.add(new THREE.ArrowHelper(d, tail, len, new THREE.Color(colour), len * 0.25, len * 0.12));
       if (double) world.add(new THREE.ArrowHelper(d, tail, len * 0.78, new THREE.Color(colour), len * 0.25, len * 0.12));
     };
-    for (const l of m.loads) {
+    for (const l of m.loads.filter(x => shownLoad(m, x))) {
       const k = l.kind, on = selSet.has(l.id), colour = on ? accent : load;
       if (k.kind === "force" && l.at.on === "node") { const p = P.get(l.at.id); if (p) arrow(p, [k.fx, k.fy, k.fz ?? 0], L, colour); }
       if (k.kind === "moment" && l.at.on === "node") { const p = P.get(l.at.id); if (p) arrow(p, [k.mx ?? 0, k.my ?? 0, k.m], L * 0.8, colour, true); }

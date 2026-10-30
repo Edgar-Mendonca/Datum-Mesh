@@ -5,6 +5,7 @@
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::type_complexity, clippy::neg_cmp_op_on_partial_ord)]
 
 pub mod bench;
+pub mod cases;
 pub mod doc;
 pub mod examples;
 pub mod frame;
@@ -15,10 +16,12 @@ pub mod modal;
 pub mod mesh;
 pub mod model;
 pub mod plane;
+mod release;
 pub mod sections;
 pub mod sketch;
 pub mod solid;
 pub mod space;
+pub mod steel;
 pub mod sparse;
 pub mod wire;
 
@@ -54,7 +57,7 @@ pub fn modes(m: &model::Model, count: usize) -> Result<Modes, String> {
     match m.analysis {
         model::Analysis::Frame => frame::modes(m, count).map(Modes::Frame),
         model::Analysis::Space => space::modes(m, count).map(Modes::Space),
-        model::Analysis::Solid => Err("Natural frequencies of 3D solids come in a later release (0.3.3).".into()),
+        model::Analysis::Solid => Err("Natural frequencies of 3D solids come in a later release (0.3.4).".into()),
         model::Analysis::Heat => Err("Natural frequencies are for frames and for parts in stress (plane stress, plane strain or axisymmetric), not heat conduction.".into()),
         _ => plane::modes(m, count).map(Modes::Plane),
     }
@@ -69,6 +72,16 @@ pub fn buckling(m: &model::Model, count: usize) -> Result<Modes, String> {
         model::Analysis::Space => space::buckling(m, count).map(Modes::Buckle3),
         _ => Err("Buckling is for frames and trusses in this release; parts come later.".into()),
     }
+}
+
+/// Solve one load case or combination (0.3.3; None: every load as it is).
+pub fn solve_for(m: &model::Model, which: Option<cases::Which>) -> Result<Results, String> {
+    solve(&cases::select(m, which)?)
+}
+
+/// Buckling under one load case or combination (0.3.3).
+pub fn buckling_for(m: &model::Model, count: usize, which: Option<cases::Which>) -> Result<Modes, String> {
+    buckling(&cases::select(m, which)?, count)
 }
 
 /// Solve the model as its analysis says: frames, plane stress or strain, or heat conduction.

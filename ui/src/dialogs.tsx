@@ -92,7 +92,7 @@ export const library = (added?: (id: number) => void) => openDialog(() => {
 
 const SHAPES: [SectionShape["kind"], string, [string, string][]][] = [
   ["rect", "Rectangle", [["b", "Width b"], ["h", "Depth h"]]], ["circle", "Round bar", [["d", "Diameter d"]]], ["tube", "Tube", [["d", "Outside diameter d"], ["t", "Wall t"]]],
-  ["box", "Box (RHS)", [["b", "Width b"], ["h", "Depth h"], ["t", "Wall t"]]], ["i", "I-section", [["h", "Depth h"], ["b", "Flange width b"], ["tw", "Web tw"], ["tf", "Flange tf"]]],
+  ["box", "Box (RHS)", [["b", "Width b"], ["h", "Depth h"], ["t", "Wall t"]]], ["i", "I-section", [["h", "Depth h"], ["b", "Flange width b"], ["tw", "Web tw"], ["tf", "Flange tf"], ["r", "Root radius r (0 if welded)"]]],
   ["channel", "Channel", [["h", "Depth h"], ["b", "Flange width b"], ["tw", "Web tw"], ["tf", "Flange tf"]]], ["angle", "Angle", [["h", "Leg in the plane h"], ["b", "Other leg b"], ["t", "Thickness t"]]],
   ["custom", "Your own values", [["a", "Area A"], ["i", "Second moment I"], ["c", "Extreme fibre c"], ["iy", "3D: other axis Iy"], ["j", "3D: torsion J"]]],
 ];
@@ -115,7 +115,9 @@ export const sections = (focus?: number) => openDialog(() => {
     <Dialog title="Sections" wide help="sections">
       <div class="mgr">
         <div class="mlist"><For each={list()}>{x => <button classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)}>{x.name}</button>}</For>
-          <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={!list().length}>Delete</button></p></div>
+          <p class="ibtns"><button class="btn sm pri" onClick={() => import("./cases").then(c => c.sectionTables(id => setCur(id)))}>From the tables…</button></p>
+          <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={!list().length}>Delete</button></p>
+          <p class="muted small">The tables: European rolled IPE, HEA and HEB sections (EN 10365).</p></div>
         <Show when={s()}>{ss => <div class="form">
           <label>Name</label><input value={ss().name} onChange={e => put({ name: e.currentTarget.value })} />
           <label>Shape</label><select value={ss().shape.kind} onChange={e => kind(e.currentTarget.value as any)}><For each={SHAPES}>{([k, l]) => <option value={k} selected={k === ss().shape.kind}>{l}</option>}</For></select>

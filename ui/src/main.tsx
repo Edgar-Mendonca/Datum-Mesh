@@ -4,7 +4,7 @@ import { For, Show, Switch, Match, onMount, createEffect, on, lazy, Suspense } f
 import "./fonts.css";
 import "./styles.css";
 import { invoke, listen, Out, Options, num, isFrame } from "./api";
-import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed, modes, modeOn } from "./store";
+import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed, modes, modeOn, closeDialog } from "./store";
 import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
@@ -68,7 +68,8 @@ const App = () => {
   });
   const keys = (e: KeyboardEvent) => {
     const ctrl = e.ctrlKey || e.metaKey, k = e.key.toLowerCase();
-    if (dialogs().length) return;
+    // A dialog left open under one that closed has lost the focus: Escape still closes it.
+    if (dialogs().length) { if (e.key === "Escape") { e.preventDefault(); closeDialog(); } return; }
     const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
     if ((ctrl && k === "k") || (e.altKey && k === "q")) { e.preventDefault(); palette(); }
     else if (ctrl && k === "s") { e.preventDefault(); C.save(e.shiftKey); }

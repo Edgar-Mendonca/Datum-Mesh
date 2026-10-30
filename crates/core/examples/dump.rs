@@ -23,7 +23,7 @@ fn main() {
     let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
     d.apply(datum_core::doc::Op::AddMember { from: [0.3, 0.0], to: [4.0, 0.0], kind: datum_core::model::MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
     let id = d.m.nodes[1].id;
-    d.apply(datum_core::doc::Op::Add { item: datum_core::doc::Item::Load(datum_core::model::Load { id: 0, at: datum_core::model::Target::Node { id }, kind: datum_core::model::LoadKind::Force { fx: 0.0, fy: -1e4, fz: 0.0 } }) }).unwrap();
+    d.apply(datum_core::doc::Op::Add { item: datum_core::doc::Item::Load(datum_core::model::Load { case: 0, id: 0, at: datum_core::model::Target::Node { id }, kind: datum_core::model::LoadKind::Force { fx: 0.0, fy: -1e4, fz: 0.0 } }) }).unwrap();
     let offgrid = d.m;
     let out_m = |m: &datum_core::model::Model| json!({ "m": m, "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] });
     let fix = json!({
@@ -40,6 +40,10 @@ fn main() {
         "bracket3d": out("bracket3d"),
         "solid": out("blank-solid"),
         "bracket3d_results": sent(&datum_core::solve(&examples::get("bracket3d").unwrap()).unwrap()),
+        "braced": out("braced"),
+        "braced_results": sent(&datum_core::solve(&examples::get("braced").unwrap()).unwrap()),
+        "braced_envelope": datum_core::cases::envelope(&examples::get("braced").unwrap()).unwrap(),
+        "sections": datum_core::steel::library(),
         "vessel3d": out("vessel3d"),
         "vessel3d_results": sent(&datum_core::solve(&examples::get("vessel3d").unwrap()).unwrap()),
         "space": out("blank-space"),

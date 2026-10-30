@@ -269,7 +269,7 @@ mod tests {
         d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.1, 0.02), ..Shape::default() }) }).unwrap();
         let s = d.m.shapes[0].id;
         d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Temperature { t: 373.15 } }) }).unwrap();
-        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: right }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: right }) }).unwrap();
         d.m.mesh.order = order;
         d.m.mesh.size = 0.007;
         d
