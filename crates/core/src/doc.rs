@@ -2,6 +2,7 @@
 //! each one runs on a copy and is kept only if the result passes `Model::check`, so a failed edit
 //! leaves the model exactly as it was (Plan's pattern: ops in, whole-model snapshots for undo).
 
+use crate::sketch::{How, Make};
 use crate::model::{dist3, Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -71,6 +72,22 @@ pub enum Op {
     InsertCorner { shape: u32, edge: u32 },
     /// Remove a polygon corner, joining the two edges that meet there.
     RemoveCorner { shape: u32, corner: u32 },
+    /// Sketch tools (0.3.1): round these corners of a polygon to radius `r`. Each must lie between
+    /// two straight edges; each adds an arc edge after the corner.
+    Fillet { shape: u32, corners: Vec<u32>, r: f64 },
+    /// Bevel these corners, cutting `d` off each edge that meets there.
+    Chamfer { shape: u32, corners: Vec<u32>, d: f64 },
+    /// Union, subtract (`a` − `b`) or intersect two shapes. The result replaces them (keeping
+    /// `a`'s id, name and material); rings inside it become holes; supports and loads move to the
+    /// edges they lie on.
+    Combine { a: u32, b: u32, how: How },
+    /// A new shape: the outline moved out by `d` (in, for a negative `d`).
+    Offset { shape: u32, d: f64 },
+    /// Copies of shapes (with the supports and loads on their edges): copy k is turned through
+    /// k·`turn` (radians, counter-clockwise) about `about`, then moved by k·`step`.
+    Pattern { ids: Vec<u32>, times: u32, step: [f64; 2], turn: f64, about: [f64; 2] },
+    /// A ready-made shape: a slot, a rounded rectangle or a regular polygon.
+    Make { make: Make, hole: bool, material: Option<u32> },
     SetSettings { s: Settings },
     SetMeta { name: String, notes: String },
     Batch(Vec<Op>),
@@ -210,7 +227,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Shape(mut x) => {
                     x.id = id;
                     if x.name.trim().is_empty() {
-                        x.name = format!("{} {}", if x.hole { "Hole" } else { "Shape" }, m.shapes.iter().filter(|s| s.hole == x.hole).count() + 1);
+                        x.name = shape_name(m, x.hole);
                     }
                     m.shapes.push(x);
                 }
@@ -476,6 +493,109 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 vec![if corner == 0 && e == n - 1 { n - 2 } else { ne }]
             });
         }
+        Op::Fillet { shape, corners, r } => round_corners(m, shape, corners, r, true)?,
+        Op::Chamfer { shape, corners, d } => round_corners(m, shape, corners, d, false)?,
+        Op::Combine { a, b, how } => {
+            if a == b {
+                return Err("Pick two different shapes to combine.".into());
+            }
+            let gone = "That shape no longer exists.";
+            let sa = m.shapes.iter().find(|s| s.id == a).cloned().ok_or(gone)?;
+            let sb = m.shapes.iter().find(|s| s.id == b).cloned().ok_or(gone)?;
+            let mut out = crate::sketch::combine(&sa.geom, &sb.geom, how)?;
+            out.sort_by_key(|p| p.inner);
+            m.shapes.retain(|s| s.id != b);
+            let mut to: std::collections::HashMap<(usize, u32), Vec<Target>> = Default::default();
+            for (k, p) in out.into_iter().enumerate() {
+                let hole = sa.hole != p.inner;
+                let id = if k == 0 { a } else { fresh(m) };
+                for (e, from) in p.from.iter().enumerate() {
+                    for f in from {
+                        to.entry(*f).or_default().push(Target::Edge { shape: id, edge: e as u32 });
+                    }
+                }
+                if k == 0 {
+                    let s = m.shapes.iter_mut().find(|s| s.id == a).ok_or(gone)?;
+                    s.geom = p.geom;
+                } else {
+                    let name = shape_name(m, hole);
+                    m.shapes.push(Shape { id, name, hole, material: sa.material, geom: p.geom });
+                    created.push(id);
+                }
+            }
+            retarget(m, |t| match t {
+                Target::Edge { shape, edge } if *shape == a || *shape == b => Some(to.get(&(usize::from(*shape == b), *edge)).cloned().unwrap_or_default()),
+                _ => None,
+            });
+        }
+        Op::Offset { shape, d } => {
+            let s = m.shapes.iter().find(|s| s.id == shape).cloned().ok_or("That shape no longer exists.")?;
+            let geom = crate::sketch::offset(&s.geom, d)?;
+            let id = fresh(m);
+            let name = shape_name(m, s.hole);
+            m.shapes.push(Shape { id, name, geom, ..s });
+            created.push(id);
+        }
+        Op::Pattern { ids, times, step, turn, about } => {
+            if !(1..=1000).contains(&times) {
+                return Err("A pattern makes 1 to 1000 copies.".into());
+            }
+            if !(step.iter().chain(about.iter()).all(|v| v.is_finite()) && turn.is_finite()) || (step[0].hypot(step[1]) < SAME && turn.abs() < 1e-9) {
+                return Err("A pattern needs a step or a turn that moves the copies.".into());
+            }
+            let src: Vec<Shape> = m.shapes.iter().filter(|s| ids.contains(&s.id)).cloned().collect();
+            if src.is_empty() {
+                return Err("Select the shapes to copy.".into());
+            }
+            for k in 1..=times {
+                for s in &src {
+                    let mut geom = s.geom.clone();
+                    crate::sketch::turn(&mut geom, about, turn * k as f64);
+                    for p in geom.points_mut() {
+                        p[0] += step[0] * k as f64;
+                        p[1] += step[1] * k as f64;
+                    }
+                    let id = fresh(m);
+                    let name = shape_name(m, s.hole);
+                    m.shapes.push(Shape { id, name, geom, ..s.clone() });
+                    created.push(id);
+                    // Supports and loads on its edges come along (turned with it).
+                    let on = |t: &Target| matches!(t, Target::Edge { shape, .. } if *shape == s.id);
+                    let moved = |t: &Target| match t {
+                        Target::Edge { edge, .. } => Target::Edge { shape: id, edge: *edge },
+                        t => t.clone(),
+                    };
+                    let sups: Vec<_> = m.supports.iter().filter(|x| on(&x.at)).cloned().collect();
+                    for mut x in sups {
+                        x.id = fresh(m);
+                        x.at = moved(&x.at);
+                        created.push(x.id);
+                        m.supports.push(x);
+                    }
+                    let lds: Vec<_> = m.loads.iter().filter(|x| on(&x.at)).cloned().collect();
+                    for mut x in lds {
+                        x.id = fresh(m);
+                        x.at = moved(&x.at);
+                        x.kind = turn_load(x.kind, turn * k as f64);
+                        created.push(x.id);
+                        m.loads.push(x);
+                    }
+                    let refs: Vec<_> = m.mesh.refine.iter().filter(|x| on(&x.at)).cloned().collect();
+                    for mut x in refs {
+                        x.at = moved(&x.at);
+                        m.mesh.refine.push(x);
+                    }
+                }
+            }
+        }
+        Op::Make { make, hole, material } => {
+            let geom = crate::sketch::make(&make)?;
+            let material = material.or(m.materials.first().map(|s| s.id)).ok_or("Add a material first.")?;
+            let id = fresh(m);
+            let name = shape_name(m, hole);
+            m.shapes.push(Shape { id, name, hole, material, geom });
+            created.push(id);
+        }
         Op::SetSettings { s } => {
             m.analysis = s.analysis;
             m.units = s.units;
@@ -503,6 +623,44 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
     Ok(())
 }
 
+/// The next free name for a new shape or hole ("Shape 3", "Hole 2").
+fn shape_name(m: &Model, hole: bool) -> String {
+    format!("{} {}", if hole { "Hole" } else { "Shape" }, m.shapes.iter().filter(|s| s.hole == hole).count() + 1)
+}
+
+/// Round or bevel corners of a polygon, highest first (each adds a corner after itself), moving
+/// supports and loads to the renumbered edges.
+fn round_corners(m: &mut Model, shape: u32, mut cs: Vec<u32>, size: f64, round: bool) -> Result<(), String> {
+    cs.sort_unstable();
+    cs.dedup();
+    if cs.is_empty() {
+        return Err("Pick the corners first.".into());
+    }
+    for &i in cs.iter().rev() {
+        let sh = m.shapes.iter_mut().find(|x| x.id == shape).ok_or("That shape no longer exists.")?;
+        sh.geom = crate::sketch::corner(&sh.geom, i as usize, size, round)?;
+        renumber(m, shape, |e| vec![if e < i { e } else { e + 1 }]);
+    }
+    Ok(())
+}
+
+/// A load on a turned copy: in-plane forces turn with it.
+fn turn_load(k: LoadKind, ang: f64) -> LoadKind {
+    let (s, c) = ang.sin_cos();
+    let t = |x: f64, y: f64| (c * x - s * y, s * x + c * y);
+    match k {
+        LoadKind::Traction { fx, fy, total, fz } => {
+            let (fx, fy) = t(fx, fy);
+            LoadKind::Traction { fx, fy, total, fz }
+        }
+        LoadKind::Bearing { fx, fy } => {
+            let (fx, fy) = t(fx, fy);
+            LoadKind::Bearing { fx, fy }
+        }
+        k => k,
+    }
+}
+
 fn is_heat(k: &crate::model::SupportKind) -> bool {
     matches!(k, crate::model::SupportKind::Temperature { .. })
 }
@@ -512,12 +670,16 @@ fn is_heat(k: &crate::model::SupportKind) -> bool {
 /// Move supports, loads and local sizes on the edges of `shape` to the edges `f` gives (several
 /// when an edge was split); targets that land twice on one edge are kept once.
 fn renumber(m: &mut Model, shape: u32, f: impl Fn(u32) -> Vec<u32>) {
-    let map = |t: &Target| -> Vec<Target> {
-        match t {
-            Target::Edge { shape: s, edge } if *s == shape => f(*edge).into_iter().map(|e| Target::Edge { shape, edge: e }).collect(),
-            t => vec![t.clone()],
-        }
-    };
+    retarget(m, |t| match t {
+        Target::Edge { shape: s, edge } if *s == shape => Some(f(*edge).into_iter().map(|e| Target::Edge { shape, edge: e }).collect()),
+        _ => None,
+    });
+}
+
+/// Move supports, loads and local sizes to the targets `f` gives (None: left where it is; an
+/// empty list: removed). A total edge load is shared between its new edges.
+fn retarget(m: &mut Model, f: impl Fn(&Target) -> Option<Vec<Target>>) {
+    let map = |t: &Target| -> Vec<Target> { f(t).unwrap_or_else(|| vec![t.clone()]) };
     let mut sups = vec![];
     for x in std::mem::take(&mut m.supports) {
         for (k, at) in map(&x.at).into_iter().enumerate() {
@@ -539,8 +701,8 @@ fn renumber(m: &mut Model, shape: u32, f: impl Fn(u32) -> Vec<u32>) {
             }
             let mut kind = x.kind.clone();
             // A total edge force is shared between the halves.
-            if let LoadKind::Traction { fx, fy, total: true, .. } = kind {
-                kind = LoadKind::Traction { fx: fx / n as f64, fy: fy / n as f64, total: true, fz: 0.0 };
+            if let LoadKind::Traction { fx, fy, total: true, fz } = kind {
+                kind = LoadKind::Traction { fx: fx / n as f64, fy: fy / n as f64, total: true, fz: fz / n as f64 };
             }
             if let LoadKind::Bearing { fx, fy } = kind {
                 kind = LoadKind::Bearing { fx: fx / n as f64, fy: fy / n as f64 };
@@ -976,5 +1138,54 @@ mod tests {
         assert!(d.apply(Op::Repeat { ids: vec![], step: [0.0, 0.0, 1.0], times: 1, link: None }).unwrap_err().contains("Select"));
         let ids: Vec<u32> = d.m.members.iter().map(|m| m.id).collect();
         assert!(d.apply(Op::Repeat { ids, step: [0.0; 3], times: 1, link: None }).unwrap_err().contains("step"));
+    }
+
+    #[test]
+    fn sketch_tools_keep_supports_and_loads_on_their_edges() {
+        use crate::sketch::{How, Make};
+        let mut d = Doc::new(Model::new(Analysis::Stress));
+        let s = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::rect(0.0, 0.0, 0.1, 0.05), ..Shape::default() }) }).unwrap()[0];
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: s, edge: 3 }, kind: SupportKind::Fixed }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, at: Target::Edge { shape: s, edge: 1 }, kind: LoadKind::Pressure { p: 1e6 } }) }).unwrap();
+        // Rounding the two right-hand corners (1 and 2): the right edge becomes 2, the left 5.
+        d.apply(Op::Fillet { shape: s, corners: vec![2, 1], r: 0.01 }).unwrap();
+        assert_eq!(d.m.shapes[0].geom.edges(), 6);
+        assert_eq!(d.m.loads[0].at, Target::Edge { shape: s, edge: 2 });
+        assert_eq!(d.m.supports[0].at, Target::Edge { shape: s, edge: 5 });
+        assert!(d.apply(Op::Chamfer { shape: s, corners: vec![2], d: 0.001 }).unwrap_err().contains("straight"), "corner 2 is between the right edge and an arc");
+        d.apply(Op::Chamfer { shape: s, corners: vec![0], d: 0.005 }).unwrap();
+        assert_eq!((d.m.loads[0].at.clone(), d.m.supports[0].at.clone()), (Target::Edge { shape: s, edge: 3 }, Target::Edge { shape: s, edge: 6 }));
+        // A slot cut into the right edge: the pressure stays on what is left of it (both pieces),
+        // the support on the left edge; the slot shape is gone.
+        let slot = d.apply(Op::Make { make: Make::Slot { a: [0.08, 0.025], b: [0.2, 0.025], w: 0.01 }, hole: false, material: None }).unwrap()[0];
+        d.apply(Op::Combine { a: s, b: slot, how: How::Subtract }).unwrap();
+        assert_eq!(d.m.shapes.len(), 1);
+        let Geom::Poly { pts, .. } = &d.m.shapes[0].geom else { panic!() };
+        let right: Vec<u32> = (0..pts.len() as u32).filter(|&i| (pts[i as usize][0] - 0.1).abs() < 1e-12 && (pts[(i as usize + 1) % pts.len()][0] - 0.1).abs() < 1e-12).collect();
+        assert_eq!(right.len(), 2, "the right edge is cut in two");
+        assert_eq!(d.m.loads.iter().map(|l| l.at.clone()).collect::<Vec<_>>(), right.iter().map(|&e| Target::Edge { shape: s, edge: e }).collect::<Vec<_>>());
+        let left = (0..pts.len() as u32).find(|&i| pts[i as usize][0].abs() < 1e-12 && pts[(i as usize + 1) % pts.len()][0].abs() < 1e-12).unwrap();
+        assert_eq!(d.m.supports[0].at, Target::Edge { shape: s, edge: left });
+        // A hole inside, subtracted: it stays a circle, now a hole shape.
+        let c = d.apply(Op::Add { item: Item::Shape(Shape { material: 1, geom: Geom::Circle { c: [0.03, 0.025], r: 0.005 }, ..Shape::default() }) }).unwrap()[0];
+        d.apply(Op::Combine { a: s, b: c, how: How::Subtract }).unwrap();
+        assert!(d.m.shapes.iter().any(|x| x.hole && matches!(x.geom, Geom::Circle { .. })));
+        // A pattern of three more holes along x, and an offset outline.
+        let h = d.m.shapes.iter().find(|x| x.hole).unwrap().id;
+        let made = d.apply(Op::Pattern { ids: vec![h], times: 3, step: [0.01, 0.0], turn: 0.0, about: [0.0, 0.0] }).unwrap();
+        assert_eq!(made.len(), 3);
+        assert_eq!(d.m.shapes.iter().filter(|x| x.hole).count(), 4);
+        let o = d.apply(Op::Offset { shape: h, d: 0.001 }).unwrap()[0];
+        assert!(matches!(d.m.shapes.iter().find(|x| x.id == o).unwrap().geom, Geom::Circle { r, .. } if (r - 0.006).abs() < 1e-12));
+        // A circular pattern: four copies a quarter turn apart about the origin.
+        let made = d.apply(Op::Pattern { ids: vec![h], times: 3, step: [0.0, 0.0], turn: std::f64::consts::FRAC_PI_2, about: [0.0, 0.0] }).unwrap();
+        let Geom::Circle { c, .. } = d.m.shapes.iter().find(|x| x.id == made[1]).unwrap().geom else { panic!() };
+        assert!((c[0] + 0.03).abs() < 1e-12 && (c[1] + 0.025).abs() < 1e-12, "half a turn: {c:?}");
+        assert!(d.apply(Op::Pattern { ids: vec![h], times: 2, step: [0.0, 0.0], turn: 0.0, about: [0.0, 0.0] }).is_err());
+        assert!(d.apply(Op::Combine { a: s, b: s, how: How::Union }).is_err());
+        // Undo takes each tool back in one step.
+        let before = d.m.shapes.len();
+        d.undo();
+        assert!(d.m.shapes.len() < before);
     }
 }

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.3.1 — 2026-10-30
+
+Sketch tools: shape a part's section with rounds, bevels, cut-outs and patterns before it is solved.
+
+**Sketch tools** (Geometry, and Format on a selected shape)
+- **Round Corners** (fillet) and **Bevel Corners** (chamfer): any corner between two straight edges, one or all at once, at a typed radius or distance. ⌒ in the Inspector's corner table rounds just that corner.
+- **Union**, **Subtract** and **Intersect** two shapes: click one, Shift+click the other. Arcs and circles stay true arcs and circles, so a support or load on a round edge is still on one edge. Rings left inside become holes. Supports and loads move to the edges they lie on, and an outline keeps its edge numbers where it can.
+- Ready-made **Slot**, **Rounded Rectangle** and **Regular Polygon** from typed sizes, as a shape or a hole.
+- **Offset** an outline in or out (a wall of a given thickness, a clearance round a hole); arcs keep their centres.
+- **Linear** and **Circular Patterns**: copies of shapes in a row or round a centre (bolt circles), with the supports and loads on their edges.
+- Every tool is one step to undo, and is in Tell Me (Ctrl+K).
+
+**Trust**
+- Help › Verification: 94 checks, all passing. New: benchmark 16, the areas of eight shapes made by the sketch tools against hand formulas (to 1 part in 10⁹), and the plate with a hole again, its hole cut by Subtract, giving the same stress concentration of 3.0.
+- Random pairs of shapes (60 of them, circles, rectangles, slots and rounded rectangles) are combined all three ways: the areas always add up (union plus intersection equals the two shapes), and every result passes the model's checks and meshes.
+
 ## 0.3.0 — 2026-10-29
 
 3D solids: a part's outline extruded by its thickness and solved in 3D.

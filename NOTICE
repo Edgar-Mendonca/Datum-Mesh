@@ -6,7 +6,9 @@ The window bundles SolidJS (MIT), three.js (MIT, https://github.com/mrdoob/three
 shell uses Tauri (MIT or Apache-2.0) and the Rust crates listed in Cargo.lock, each under MIT,
 Apache-2.0, BSD, ISC, Zlib, MPL-2.0 or Unicode licences (checked by cargo deny, deny.toml). The sparse Cholesky solver is faer (MIT,
 https://github.com/sarah-quinones/faer-rs), run on every core with rayon (MIT or Apache-2.0). Parts are meshed with spade (MIT or Apache-2.0,
-https://github.com/Stoeoef/spade), constrained Delaunay triangulation and refinement.
+https://github.com/Stoeoef/spade), constrained Delaunay triangulation and refinement. Shapes are combined
+(union, subtract, intersect) with i_overlay and its i_float, i_shape, i_tree and i_key_sort crates (MIT or
+Apache-2.0, https://github.com/iShape-Rust/iOverlay).
 
 The materials library (crates/core/data/materials.json, built by tools/materials.py) is copied
 from Datum Atlas (MIT, https://github.com/Edgar-Mendonca/Datum-Atlas), with each value's source

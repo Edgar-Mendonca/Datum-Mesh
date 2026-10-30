@@ -16,6 +16,7 @@ pub mod mesh;
 pub mod model;
 pub mod plane;
 pub mod sections;
+pub mod sketch;
 pub mod solid;
 pub mod space;
 pub mod sparse;

@@ -6,6 +6,7 @@ import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
 import { defaultLoad } from "./panels";
 import * as D from "./dialogs";
+import * as K from "./sketch";
 import { niceGrid } from "./units";
 
 export const C = {
@@ -120,6 +121,8 @@ export const ALL_CMDS: [string, () => void, string?][] = [
   ["Undo", C.undo, "Ctrl+Z"], ["Redo", C.redo, "Ctrl+Y"], ["Delete", C.del, "Del"], ["Select all", C.selectAll, "Ctrl+A"], ["Select", () => C.tool("select"), "Esc"],
   ["Draw a node", () => C.tool("node")], ["Draw beams", () => C.tool("beam")], ["Draw truss bars", () => C.tool("truss")], ["Add a node at coordinates", () => D.nodeAt()],
   ["Draw a rectangle", () => C.tool("rect")], ["Draw a circle", () => C.tool("circle")], ["Draw a polygon", () => C.tool("poly")], ["Cut a rectangular hole", () => C.tool("hrect")], ["Cut a round hole", () => C.tool("hcircle")],
+  ["Slot", () => K.makeShape("slot")], ["Rounded rectangle", () => K.makeShape("rounded")], ["Regular polygon (hexagon, …)", () => K.makeShape("polygon")], ["Round corners (fillet)", () => K.corners(true)], ["Bevel corners (chamfer)", () => K.corners(false)],
+  ["Union: join two shapes", () => K.combine("union")], ["Subtract: cut one shape out of another", () => K.combine("subtract")], ["Intersect: keep where two shapes overlap", () => K.combine("intersect")], ["Offset an outline", K.offset], ["Linear pattern of shapes", () => K.pattern(false)], ["Circular pattern of holes", () => K.pattern(true)],
   ["Sections", () => D.sections()], ["Materials", () => D.materials()],
   ["Fixed support", () => C.tool("sup:fixed")], ["Pinned support", () => C.tool("sup:pinned")], ["Roller support", () => C.tool(isFrame(model()?.analysis) ? "sup:rollerx" : "sup:roller")], ["Spring support", () => C.tool("sup:spring")], ["Symmetry", () => C.tool("sup:symmetry")],
   ["Force", () => C.tool("load:force")], ["Moment", () => C.tool("load:moment")], ["Distributed load", () => C.tool("load:dist")], ["Pressure", () => C.tool("load:pressure")], ["Edge force", () => C.tool("load:traction")], ["Pin load (bearing in a hole)", () => C.tool("load:bearing")], ["Gravity (self-weight)", () => C.body("gravity")],

@@ -9,7 +9,7 @@ import { Dialog, Icon } from "./ui";
 import { Q, toU, fromU, unit, fmt } from "./units";
 
 /** A number field inside a dialog: display units in, SI out. */
-const F = (p: { l: string; q: Q; v: number; set: (v: number) => void }) => (
+export const F = (p: { l: string; q: Q; v: number; set: (v: number) => void }) => (
   <><label>{p.l}<span class="unit"> {unit(p.q)}</span></label>
     <input class="mono" value={num(toU(p.q, p.v), 6).replace("−", "-")} onChange={numIn(v => p.set(fromU(p.q, v)), () => num(toU(p.q, p.v), 6).replace("−", "-"))} /></>
 );

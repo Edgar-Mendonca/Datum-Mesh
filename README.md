@@ -35,17 +35,16 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 - **Buckling of frames**: load factors and buckled shapes, with every squeezed truss bar checked as a strut.
 - **3D solids**: a part's outline extruded by its thickness, solved in 3D, coloured by its stresses in a 3D view.
 - **3D frames and trusses**: drawn on front, side and plan planes, repeated into bays, seen in a 3D view and coloured by their results, with natural frequencies and buckling.
-- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 85 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
+- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 94 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and conduction through a fin, with mesh convergence.
 - **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out.
-- **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; supports and loads on edges and points, including a pin load that bears on one side of a hole.
+- **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; slots, rounded rectangles and regular polygons; rounded and bevelled corners; union, subtract and intersect with arcs kept true; offsets and patterns of holes; supports and loads on edges and points, including a pin load that bears on one side of a hole.
 - **Units**: SI (mm, kN, MPa) or US (in, kip, ksi); files keep SI.
 - **Worked examples**: a portal frame, a roof truss, a steel platform in 3D, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink, a pressure vessel and a heated plate.
 - **Print to PDF**: the model with a title block and a report with the mesh, contour pictures, the largest values, reactions and the equilibrium check; a `?` card beside every tool, light and dark themes, recovery of unsaved work, updates from inside the app.
 
 | Release | What arrives |
 | --- | --- |
-| 0.3.1 | Sketch tools: round and bevel corners, combine shapes, slots, patterns of holes |
 | 0.3.2–0.3.4 | Revolved solids, a cutting plane in the 3D view, 3D heat and natural frequencies, DXF import |
 | 0.4 | STEP import of any 3D part (with an open mesher in the installer), then yielding, large deflection and contact |
 

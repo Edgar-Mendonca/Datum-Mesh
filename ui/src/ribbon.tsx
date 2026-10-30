@@ -6,6 +6,7 @@ import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTa
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
+import * as K from "./sketch";
 import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle } from "./api";
@@ -123,6 +124,13 @@ const joinCrossings = () => { const m = model()!, s = new Set(sel()), ids = m.me
 const formatShapes = (f: (s: any) => object) => { const m = model()!, s = new Set(sel()); act({ Batch: m.shapes.filter(x => s.has(x.id)).map(x => ({ Set: { item: { Shape: { ...x, ...f(x) } } } })) }); };
 const formatMembers = (f: (s: any) => object) => { const m = model()!, s = new Set(sel()); act({ Batch: m.members.filter(x => s.has(x.id)).map(x => ({ Set: { item: { Member: { ...x, ...f(x) } } } })) }); };
 
+/** Sketch tools on the selected shapes (Geometry and Format tabs). */
+const SketchTools = () => <>
+  <G l="Combine" h="sketch"><S><B i="union" l="Union" run={() => K.combine("union")} title="Join the two selected shapes into one" /><B i="subtract" l="Subtract" run={() => K.combine("subtract")} title="Cut the second selected shape out of the first" /><B i="intersect" l="Intersect" run={() => K.combine("intersect")} title="Keep only where the two selected shapes overlap" /></S></G>
+  <G l="Modify" h="sketch"><S><B i="fillet" l="Round Corners…" run={() => K.corners(true)} title="Fillet: round corners of the selected polygon" /><B i="chamfer" l="Bevel Corners…" run={() => K.corners(false)} title="Chamfer: bevel corners of the selected polygon" /><B i="offset" l="Offset…" run={K.offset} title="A new outline parallel to the selected shape's" /></S>
+    <S><B i="pattern" l="Linear Pattern…" run={() => K.pattern(false)} title="Copies of the selected shapes in a row" /><B i="cpattern" l="Circular Pattern…" run={() => K.pattern(true)} title="Copies of the selected shapes around a centre" /></S></G>
+</>;
+
 export const Ribbon = () => {
   const m = () => model();
   const frame = () => isFrame(m()?.analysis), heat = () => m()?.analysis === "heat", sp = () => m()?.analysis === "space", solid3 = () => m()?.analysis === "solid";
@@ -142,13 +150,15 @@ export const Ribbon = () => {
         <Show when={frame()} fallback={<>
           <G l="Part" h="shapes"><T big i="rect" l="Rectangle" t="rect" /><S><T i="circle" l="Circle" t="circle" /><T i="poly" l="Polygon" t="poly" /></S></G>
           <G l="Holes" h="holes"><S><T i="hrect" l="Rectangular Hole" t="hrect" /><T i="hcircle" l="Round Hole" t="hcircle" /></S></G>
+          <G l="Ready-made" h="sketch"><S><B i="slot" l="Slot…" run={() => K.makeShape("slot")} /><B i="rrect" l="Rounded Rectangle…" run={() => K.makeShape("rounded")} /><B i="ngon" l="Regular Polygon…" run={() => K.makeShape("polygon")} /></S></G>
+          <SketchTools />
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G>
-          <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.2" /></G>
+          <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.3.4" /></G>
         </>}>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
-          <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.2" /></G>
+          <G l="Import" h="import"><Planned big i="import" l="DXF" v="0.3.4" /></G>
         </Show>
         <G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G>
       </Show>
@@ -209,7 +219,7 @@ export const Ribbon = () => {
       </Show>
       <Show when={tab() === "format"}>
         <Show when={fmtKind() === "shape"}><G l="Shape" h="shapes"><B big i="hrect" l="Make a Hole" run={() => formatShapes(() => ({ hole: true }))} /><B big i="rect" l="Make Solid" run={() => formatShapes(() => ({ hole: false }))} />
-          <S><B i="material" l="Material ▾" dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => formatShapes(() => ({ material: x.id })) })))} /></S></G></Show>
+          <S><B i="material" l="Material ▾" dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => formatShapes(() => ({ material: x.id })) })))} /></S></G><SketchTools /></Show>
         <Show when={fmtKind() === "member"}><G l="Member" h="members"><B big i="beam" l="Beam" run={() => formatMembers(() => ({ kind: "beam" }))} /><B big i="truss" l="Truss Bar" run={() => formatMembers(() => ({ kind: "truss" }))} /><B big i="node" l="Join Where They Cross" run={() => joinCrossings()} title="Put a node where the selected members cross, joining them there" />
           <S><B i="section" l="Section ▾" dd={e => openMenu(e, (m()?.sections ?? []).map(x => ({ label: x.name, run: () => formatMembers(() => ({ section: x.id })) })))} /><B i="material" l="Material ▾" dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => formatMembers(() => ({ material: x.id })) })))} /></S></G></Show>
       </Show>

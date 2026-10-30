@@ -13,7 +13,7 @@
   "steps": [
     {
       "title": "Draw and mesh",
-      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes (extruded into a 3D solid if you like), on a grid with snap and rulers."
+      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes, shaped with rounds, bevels, cut-outs and patterns (extruded into a 3D solid if you like), on a grid with snap and rulers."
     },
     {
       "title": "Load and support",
@@ -34,7 +34,8 @@
     "Buckling of frames: load factors and buckled shapes, with every squeezed truss bar checked as a strut",
     "3D frames and trusses: drawn on front, side and plan planes, repeated into bays, seen in a 3D view, with natural frequencies and buckling",
     "3D solids: a part's outline extruded by its thickness, solved in 3D and coloured by its stresses in a 3D view",
-    "Help › Verification: 85 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1, with mesh convergence and solve times",
+    "Sketch tools: round and bevel corners, union, subtract and intersect shapes with arcs kept true, slots, rounded rectangles, polygons, offsets and patterns of holes",
+    "Help › Verification: 94 benchmark checks with known answers solved in front of you, from beam theory, Euler columns, 3D frames and 3D solids to NAFEMS LE1, with mesh convergence and solve times",
     "Frames and trusses: draw members on a grid, press Solve, and see the deflected shape, moment, shear and axial diagrams and the reactions",
     "A materials library of 54 metals and plastics from Datum Atlas, each with its source",
     "Pin loads for lugs and clevises: the pin presses only where it pushes into the hole",
@@ -51,19 +52,9 @@
   ],
   "roadmap": [
     {
-      "v": "0.3.1",
-      "title": "Sketch tools",
-      "when": "Next",
-      "items": [
-        "Round (fillet) and bevel (chamfer) any corner of a section",
-        "Combine shapes: union, subtract and intersect, for slots, notches and cut-outs",
-        "Slots, rounded rectangles, regular polygons, offset outlines and patterns of holes"
-      ]
-    },
-    {
       "v": "0.3.2–0.3.4",
       "title": "3D solids, continued",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Revolved solids (shafts, hubs, vessels) with symmetry faces; verified on NAFEMS LE10",
         "A cutting plane through the part and picking faces in the 3D view",

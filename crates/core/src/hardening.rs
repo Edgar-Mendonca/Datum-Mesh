@@ -6,6 +6,7 @@
 mod tests {
     use crate::doc::{Doc, Item, Op, Settings};
     use crate::examples;
+    use crate::sketch::{How, Make};
     use crate::model::{self, Analysis, Dir, Geom, Load, LoadKind, MemberKind, Model, Node, Shape, Support, SupportKind, Target};
 
     /// A small deterministic generator (no extra crate).
@@ -42,7 +43,18 @@ mod tests {
             3 => Target::Point { x: r.f(-5.0, 5.0), y: r.f(-5.0, 5.0) },
             _ => Target::Body,
         };
-        match r.below(12) {
+        let shape = |r: &mut Rng, m: &Model| if m.shapes.is_empty() || r.below(8) == 0 { r.id(m) } else { m.shapes[r.below(m.shapes.len())].id };
+        match r.below(16) {
+            12 => {
+                let (s, cs) = (shape(r, m), (0..r.below(4)).map(|_| r.below(7) as u32).collect());
+                if r.below(2) == 0 { Op::Fillet { shape: s, corners: cs, r: r.f(-0.1, 1.0) } } else { Op::Chamfer { shape: s, corners: cs, d: r.f(-0.1, 1.0) } }
+            }
+            13 => Op::Combine { a: shape(r, m), b: shape(r, m), how: [How::Union, How::Subtract, How::Intersect][r.below(3)] },
+            14 => match r.below(3) {
+                0 => Op::Offset { shape: shape(r, m), d: r.f(-1.0, 1.0) },
+                1 => Op::Pattern { ids: vec![shape(r, m)], times: r.below(4) as u32, step: [r.f(-2.0, 2.0), 0.0], turn: r.f(-1.0, 1.0), about: p(r) },
+                _ => Op::Make { make: [Make::Slot { a: p(r), b: p(r), w: r.f(-0.2, 1.0) }, Make::Rounded { a: p(r), b: p(r), r: r.f(-0.2, 1.0) }, Make::Polygon { c: p(r), r: r.f(-0.2, 2.0), n: r.below(9) as u32, turn: 0.3 }][r.below(3)].clone(), hole: r.below(2) == 0, material: None },
+            },
             0..=2 => Op::AddMember { from: p(r), to: p(r), kind: if r.below(2) == 0 { MemberKind::Beam } else { MemberKind::Truss }, section: None, material: None, z: [0.0; 2] },
             3 => Op::Add { item: Item::Node(Node { id: 0, x: p(r)[0], y: p(r)[1], z: 0.0 }) },
             4 => {
@@ -495,5 +507,47 @@ mod tests {
         }
         let limit = if cfg!(debug_assertions) { 60.0 } else { 10.0 };
         assert!(t.elapsed().as_secs_f64() < limit, "took {:?}", t.elapsed());
+    }
+
+    #[test]
+    fn random_shapes_combine_into_valid_parts_with_consistent_areas() {
+        // For any two shapes: |A ∪ B| + |A ∩ B| = |A| + |B| and |A − B| = |A| − |A ∩ B|; every
+        // result passes the model's checks and meshes.
+        use crate::sketch::{combine, make};
+        let mut r = Rng(0x5eed_5ce7c4);
+        let mut tried = 0;
+        for seed in 0..60 {
+            let shape = |r: &mut Rng| -> Geom {
+                let c = [r.f(-1.0, 1.0), r.f(-1.0, 1.0)];
+                match r.below(4) {
+                    0 => Geom::Circle { c, r: r.f(0.2, 1.5) },
+                    1 => Geom::rect(c[0], c[1], c[0] + r.f(0.3, 2.0), c[1] + r.f(0.3, 2.0)),
+                    2 => make(&Make::Slot { a: c, b: [r.f(-1.0, 1.0), r.f(-1.0, 1.0)], w: r.f(0.2, 1.0) }).unwrap(),
+                    _ => make(&Make::Rounded { a: c, b: [c[0] + r.f(0.5, 2.0), c[1] + r.f(0.5, 2.0)], r: r.f(0.0, 0.25) }).unwrap(),
+                }
+            };
+            let (a, b) = (shape(&mut r), shape(&mut r));
+            let area = |v: &Result<Vec<crate::sketch::Piece>, String>| v.as_ref().map(|p| p.iter().map(|x| if x.inner { -x.geom.area() } else { x.geom.area() }).sum::<f64>()).unwrap_or(0.0);
+            let (u, i, d) = (combine(&a, &b, How::Union), combine(&a, &b, How::Intersect), combine(&a, &b, How::Subtract));
+            let (aa, ab) = (a.area(), b.area());
+            let tol = 1e-6 * (aa + ab);
+            assert!((area(&u) + area(&i) - aa - ab).abs() < tol, "seed {seed}: {} + {} vs {aa} + {ab}", area(&u), area(&i));
+            if d.is_ok() {
+                assert!((area(&d) - (aa - area(&i))).abs() < tol, "seed {seed}: {} vs {aa} − {}", area(&d), area(&i));
+            }
+            for res in [&u, &i, &d] {
+                let Ok(pieces) = res else { continue };
+                let mut m = Model::new(Analysis::Stress);
+                m.mesh.size = 0.2;
+                for (k, p) in pieces.iter().enumerate() {
+                    m.shapes.push(Shape { id: 100 + k as u32, hole: p.inner, material: 1, geom: p.geom.clone(), ..Shape::default() });
+                }
+                m.next = 200;
+                m.check().unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+                crate::mesh::mesh(&m).unwrap_or_else(|e| panic!("seed {seed}: {e}"));
+                tried += 1;
+            }
+        }
+        assert!(tried > 100, "{tried}");
     }
 }

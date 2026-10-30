@@ -8,6 +8,7 @@ import { Help } from "./help";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
 import * as D from "./dialogs";
+import { sharpCorners, corners } from "./sketch";
 
 export const ANALYSES: [string, string][] = [["frame", "Frame or truss"], ["space", "3D frame or truss"], ["stress", "Plane stress"], ["strain", "Plane strain"], ["axi", "Axisymmetric (turned about y)"], ["heat", "Heat conduction"], ["solid", "3D solid (extruded)"]];
 
@@ -168,9 +169,9 @@ const ShapeInsp = (p: { s: Shape; m: Model }) => {
             <td><input class="mono" value={num(toU("coord", pt[0]), 6).replace("−", "-")} onChange={numIn(v => put({ ...pg(), pts: pg().pts.map((q, k) => k === i() ? [fromU("coord", v), q[1]] : q) }), () => num(toU("coord", pt[0]), 6).replace("−", "-"))} /></td>
             <td><input class="mono" value={num(toU("coord", pt[1]), 6).replace("−", "-")} onChange={numIn(v => put({ ...pg(), pts: pg().pts.map((q, k) => k === i() ? [q[0], fromU("coord", v)] : q) }), () => num(toU("coord", pt[1]), 6).replace("−", "-"))} /></td>
             <td><input class="mono" value={num(4 * Math.atan(pg().bulge[i()] ?? 0) * 180 / Math.PI).replace("−", "-")} onChange={numIn(v => Math.abs(v) <= 180 && put({ ...pg(), bulge: pg().bulge.map((b, k) => k === i() ? Math.tan(v * Math.PI / 720) : b) }), () => num(4 * Math.atan(pg().bulge[i()] ?? 0) * 180 / Math.PI).replace("−", "-"))} /></td>
-            <td><button class="x" title="Remove this corner" disabled={pg().pts.length <= 3} onClick={() => act({ RemoveCorner: { shape: p.s.id, corner: i() } })}>×</button><button class="x" title="Add a corner in the middle of the next edge" onClick={() => act({ InsertCorner: { shape: p.s.id, edge: i() } })}>+</button></td>
+            <td><button class="x" title="Remove this corner" disabled={pg().pts.length <= 3} onClick={() => act({ RemoveCorner: { shape: p.s.id, corner: i() } })}>×</button><button class="x" title="Add a corner in the middle of the next edge" onClick={() => act({ InsertCorner: { shape: p.s.id, edge: i() } })}>+</button><Show when={sharpCorners(pg()).includes(i())}><button class="x" title="Round or bevel this corner" onClick={() => { setSel([p.s.id]); corners(true, i()); }}>⌒</button></Show></td>
           </tr>}</For></tbody></table>
-        <p class="muted small">+ adds a corner halfway along the next edge (on the arc, for an arc); supports and loads stay on their edges.</p>
+        <p class="muted small">+ adds a corner halfway along the next edge (on the arc, for an arc); ⌒ rounds the corner; supports and loads stay on their edges.</p>
       </>; }}</Show>
       <table class="vmini"><tbody><tr><td>Area</td><td class="r">{fmt("area", Math.abs(g().kind === "circle" ? Math.PI * (g() as any).r ** 2 : area(outline(g(), 1e-4))))}</td></tr><tr><td>Edges</td><td class="r">{edgeCount(g())}</td></tr></tbody></table>
     </>

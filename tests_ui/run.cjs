@@ -496,6 +496,45 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const ins = (await ops()).reverse().find(o => o.InsertCorner);
   check("+ in the corner table inserts a corner through the engine (keeps loads on their edges)", !!ins && ins.InsertCorner.edge === 1, JSON.stringify(ins));
 
+  // 0.3.1 sketch tools: round corners, ready-made shapes, combine, offset, patterns.
+  await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
+  await p.click('.ribbon button[title^="Fillet: round corners"]'); await p.waitForTimeout(150);
+  check("Round Corners lists only the corners between two straight edges", (await p.$$(".dlg .cks input")).length === 5, String((await p.$$(".dlg .cks input")).length));
+  await p.click('.dlg button:text-is("Round")'); await p.waitForTimeout(150);
+  const fil = await lastOp();
+  check("Round Corners sends a fillet of those corners at the grid size", !!fil?.Fillet && JSON.stringify(fil.Fillet.corners) === "[0,1,2,5,6]" && Math.abs(fil.Fillet.r - 0.005) < 1e-12, JSON.stringify(fil));
+  await p.click(".ptbl tbody tr:nth-child(1) button[title^='Round or bevel']"); await p.waitForTimeout(150);
+  check("⌒ in the corner table rounds just that corner", (await p.$$eval(".dlg .cks input", els => els.filter(e => e.checked).length)) === 1);
+  await p.click('.dlg button:text-is("Cancel")');
+  await p.click('.ribbon button[title="Slot…"]'); await p.waitForTimeout(150);
+  await p.click('.dlg label.chk:has-text("A hole") input'); await p.click('.dlg button:text-is("Add")'); await p.waitForTimeout(150);
+  const mk = await lastOp();
+  check("Slot… sends a ready-made slot, as a hole when ticked", mk?.Make?.make.kind === "slot" && mk.Make.hole === true && mk.Make.make.w > 0, JSON.stringify(mk));
+  await p.click('.ribbon button[title="Regular Polygon…"]'); await p.waitForTimeout(150);
+  await p.click('.dlg button:text-is("Add")'); await p.waitForTimeout(150);
+  const pgm = await lastOp();
+  check("Regular Polygon… sends six sides, the first corner straight up", pgm?.Make?.make.kind === "polygon" && pgm.Make.make.n === 6 && Math.abs(pgm.Make.make.turn - Math.PI / 2) < 1e-12, JSON.stringify(pgm));
+  await open("lug");
+  await p.click('.tabs > button:text-is("Geometry")');
+  const lm = await p.evaluate(() => window.__cur.m);
+  const [outer, bore] = [lm.shapes.find(s => !s.hole), lm.shapes.find(s => s.hole)];
+  await p.click('.ribbon button[title^="Cut the second selected shape"]'); await p.waitForTimeout(100);
+  check("Subtract with nothing selected says what to pick", (await p.textContent("#toast")).includes("Select two shapes"));
+  await p.click(`.tree .ti:has-text('${outer.name}')`); await p.click(`.tree .ti:has-text('${bore.name}')`, { modifiers: ["Shift"] }); await p.waitForTimeout(100);
+  await p.click('.ribbon button[title^="Cut the second selected shape"]'); await p.waitForTimeout(150);
+  const cmb = await lastOp();
+  check("Subtract sends the first picked shape less the second", cmb?.Combine?.a === outer.id && cmb.Combine.b === bore.id && cmb.Combine.how === "subtract", JSON.stringify(cmb));
+  check("the Format tab offers the sketch tools on a selected shape", (await p.$$('.tabs .ctxgrp button:text-is("Format")')).length === 1 && await (async () => { await p.click('.tabs .ctxgrp button:text-is("Format")'); return (await p.$$('.ribbon button[title^="Join the two selected shapes"]')).length === 1; })());
+  await p.click(`.tree .ti:has-text('${bore.name}')`); await p.waitForTimeout(100);
+  await p.click('.ribbon button[title^="Copies of the selected shapes around"]'); await p.waitForTimeout(150);
+  await p.click('.dlg button:text-is("Copy")'); await p.waitForTimeout(150);
+  const cp = await lastOp();
+  check("Circular Pattern sends 5 copies a sixth of a turn apart", cp?.Pattern?.times === 5 && Math.abs(cp.Pattern.turn - Math.PI / 3) < 1e-12 && cp.Pattern.ids[0] === bore.id, JSON.stringify(cp));
+  await p.click('.ribbon button[title^="A new outline parallel"]'); await p.waitForTimeout(150);
+  await p.click('.dlg button:text-is("Offset")'); await p.waitForTimeout(150);
+  const of = (await ops()).reverse().find(o => o.Offset);
+  check("Offset sends the outline moved inwards (a negative distance)", of?.Offset?.shape === bore.id && of.Offset.d < 0, JSON.stringify(of));
+
   // (10) Number fields: "1,5" is 1.5, "1,200" is 1200, an empty field changes nothing.
   await open("portal");
   await p.click(".tree .ti:has-text('Node 2')"); await p.waitForTimeout(100);

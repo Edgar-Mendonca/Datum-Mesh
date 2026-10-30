@@ -808,6 +808,53 @@ fn solids() -> Vec<Check> {
 }
 
 /// Every check, in the order of the brief's table.
+/// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
+/// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
+/// hole cut by subtracting a circle from a rectangle, meshed and solved.
+fn sketch() -> Vec<Check> {
+    use crate::sketch::{combine, corner, make, offset, How, Make};
+    use std::f64::consts::PI;
+    let sq = Geom::rect(0.0, 0.0, 1.0, 1.0);
+    let r = 0.2;
+    let round = corner(&sq, 2, r, true).expect("round").area();
+    let bevel = corner(&sq, 2, r, false).expect("bevel").area();
+    let bite: f64 = combine(&sq, &Geom::Circle { c: [1.0, 1.0], r: 0.5 }, How::Subtract).expect("subtract").iter().map(|p| p.geom.area()).sum();
+    let lens = combine(&Geom::Circle { c: [0.0, 0.0], r: 1.0 }, &Geom::Circle { c: [1.0, 0.0], r: 1.0 }, How::Intersect).expect("intersect")[0].geom.area();
+    let joined = combine(&sq, &Geom::Circle { c: [1.0, 0.5], r: 0.5 }, How::Union).expect("union")[0].geom.area();
+    let rr = make(&Make::Rounded { a: [0.0, 0.0], b: [1.0, 1.0], r }).expect("rounded");
+    let inset = offset(&rr, -0.1).expect("offset").area();
+    let slot = make(&Make::Slot { a: [0.0, 0.0], b: [1.0, 0.0], w: 0.2 }).expect("slot").area();
+    let hex = make(&Make::Polygon { c: [0.0, 0.0], r: 1.0, n: 6, turn: 0.0 }).expect("polygon").area();
+    let src = "Hand formulas (circle segments and sectors)";
+    let mut v = vec![
+        check(16, "Sketch tools: areas", "Unit square, one corner rounded r = 0.2: 1 − r² + πr²/4", "ratio", 1.0 - r * r + PI * r * r / 4.0, round, 1e-9, src),
+        check(16, "Sketch tools: areas", "Unit square, one corner bevelled 0.2: 1 − 0.2²/2", "ratio", 1.0 - r * r / 2.0, bevel, 1e-9, src),
+        check(16, "Sketch tools: areas", "Unit square less a circle r = 0.5 on a corner: 1 − π/16", "ratio", 1.0 - PI / 16.0, bite, 1e-9, src),
+        check(16, "Sketch tools: areas", "Two unit circles 1 apart, in common: 2π/3 − √3/2", "ratio", 2.0 * PI / 3.0 - 3f64.sqrt() / 2.0, lens, 1e-9, src),
+        check(16, "Sketch tools: areas", "Unit square and a circle r = 0.5 on its side, joined: 1 + π/8", "ratio", 1.0 + PI / 8.0, joined, 1e-9, src),
+        check(16, "Sketch tools: areas", "Unit square rounded r = 0.2, offset in 0.1: 0.8² − (4 − π)·0.1²", "ratio", 0.64 - (4.0 - PI) * 0.01, inset, 1e-9, src),
+        check(16, "Sketch tools: areas", "Slot 1 between centres, 0.2 wide: 0.2 + π·0.1²", "ratio", 0.2 + PI * 0.01, slot, 1e-9, src),
+        check(16, "Sketch tools: areas", "Regular hexagon, corners 1 from the centre: 3√3/2", "ratio", 1.5 * 3f64.sqrt(), hex, 1e-9, src),
+    ];
+    // Kirsch's quarter plate, the hole cut by Subtract (as benchmark 4, finest mesh).
+    let (a, w, s) = (0.01, 4.0, 100e6);
+    let (mut d, ids) = part(Analysis::Stress, 210e9, 0.3, vec![(Geom::rect(0.0, 0.0, w / 2.0, w / 2.0), false), (Geom::Circle { c: [0.0, 0.0], r: a }, false)]);
+    add(&mut d, Op::Combine { a: ids[0], b: ids[1], how: How::Subtract });
+    let p = ids[0];
+    let Geom::Poly { pts, bulge } = d.m.shapes[0].geom.clone() else { panic!("a polygon") };
+    let n = pts.len() as u32;
+    let edge = |f: &dyn Fn([f64; 2], [f64; 2]) -> bool| (0..n).find(|&i| f(pts[i as usize], pts[((i + 1) % n) as usize])).expect("edge");
+    let hole = (0..n).find(|&i| bulge[i as usize] != 0.0).expect("the arc");
+    edge_support(&mut d, p, edge(&|p, q| p[1].abs() < 1e-12 && q[1].abs() < 1e-12), SupportKind::Symmetry);
+    edge_support(&mut d, p, edge(&|p, q| p[0].abs() < 1e-12 && q[0].abs() < 1e-12), SupportKind::Symmetry);
+    edge_load(&mut d, p, edge(&|p, q| (p[0] - w / 2.0).abs() < 1e-12 && (q[0] - w / 2.0).abs() < 1e-12), LoadKind::Pressure { p: -s });
+    d.m.mesh.size = 0.2;
+    d.m.mesh.refine.push(Refine { at: Target::Edge { shape: p, edge: hole }, size: a / 16.0 });
+    let res = plane::solve(&d.m).expect("benchmark solves");
+    v.push(check(16, "Sketch tools: a hole cut by Subtract", "Stress concentration at the hole 3.0 (as benchmark 4)", "ratio", 3.0, at(&res, "sx", [0.0, a]) / s, 1e-2, "Kirsch (1898), infinite plate"));
+    v
+}
+
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
     v.extend(simply_supported());
@@ -824,6 +871,7 @@ pub fn run() -> Vec<Check> {
     v.extend(space());
     v.extend(space_dynamics());
     v.extend(solids());
+    v.extend(sketch());
     v
 }
 
@@ -841,7 +889,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=15 {
+        for b in 1..=16 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

@@ -914,3 +914,4 @@ p.warn { color: var(--warn-fg); }
 .view3d .axkey i { font-style: normal; padding: 1px 5px; border-radius: 2px; color: #fff; }
 .axkey .ax-x { background: #E5484D; } .axkey .ax-y { background: #2F9E44; } .axkey .ax-z { background: #3B6FD8; }
 .dsvg .ghost { stroke: var(--line3); stroke-width: 1.2; stroke-dasharray: 4 3; pointer-events: none; }
+.cks { display: flex; flex-wrap: wrap; gap: 2px 0; margin: 6px 0 8px; }
