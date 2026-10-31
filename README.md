@@ -47,7 +47,11 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 
 | Release | What arrives |
 | --- | --- |
-| 0.4 | STEP import of any 3D part (with an open mesher in the installer), then yielding, large deflection and contact |
+| 0.4.0 | Analysis steps in one engine; Newton and arc-length solution; second-order (P-delta) and large-deflection frames |
+| 0.4.1–0.4.3 | Plates and shells, response spectrum and time history, tension-only members, settlements, offsets, rigid floors |
+| 0.5–0.7 | Plasticity and rubber, tetrahedra and mesh import, implicit and explicit dynamics, contact |
+
+The vision: [docs/VISION.md](docs/VISION.md).
 
 Everything is computed by Datum Mesh's own engine in Rust (`crates/core`), with tests against known answers.
 

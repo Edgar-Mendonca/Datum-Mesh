@@ -3,7 +3,7 @@
   "name": "Datum Mesh",
   "accent": "#B83250",
   "logo": "docs/brand/datum-mesh-icon.svg",
-  "tagline": "Finite-element analysis on the desktop: stresses, deflections and temperatures in parts and frames.",
+  "tagline": "One open-source platform for structural and finite-element analysis: frames, plates, solids, heat and vibration, our own solver that proves its answers.",
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
@@ -54,31 +54,33 @@
   ],
   "roadmap": [
     {
-      "v": "0.4",
-      "title": "Any 3D part, and beyond linear",
+      "v": "0.4.0",
+      "title": "The core, and frames beyond linear",
       "when": "Next",
       "items": [
-        "STEP import of any 3D part, meshed with an open mesher that comes in the installer",
-        "Yielding, large deflection and contact",
-        "A quicker solver for large 3D models"
+        "Analysis steps in one engine for frames, plates and solids",
+        "Newton and arc-length solution, for large deflection and snap-through",
+        "Second-order (P-delta) and large-deflection frames, checked against published second-order problems and the classic nonlinear beam benchmarks"
       ]
     },
     {
-      "v": "later",
-      "title": "Frames, continued",
-      "when": "Later",
+      "v": "0.4.1–0.4.3",
+      "title": "Structures, complete",
+      "when": "Soon",
       "items": [
-        "Second-order (P-delta) analysis",
-        "Plates and shells for slabs and walls",
-        "Response spectrum analysis"
+        "Plates and shells for slabs and walls, joined to frames",
+        "Response spectrum and time history",
+        "Tension-only and compression-only members, support settlement, member offsets, rigid floors"
       ]
     },
     {
-      "v": "0.5",
-      "title": "Flow",
+      "v": "0.5–0.7",
+      "title": "Nonlinear and dynamic solids",
       "when": "Later",
       "items": [
-        "Incompressible flow and conjugate heat transfer with open CFD solvers"
+        "Plasticity and rubber, tetrahedra, mesh import",
+        "Implicit and explicit dynamics, transient heat",
+        "Contact"
       ]
     },
     {
@@ -86,7 +88,7 @@
       "title": "Validated",
       "when": "Goal",
       "items": [
-        "A validation report covering every analysis type",
+        "A validation report covering every analysis",
         "User guide",
         "Signed installer"
       ]

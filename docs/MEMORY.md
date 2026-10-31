@@ -5,8 +5,8 @@
 
 | | |
 | --- | --- |
-| **Product** | Datum Mesh: finite-element analysis on the desktop (2D frames and trusses, plane stress and strain, heat conduction in 0.1; 3D, nonlinear and flow later) |
-| **Current version** | 0.3.0 (2026-10-29) |
+| **Product** | Datum Mesh: one open-source platform for structural and finite-element analysis (frames, plates, solids, heat, vibration; linear and nonlinear, static and dynamic), our own solver that proves its answers. Vision: `docs/VISION.md` |
+| **Current version** | 0.3.5 (2026-10-30) |
 | **Repo** | `Edgar-Mendonca/Datum-Mesh` · branch `claude/upbeat-maxwell-xxve2b` (the first branch pushed, so the default branch) |
 | **Stack** | Rust engine (`crates/core`, own solver), Tauri 2, SolidJS + strict TypeScript; no Python, no external solvers in 0.1 |
 | **Identifier** | `com.edgarmendonca.datummesh` · files `.dmesh` (JSON, `format` 1) · installer `DatumMesh-x.y.z-setup.exe` + `SHA256SUMS.txt` |
@@ -14,7 +14,15 @@
 | **Brief** | `Edgar-Mendonca/Datum` › `briefs/DATUM-MESH.md` (hub session 13): every decision made up front |
 | **Reference repos** | `Edgar-Mendonca/Datum` (FAMILY, MEMORY, brain), `Edgar-Mendonca/Datum-Plan` (reference code), `Edgar-Mendonca/Datum-Sim` (Plan's skeleton for a canvas app; solver crate layout and verification records), `Edgar-Mendonca/Datum-Atlas` (materials data and sources) |
 
-## Purpose (agreed 2026-10-29)
+## Vision (agreed 2026-10-31): read `docs/VISION.md`
+
+**One open-source platform for structural and finite-element analysis, written by us, that proves its own answers.** Frames, plates and shells, solids, heat and vibration in one model; linear and nonlinear, static and dynamic, in one engine; small and simple however much it grows. In the spirit of the structural frame programs (STAAD.Pro's analysis side), the nonlinear finite-element programs (ADINA) and, in time, the general and explicit ones (Abaqus, LS-DYNA). The user has used Abaqus (student) for over ten years; that is the feel it aims at.
+
+- **One engine: a core and modules** (core: model, steps, sets, assembly, solvers, Newton/arc-length and time loops, results; modules: frames, plates, solids, materials, heat, contact; bench). Every analysis is a sequence of steps on one model. Modules plug in through a small fixed interface and carry their own benchmarks.
+- **Our own solver**: mechanics written from published methods (Bathe's *Finite Element Procedures*, Simo and Hughes, Newmark/HHT, Crisfield); no porting of other programs' code. Outside code only as infrastructure (faer, METIS). GPL tools only as separate optional add-ons.
+- **Order**: finish the frames-and-structures side on the new core first (0.4.0 core + P-delta/large-deflection frames, 0.4.1 plates and shells, 0.4.2 dynamics, 0.4.3 structural details), then nonlinear and dynamic solids (0.5–0.7).
+
+## Purpose (agreed 2026-10-29; kept, and widened by the vision above)
 
 To show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.
 
@@ -165,6 +173,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.3.0 | The sparse system can store only its lower half (`System::lower`), and faer runs on every core (`rayon`, MIT/Apache) | A 3D solid of 178 000 unknowns took 22.7 s and 3.1 GB on one core; on four, 15 s; 90 000 take 6 s and 1.2 GB |
 | 0.3.0 | A 3D solid is refused beyond 200 000 unknowns, with how to coarsen | 500 000 needed 9.9 GB; one test run was killed out of memory: a crash in the app |
 | 0.3.5 | A home-made nested dissection (BFS level separators, thinned) was tried for large 3D solves and dropped: measured interleaved on one machine it was no faster than faer's AMD (8.6 s against 8.2 s for 90 000 unknowns), and 4× slower on frames. An earlier "11.7 → 8 s" came from timing on a busy machine; compare orderings interleaved in one run | Speed for large 3D models needs a multilevel partitioner (METIS-like, under a permissive licence) or a different solver; kept on the list |
+| 0.4 | **Vision (2026-10-31)**: one engine (a core plus modules) for frames, plates, solids, heat and dynamics, linear and nonlinear, organised in steps; our own mechanics from published methods; finish the structures side (0.4.x) on the new core before nonlinear solids (0.5+). Replaces the 0.4 plan of STEP import with Gmsh in the installer; mesh and CAD import come in 0.5 as files and optional add-ons | The user's aim from the start was an Abaqus-like nonlinear solver; frames and solids need the same Newton and time loops, so two engines would mean twice the work and answers that disagree |
+| 0.4 | Researched 2026-10-31: tangency-labs/FieldCraft (Rust, MIT/Apache, own supernodal Cholesky, block Lanczos, tet/hex mesher, Newton/Riks, J2, hyperelastic, explicit, mortar contact, LBM; 48.6 MB Windows download; 394/403 checks) and SolidCraft (its CAD; its kernel `solidcore` is a Rust port of NVIDIA's open SMLib B-rep kernel; no NVIDIA libraries in the solver, GPU through wgpu). Libraries: faer (has LDLᵀ, Bunch–Kaufman, LU, Lanczos), METIS (Apache, `metis` crate), FEBio (MIT, reference only), truck (Apache B-rep; STEP reading immature). Benchmarks: NAFEMS NL1–NL7, LE/FV/T, MacNeal–Harder, Scordelis–Lo, Hill cylinder, Rivlin, Hertz, wave in a bar, Taylor bar, AISC 360 C2 | Background for the vision; we read them for what they verify, not to copy |
 | 0.3.5 | DXF import adds shapes to the open part in one step; shapes sorted solids first, largest first; non-finite numbers skipped | Undo restores; a garbled file never makes a NaN corner |
 | 0.3.4 | 3D heat is its own analysis (`Analysis::SolidHeat`, `is_solid()`), sharing the solid's sweep, faces and window; natural frequencies of solids reuse `build` (stiffness and supports) with consistent masses through `modal::lowest` | One geometry path for stress, vibration and heat; the window tells them apart by result kind |
 | 0.3.3 | Load cases: `Load.case` (a case that does not exist means the first; adding the first case moves every load into it), `Model.cases`, `Model.combos` with factors; a combination is solved as one model with scaled loads (linear), the envelope solves each combination | Superposition is exact for every analysis here; one solve per combination keeps the code one path |
@@ -219,9 +229,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.3.3 | Frames: load cases and combinations with an envelope, hinges (2D and 3D, static, modes, buckling), IPE/HEA/HEB tables with root radii; braced frame example; benchmark 18 (120 checks) | ✅ |
 | 0.3.4 | 3D heat conduction (SolidHeat: temperatures, flux, flows, balance, cut) and natural frequencies of 3D solids (modes on the surface in the 3D view); heat sink in 3D example; benchmark 19 (131 checks) | ✅ |
 | 0.3.5 | DXF import and export of sections, benchmark 20 (134 checks); a quicker ordering for large 3D solids tried and dropped (no gain) | ✅ |
-| later | Large 3D solves: a multilevel partitioner or an iterative solver | ⬜ |
-| later | Frames: P-delta, plates and shells, response spectrum | ⬜ |
-| 0.4.0 | STEP import, Gmsh bundled in the installer (separate program), 10-node tetrahedra | 🔜 |
+| later | Large 3D solves: METIS ordering (planned with 0.4.0's core) or an iterative solver | ⬜ |
+| 0.4.0 | **The core** (steps, Newton and arc-length, modules) and **P-delta / large-deflection frames** (corotational beams); AISC C2, NAFEMS NL5, NL6, NL7 | 🔜 |
+| 0.4.1 | Plates and shells for slabs and walls; Scordelis–Lo, pinched cylinder, Roark | ⬜ |
+| 0.4.2 | Dynamics for structures: response spectrum, time history (Newmark) | ⬜ |
+| 0.4.3 | Tension-only and compression-only members, support settlement, member offsets, rigid floors | ⬜ |
+| 0.5–0.7 | Nonlinear materials and tetrahedra with mesh import (0.5), implicit/explicit dynamics for solids (0.6), contact (0.7) | ⬜ |
 | later | DXF import, Send to Calc and Plot; STEP and arbitrary 3D shapes with an external mesher | ⬜ |
 | 0.3–1.0 | 3D solids, nonlinear, CFD, multiphysics (open solvers as separate programs), validation report, signed installer | ⬜ |
 
@@ -303,6 +316,9 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 
 ### 2026-10-30: Session 1, continued (0.3.5 DXF and ordering)
 - Released 0.3.4. Engine: dxf.rs (read, write, sample), benchmark 20, DXF fuzz hardening. Tried a nested dissection ordering for large 3D solves (through faer's low-level Cholesky with a custom permutation): first timings looked 30 % faster, but interleaved runs on the same machine showed no gain (8.6 s against AMD's 8.2 s) and frames got 4× slower, so it was removed before release; the 0.3.x "OVER" rows for the 90 000-unknown solid are mostly the machine's load. Shell: `import_dxf` (file dialog, units, one undo step) and `export_dxf`. Window: Geometry › DXF with a units choice, File › Export › Section as DXF, help card, stale planned-release labels fixed. Found in the app: "1 lines or arcs … do not close" (now singular).
+
+### 2026-10-31: Session 1, continued (vision; 0.4.0 started)
+- Released 0.3.5. The user pointed to tangency-labs (FieldCraft, SolidCraft) and explained the real aim: an Abaqus-like nonlinear and dynamic solver, one platform for frames and everything else, our own code. Researched their repos, open libraries and the benchmark sets (three research agents; findings in Decisions). Agreed: one engine of a core and modules, organised in steps, mechanics from published methods; finish the structures side first on the new core. Wrote `docs/VISION.md`; updated CLAUDE.md, the site roadmap and README. Started 0.4.0.
 
 ## 5. Known limits (0.3.5)
 

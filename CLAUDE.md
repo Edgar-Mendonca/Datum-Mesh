@@ -1,6 +1,6 @@
 # Datum Mesh: notes for Claude
 
-Read `docs/MEMORY.md` first. It is the project's memory: architecture, decisions, roadmap, and a log of every session. The family design guide is `FAMILY.md` in `Edgar-Mendonca/Datum` (read-only from here; `docs/FAMILY.md` links to it). The brief this app started from is `briefs/DATUM-MESH.md` in the same hub repo.
+Read `docs/VISION.md` and `docs/MEMORY.md` first. The vision (2026-10-31): one open-source platform for structural and finite-element analysis, our own solver; one engine of a core and modules, organised in analysis steps; the structures side (0.4.x) first, then nonlinear and dynamic solids (0.5+). It is the project's memory: architecture, decisions, roadmap, and a log of every session. The family design guide is `FAMILY.md` in `Edgar-Mendonca/Datum` (read-only from here; `docs/FAMILY.md` links to it). The brief this app started from is `briefs/DATUM-MESH.md` in the same hub repo.
 At the end of every session that changes anything, update `docs/MEMORY.md`:
 - tick the roadmap
 - add a session-log entry
@@ -11,6 +11,8 @@ User preferences:
 - Rust and Tauri 2, small and efficient code, Windows first. The same look, ribbon, help, printing and updater as every Datum app (FAMILY §2–9); copy from Datum Plan (and Datum Sim, Plan's skeleton for a canvas app) rather than reinventing.
 - Ship in small numbered releases (0.1.0, 0.1.1, …). Every release appears in the in-app updater.
 - Engine logic belongs in `crates/core` (pure Rust, unit-tested), not in the UI. The window never calculates results.
+- Our own solver: write the mechanics from published methods (Bathe's *Finite Element Procedures*, Simo and Hughes, Newmark/HHT, Crisfield); never port another program's code, even if permissive. Outside code only as infrastructure (faer, METIS).
+- Modules plug into the core through its small interface (element: stiffness, internal force, mass; material: stress and tangent) and carry their own benchmarks; keep them independent.
 - The UI is SolidJS + Vite in `ui/src/*.tsx` (built to `ui/dist`). State lives in `ui/src/store.ts`.
 - The engine and the `.dmesh` file use SI base units (m, N, Pa, K, W); the window converts for display only (`ui/src/units.ts`).
 - Public words (README, CHANGELOG, site.json, help): never name, compare with, or say the app copies or replaces a commercial product (FAMILY §13). Open solvers and benchmark sets (NAFEMS) may be named.

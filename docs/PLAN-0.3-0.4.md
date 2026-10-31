@@ -1,5 +1,7 @@
 # Datum Mesh 0.3 and 0.4: plan
 
+> **Superseded from 0.4 on by [VISION.md](VISION.md) (2026-10-31).** The 0.3.x part below was delivered.
+
 Written 2026-10-30 after 0.3.0 (extruded 3D solids), from a brainstorm with the user about where Datum Mesh is heading.
 
 ## Where Datum Mesh sits
