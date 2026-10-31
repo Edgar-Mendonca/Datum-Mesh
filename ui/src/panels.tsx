@@ -25,6 +25,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "moment": return { kind: "moment", m: 10e3 };
     case "dist": return { kind: "dist", w1: -5e3, w2: -5e3, dir: "y" };
     case "pressure": return { kind: "pressure", p: 1e6 };
+    case "platepressure": return { kind: "pressure", p: 5e3 };
     case "traction": return { kind: "traction", fx: 0, fy: -1e3, total: true };
     case "bearing": return { kind: "bearing", fx: 0, fy: 1e3 };
     case "gravity": return { kind: "gravity", gx: 0, gy: -9.81 };
@@ -45,6 +46,7 @@ const targetName = (m: Model, t: Target) => {
   if (t.on === "edge") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}`;
   if (t.on === "point") return `Point ${fmt("coord", t.x)}, ${fmt("coord", t.y)}`;
   if (t.on === "end") return t.front ? "Front face" : "Back face";
+  if (t.on === "plate") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Plate"}, whole face`;
   if (t.on === "line") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}, line at ${num(t.at * 100, 3)} %`;
   return "Whole model";
 };
@@ -78,6 +80,7 @@ export const Tree = () => {
           <Show when={frame()} fallback={
             <Group t="Shapes" n={mm().shapes.length} help="shapes" add={() => setTool("rect")}><For each={mm().shapes}>{s => <Leaf id={s.id} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Group>}>
             <Group t="Members" n={mm().members.length} help="members" add={() => setTool("beam")}><For each={mm().members}>{(b, i) => <Leaf id={b.id} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Group>
+            <Show when={sp() && mm().shapes.length}><Group t="Plates" n={mm().shapes.length} help="plates"><For each={mm().shapes}>{s => <Leaf id={s.id} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Group></Show>
             <Group t="Nodes" n={mm().nodes.length} help="nodes" add={() => setTool("node")}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Group>
           </Show>
           <Group t="Materials" n={mm().materials.length} help="materials" add={() => D.materials()}><For each={mm().materials}>{x => <button class="ti" onClick={() => D.materials(x.id)}><span>{x.name}</span></button>}</For></Group>
@@ -159,7 +162,10 @@ const ShapeInsp = (p: { s: Shape; m: Model }) => {
   return (
     <>
       <Row label="Name"><input value={p.s.name} onChange={e => set("Shape", { ...p.s, name: e.currentTarget.value })} /></Row>
-      <label class="chk"><input type="checkbox" checked={p.s.hole} onChange={e => set("Shape", { ...p.s, hole: e.currentTarget.checked })} />A hole (cut out of the part)</label>
+      <label class="chk"><input type="checkbox" checked={p.s.hole} onChange={e => set("Shape", { ...p.s, hole: e.currentTarget.checked })} />{p.s.plate ? "An opening (cut out of the plates on its plane)" : "A hole (cut out of the part)"}</label>
+      <Show when={p.s.plate}>{pl => <>
+        <NumField label="Thickness" q="len" v={pl().t} min={0} set={t => t > 0 && set("Shape", { ...p.s, plate: { ...pl(), t } })} hint={`A plate on the ${({ xy: "Front", zy: "Side", xz: "Plan" } as const)[pl().plane]} plane at ${({ xy: "z", zy: "x", xz: "y" } as const)[pl().plane]} = ${fmt("coord", pl().depth)}. Thin-plate (Kirchhoff) bending with membrane action; it joins beams and other plates where their nodes meet.`} />
+      </>}</Show>
       <Show when={!p.s.hole}><Row label="Material"><Choice v={String(p.s.material)} set={v => set("Shape", { ...p.s, material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row></Show>
       <Show when={g().kind === "circle"}>{_ => { const c = g() as Extract<Geom, { kind: "circle" }>; return <>
         <NumField label="Centre x" q="coord" v={c.c[0]} set={x => put({ ...c, c: [x, c.c[1]] })} />

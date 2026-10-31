@@ -16,7 +16,8 @@ import { defaultLoad, defaultSupport } from "./panels";
 import { fmt, unit } from "./units";
 import { setPlane, fit3d } from "./plane3";
 import { C } from "./cmds";
-import { P3, at3, span3, dlen, deform3, vals, q3, range3, cut } from "./space3";
+import { P3, at3, span3, dlen, deform3, vals, q3, range3, cut, pq, plateRange } from "./space3";
+import { plate3 } from "./plane3";
 import { modeAmp } from "./modes";
 
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
@@ -231,6 +232,40 @@ export const View3D = () => {
       }
       if (pts.length) fat(pts, cs, ink, 4);
     }
+    // Plates (0.4.1): solved, the mesh moved and coloured by the chosen result; else each plate's
+    // face (openings cut out), tinted.
+    const pr = showRes && r && !mode3() ? r.plates : undefined;
+    if (pr) {
+      const fl = pr.fields.find(x => x.key === pq()) ?? pr.fields[0], prg = plateRange() ?? [fl.min, fl.max];
+      const pos = new Float32Array(pr.nodes.length * 3), col = new Float32Array(pr.nodes.length * 3);
+      pr.nodes.forEach((p, i) => {
+        const d = show().deformed ? pr.disp[i] : [0, 0, 0];
+        for (let k = 0; k < 3; k++) pos[3 * i + k] = p[k] + d[k] * f;
+        const c = cols[Math.max(0, Math.min(BANDS - 1, Math.floor((fl.v[i] - prg[0]) / ((prg[1] - prg[0]) || 1) * BANDS)))];
+        col[3 * i] = c.r; col[3 * i + 1] = c.g; col[3 * i + 2] = c.b;
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.setIndex(pr.tris.flat());
+      g.computeVertexNormals();
+      world.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
+      const edges = new THREE.EdgesGeometry(g, 1);
+      world.add(new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color: new THREE.Color(faint) })));
+    } else if (!mode3()) {
+      for (const s of m.shapes) {
+        const pl = s.plate; if (!pl || s.hole) continue;
+        const shp = new THREE.Shape(outline(s.geom, span / 200).map(p => new THREE.Vector2(p[0], p[1])));
+        for (const h of m.shapes) if (h.hole && h.plate && h.plate.plane === pl.plane && Math.abs(h.plate.depth - pl.depth) < 1e-7) shp.holes.push(new THREE.Path(outline(h.geom, span / 200).map(p => new THREE.Vector2(p[0], p[1]))));
+        const g = new THREE.ShapeGeometry(shp), a = g.getAttribute("position");
+        for (let i = 0; i < a.count; i++) { const q = plate3(pl, a.getX(i), a.getY(i)); a.setXYZ(i, q[0], q[1], q[2]); }
+        g.computeVertexNormals();
+        const on = selSet.has(s.id);
+        world.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(on ? accent : css("--accent2")), transparent: true, opacity: on ? 0.55 : 0.3, side: THREE.DoubleSide, depthWrite: false })));
+        const rim = outline(s.geom, span / 200).flatMap((p, i, o) => [...plate3(pl, p[0], p[1]), ...plate3(pl, o[(i + 1) % o.length][0], o[(i + 1) % o.length][1])]);
+        world.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(rim), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color(on ? accent : ink) })));
+      }
+    }
     // Nodes.
     const np = new Float32Array(m.nodes.flatMap(n => [n.x, n.y, n.z ?? 0]));
     const ng = new THREE.BufferGeometry(); ng.setAttribute("position", new THREE.BufferAttribute(np, 3));
@@ -283,6 +318,8 @@ export const View3D = () => {
   const fit = (keepDir = false, from?: P3) => {
     const m = model(); if (!m) return;
     const box = new THREE.Box3(); m.nodes.forEach(n => box.expandByPoint(new THREE.Vector3(n.x, n.y, n.z ?? 0)));
+    // Plates (0.4.1): their outlines in 3D.
+    for (const s of m.shapes) if (s.plate) for (const p of outline(s.geom, Infinity)) box.expandByPoint(new THREE.Vector3(...plate3(s.plate, p[0], p[1])));
     // A solid: its outline at both ends of the extrusion.
     if (isSolidA(m.analysis)) for (const s of m.shapes) for (const p of outline(s.geom, m.revolve ? 1e-3 : Infinity)) {
       if (m.revolve) for (let i = 0; i <= 16; i++) { const a = m.revolve * i / 16; box.expandByPoint(new THREE.Vector3(p[0] * Math.cos(a), p[1], p[0] * Math.sin(a))); }
@@ -452,6 +489,23 @@ export const View3D = () => {
       const pts: number[] = [];
       for (const [a, b] of ms.s.lines) pts.push(pos[3 * a], pos[3 * a + 1], pos[3 * a + 2], pos[3 * b], pos[3 * b + 1], pos[3 * b + 2]);
       if (pts.length) modeGroup.add(new THREE.LineSegments(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(pts), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color(css("--text")) })));
+    }
+    const pm = modes(), pdisp = md && "plate_disp" in md ? md.plate_disp : undefined;
+    if (md && m && pm?.kind === "space" && pm.plates && pdisp?.length) {
+      const [pn, pt] = pm.plates, cs = palette(opts().contours, false).map(c => new THREE.Color(c));
+      const pos = new Float32Array(pn.length * 3), col = new Float32Array(pn.length * 3);
+      pn.forEach((p, i) => {
+        const d = pdisp[i], a = Math.hypot(d[0], d[1], d[2]);
+        for (let c = 0; c < 3; c++) pos[3 * i + c] = p[c] + d[c] * k;
+        const cc = cs[Math.max(0, Math.min(BANDS - 1, Math.floor(a * BANDS)))];
+        col[3 * i] = cc.r; col[3 * i + 1] = cc.g; col[3 * i + 2] = cc.b;
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      g.setIndex(pt.flat());
+      g.computeVertexNormals();
+      modeGroup.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
     }
     if (md && m) {
       const P = at3(m), pts: number[] = [];

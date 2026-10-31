@@ -13,7 +13,9 @@ import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
 import { q3, setQ3, Q3 } from "./space3";
-import { setPlane } from "./plane3";
+import { setPlane, onPlane, plateT, setPlateT } from "./plane3";
+import { parseNum } from "./api";
+import { toU, fromU, unit } from "./units";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
 
@@ -158,6 +160,8 @@ export const Ribbon = () => {
           <G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /></G>
         </>}>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
+          <Show when={sp() && onPlane()}><G l="Plates" h="plates"><T big i="rect" l="Plate" t="rect" title="Draw a rectangular plate on this plane: click two corners" /><S><T i="poly" l="Polygon Plate" t="poly" /><T i="circle" l="Round Plate" t="circle" /><T i="hrect" l="Opening" t="hrect" title="Cut a rectangular opening out of the plates on this plane" /></S>
+            <S><label class="ribnum" title="Thickness of the plates drawn next (each plate's own is in the Inspector)">Thickness<input class="mono" value={toU("len", plateT())} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null && v > 0) setPlateT(fromU("len", v)); else e.currentTarget.value = String(toU("len", plateT())); }} /><span class="unit">{unit("len")}</span></label></S></G></Show>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
         </Show>
@@ -177,7 +181,7 @@ export const Ribbon = () => {
             <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /><Show when={solid3()}><T i="roller" l="Hold Directions" t="sup:hold" title="Hold only chosen directions (x, y, z) of a face; set them in the Inspector, or make it a line along the face" /></Show></>}><T i="roller" l="Roller (along x)" t="sup:rollerx" /><T i="roller" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
           <G l="Loads" h="loads"><T big i="force" l="Force" t="load:force" />
             <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><Show when={m()?.analysis !== "axi" && !solid3()}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
-              <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /></S></Show></G>
+              <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /><Show when={sp()}><T i="pressure" l="Plate Pressure" t="load:platepressure" title="Pressure on a plate: click inside it (positive pushes a floor down)" /></Show></S></Show></G>
         </Show>
         <Show when={heat()}>
           <G l="Heat" h="heat"><T big i="temp" l="Temperature" t="sup:temperature" /><S><T i="flux" l="Heat Flux" t="load:flux" /><T i="convection" l="Convection" t="load:convection" /><B i="heatgen" l="Heat Generation" run={() => C.body("heat")} /></S></G>

@@ -113,7 +113,9 @@ export const cancelDraft = () => batch(() => { setDraft([]); setMarquee(null); s
 const selSet = createMemo(() => new Set(sel()));
 
 /** Where to put an item for a support or load tool, from what was clicked. */
-const placeOn = (h: Hit, p: Pt, frame: boolean): Target | null => {
+const placeOn = (h: Hit, p: Pt, frame: boolean, t = ""): Target | null => {
+  // Pressure on a plate (0.4.1): click inside it.
+  if (t === "load:platepressure") return h?.kind === "shape" ? { on: "plate", shape: h.id } : null;
   if (h?.kind === "node") return { on: "node", id: h.id };
   if (h?.kind === "member") return { on: "member", id: h.id };
   if (h?.kind === "edge") return { on: "edge", shape: h.shape, edge: h.edge };
@@ -389,8 +391,8 @@ export const Canvas = () => {
       return toast(`Elements a quarter of the size (${fmt("len", base / 4)}) near there. Change or remove it in the tree, under Mesh.`, true);
     }
     if (t.startsWith("sup:") || t.startsWith("load:")) {
-      const h = hitTest(w), at = placeOn(h, frame() ? w : p, frame());
-      if (!at) return toast(t.startsWith("sup:") ? (frame() ? "Click a node to put the support on." : "Click an edge or a point of the part.") : "Click where the load goes: a node, a member or an edge.");
+      const h = hitTest(w), at = placeOn(h, frame() ? w : p, frame(), t);
+      if (!at) return toast(t === "load:platepressure" ? "Click inside a plate to put the pressure on it." : t.startsWith("sup:") ? (frame() ? "Click a node (or a plate's edge) to put the support on." : "Click an edge or a point of the part.") : "Click where the load goes: a node, a member or an edge.");
       const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4))] : ["Load", defaultLoad(t.slice(5), frame())];
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) batch(() => { setSel(o.created); setEdgeSel(null); });

@@ -704,8 +704,10 @@ fn stitched(e: &Elem, pieces: &[Elem], u: &[f64]) -> SpaceMember {
 fn plate_results(shells: &[Shell], plate_nodes: &[usize], pos: &[[f64; 3]], u: &[f64]) -> PlateResults {
     let np = plate_nodes.len();
     let back: std::collections::HashMap<usize, usize> = plate_nodes.iter().enumerate().map(|(i, &k)| (k, i)).collect();
-    let keys = ["vm", "mx", "my", "mxy", "nx", "ny", "nxy"];
-    let mut acc = vec![[0.0; 7]; np];
+    // Averaged at the nodes from the triangles round each (weighted by area): moments, membrane
+    // forces, and the stresses of the two faces, whose von Mises is taken after averaging.
+    let keys = ["mx", "my", "mxy", "nx", "ny", "nxy"];
+    let mut acc = vec![[0.0; 12]; np];
     let mut wsum = vec![0.0; np];
     let mut tris = vec![];
     for sh in shells {
@@ -721,20 +723,22 @@ fn plate_results(shells: &[Shell], plate_nodes: &[usize], pos: &[[f64; 3]], u: &
         };
         let (n, mm) = (turn(n), turn(mm));
         let t = sh.tri.t;
-        let vm = |s: [f64; 3]| (s[0] * s[0] - s[0] * s[1] + s[1] * s[1] + 3.0 * s[2] * s[2]).sqrt();
         let face = |sg: f64| std::array::from_fn::<f64, 3, _>(|i| n[i] / t + sg * 6.0 * mm[i] / (t * t));
-        let v = [vm(face(1.0)).max(vm(face(-1.0))), mm[0], mm[1], mm[2], n[0], n[1], n[2]];
+        let (top, bot) = (face(1.0), face(-1.0));
+        let v = [mm[0], mm[1], mm[2], n[0], n[1], n[2], top[0], top[1], top[2], bot[0], bot[1], bot[2]];
         let mut c = [0u32; 3];
         for (j, &k) in sh.n.iter().enumerate() {
             let i = back[&k];
             c[j] = i as u32;
-            for q in 0..7 {
+            for q in 0..12 {
                 acc[i][q] += area * v[q];
             }
             wsum[i] += area;
         }
         tris.push(c);
     }
+    let avg = |i: usize, q: usize| if wsum[i] > 0.0 { acc[i][q] / wsum[i] } else { 0.0 };
+    let vm = |s: [f64; 3]| (s[0] * s[0] - s[0] * s[1] + s[1] * s[1] + 3.0 * s[2] * s[2]).sqrt();
     let nodes: Vec<[f64; 3]> = plate_nodes.iter().map(|&k| pos[k]).collect();
     let disp: Vec<[f64; 3]> = plate_nodes.iter().map(|&k| [u[6 * k], u[6 * k + 1], u[6 * k + 2]]).collect();
     let mut fields = vec![];
@@ -756,8 +760,9 @@ fn plate_results(shells: &[Shell], plate_nodes: &[usize], pos: &[[f64; 3]], u: &
     push("ux", disp.iter().map(|d| d[0]).collect());
     push("uy", disp.iter().map(|d| d[1]).collect());
     push("uz", disp.iter().map(|d| d[2]).collect());
+    push("vm", (0..np).map(|i| vm([avg(i, 6), avg(i, 7), avg(i, 8)]).max(vm([avg(i, 9), avg(i, 10), avg(i, 11)]))).collect());
     for (q, key) in keys.iter().enumerate() {
-        push(key, (0..np).map(|i| if wsum[i] > 0.0 { acc[i][q] / wsum[i] } else { 0.0 }).collect());
+        push(key, (0..np).map(|i| avg(i, q)).collect());
     }
     PlateResults { nodes, tris, disp, fields }
 }

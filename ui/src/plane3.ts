@@ -5,7 +5,7 @@
 // and its edits are turned back into 3D here before they go to the engine. Members off the plane
 // are drawn faint and cannot be picked; the 3D view shows everything.
 import { createMemo, createSignal } from "solid-js";
-import { Model, Node, Load, Pt, isFrame, isSolidA } from "./api";
+import { Model, Node, Load, Pt, Shape, Plate, isFrame, isSolidA } from "./api";
 import { model, shownLoad } from "./store";
 
 export type Plane = "3d" | "xy" | "zy" | "xz";
@@ -77,8 +77,19 @@ export const planeModel = createMemo((): Model | undefined => {
     }
     return l;
   });
-  return { ...m, nodes, members, supports: m.supports.filter(keep), loads };
+  // Plates (0.4.1) on this plane at this depth, as drawn; supports on their edges and pressure on them.
+  const shapes = m.shapes.filter(onPlate);
+  const sids = new Set(shapes.map(s => s.id));
+  const keepS = (t: { at: any }) => keep(t) || ((t.at.on === "edge" || t.at.on === "plate") && sids.has(t.at.shape));
+  return { ...m, nodes, members, shapes, supports: m.supports.filter(keepS), loads: loads.concat(m.loads.filter(l => !keep(l) && keepS(l))) };
 });
+
+/** Is a plate on the working plane, at its depth? */
+export const onPlate = (s: Shape) => !!s.plate && s.plate.plane === plane() && Math.abs(s.plate.depth - depth()) < SAME;
+/** The thickness new plates are drawn with (m). */
+export const [plateT, setPlateT] = createSignal(0.2);
+/** A plate's (u, v) point in 3D. */
+export const plate3 = (p: Plate, u: number, v: number): [number, number, number] => p.plane === "zy" ? [p.depth, v, u] : p.plane === "xz" ? [u, p.depth, -v] : [u, v, p.depth];
 
 /** Members not on the plane, flattened onto it: drawn faint for orientation. */
 export const ghosts = createMemo((): [Pt, Pt][] => {
@@ -107,6 +118,8 @@ export const lift = (op: any): any => {
     return { AddMember: { ...op.AddMember, from: [a[0], a[1]], to: [b[0], b[1]], z: [a[2], b[2]] } };
   }
   if (op.Move) { const [dx, dy, dz] = unproj(op.Move.dx, op.Move.dy, 0); return { Move: { ...op.Move, dx, dy, dz } }; }
+  // A shape drawn on a plane is a plate there (0.4.1); a changed one keeps where it is.
+  if (op.Add?.item?.Shape && !op.Add.item.Shape.plate) return { Add: { item: { Shape: { ...op.Add.item.Shape, plate: { plane: plane(), depth: depth(), t: plateT() } } } } };
   for (const k of ["Add", "Set"]) {
     const n = op[k]?.item?.Node;
     if (n) {

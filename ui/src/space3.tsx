@@ -18,6 +18,13 @@ export const at3 = (m: Model) => new Map(m.nodes.map(n => [n.id, [n.x, n.y, n.z 
 export type Q3 = "util" | "n" | "mz" | "my" | "t" | "vy" | "vz" | "d" | "none";
 export const Q3S: [Q3, string, Q][] = [["util", "Utilisation", "ratio"], ["n", "Axial force N", "force"], ["mz", "Bending moment Mz (about the strong axis)", "moment"], ["my", "Bending moment My (about the weak axis)", "moment"], ["t", "Torque T", "moment"], ["vy", "Shear Vy", "force"], ["vz", "Shear Vz", "force"], ["d", "Deflection", "len"], ["none", "None", "ratio"]];
 export const [q3, setQ3] = createSignal<Q3>("util");
+/** What the plates are coloured by (0.4.1). */
+export const PQS: [string, string, Q][] = [["vm", "Von Mises stress (worse face)", "stress"], ["umag", "Movement", "len"], ["uy", "Movement in y", "len"], ["mx", "Moment Mx (per length)", "force"], ["my", "Moment My (per length)", "force"], ["mxy", "Twisting moment Mxy", "force"], ["nx", "Membrane force Nx (per length)", "dist"], ["ny", "Membrane force Ny", "dist"], ["nxy", "Membrane shear Nxy", "dist"]];
+export const [pq, setPq] = createSignal("vm");
+export const plateRange = createMemo((): [number, number] | null => {
+  const f = spaceRes()?.plates?.fields.find(x => x.key === pq()); if (!f) return null;
+  return f.max - f.min > 1e-12 * Math.max(Math.abs(f.max), Math.abs(f.min), 1e-300) ? [f.min, f.max] : [f.min, f.min + 1];
+});
 
 export const span3 = (m: Model) => {
   if (!m.nodes.length) return 1;
@@ -27,7 +34,7 @@ export const span3 = (m: Model) => {
 export const dlen = (d: P3) => Math.hypot(d[0], d[1], d[2]);
 /** How many times the deflections are drawn larger: a round number, as for plane frames. */
 export const deform3 = (m: Model, r: SpaceResults) => {
-  const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(dlen)));
+  const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(dlen)), ...(r.plates?.disp.map(dlen) ?? []));
   if (!(dmax > 1e-12 * span3(m))) return 0;
   const f = 0.08 * span3(m) / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p;
   return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale;
@@ -47,7 +54,8 @@ export const range3 = createMemo((): [number, number] | null => {
 export const SpaceLegend = () => {
   const r = () => spaceRes(), m = () => model();
   const qd = () => Q3S.find(x => x[0] === q3())!;
-  const dmax = () => Math.max(0, ...(r()?.members.flatMap(mr => mr.d.map(dlen)) ?? [0]));
+  const dmax = () => Math.max(0, ...(r()?.members.flatMap(mr => mr.d.map(dlen)) ?? [0]), ...(r()?.plates?.disp.map(dlen) ?? []));
+  const pd = () => PQS.find(x => x[0] === pq())!;
   const cols = () => palette(opts().contours);
   return (
     <Show when={r() && m()}>
@@ -56,6 +64,8 @@ export const SpaceLegend = () => {
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div><b>Colour by</b><select class="fpick" value={q3()} onChange={e => setQ3(e.currentTarget.value as Q3)}>{Q3S.map(([k, l]) => <option value={k} selected={k === q3()}>{l}</option>)}</select></div>
         <Show when={range3()}>{rg => <span class="cbar"><span class="cb">{cols().map((c, k) => <i style={{ background: c }}><Show when={k % 3 === 0}><small>{q3() === "util" ? `${num((rg()[0] + (rg()[1] - rg()[0]) * k / BANDS) * 100, 2)}%` : num(+fmt(qd()[2], rg()[0] + (rg()[1] - rg()[0]) * k / BANDS, 3).split(" ")[0].replace("−", "-"), 3)}</small></Show></i>)}<b><small>{q3() === "util" ? `${num(rg()[1] * 100, 2)}%` : num(+fmt(qd()[2], rg()[1], 3).split(" ")[0].replace("−", "-"), 3)}</small></b></span><em>{q3() === "util" ? "" : unit(qd()[2])}</em></span>}</Show>
+        <Show when={r()!.plates}><div><b>Plates by</b><select class="fpick plates" value={pq()} onChange={e => setPq(e.currentTarget.value)}>{PQS.map(([k, l]) => <option value={k} selected={k === pq()}>{l}</option>)}</select></div>
+          <Show when={plateRange()}>{rg => <span class="cbar"><span class="cb">{cols().map((c, k) => <i style={{ background: c }}><Show when={k % 3 === 0}><small>{num(+fmt(pd()[2], rg()[0] + (rg()[1] - rg()[0]) * k / BANDS, 3).split(" ")[0].replace("−", "-"), 3)}</small></Show></i>)}<b><small>{num(+fmt(pd()[2], rg()[1], 3).split(" ")[0].replace("−", "-"), 3)}</small></b></span><em>{unit(pd()[2])}</em></span>}</Show></Show>
         <div><b>Deflected shape</b><span>{deform3(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deform3(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>

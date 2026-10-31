@@ -42,12 +42,13 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
+          if (c === "modes" && window.__modesKey) return f[window.__modesKey];
           if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
           if (c === "modes" && window.__cur?.m?.analysis === "solid") return f.bracket3d_modes;
           if (c === "modes") { if (window.__cur === f.portal) return f.portal_modes; if (window.__cur === f.bracket) return f.bracket_modes; throw "Natural frequencies are for frames and for parts in stress."; }
@@ -531,6 +532,49 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("adding a table section adds it with its root radius", ts?.Add?.item?.Section?.name === "HEB 300" && Math.abs(ts.Add.item.Section.shape.r - 0.027) < 1e-12, JSON.stringify(ts));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   check("Escape closes the dialog left open under a closed one (0.3.3 bug: focus was lost)", (await p.$$(".ov")).length === 0);
+  // 0.4.1: plates in a 3D frame, on the floor slab.
+  await open("slab"); await p.waitForTimeout(400);
+  const slm = fix.slab.m, slabId = slm.shapes[0].id;
+  check("a plate is listed in the tree with its thickness", (await p.textContent(".tree")).includes("Plates") && (await p.textContent(".tree")).includes("200 mm thick"));
+  await p.click('.planebar .seg button:text-is("Plan")'); await p.waitForTimeout(250);
+  await p.selectOption(".planebar select", "3"); await p.waitForTimeout(250);
+  check("the Plan plane at the slab's height shows the slab", (await p.$$(".dsvg .shape")).length === 1);
+  await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
+  check("Geometry offers plates on a plane of a 3D frame", (await p.$$('.ribbon button[title^="Draw a rectangular plate"]')).length === 1);
+  await p.click('.ribbon button[title^="Draw a rectangular plate"]');
+  const pcb = await canvasBox();
+  await p.mouse.click(pcb.x + pcb.w * 0.1, pcb.y + pcb.h * 0.1); await p.waitForTimeout(80); await p.mouse.click(pcb.x + pcb.w * 0.2, pcb.y + pcb.h * 0.2); await p.waitForTimeout(150);
+  const apl = (await ops()).reverse().find(o => o.Add?.item?.Shape);
+  check("a plate drawn on the Plan plane goes to the engine on that plane, at its height and thickness", apl?.Add.item.Shape.plate?.plane === "xz" && apl.Add.item.Shape.plate.depth === 3 && apl.Add.item.Shape.plate.t === 0.2, JSON.stringify(apl));
+  await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
+  await p.click('.tabs > button:text-is("Loads")'); await p.waitForTimeout(100);
+  await p.click('.ribbon button:has-text("Plate Pressure")'); await p.waitForTimeout(80);
+  const inPlate = await center(".dsvg .shape");
+  await p.mouse.click(inPlate[0], inPlate[1]); await p.waitForTimeout(150);
+  const plp = await lastOp();
+  check("Plate Pressure clicked inside a plate puts a pressure on the whole plate", plp?.Add?.item?.Load?.at?.on === "plate" && plp.Add.item.Load.at.shape === slabId && plp.Add.item.Load.kind.kind === "pressure", JSON.stringify(plp));
+  await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(100);
+  await p.click(`.tree :text-is("Slab")`); await p.waitForTimeout(150);
+  check("a plate's Inspector has its thickness and plane", (await p.textContent(".insp")).includes("Thickness") && (await p.textContent(".insp")).includes("Plan plane"));
+  await p.click('.planebar .seg button:text-is("3D")'); await p.waitForTimeout(250);
+  await p.evaluate(() => { window.__solveKey = "slab_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__solveKey = null; });
+  const slabLeg = await p.textContent(".legend").catch(() => "");
+  check("once solved, the legend colours the plates (von Mises by default) with a scale", slabLeg.includes("Plates by") && (await p.$eval(".legend select.plates", s => s.value)) === "vm" && (await p.$$(".legend .cbar")).length >= 2, slabLeg.slice(0, 200));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "slab-vm.png") });
+  await p.selectOption(".legend select.plates", "mx"); await p.waitForTimeout(200);
+  check("the plates can be coloured by their moments", (await p.textContent(".legend")).includes("kN·m/m") || (await p.textContent(".legend")).includes("kN"));
+  await p.click('.tabs > button:text-is("Results")'); await p.click('.ribbon button:has-text("Tables and Equilibrium")'); await p.waitForTimeout(250);
+  const slabPage = await p.textContent(".page");
+  check("the Results page lists the plates' extremes and the reactions balance", slabPage.includes("Plates") && slabPage.includes("Von Mises stress") && slabPage.includes("Membrane force Nx") && slabPage.includes("Discrete Kirchhoff"), slabPage.slice(0, 300));
+  await p.click('.side button[title="Model"]').catch(() => {}); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__modesKey = "slab_modes"; });
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Natural Frequencies")'); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__modesKey = null; });
+  check("natural frequencies of a slab list its modes", (await p.textContent("body")).includes(String(+fix.slab_modes.modes[0].f.toPrecision(3)).slice(0, 4)));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "slab-mode.png") });
   // 0.4.0: analysis steps and large deflection, on Lee's frame (snap-through).
   await open("lee"); await p.waitForTimeout(200);
   const leeM = fix.lee.m;

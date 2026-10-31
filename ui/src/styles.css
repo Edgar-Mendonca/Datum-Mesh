@@ -926,3 +926,7 @@ svg.curve .pt { fill: var(--blue); }
 svg.curve .pt.unstable { fill: var(--bg2); stroke: var(--blue); stroke-width: 1.5; }
 svg.curve .lbl { font-size: 11px; fill: var(--muted); }
 table.steps select { max-width: 13em; }
+/* Plates (0.4.1): thickness of new plates on the ribbon */
+.ribnum { display: flex; align-items: center; gap: 4px; font-size: 12px; }
+.ribnum input { width: 5em; }
+.ribnum .unit { color: var(--muted); }

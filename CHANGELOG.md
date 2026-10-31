@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.1 — 2026-10-31
+
+Plates and shells: slabs, walls and panels in 3D frames.
+
+**Plates**
+- On a working plane of a 3D frame (Front, Side or Plan, at a depth), Geometry › **Plate**: draw a rectangular, polygonal or round plate, with openings. Set the thickness for new plates on the ribbon, or each plate's in the Inspector.
+- Plates bend (thin-plate theory) and carry forces in their own plane, and join the frame: frame nodes on a plate become its mesh nodes, and beams along a plate's edge are joined to it all along. Plates on different planes join along an edge they share.
+- Supports on a plate's edges (fixed or pinned), Loads › **Plate Pressure** on the whole plate, and self-weight. Plates are meshed into triangles automatically (Mesh › Element Size).
+- Results: in the 3D view the plates are coloured by von Mises stress (the worse face), movement, moments or membrane forces, on the deflected shape; the Results page lists their largest and smallest values and where. Natural frequencies include the plates, and their mode shapes move in the 3D view.
+- New example: a floor slab on four columns with edge beams.
+
+**Trust**
+- Help › Verification: 157 checks, all passing. New: benchmark 22, square plates simply supported and clamped (Navier's series and Timoshenko's tables, within 0.6 %), a panel bent in its own plane (exact elasticity, 0.5 %), the Scordelis–Lo roof (0.8 %) and the pinched cylinder (0.4 %) from the standard shell problems, a slab drawn in a 3D frame (0.3 %, its edge reactions exact), and the slab's first natural frequency (0.3 %).
+- Random plates on random planes, with random edge supports and pressures, solve and balance or say why.
+
 ## 0.4.0 — 2026-10-31
 
 The engine grows a core: analysis steps, and frames that bend far.

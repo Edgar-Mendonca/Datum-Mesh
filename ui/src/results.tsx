@@ -207,6 +207,9 @@ export const ResultsPage = () => {
 export const SpaceResultsPage = (p: { r: SpaceResults }) => {
   const m = () => model()!, r = () => p.r;
   const nodeName = (id: number) => `Node ${m().nodes.findIndex(n => n.id === id) + 1}`;
+  /** A support on a plate's edge (0.4.1): its forces summed, moments about the edge's middle. */
+  const supName = (id: number) => { const s = m().supports.find(x => x.id === id), at = s?.at; return at?.on === "edge" ? `${m().shapes.find(x => x.id === at.shape)?.name ?? "Plate"}, edge ${at.edge + 1}` : "Support"; };
+  const pf = (k: string) => r().plates?.fields.find(f => f.key === k);
   const top = (k: "n" | "vy" | "vz" | "t" | "my" | "mz") => Math.max(0, ...r().members.flatMap(mr => mr[k].map(Math.abs)));
   const absMax = (v: number[]) => Math.max(0, ...v.map(Math.abs));
   const rows: [string, number, "force" | "moment"][] = [["Σ Fx", 0, "force"], ["Σ Fy", 1, "force"], ["Σ Fz", 2, "force"], ["Σ Mx about the origin", 3, "moment"], ["Σ My about the origin", 4, "moment"], ["Σ Mz about the origin", 5, "moment"]];
@@ -221,7 +224,13 @@ export const SpaceResultsPage = (p: { r: SpaceResults }) => {
       <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(r().applied[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().reacted[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().applied[k] + r().reacted[k], sc(k)))}</td></tr>}</For></tbody></table>
     <h2>Reactions</h2>
     <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th><th class="r">Mx ({unit("moment")})</th><th class="r">My</th><th class="r">Mz</th></tr></thead><tbody>
-      <For each={r().reactions}>{x => <tr><td>{nodeName(x.node)}</td><For each={[0, 1, 2, 3, 4, 5]}>{k => <td class="r">{cell(k < 3 ? "force" : "moment", x.f[k], sc(k))}</td>}</For></tr>}</For></tbody></table>
+      <For each={r().reactions}>{x => <tr><td>{x.node ? nodeName(x.node) : supName(x.support ?? 0)}</td><For each={[0, 1, 2, 3, 4, 5]}>{k => <td class="r">{cell(k < 3 ? "force" : "moment", x.f[k], sc(k))}</td>}</For></tr>}</For></tbody></table>
+    <Show when={r().plates}>{pl => <>
+      <h2>Plates <Help k="plates" /></h2>
+      <p class="muted small">{pl().tris.length.toLocaleString()} triangles, {pl().nodes.length.toLocaleString()} nodes. Moments and membrane forces are per length, in each plate's own axes (u across its plane, v up it).</p>
+      <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>Where (x, y, z)</th><th class="r">Largest</th><th>Where (x, y, z)</th></tr></thead><tbody>
+        <For each={[["umag", "Movement", "len"], ["uy", "Movement in y", "len"], ["vm", "Von Mises stress (worse face)", "stress"], ["mx", "Moment Mx", "force"], ["my", "Moment My", "force"], ["mxy", "Twisting moment Mxy", "force"], ["nx", "Membrane force Nx", "dist"], ["ny", "Membrane force Ny", "dist"], ["nxy", "Membrane shear Nxy", "dist"]] as const}>{([k, l, q]) => <Show when={pf(k)}>{f => <tr><td>{l}{q === "force" ? ` (${unit("moment")}/${unit("coord")})` : ""}</td><td class="r">{fmt(q, f().min)}</td><td class="small">{f().at_min.map(v => fmt("coord", v).split(" ")[0]).join(", ")}</td><td class="r">{fmt(q, f().max)}</td><td class="small">{f().at_max.map(v => fmt("coord", v).split(" ")[0]).join(", ")}</td></tr>}</Show>}</For>
+      </tbody></table></>}</Show>
     <h2>Members</h2>
     <table class="tbl"><thead><tr><th>Member</th><th class="r">Length ({unit("coord")})</th><th class="r">N max / min ({unit("force")})</th><th class="r">|Vy| · |Vz|</th><th class="r">|T| ({unit("moment")})</th><th class="r">|Mz| · |My|</th><th class="r">Deflection ({unit("len")})</th><th class="r">Stress ({unit("stress")})</th><th class="r">Utilisation</th></tr></thead><tbody>
       <For each={r().members}>{(mr, i) => <tr class="link" classList={{ on: sel().includes(mr.id) }} onClick={() => { setSel([mr.id]); setView("model"); }}>
@@ -237,7 +246,7 @@ export const SpaceResultsPage = (p: { r: SpaceResults }) => {
     <table class="tbl"><tbody>
       <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
       <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
-      <tr><td>Method</td><td>3D beam elements (axial, torsion, bending about both axes) and truss bars; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+      <tr><td>Method</td><td>3D beam elements (axial, torsion, bending about both axes) and truss bars{r().plates ? "; flat shell triangles for the plates (Allman's membrane with drilling rotations, Discrete Kirchhoff bending)" : ""}; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
   </>;
 };
 

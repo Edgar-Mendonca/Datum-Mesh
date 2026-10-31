@@ -22,8 +22,10 @@ export type SectionShape =
 export interface Section { id: number; name: string; shape: SectionShape }
 export interface Material { id: number; name: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
 export type Geom = { kind: "poly"; pts: Pt[]; bulge: number[] } | { kind: "circle"; c: Pt; r: number };
-export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom }
-export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number };
+/** A plate of a 3D frame (0.4.1): the shape on a working plane at a depth, and its thickness. */
+export interface Plate { plane: "xy" | "zy" | "xz"; depth: number; t: number }
+export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom; plate?: Plate }
+export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number } | { on: "plate"; shape: number };
 export type SupportKind =
   | { kind: "fixed" } | { kind: "pinned" } | { kind: "rollerx" } | { kind: "rollery" } | { kind: "roller" } | { kind: "symmetry" }
   | { kind: "spring"; kx: number; ky: number; kr: number; kz?: number; krx?: number; kry?: number } | { kind: "temperature"; t: number } | { kind: "hold"; x: boolean; y: boolean; z: boolean };
@@ -99,7 +101,9 @@ export interface HeatResults { kind: "heat"; mesh: Mesh; draw: [number, number, 
 /** 3D frames (0.2.4): six movements per node, forces along and moments about both section axes. */
 export type P3 = [number, number, number];
 export interface SpaceMember { id: number; length: number; x: number[]; n: number[]; vy: number[]; vz: number[]; t: number[]; my: number[]; mz: number[]; d: P3[]; stress: number; util: number; axes: [P3, P3, P3] }
-export interface SpaceResults { kind: "space"; disp: number[][]; reactions: { node: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
+/** Plate results (0.4.1): mesh, movements and fields at the plate nodes. */
+export interface PlateResults { nodes: P3[]; tris: [number, number, number][]; disp: P3[]; fields: Field3[] }
+export interface SpaceResults { kind: "space"; plates?: PlateResults; disp: number[][]; reactions: { node: number; support?: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
 /** 3D solids (0.3.0): the outer surface with its displacements and fields; min and max over every node. */
 export interface Field3 { key: string; v: number[]; min: number; max: number; at_min: P3; at_max: P3 }
 /** 3D heat conduction (0.3.4): temperatures and heat flux over the surface, flows and the balance. */
@@ -156,11 +160,11 @@ export interface BarBuckle { id: number; n: number; ncr: number; lambda: number 
 export type ModeResults = { kind: "frame"; modes: FrameMode[]; equations: number; iterations: number; ms: number }
   | { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; modes: PartMode[]; equations: number; iterations: number; ms: number }
   | { kind: "buckle"; modes: FrameBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number }
-  | { kind: "space"; modes: SpaceMode[]; equations: number; iterations: number; ms: number; warnings: string[] }
+  | { kind: "space"; modes: SpaceMode[]; plates?: [P3[], [number, number, number][]]; equations: number; iterations: number; ms: number; warnings: string[] }
   | { kind: "buckle3"; modes: SpaceBuckle[]; bars: BarBuckle[]; warnings: string[]; equations: number; iterations: number; ms: number }
   | { kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; modes: { f: number; disp: P3[] }[]; equations: number; iterations: number; ms: number; warnings: string[] };
 /** 3D frames (0.2.6): a mode or buckled shape with six movements per node and 3D member shapes. */
-export interface SpaceMode { f: number; disp: number[][]; members: { id: number; d: P3[] }[] }
+export interface SpaceMode { f: number; disp: number[][]; members: { id: number; d: P3[] }[]; plate_disp?: P3[] }
 export interface SpaceBuckle { lambda: number; disp: number[][]; members: { id: number; d: P3[] }[] }
 /** Buckling results, plane or 3D. */
 export const isBuckle = (r: ModeResults): r is Extract<ModeResults, { kind: "buckle" | "buckle3" }> => r.kind === "buckle" || r.kind === "buckle3";
