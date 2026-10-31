@@ -236,6 +236,58 @@ impl System {
     }
 }
 
+/// A system factorised once and solved for many right-hand sides (0.4.2: time stepping), the
+/// held unknowns at zero. Needs a positive definite matrix.
+pub struct Factor {
+    n: usize,
+    map: Vec<usize>,
+    llt: faer::sparse::linalg::solvers::Llt<usize, f64>,
+}
+
+impl Factor {
+    /// Solve K x = b; b is read on the free unknowns only, x is zero at held ones.
+    pub fn solve(&self, b: &[f64]) -> Vec<f64> {
+        let m = self.map.iter().filter(|x| **x != usize::MAX).count();
+        let mut r = Mat::<f64>::zeros(m, 1);
+        for i in 0..self.n {
+            if self.map[i] != usize::MAX {
+                r[(self.map[i], 0)] = b[i];
+            }
+        }
+        let x = self.llt.solve(&r);
+        (0..self.n).map(|i| if self.map[i] != usize::MAX { x[(self.map[i], 0)] } else { 0.0 }).collect()
+    }
+}
+
+impl System {
+    /// Factorise K (with the extra entries `plus`, e.g. a multiple of the mass) once, the
+    /// unknowns in `held` removed.
+    pub fn factor(&self, held: &[bool], plus: &[(usize, usize, f64)]) -> Result<Factor, String> {
+        let mut map = vec![usize::MAX; self.n];
+        let mut m = 0;
+        for i in 0..self.n {
+            if !held[i] {
+                map[i] = m;
+                m += 1;
+            }
+        }
+        let mut tri = vec![];
+        for &(i, j, v) in self.k.iter().chain(plus.iter()) {
+            let (a, b) = (map[i], map[j]);
+            if a == usize::MAX || b == usize::MAX {
+                continue;
+            }
+            // The lower triangle (a half-stored K has only that; `plus` gives both halves).
+            if a >= b {
+                tri.push(Triplet::new(a, b, v));
+            }
+        }
+        let a = SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &tri).map_err(|e| format!("Could not build the matrix: {e:?}"))?;
+        let llt = a.sp_cholesky(Side::Lower).map_err(|_| mechanism())?;
+        Ok(Factor { n: self.n, map, llt })
+    }
+}
+
 fn mechanism() -> String {
     "The model can move without resistance: add supports so it cannot slide or turn as a whole, and check that every part is connected (a truss needs triangles).".into()
 }

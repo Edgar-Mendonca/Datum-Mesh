@@ -2,6 +2,7 @@
 //! combinations, and the path solver (Newton and arc length) that nonlinear steps run on.
 
 pub mod cases;
+pub mod dynamics;
 pub mod modal;
 pub mod path;
 pub mod sparse;

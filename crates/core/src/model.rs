@@ -482,6 +482,9 @@ pub enum LoadKind {
     Convection { h: f64, t_inf: f64 },
     /// Body: heat generated per volume (W/m³).
     Heat { q: f64 },
+    /// Frames (0.4.2): a mass at a node (kg), for natural frequencies and dynamics. It is in
+    /// every load case and is not scaled by combinations; it adds no weight to a static solve.
+    Mass { m: f64 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -526,6 +529,10 @@ pub enum StepKind {
     Newton,
     /// Large deflections, following the path past limit points (snap-through) by arc length.
     Arc,
+    /// Dynamics (0.4.2): a response spectrum, the modes' peak responses combined (CQC or SRSS).
+    Spectrum,
+    /// Dynamics (0.4.2): a time history by direct integration (Newmark, average acceleration).
+    History,
 }
 
 /// An analysis step (0.4.0): a load, its factor, and how it is solved. Nonlinear steps carry on
@@ -546,11 +553,46 @@ pub struct Step {
     pub pieces: u32,
     /// The node whose movement the load–deflection curve follows; None: the one that moves most.
     pub monitor: Option<u32>,
+    /// Dynamics (0.4.2). The direction of the ground's shaking (a unit vector: x, y or z).
+    pub along: [f64; 3],
+    /// The design spectrum: (period s, spectral acceleration m/s²) points, straight between.
+    pub spectrum: Vec<[f64; 2]>,
+    /// Damping ratio of every mode (0.05: 5 %).
+    pub damping: f64,
+    /// Modes in a spectrum analysis.
+    pub modes: u32,
+    /// Combine modes by CQC (true) or SRSS (false).
+    pub cqc: bool,
+    /// Time history: (time s, value) points, straight between: the factor on the load, or the
+    /// ground's acceleration (m/s²) when `ground`.
+    pub time: Vec<[f64; 2]>,
+    pub ground: bool,
+    /// Time step and length of a time history (s).
+    pub dt: f64,
+    pub duration: f64,
 }
 
 impl Default for Step {
     fn default() -> Self {
-        Step { id: 0, name: String::new(), kind: StepKind::Newton, load: None, factor: 1.0, increments: 10, pieces: 10, monitor: None }
+        Step {
+            id: 0,
+            name: String::new(),
+            kind: StepKind::Newton,
+            load: None,
+            factor: 1.0,
+            increments: 10,
+            pieces: 10,
+            monitor: None,
+            along: [1.0, 0.0, 0.0],
+            spectrum: vec![[0.0, 2.5], [0.5, 2.5], [4.0, 0.3125]],
+            damping: 0.05,
+            modes: 12,
+            cqc: true,
+            time: vec![[0.0, 1.0], [10.0, 1.0]],
+            ground: false,
+            dt: 0.01,
+            duration: 2.0,
+        }
     }
 }
 
@@ -759,6 +801,26 @@ impl Model {
             if !(1..=200).contains(&st.pieces) {
                 return Err("Beams are cut into 1 to 200 pieces in a step.".into());
             }
+            if !(st.damping.is_finite() && (0.0..1.0).contains(&st.damping)) {
+                return Err("Damping is a ratio from 0 to under 1 (0.05 is 5 %).".into());
+            }
+            if !(1..=100).contains(&st.modes) {
+                return Err("A spectrum step uses 1 to 100 modes.".into());
+            }
+            if !st.along.iter().all(|v| v.is_finite()) || st.along.iter().map(|v| v * v).sum::<f64>() < 1e-12 {
+                return Err("The direction of shaking needs a size.".into());
+            }
+            for p in st.spectrum.iter().chain(st.time.iter()) {
+                if !(p[0].is_finite() && p[1].is_finite() && p[0] >= 0.0) {
+                    return Err("Spectrum and time points need numbers, times and periods from zero up.".into());
+                }
+            }
+            if st.spectrum.windows(2).any(|w| w[1][0] <= w[0][0]) || st.time.windows(2).any(|w| w[1][0] <= w[0][0]) {
+                return Err("Spectrum periods and times must rise from one point to the next.".into());
+            }
+            if !(st.dt.is_finite() && st.dt > 0.0 && st.duration.is_finite() && st.duration > 0.0) || st.duration / st.dt > 200_000.0 {
+                return Err("A time history needs a time step and a length above zero, and at most 200 000 steps.".into());
+            }
         }
         for r in &self.mesh.refine {
             pos(r.size, "A local element size")?;
@@ -910,6 +972,7 @@ impl Model {
                 (LoadKind::Flux { q }, Target::Edge { .. } | Target::End { .. }) => q.is_finite(),
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
+                (LoadKind::Mass { m }, Target::Node { .. }) => m.is_finite() && *m >= 0.0,
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 _ => return Err("That load cannot go there.".into()),
             };
@@ -1095,6 +1158,25 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
         }
         st.increments = st.increments.clamp(1, 1000);
         st.pieces = st.pieces.clamp(1, 200);
+        st.modes = st.modes.clamp(1, 100);
+        let dd = Step::default();
+        if !(st.damping.is_finite() && (0.0..1.0).contains(&st.damping)) {
+            st.damping = dd.damping;
+        }
+        if !st.along.iter().all(|v| v.is_finite()) || st.along.iter().map(|v| v * v).sum::<f64>() < 1e-12 {
+            st.along = dd.along;
+        }
+        let ok = |v: &Vec<[f64; 2]>| v.iter().all(|p| p[0].is_finite() && p[1].is_finite() && p[0] >= 0.0) && v.windows(2).all(|w| w[1][0] > w[0][0]);
+        if !ok(&st.spectrum) {
+            st.spectrum = dd.spectrum.clone();
+        }
+        if !ok(&st.time) {
+            st.time = dd.time.clone();
+        }
+        if !(st.dt.is_finite() && st.dt > 0.0 && st.duration.is_finite() && st.duration > 0.0) || st.duration / st.dt > 200_000.0 {
+            st.dt = dd.dt;
+            st.duration = dd.duration;
+        }
         if st.monitor.is_some_and(|id| !nodes.contains(&id)) {
             st.monitor = None;
         }

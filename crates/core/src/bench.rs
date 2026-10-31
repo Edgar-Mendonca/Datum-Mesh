@@ -1377,6 +1377,136 @@ fn plates() -> Vec<Check> {
     v
 }
 
+/// Benchmark 23 (0.4.2): dynamics of structures, against the closed forms of one and two masses.
+fn dynamics() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    use std::f64::consts::TAU;
+    let mut v = vec![];
+    // One mass on a weightless cantilever column: lateral stiffness k = 3EI/L³, ω = √(k/M).
+    let (l, mass) = (3.0f64, 2000.0);
+    let rect = SectionShape::Rect { b: 0.1, h: 0.2 };
+    let ei = 200e9 * 0.1 * 0.2f64.powi(3) / 12.0;
+    let k = 3.0 * ei / l.powi(3);
+    let w = (k / mass).sqrt();
+    let tp = TAU / w;
+    let column = |steps: Vec<Step>, extra: Option<LoadKind>| {
+        let mut d = frame(200e9, rect.clone());
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [0.0, l], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let top = node(&d, 0.0, l);
+        load(&mut d, Target::Node { id: top }, LoadKind::Mass { m: mass });
+        if let Some(k) = extra {
+            add(&mut d, Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: top }, kind: k }) });
+        }
+        for st in steps {
+            add(&mut d, Op::Add { item: Item::Step(Step { monitor: Some(top), ..st }) });
+        }
+        d
+    };
+    let sdof = "One mass on a weightless cantilever column: ω² = 3EI/(ML³)";
+    let d = column(vec![], None);
+    let fm = crate::frame::modes(&d.m, 1).expect("modes");
+    v.push(check(23, "Mass on a cantilever column", "Natural frequency √(k/M)/2π", "hz", w / TAU, fm.modes[0].f, 1e-6, sdof));
+    let solve = |d: &Doc| match crate::solve_for(&d.m, None).expect("dynamic step") {
+        crate::Results::Frame(r) => r,
+        _ => unreachable!(),
+    };
+    // A step load H at the top, undamped: u = (H/k)(1 − cos ωt), peak 2H/k at t = π/ω.
+    let h = 1e3;
+    let st = Step { kind: StepKind::History, damping: 0.0, time: vec![[0.0, 1.0], [100.0, 1.0]], dt: tp / 200.0, duration: 1.5 * tp, pieces: 1, ..Default::default() };
+    let r = solve(&column(vec![st], Some(LoadKind::Force { fx: h, fy: 0.0, fz: 0.0 })));
+    let dy = r.dynamic.as_ref().expect("record");
+    let pk = dy.ux.iter().fold(0.0f64, |a, b| a.max(*b));
+    v.push(check(23, "Step load on the mass, undamped (Newmark, 200 steps a period)", "Largest movement 2H/k", "len", 2.0 * h / k, pk, 2e-3, "Single degree of freedom, step load (Chopra, Dynamics of Structures, §4.3)"));
+    v.push(check(23, "Step load on the mass, undamped (Newmark, 200 steps a period)", "When it comes: t = T/2", "ratio", 0.5, dy.peak_t / tp, 0.02, "Single degree of freedom, step load"));
+    v.push(check(23, "Step load on the mass, undamped (Newmark, 200 steps a period)", "Dynamic balance at that time (loads, inertia, reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics with d'Alembert's inertia forces"));
+    // The ground suddenly accelerating at 1 m/s²: relative movement −(M a/k)(1 − cos ωt).
+    let st = Step { kind: StepKind::History, ground: true, along: [1.0, 0.0, 0.0], damping: 0.0, time: vec![[0.0, 1.0], [100.0, 1.0]], dt: tp / 200.0, duration: 1.5 * tp, pieces: 1, ..Default::default() };
+    let r = solve(&column(vec![st], None));
+    let pk = r.dynamic.as_ref().expect("record").ux.iter().fold(0.0f64, |a, b| a.max(b.abs()));
+    v.push(check(23, "The ground stepping to 1 m/s², undamped", "Largest movement relative to the ground 2Ma/k", "len", 2.0 * mass * 1.0 / k, pk, 2e-3, "Single degree of freedom, ground acceleration (Chopra §6.4)"));
+    // Resonance with 5 % damping: F sin ωt from rest, the exact transient and steady parts.
+    let z = 0.05f64;
+    let wd = w * (1.0 - z * z).sqrt();
+    let exact = |t: f64| h / k / (2.0 * z) * ((-z * w * t).exp() * ((wd * t).cos() + z / (1.0 - z * z).sqrt() * (wd * t).sin()) - (w * t).cos());
+    let pts: Vec<[f64; 2]> = (0..=4000).map(|i| { let t = 12.0 * tp * i as f64 / 4000.0; [t, (w * t).sin()] }).collect();
+    let st = Step { kind: StepKind::History, damping: z, time: pts, dt: tp / 200.0, duration: 10.0 * tp, pieces: 1, ..Default::default() };
+    let r = solve(&column(vec![st], Some(LoadKind::Force { fx: h, fy: 0.0, fz: 0.0 })));
+    let dy = r.dynamic.as_ref().expect("record");
+    let late: f64 = dy.ux.iter().zip(&dy.t).filter(|(_, t)| **t > 9.0 * tp).map(|(u, _)| u.abs()).fold(0.0, f64::max);
+    let want: f64 = (0..2000).map(|i| exact(9.0 * tp + tp * i as f64 / 2000.0).abs()).fold(0.0, f64::max);
+    v.push(check(23, "Harmonic load at resonance, 5 % damping (Rayleigh)", "Largest movement in the tenth cycle", "len", want, late, 0.01, "Single degree of freedom, harmonic load from rest (Chopra §3.2)"));
+    // A flat response spectrum Sa: the movement Sa/ω² and the base shear M·Sa.
+    let sa = 2.5;
+    let st = Step { kind: StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: vec![[0.0, sa], [10.0, sa]], modes: 2, pieces: 1, ..Default::default() };
+    let r = solve(&column(vec![st], None));
+    v.push(check(23, "Response spectrum, flat 2.5 m/s²", "Peak movement Sa/ω²", "len", sa / (w * w), r.disp[1][0], 1e-6, "Single degree of freedom, spectrum"));
+    v.push(check(23, "Response spectrum, flat 2.5 m/s²", "Base shear M·Sa", "force", mass * sa, r.reactions[0].fx, 1e-6, "Single degree of freedom, spectrum"));
+    // A two-storey shear frame: equal masses m and storey stiffnesses k (two fixed-ended columns,
+    // 12EI/h³ each, under rigid floors): ω² = (k/m)(3 ∓ √5)/2.
+    let (hs, bw, mf) = (3.0f64, 6.0, 10_000.0);
+    // Columns that bend but do not stretch (a large area), as the shear-frame formula assumes.
+    let col = SectionShape::Custom { a: 10.0, i: 0.1 * 0.2f64.powi(3) / 12.0, c: 0.1, iy: 1e-4, j: 1e-4 };
+    let shear = |steps: Vec<Step>| {
+        let mut d = frame(200e9, col.clone());
+        d.m.materials[0].rho = 0.0;
+        let stiff = d.apply(Op::Add { item: Item::Section(Section { id: 0, name: "Rigid".into(), shape: SectionShape::Custom { a: 10.0, i: 10.0, c: 1.0, iy: 10.0, j: 10.0 } }) }).expect("section")[0];
+        for y in [0.0, hs] {
+            member(&mut d, [0.0, y], [0.0, y + hs], MemberKind::Beam);
+            member(&mut d, [bw, y], [bw, y + hs], MemberKind::Beam);
+        }
+        for y in [hs, 2.0 * hs] {
+            add(&mut d, Op::AddMember { from: [0.0, y], to: [bw, y], kind: MemberKind::Beam, section: Some(stiff), material: None, z: [0.0; 2] });
+        }
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        support(&mut d, bw, 0.0, SupportKind::Fixed);
+        for y in [hs, 2.0 * hs] {
+            for x in [0.0, bw] {
+                let id = node(&d, x, y);
+                load(&mut d, Target::Node { id }, LoadKind::Mass { m: mf / 2.0 });
+            }
+        }
+        for st in steps {
+            add(&mut d, Op::Add { item: Item::Step(st) });
+        }
+        d
+    };
+    let ks = 2.0 * 12.0 * ei / hs.powi(3);
+    let (w1, w2) = ((ks / mf * (3.0 - 5f64.sqrt()) / 2.0).sqrt(), (ks / mf * (3.0 + 5f64.sqrt()) / 2.0).sqrt());
+    let d = shear(vec![]);
+    let fm = crate::frame::modes(&d.m, 2).expect("modes");
+    let src2 = "Two masses on two storeys, equal m and k: ω² = (k/m)(3 ∓ √5)/2";
+    v.push(check(23, "Two-storey shear frame (rigid floors, columns that do not stretch)", "First frequency", "hz", w1 / TAU, fm.modes[0].f, 1e-4, src2));
+    v.push(check(23, "Two-storey shear frame (rigid floors, columns that do not stretch)", "Second frequency", "hz", w2 / TAU, fm.modes[1].f, 1e-4, src2));
+    // Spectrum, SRSS: the modes are φ = (1, (1 ± √5)/2), participation Γ = (1 + φ₂)/(1 + φ₂²).
+    let st = Step { kind: StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: vec![[0.0, sa], [10.0, sa]], modes: 2, cqc: false, pieces: 1, ..Default::default() };
+    let r = solve(&shear(vec![st]));
+    let mut top2 = 0.0;
+    for (wi, top) in [(w1, (1.0 + 5f64.sqrt()) / 2.0), (w2, (1.0 - 5f64.sqrt()) / 2.0)] {
+        // φ = (1, top); Γ = m(1 + top)/(m(1 + top²)).
+        let g = (1.0 + top) / (1.0 + top * top);
+        let u = g * top * sa / (wi * wi);
+        top2 += u * u;
+    }
+    let ti = node(&d, 0.0, 2.0 * hs);
+    let k2 = d.m.nodes.iter().position(|n| n.id == ti).expect("top");
+    v.push(check(23, "Two-storey shear frame, flat spectrum, SRSS", "Peak movement of the roof", "len", top2.sqrt(), r.disp[k2][0], 1e-4, src2));
+    let dyn_ = r.dynamic.as_ref().expect("modes");
+    v.push(check(23, "Two-storey shear frame, flat spectrum, SRSS", "The two modes' effective masses, all of the moving mass", "ratio", 1.0, dyn_.share, 1e-3, "Σ Γ² φᵀMφ = total mass"));
+    // The floor slab example (plates and beams in 3D) shaken along x: a time history's results
+    // balance with the inertia forces.
+    let mut slab = crate::examples::get("slab").expect("slab");
+    slab.mesh.size = 0.5;
+    let st = Step { id: slab.next, kind: StepKind::History, ground: true, along: [1.0, 0.0, 0.0], damping: 0.05, time: vec![[0.0, 0.0], [0.1, 2.0], [0.2, -2.0], [0.3, 0.0]], dt: 0.005, duration: 0.6, pieces: 4, ..Default::default() };
+    slab.next += 1;
+    slab.steps = vec![st];
+    let Ok(crate::Results::Space(r)) = crate::solve_for(&slab, None) else { panic!("slab history") };
+    v.push(check(23, "Floor slab (plates and beams) shaken along x, time history", "Dynamic balance at the time of the largest movement", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics with d'Alembert's inertia forces"));
+
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1448,6 +1578,7 @@ pub fn run() -> Vec<Check> {
     v.extend(dxf());
     v.extend(large());
     v.extend(plates());
+    v.extend(dynamics());
     v
 }
 
@@ -1465,7 +1596,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=22 {
+        for b in 1..=23 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -1565,3 +1696,4 @@ pub fn timings() -> Vec<Timing> {
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
     out
 }
+

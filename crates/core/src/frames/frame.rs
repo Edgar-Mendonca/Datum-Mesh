@@ -67,6 +67,9 @@ pub struct FrameResults {
     /// A nonlinear solution's load–deflection curve (0.4.0).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<crate::frames::corot::Curve>,
+    /// A dynamic solution (0.4.2): the modes of a spectrum, or a time history's record.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<crate::engine::dynamics::DynInfo>,
 }
 
 impl FrameResults {
@@ -369,7 +372,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         match (&l.kind, &l.at) {
             (LoadKind::Force { fx, fy, .. }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, 0.0]),
             (LoadKind::Moment { m: mz, mx: 0.0, my: 0.0 }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -476,7 +479,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     if umax > 0.1 * span {
         warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span * 100.0));
     }
-    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None };
+    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, dynamic: None };
     r.check_balance();
     Ok(r)
 }
@@ -543,6 +546,7 @@ pub fn modes(m: &Model, count: usize) -> Result<FrameModes, String> {
     for e in &parts {
         scatter(e, &cond(e, m_local(e)), |i, j, v| mass.push((i, j, v)));
     }
+    mass.extend(point_masses(m, 3, 2));
     let (found, iterations) = crate::modal::lowest(&sys, &mass, &held, count)?;
     let nn = m.nodes.len();
     let equations = held.iter().filter(|h| !**h).count();
@@ -672,6 +676,22 @@ pub fn buckling(m: &Model, count: usize) -> Result<FrameBuckling, String> {
     Ok(FrameBuckling { modes, bars, equations, iterations, ms: t0.elapsed().as_secs_f64() * 1e3, warnings })
 }
 
+/// Point masses (0.4.2) as mass entries: each node's mass on its first `dims` movements, the
+/// model's nodes having `per` unknowns each.
+pub(crate) fn point_masses(m: &Model, per: usize, dims: usize) -> Vec<(usize, usize, f64)> {
+    let mut out = vec![];
+    for l in &m.loads {
+        if let (LoadKind::Mass { m: mass }, Target::Node { id }) = (&l.kind, &l.at) {
+            if let Some(i) = m.nodes.iter().position(|n| n.id == *id) {
+                for d in 0..dims {
+                    out.push((per * i + d, per * i + d, *mass));
+                }
+            }
+        }
+    }
+    out
+}
+
 fn load_name(k: &LoadKind) -> &'static str {
     match k {
         LoadKind::Pressure { .. } => "pressure",
@@ -740,6 +760,168 @@ pub(crate) fn member_result(e: &Elem, u: &[f64]) -> MemberResult {
     let stress = (0..n_st).map(|i| n[i].abs() / e.area + mm[i].abs() / e.z).fold(0.0, f64::max);
     let util = if e.fy > 0.0 { stress / e.fy } else { 0.0 };
     MemberResult { id: e.id, length: l, x, n, v, m: mm, d, stress, util, ends }
+}
+
+// ---------- dynamics (0.4.2) ----------
+
+/// A plane frame for the dynamics: its stiffness and mass with beams cut into pieces, and its
+/// results from any movements.
+pub struct Dyn {
+    m: Model,
+    asm: Assembly,
+    mass: Vec<(usize, usize, f64)>,
+}
+
+impl Dyn {
+    pub fn new(m: &Model, pieces: usize) -> Result<Dyn, String> {
+        let asm = assemble(m, pieces.max(1))?;
+        let mut mass = vec![];
+        for e in &asm.parts {
+            scatter(e, &cond(e, m_local(e)), |i, j, v| mass.push((i, j, v)));
+        }
+        mass.extend(point_masses(m, 3, 2));
+        if !mass.iter().any(|x| x.2 > 0.0) {
+            return Err("The model has no mass: give the materials a density, or put masses on nodes (Loads › Mass).".into());
+        }
+        Ok(Dyn { m: m.clone(), asm, mass })
+    }
+    /// The step's loads as nodal loads (members' own loads as their end loads).
+    pub fn load(&self) -> &[f64] {
+        &self.asm.sys.f
+    }
+}
+
+impl crate::engine::dynamics::Structure for Dyn {
+    type Out = FrameResults;
+    fn k(&self) -> &System {
+        &self.asm.sys
+    }
+    fn held(&self) -> &[bool] {
+        &self.asm.held
+    }
+    fn mass(&self) -> &[(usize, usize, f64)] {
+        &self.mass
+    }
+    fn ground(&self, dir: [f64; 3]) -> Vec<f64> {
+        let n = self.asm.sys.n;
+        (0..n).map(|i| if self.asm.held[i] || i % 3 == 2 { 0.0 } else { dir[i % 3] }).collect()
+    }
+    fn node(&self, i: usize) -> [usize; 3] {
+        [3 * i, 3 * i + 1, usize::MAX]
+    }
+    fn results(&self, u: &[f64], f: &[f64], p: f64) -> FrameResults {
+        let (m, asm) = (&self.m, &self.asm);
+        let nn = m.nodes.len();
+        let ku = asm.sys.mul(u);
+        let mut applied = [0.0; 3];
+        for i in 0..asm.pos.len() {
+            let [x, y] = asm.pos[i];
+            applied[0] += f[3 * i];
+            applied[1] += f[3 * i + 1];
+            applied[2] += f[3 * i + 2] + x * f[3 * i + 1] - y * f[3 * i];
+        }
+        let mut reactions = vec![];
+        let mut reacted = [0.0; 3];
+        for (i, n) in m.nodes.iter().enumerate() {
+            let Some(sp) = m.supports.iter().find(|s| s.at == Target::Node { id: n.id }) else { continue };
+            let mut r = [0.0; 3];
+            for k in 0..3 {
+                if asm.held[3 * i + k] && !(k == 2 && asm.free_rot[i]) && asm.has_member[i] {
+                    r[k] = ku[3 * i + k] - f[3 * i + k];
+                }
+            }
+            if let SupportKind::Spring { kx, ky, kr, .. } = sp.kind {
+                r = [-kx * u[3 * i], -ky * u[3 * i + 1], -kr * u[3 * i + 2]];
+            }
+            reactions.push(Reaction { node: n.id, fx: r[0], fy: r[1], m: r[2] });
+            reacted[0] += r[0];
+            reacted[1] += r[1];
+            reacted[2] += r[2] + n.x * r[1] - n.y * r[0];
+        }
+        let reach = asm.pos.iter().map(|p| p[0].hypot(p[1])).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
+        let fscale: f64 = (0..asm.pos.len()).map(|i| f[3 * i].abs() + f[3 * i + 1].abs()).sum();
+        let scale = [fscale, fscale * reach + (0..asm.pos.len()).map(|i| f[3 * i + 2].abs()).sum::<f64>()];
+        let disp = (0..nn).map(|i| [u[3 * i], u[3 * i + 1], if asm.free_rot[i] || !asm.has_beam[i] { 0.0 } else { u[3 * i + 2] }]).collect();
+        let members = asm.elems.iter().zip(&asm.spans).map(|(e, sp)| {
+            let pcs: Vec<Elem> = asm.parts[sp.clone()].iter().map(|x| Elem { p: x.p.map(|v| v * p), at: x.at * p, ..x.clone() }).collect();
+            stitch(e, &pcs, u)
+        }).collect();
+        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats: Stats { equations: asm.held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings: vec![], path: None, dynamic: None };
+        r.check_balance();
+        r
+    }
+}
+
+/// A member's results from its pieces, end to end.
+fn stitch(e: &Elem, pieces: &[Elem], u: &[f64]) -> MemberResult {
+    if pieces.len() == 1 {
+        return member_result(&pieces[0], u);
+    }
+    let mut out = MemberResult { id: e.id, length: e.l, x: vec![], n: vec![], v: vec![], m: vec![], d: vec![], stress: 0.0, util: 0.0, ends: [0.0; 6] };
+    let mut at = 0.0;
+    let step = ((STATIONS - 1) / pieces.len()).max(1);
+    for (k, p) in pieces.iter().enumerate() {
+        let r = member_result(p, u);
+        let idx: Vec<usize> = (0..STATIONS).step_by(step).chain(std::iter::once(STATIONS - 1)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        for &i in idx.iter().skip(usize::from(k > 0)) {
+            out.x.push(at + r.x[i]);
+            out.n.push(r.n[i]);
+            out.v.push(r.v[i]);
+            out.m.push(r.m[i]);
+            out.d.push(r.d[i]);
+        }
+        if k == 0 {
+            out.ends[..3].copy_from_slice(&r.ends[..3]);
+        }
+        if k == pieces.len() - 1 {
+            out.ends[3..].copy_from_slice(&r.ends[3..]);
+        }
+        out.stress = out.stress.max(r.stress);
+        out.util = out.util.max(r.util);
+        at += p.l;
+    }
+    out
+}
+
+impl Dyn {
+    /// The modes' results combined, value by value (CQC or SRSS by `rho`): every number is a
+    /// peak, without its sign; stresses from the combined forces.
+    pub fn combine(&self, outs: &[FrameResults], rho: &[Vec<f64>]) -> FrameResults {
+        let c = |f: &dyn Fn(&FrameResults) -> f64| crate::engine::dynamics::combine(&outs.iter().map(f).collect::<Vec<_>>(), rho);
+        let mut r = outs[0].clone();
+        for i in 0..r.disp.len() {
+            for k in 0..3 {
+                r.disp[i][k] = c(&|x| x.disp[i][k]);
+            }
+        }
+        for i in 0..r.reactions.len() {
+            r.reactions[i].fx = c(&|x| x.reactions[i].fx);
+            r.reactions[i].fy = c(&|x| x.reactions[i].fy);
+            r.reactions[i].m = c(&|x| x.reactions[i].m);
+        }
+        for (j, e) in self.asm.elems.iter().enumerate() {
+            let mr = &mut r.members[j];
+            for i in 0..mr.x.len() {
+                mr.n[i] = c(&|x| x.members[j].n[i]);
+                mr.v[i] = c(&|x| x.members[j].v[i]);
+                mr.m[i] = c(&|x| x.members[j].m[i]);
+                for k in 0..2 {
+                    mr.d[i][k] = c(&|x| x.members[j].d[i][k]);
+                }
+            }
+            for k in 0..6 {
+                mr.ends[k] = c(&|x| x.members[j].ends[k]);
+            }
+            mr.stress = (0..mr.x.len()).map(|i| mr.n[i] / e.area + mr.m[i] / e.z).fold(0.0, f64::max);
+            mr.util = if e.fy > 0.0 { mr.stress / e.fy } else { 0.0 };
+        }
+        for k in 0..3 {
+            r.applied[k] = c(&|x| x.applied[k]);
+            r.reacted[k] = c(&|x| x.reacted[k]);
+        }
+        r.imbalance = 0.0;
+        r
+    }
 }
 
 #[cfg(test)]

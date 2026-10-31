@@ -118,13 +118,21 @@ fn subspace(k: &System, m: &[(usize, usize, f64)], held: &[bool], count: usize, 
         }
         y
     };
-    let count = count.min(nf);
+    // Masses on a few nodes of weightless members (0.4.2): only the movements with mass can
+    // vibrate, so there are no more modes than those, and the subspace is no larger.
+    let big = mdiag.iter().fold(0.0f64, |a, b| a.max(*b));
+    let massive = match kind {
+        Kind::Vibration => mdiag.iter().filter(|v| **v > 1e-12 * big).count(),
+        Kind::Buckling => nf,
+    };
+    let count = count.min(nf).min(massive);
     let p = match kind {
         Kind::Vibration => (2 * count).max(count + 8),
         // Negative μ (buckling under the loads reversed) compete for the subspace too.
         Kind::Buckling => (3 * count).max(count + 12),
     }
-    .min(nf);
+    .min(nf)
+    .min(massive);
     // Start: the B diagonal, then unit pushes where B is large against K, then a fixed
     // pseudo-random mix (so every mode has something to grow from).
     let mut x = Mat::<f64>::zeros(nf, p);

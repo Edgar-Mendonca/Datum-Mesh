@@ -6,12 +6,19 @@
 use crate::cases::{self, Which};
 use crate::engine::path::{follow, Control};
 use crate::frames::corot::{Corot, Curve};
-use crate::model::{Analysis, Model, StepKind};
+use crate::engine::dynamics::{self, DynInfo, Structure};
+use crate::model::{Analysis, LoadKind, Model, Step, StepKind};
 use crate::sparse::Stats;
 use crate::Results;
 
 /// Solve the model by its steps, for the load case or combination chosen in the window.
 pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
+    if let Some(st) = m.steps.iter().find(|s| matches!(s.kind, StepKind::Spectrum | StepKind::History)) {
+        if m.steps.len() > 1 {
+            return Err("A dynamic step (response spectrum or time history) stands on its own: make it the only step (Solve › Steps).".into());
+        }
+        return dynamic(m, which, st);
+    }
     let nonlinear = m.steps.iter().any(|s| s.kind != StepKind::Linear);
     if !nonlinear {
         // Linear: the last step's load times its factor (or the window's choice as it is).
@@ -111,4 +118,132 @@ fn frame(m: &Model, which: Option<Which>) -> Result<Results, String> {
     let mut r = c.results(m, &u, &base, stats, warnings);
     r.path = Some(curve);
     Ok(Results::Frame(r))
+}
+
+/// A dynamic step (0.4.2) on a plane or 3D frame.
+fn dynamic(m: &Model, which: Option<Which>, st: &Step) -> Result<Results, String> {
+    let t0 = std::time::Instant::now();
+    let loaded = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+    // The shaking of the ground and the spectrum move the masses only: the static loads are left
+    // out (solve them on their own and add). A load history applies the step's loads.
+    let masses = Model { loads: loaded.loads.iter().filter(|l| matches!(l.kind, LoadKind::Mass { .. })).cloned().collect(), ..loaded.clone() };
+    let base = if st.kind == StepKind::History && !st.ground { &loaded } else { &masses };
+    let pieces = st.pieces as usize;
+    match m.analysis {
+        Analysis::Frame => {
+            let s = crate::frame::Dyn::new(base, pieces)?;
+            let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else { history(&s, st, s.load(), m)? };
+            r.warnings.extend(info.notes.iter().cloned());
+            r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
+            r.dynamic = Some(info);
+            Ok(Results::Frame(r))
+        }
+        Analysis::Space => {
+            let s = crate::space::Dyn::new(base, pieces)?;
+            let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else { history(&s, st, s.load(), m)? };
+            r.warnings.extend(info.notes.iter().cloned());
+            r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
+            r.dynamic = Some(info);
+            Ok(Results::Space(r))
+        }
+        _ => Err("Dynamic steps are for frames, plates and trusses in this release; solids come later.".into()),
+    }
+}
+
+fn unit(v: [f64; 3]) -> [f64; 3] {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+    [v[0] / l, v[1] / l, v[2] / l]
+}
+
+fn spectrum<S: Structure>(s: &S, st: &Step, combine: impl Fn(&[S::Out], &[Vec<f64>]) -> S::Out) -> Result<(S::Out, DynInfo), String> {
+    let free = s.held().iter().filter(|h| !**h).count();
+    let (modes, _) = crate::modal::lowest(s.k(), s.mass(), s.held(), (st.modes as usize).min(free))?;
+    let (outs, rho, mut info) = dynamics::spectrum(s, &modes, unit(st.along), &st.spectrum, st.damping, st.cqc);
+    if info.share < 0.9 {
+        info.notes.push(format!("The {} modes reach {:.0} % of the mass along the shaking; add modes (Solve › Steps) until they reach 90 % or more.", info.modes.len(), info.share * 100.0));
+    }
+    info.notes.push(format!("Peak values of the modes combined by {}: each number is a largest size, without its sign, and the reactions and loads do not balance as a static solve's do.", info.combined));
+    Ok((combine(&outs, &rho), info))
+}
+
+fn history<S: Structure>(s: &S, st: &Step, load: &[f64], m: &Model) -> Result<(S::Out, DynInfo), String> {
+    let n = s.k().n;
+    let free = s.held().iter().filter(|h| !**h).count();
+    let (modes, _) = crate::modal::lowest(s.k(), s.mass(), s.held(), 2.min(free))?;
+    let w: Vec<f64> = modes.iter().map(|x| x.lambda.max(0.0).sqrt()).collect();
+    let (alpha, beta) = dynamics::rayleigh(st.damping, w[0], *w.get(1).unwrap_or(&w[0]));
+    let mr = dynamics::mul(s.mass(), &s.ground(unit(st.along)));
+    let ground = st.ground;
+    let force = |t: f64| -> Vec<f64> {
+        let g = dynamics::interp(&st.time, t);
+        if ground { mr.iter().map(|x| -x * g).collect() } else { load.iter().map(|x| x * g).collect() }
+    };
+    let steps = (st.duration / st.dt).round().max(1.0) as usize;
+    let nn = m.nodes.len();
+    let dofs: Vec<[usize; 3]> = (0..nn).map(|i| s.node(i)).collect();
+    let at = |u: &[f64], d: [usize; 3]| d.map(|k| if k == usize::MAX { 0.0 } else { u[k] });
+    let keep_all = nn * (steps + 1) <= 2_000_000;
+    let mon = st.monitor.and_then(|id| m.nodes.iter().position(|x| x.id == id));
+    let mut series: Vec<Vec<[f64; 3]>> = vec![vec![]; nn];
+    let mut times = vec![];
+    let mut peak = vec![0.0f64; nn];
+    let mut best = (-1.0f64, 0.0, vec![0.0; n], vec![0.0; n], 0.0);
+    // The time of the largest movement of the node followed (or of any node): the results are
+    // shown then, with the inertia and damping forces among the loads so they balance.
+    let mut each = |_: usize, t: f64, u: &[f64], v: &[f64], a: &[f64], f: &[f64]| {
+        times.push(t);
+        for i in 0..nn {
+            let d = at(u, dofs[i]);
+            let size = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+            peak[i] = peak[i].max(size);
+            if keep_all || Some(i) == mon {
+                series[i].push(d);
+            }
+            if (mon.is_none() || mon == Some(i)) && size > best.0 {
+                let ma = dynamics::mul(s.mass(), a);
+                let (mv, kv) = (dynamics::mul(s.mass(), v), s.k().mul(v));
+                let feff: Vec<f64> = (0..n).map(|k| f[k] - ma[k] - alpha * mv[k] - beta * kv[k]).collect();
+                best = (size, t, u.to_vec(), feff, if ground { 0.0 } else { dynamics::interp(&st.time, t) });
+            }
+        }
+    };
+    dynamics::history(s, (alpha, beta), st.dt, steps, &force, &mut each)?;
+    let node = mon.unwrap_or_else(|| (0..nn).max_by(|&a, &b| peak[a].total_cmp(&peak[b])).unwrap_or(0));
+    let sr = &series[node];
+    let mut info = DynInfo { kind: "history", node: m.nodes.get(node).map_or(0, |x| x.id), t: times, ux: sr.iter().map(|d| d[0]).collect(), uy: sr.iter().map(|d| d[1]).collect(), uz: sr.iter().map(|d| d[2]).collect(), peak_t: best.1, peak, steps, ..Default::default() };
+    if info.t.len() != info.ux.len() {
+        info.t.truncate(info.ux.len());
+    }
+    let tp = std::f64::consts::TAU / w[0];
+    if st.dt > tp / 10.0 {
+        info.notes.push(format!("The time step is over a tenth of the first period ({:.3} s): the motion is followed coarsely; use a smaller step.", tp));
+    }
+    info.notes.push(format!("The results shown are at t = {:.3} s, when {} moves most{}; the largest movement of every node over the whole history is in the record.", best.1, m.nodes.get(node).map_or("the model".to_string(), |_| format!("node {}", node + 1)), if ground { " (relative to the ground)" } else { "" }));
+    let out = s.results(&best.2, &best.3, best.4);
+    Ok((out, info))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::{Step, StepKind};
+
+    #[test]
+    fn the_slab_shaken_by_a_spectrum_reaches_most_of_its_mass_and_names_its_modes() {
+        let mut m = crate::examples::get("slab").unwrap();
+        m.mesh.size = 0.5;
+        m.steps = vec![Step { id: m.next, kind: StepKind::Spectrum, along: [1.0, 0.0, 0.0], modes: 12, pieces: 4, ..Default::default() }];
+        m.next += 1;
+        let Ok(crate::Results::Space(r)) = crate::solve_for(&m, None) else { panic!() };
+        let d = r.dynamic.unwrap();
+        assert!(d.share > 0.9 && d.share <= 1.0 + 1e-9, "{}", d.share);
+        assert_eq!(d.modes.len(), 12);
+        assert!(d.modes.windows(2).all(|w| w[1].f >= w[0].f * (1.0 - 1e-9)));
+        // Every number a peak: nothing negative.
+        assert!(r.members.iter().all(|mr| mr.n.iter().chain(&mr.mz).all(|v| *v >= 0.0)));
+        assert!(r.plates.unwrap().fields.iter().all(|f| f.min >= 0.0));
+        // A dynamic step with another step is refused, and says why.
+        m.steps.push(Step { id: m.next, ..Default::default() });
+        m.next += 1;
+        assert!(crate::solve_for(&m, None).unwrap_err().contains("on its own"));
+    }
 }

@@ -28,6 +28,8 @@ fn scaled(k: &LoadKind, f: f64) -> Option<LoadKind> {
         Gravity { gx, gy, gz } => Gravity { gx: gx * f, gy: gy * f, gz: gz * f },
         Flux { q } => Flux { q: q * f },
         Heat { q } => Heat { q: q * f },
+        // A mass is the structure's, not a load: never scaled.
+        Mass { m } => Mass { m },
         Convection { .. } => return None,
     })
 }
@@ -53,7 +55,7 @@ pub fn select(m: &Model, which: Option<Which>) -> Result<Model, String> {
             if !m.cases.iter().any(|c| c.id == id) {
                 return Err("That load case no longer exists.".into());
             }
-            out.loads.retain(|l| m.case_of(l) == id);
+            out.loads.retain(|l| m.case_of(l) == id || matches!(l.kind, LoadKind::Mass { .. }));
         }
         Which::Combo { id } => {
             let c = m.combos.iter().find(|c| c.id == id).ok_or("That combination no longer exists.")?;
@@ -63,9 +65,10 @@ pub fn select(m: &Model, which: Option<Which>) -> Result<Model, String> {
             if c.parts.is_empty() {
                 return Err(format!("{} has no load cases in it yet: give it factors (Loads › Cases and Combinations).", c.name));
             }
-            out.loads = vec![];
+            // Masses are in every case, once.
+            out.loads = m.loads.iter().filter(|l| matches!(l.kind, LoadKind::Mass { .. })).cloned().collect();
             for p in &c.parts {
-                for l in m.loads.iter().filter(|l| m.case_of(l) == p.case) {
+                for l in m.loads.iter().filter(|l| m.case_of(l) == p.case && !matches!(l.kind, LoadKind::Mass { .. })) {
                     let kind = scaled(&l.kind, p.f).ok_or("Convection cannot be scaled by a factor; leave it out of combinations.")?;
                     out.loads.push(crate::model::Load { kind, ..l.clone() });
                 }

@@ -68,6 +68,9 @@ pub struct SpaceResults {
     /// Plates (0.4.1): their mesh, movements and results.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub plates: Option<PlateResults>,
+    /// A dynamic solution (0.4.2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamic: Option<crate::engine::dynamics::DynInfo>,
 }
 
 /// Plate results (0.4.1): the mesh in 3D, the movements of its nodes and fields averaged at them:
@@ -277,7 +280,6 @@ struct Assembly {
     free_rot: Vec<bool>,
     has_member: Vec<bool>,
     has_beam: Vec<bool>,
-    applied: [f64; 6],
     warnings: Vec<String>,
     /// Plates: their triangles, the assembly node of each plate mesh node, and the nodes held
     /// by each support on a plate's edge.
@@ -505,7 +507,7 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             (LoadKind::Pressure { .. }, Target::Plate { .. }) => {}
             (LoadKind::Force { fx, fy, fz }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, *fz, 0.0, 0.0, 0.0]),
             (LoadKind::Moment { m: mz, mx, my }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, 0.0, *mx, *my, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -579,29 +581,51 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             held[6 * i..6 * i + 3].iter_mut().for_each(|h| *h = true);
         }
     }
-    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, warnings, shells, plate_nodes, edge_sup, pos })
+    let _ = applied;
+    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos })
 }
 
 /// Solve a 3D frame or truss model, with its plates (0.4.1).
 pub fn solve(m: &Model) -> Result<SpaceResults, String> {
     let asm = assemble(m, 1)?;
-    let Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, mut warnings, shells, plate_nodes, edge_sup, pos } = asm;
-    let nn = m.nodes.len();
-    let n_all = pos.len();
-    let reach = pos.iter().map(|p| dist3(*p, [0.0; 3])).fold(0.0, f64::max) + span(m);
-    let fscale: f64 = (0..n_all).map(|i| (0..3).map(|k| sys.f[6 * i + k].abs()).sum::<f64>()).sum();
-    let scale = [fscale, fscale * reach + (0..n_all).map(|i| (3..6).map(|k| sys.f[6 * i + k].abs()).sum::<f64>()).sum::<f64>()];
-    if scale[0] == 0.0 && scale[1] == 0.0 {
-        warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
-    }
-    let (u, stats) = sys.solve(&held, &vec![0.0; 6 * n_all]).map_err(|e| {
-        if elems.iter().any(|e| e.kind == MemberKind::Beam) {
+    let n_all = asm.pos.len();
+    let (u, stats) = asm.sys.solve(&asm.held, &vec![0.0; 6 * n_all]).map_err(|e| {
+        if asm.elems.iter().any(|e| e.kind == MemberKind::Beam) {
             format!("{e} In 3D, a beam held only by pins at its ends can spin about its own axis: fix one end, or hold its turning with a spring.")
         } else {
             e
         }
     })?;
-    let ku = sys.mul(&u);
+    let mut r = results_from(m, &asm, &u, &asm.sys.f, 1.0);
+    r.stats = stats;
+    if r.scale[0] == 0.0 && r.scale[1] == 0.0 {
+        r.warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
+    }
+    let umax = r.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()).chain(r.plates.iter().flat_map(|p| p.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()))).fold(0.0, f64::max);
+    if umax > 0.1 * span(m) {
+        r.warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span(m) * 100.0));
+    }
+    Ok(r)
+}
+
+/// Results for movements `u` under nodal loads `f`, the members' own loads times `p`.
+fn results_from(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64) -> SpaceResults {
+    let Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos } = asm;
+    let mut warnings = warnings.clone();
+    let nn = m.nodes.len();
+    let n_all = pos.len();
+    let reach = pos.iter().map(|q| dist3(*q, [0.0; 3])).fold(0.0, f64::max) + span(m);
+    let fscale: f64 = (0..n_all).map(|i| (0..3).map(|k| f[6 * i + k].abs()).sum::<f64>()).sum();
+    let scale = [fscale, fscale * reach + (0..n_all).map(|i| (3..6).map(|k| f[6 * i + k].abs()).sum::<f64>()).sum::<f64>()];
+    let mut applied = [0.0; 6];
+    for i in 0..n_all {
+        let mo = cross(pos[i], [f[6 * i], f[6 * i + 1], f[6 * i + 2]]);
+        for k in 0..3 {
+            applied[k] += f[6 * i + k];
+            applied[3 + k] += f[6 * i + 3 + k] + mo[k];
+        }
+    }
+    let ku = sys.mul(u);
     let mut reactions = vec![];
     let mut reacted = [0.0; 6];
     let react = |r: [f64; 6], at: [f64; 3], reacted: &mut [f64; 6]| {
@@ -621,7 +645,7 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
         } else if has_member[i] {
             for k in 0..6 {
                 if held[6 * i + k] && !(k >= 3 && free_rot[i]) {
-                    r[k] = ku[6 * i + k] - sys.f[6 * i + k];
+                    r[k] = ku[6 * i + k] - f[6 * i + k];
                 }
             }
         }
@@ -632,7 +656,7 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
     // middle of the edge. A node held by a support of its own is counted there, not here.
     let own: std::collections::HashSet<usize> = m.supports.iter().filter_map(|s| if let Target::Node { id } = s.at { m.nodes.iter().position(|n| n.id == id) } else { None }).collect();
     let mut counted = own.clone();
-    for (sid, nodes) in &edge_sup {
+    for (sid, nodes) in edge_sup {
         let nodes: Vec<usize> = nodes.iter().copied().filter(|k| counted.insert(*k)).collect();
         if nodes.is_empty() {
             continue;
@@ -643,7 +667,7 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
             let mut r = [0.0; 6];
             for d in 0..6 {
                 if held[6 * k + d] {
-                    r[d] = ku[6 * k + d] - sys.f[6 * k + d];
+                    r[d] = ku[6 * k + d] - f[6 * k + d];
                 }
             }
             react(r, pos[k], &mut reacted);
@@ -656,18 +680,19 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
         reactions.push(SpaceReaction { node: 0, support: *sid, f: tot });
     }
     let disp: Vec<[f64; 6]> = (0..nn).map(|i| std::array::from_fn(|k| if k >= 3 && (free_rot[i] || !has_beam[i]) { 0.0 } else { u[6 * i + k] })).collect();
-    let members = elems.iter().zip(&spans).map(|(e, sp)| if sp.len() == 1 { member_result(e, &u) } else { stitched(e, &parts[sp.clone()], &u) }).collect();
-    let mut umax = disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()).fold(0.0, f64::max);
-    let plates = (!shells.is_empty()).then(|| plate_results(&shells, &plate_nodes, &pos, &u));
-    if let Some(p) = &plates {
-        umax = umax.max(p.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()).fold(0.0, f64::max));
-    }
-    if umax > 0.1 * span(m) {
-        warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span(m) * 100.0));
-    }
-    let f = if scale[0] > 0.0 { (0..3).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[0] } else { 0.0 };
+    let members = elems
+        .iter()
+        .zip(spans)
+        .map(|(e, sp)| {
+            let pcs: Vec<Elem> = parts[sp.clone()].iter().map(|x| Elem { p: x.p.map(|v| v * p), at: x.at * p, ..x.clone() }).collect();
+            if pcs.len() == 1 { member_result(&pcs[0], u) } else { stitched(e, &pcs, u) }
+        })
+        .collect();
+    let plates = (!shells.is_empty()).then(|| plate_results(shells, plate_nodes, pos, u));
+    let fb = if scale[0] > 0.0 { (0..3).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[0] } else { 0.0 };
     let mo = if scale[1] > 0.0 { (3..6).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[1] } else { 0.0 };
-    Ok(SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: f.max(mo), stats, warnings, plates })
+    warnings.dedup();
+    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None }
 }
 
 fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -816,6 +841,131 @@ fn member_result(e: &Elem, u: &[f64]) -> SpaceMember {
     let stress = (0..STATIONS).map(|i| n[i].abs() / e.area + mz[i].abs() / e.zz + my[i].abs() / e.zy).fold(0.0, f64::max);
     let util = if e.fy > 0.0 { stress / e.fy } else { 0.0 };
     SpaceMember { id: e.id, length: l, x, n, vy, vz, t, my, mz, d, stress, util, axes: e.r }
+}
+
+// ---------- dynamics (0.4.2) ----------
+
+/// A 3D frame (with its plates) for the dynamics.
+pub struct Dyn {
+    m: Model,
+    asm: Assembly,
+    mass: Vec<(usize, usize, f64)>,
+}
+
+impl Dyn {
+    pub fn new(m: &Model, pieces: usize) -> Result<Dyn, String> {
+        let asm = assemble(m, pieces.max(1))?;
+        let mut mass = vec![];
+        for e in &asm.parts {
+            triplets(e, &cond(e, m_local(e)), &mut mass);
+        }
+        for sh in &asm.shells {
+            let (_, _, area) = sh.tri.frame();
+            let mt = sh.rho * area / 3.0;
+            let mr = mt * sh.tri.t * sh.tri.t / 12.0;
+            for &k in &sh.n {
+                for d in 0..3 {
+                    mass.push((6 * k + d, 6 * k + d, mt));
+                    mass.push((6 * k + 3 + d, 6 * k + 3 + d, mr));
+                }
+            }
+        }
+        mass.extend(crate::frame::point_masses(m, 6, 3));
+        if !mass.iter().any(|x| x.2 > 0.0) {
+            return Err("The model has no mass: give the materials a density, or put masses on nodes (Loads › Mass).".into());
+        }
+        Ok(Dyn { m: m.clone(), asm, mass })
+    }
+    pub fn load(&self) -> &[f64] {
+        &self.asm.sys.f
+    }
+
+    /// The modes' results combined value by value (CQC or SRSS by `rho`): peaks without signs.
+    pub fn combine(&self, outs: &[SpaceResults], rho: &[Vec<f64>]) -> SpaceResults {
+        let c = |f: &dyn Fn(&SpaceResults) -> f64| crate::engine::dynamics::combine(&outs.iter().map(f).collect::<Vec<_>>(), rho);
+        let mut r = outs[0].clone();
+        for i in 0..r.disp.len() {
+            for k in 0..6 {
+                r.disp[i][k] = c(&|x| x.disp[i][k]);
+            }
+        }
+        for i in 0..r.reactions.len() {
+            for k in 0..6 {
+                r.reactions[i].f[k] = c(&|x| x.reactions[i].f[k]);
+            }
+        }
+        for (j, e) in self.asm.elems.iter().enumerate() {
+            let mr = &mut r.members[j];
+            for i in 0..mr.x.len() {
+                mr.n[i] = c(&|x| x.members[j].n[i]);
+                mr.vy[i] = c(&|x| x.members[j].vy[i]);
+                mr.vz[i] = c(&|x| x.members[j].vz[i]);
+                mr.t[i] = c(&|x| x.members[j].t[i]);
+                mr.my[i] = c(&|x| x.members[j].my[i]);
+                mr.mz[i] = c(&|x| x.members[j].mz[i]);
+                for k in 0..3 {
+                    mr.d[i][k] = c(&|x| x.members[j].d[i][k]);
+                }
+            }
+            mr.stress = (0..mr.x.len()).map(|i| mr.n[i] / e.area + mr.mz[i] / e.zz + mr.my[i] / e.zy).fold(0.0, f64::max);
+            mr.util = if e.fy > 0.0 { mr.stress / e.fy } else { 0.0 };
+        }
+        if let Some(p) = r.plates.as_mut() {
+            for i in 0..p.disp.len() {
+                for k in 0..3 {
+                    p.disp[i][k] = c(&|x| x.plates.as_ref().map_or(0.0, |q| q.disp[i][k]));
+                }
+            }
+            for (fi, fl) in p.fields.iter_mut().enumerate() {
+                for i in 0..fl.v.len() {
+                    fl.v[i] = c(&|x| x.plates.as_ref().map_or(0.0, |q| q.fields[fi].v[i]));
+                }
+                let (mut lo, mut hi) = (0, 0);
+                for i in 0..fl.v.len() {
+                    if fl.v[i] < fl.v[lo] {
+                        lo = i;
+                    }
+                    if fl.v[i] > fl.v[hi] {
+                        hi = i;
+                    }
+                }
+                if !fl.v.is_empty() {
+                    fl.min = fl.v[lo];
+                    fl.max = fl.v[hi];
+                    fl.at_min = p.nodes[lo];
+                    fl.at_max = p.nodes[hi];
+                }
+            }
+        }
+        for k in 0..6 {
+            r.applied[k] = c(&|x| x.applied[k]);
+            r.reacted[k] = c(&|x| x.reacted[k]);
+        }
+        r.imbalance = 0.0;
+        r
+    }
+}
+
+impl crate::engine::dynamics::Structure for Dyn {
+    type Out = SpaceResults;
+    fn k(&self) -> &System {
+        &self.asm.sys
+    }
+    fn held(&self) -> &[bool] {
+        &self.asm.held
+    }
+    fn mass(&self) -> &[(usize, usize, f64)] {
+        &self.mass
+    }
+    fn ground(&self, dir: [f64; 3]) -> Vec<f64> {
+        (0..self.asm.sys.n).map(|i| if self.asm.held[i] || i % 6 >= 3 { 0.0 } else { dir[i % 6] }).collect()
+    }
+    fn node(&self, i: usize) -> [usize; 3] {
+        [6 * i, 6 * i + 1, 6 * i + 2]
+    }
+    fn results(&self, u: &[f64], f: &[f64], p: f64) -> SpaceResults {
+        results_from(&self.m, &self.asm, u, f, p)
+    }
 }
 
 // ---------- natural frequencies and buckling (0.2.6) ----------
@@ -968,6 +1118,7 @@ pub fn modes(m: &Model, count: usize) -> Result<SpaceModes, String> {
     for e in &asm.parts {
         triplets(e, &cond(e, m_local(e)), &mut mass);
     }
+    mass.extend(crate::frame::point_masses(m, 6, 3));
     // Plates: lumped masses, a third of each triangle on each corner (and the rotary inertia of
     // its thickness, ρt·t²/12, so no rotation is without mass).
     for sh in &asm.shells {

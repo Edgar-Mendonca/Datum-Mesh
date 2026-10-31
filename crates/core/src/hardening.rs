@@ -788,4 +788,59 @@ mod tests {
         }
         assert!(solved > 5, "{solved} solved, {refused} refused");
     }
+
+    #[test]
+    fn dynamic_steps_on_every_frame_example_solve_or_say_why() {
+        use crate::model::{Step, StepKind};
+        let mut r = Rng(99);
+        let (mut ok, mut why) = (0, vec![]);
+        for ex in examples::list().into_iter().filter(|e| matches!(e.analysis, Analysis::Frame | Analysis::Space) && !e.id.starts_with("blank")) {
+            let base = examples::get(ex.id).unwrap();
+            for _ in 0..3 {
+                let mut m = base.clone();
+                m.mesh.size = m.mesh.size.max(0.5);
+                let history = r.below(2) == 0;
+                let dirs = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+                let st = Step {
+                    id: m.next,
+                    kind: if history { StepKind::History } else { StepKind::Spectrum },
+                    along: dirs[r.below(if m.analysis == Analysis::Space { 3 } else { 2 })],
+                    damping: r.f(0.0, 0.2),
+                    modes: 1 + r.below(10) as u32,
+                    cqc: r.below(2) == 0,
+                    ground: r.below(2) == 0,
+                    time: vec![[0.0, 0.0], [r.f(0.01, 0.2), r.f(-3.0, 3.0)], [0.5, 0.0]],
+                    dt: r.f(0.002, 0.02),
+                    duration: r.f(0.05, 0.4),
+                    pieces: 1 + r.below(4) as u32,
+                    ..Default::default()
+                };
+                m.next += 1;
+                m.steps = vec![st];
+                assert!(m.check().is_ok());
+                match crate::solve_for(&m, None) {
+                    Ok(crate::Results::Frame(x)) => {
+                        assert!(x.disp.iter().flatten().all(|v| v.is_finite()), "{}", ex.id);
+                        if history {
+                            assert!(x.imbalance < 1e-6, "{}: {:e}", ex.id, x.imbalance);
+                        }
+                    }
+                    Ok(crate::Results::Space(x)) => {
+                        assert!(x.disp.iter().flatten().all(|v| v.is_finite()), "{}", ex.id);
+                        if history {
+                            assert!(x.imbalance < 1e-6, "{}: {:e}", ex.id, x.imbalance);
+                        }
+                    }
+                    Ok(_) => panic!("{}: not a frame", ex.id),
+                    Err(e) => {
+                        assert!(!e.is_empty());
+                        why.push(format!("{}: {e}", ex.id));
+                        continue;
+                    }
+                }
+                ok += 1;
+            }
+        }
+        assert!(ok >= 12, "{ok} solved; {why:?}");
+    }
 }
