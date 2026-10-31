@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.0 — 2026-10-31
+
+The engine grows a core: analysis steps, and frames that bend far.
+
+**Large deflection and P-delta for frames**
+- Solve › **Steps**: solve a plane frame in steps. A **large-deflection** step applies the load in increments and finds the frame's balance in its deflected shape: second-order (P-delta) effects, large rotations, and the loss of stiffness as a frame nears the most it can carry. A step **past limit loads** follows the path by arc length, over the largest load and down again, so a frame that snaps through shows it.
+- Each step has its load (a case, a combination, or the one picked on the Loads tab) times a factor, its increments, how many pieces each beam is cut into, and the node its curve follows. Steps carry on from where the one before ended.
+- Results › **Load–Deflection**: the load against a node's movement or rotation through the solution, with the first limit load named and the unstable part of the path marked.
+- The deflected shape of a large-deflection solution is drawn true to size; the diagrams, reactions and equilibrium check are for the deflected frame.
+- New example: a snap-through frame (Lee's frame), solved past its limit load.
+
+**The engine**
+- One engine of a core and modules: the core (sparse solver, eigenvalues, load cases, and a new path solver: Newton and arc length) with frames and solids as modules on it. The vision for what comes next is in docs/VISION.md.
+
+**Trust**
+- Help › Verification: 149 checks, all passing. New: benchmark 21, a beam-column and a flagpole against the closed-form second-order answers of AISC 360 (within 0.13 %), a cantilever rolled into a full circle by an end moment (NAFEMS NL5; the tip comes back to the root exactly), a column bent far past buckling against the exact elastica (NAFEMS NL6, within 0.2 %), and Lee's frame snapping through (NAFEMS NL7: first limit PL²/EI = 18.56 against 18.54).
+- Damaged files with bad steps or a revolve angle out of range open with the bad values put right, and say so.
+
 ## 0.3.5 — 2026-10-30
 
 Sections from CAD.

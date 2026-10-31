@@ -8,7 +8,7 @@
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
-    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests), so you can see how far to trust each result."
+    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams), so you can see how far to trust each result."
   ],
   "steps": [
     {
@@ -25,6 +25,7 @@
     }
   ],
   "highlights": [
+    "Frames that bend far: large deflection and second-order (P-delta) analysis in steps, followed past the limit load by arc length, with the load–deflection curve",
     "Parts meshed automatically into quality triangles, finer where you ask, and solved in plane stress, plane strain or heat conduction",
     "Frames for everyday structural analysis: load cases and combinations with an envelope of every member's forces, hinged member ends, and European steel section tables (IPE, HEA, HEB)",
     "Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; hover anywhere to read values",
@@ -54,21 +55,12 @@
   ],
   "roadmap": [
     {
-      "v": "0.4.0",
-      "title": "The core, and frames beyond linear",
-      "when": "Next",
-      "items": [
-        "Analysis steps in one engine for frames, plates and solids",
-        "Newton and arc-length solution, for large deflection and snap-through",
-        "Second-order (P-delta) and large-deflection frames, checked against published second-order problems and the classic nonlinear beam benchmarks"
-      ]
-    },
-    {
       "v": "0.4.1–0.4.3",
       "title": "Structures, complete",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Plates and shells for slabs and walls, joined to frames",
+        "Large deflection for 3D frames",
         "Response spectrum and time history",
         "Tension-only and compression-only members, support settlement, member offsets, rigid floors"
       ]

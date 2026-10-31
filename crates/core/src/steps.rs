@@ -94,7 +94,20 @@ fn frame(m: &Model, which: Option<Which>) -> Result<Results, String> {
     if !stopped && !points.last().is_some_and(|p| p.3) {
         warnings.push("The structure is not stable at the end of the last step (its stiffness is not positive): it is held only by the exact balance of the loads.".into());
     }
-    let stats = Stats { equations: c.asm.held.iter().filter(|h| !**h).count(), nonzeros: 0, residual: 0.0, ms: t0.elapsed().as_secs_f64() * 1e3 };
+    // The solver report: the out-of-balance force left at the end, over the load.
+    use crate::engine::path::Problem;
+    let (fint, k) = c.state(&u)?;
+    let held = &c.asm.held;
+    let (mut r2, mut f2) = (0.0, 0.0);
+    for i in 0..n {
+        if !held[i] {
+            r2 += (base[i] - fint[i]).powi(2);
+            f2 += base[i].powi(2);
+        }
+    }
+    let residual = if f2 > 0.0 { (r2 / f2).sqrt() } else { r2.sqrt() };
+    let nonzeros = k.k.iter().filter(|e| e.0 >= e.1 && !held[e.0] && !held[e.1]).count();
+    let stats = Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros, residual, ms: t0.elapsed().as_secs_f64() * 1e3 };
     let mut r = c.results(m, &u, &base, stats, warnings);
     r.path = Some(curve);
     Ok(Results::Frame(r))

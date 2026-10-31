@@ -42,10 +42,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
-          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
+          if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
           if (c === "modes" && (window.__cur === f.platform || window.__cur?.m?.analysis === "space")) return f.platform_modes;
@@ -531,6 +531,36 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("adding a table section adds it with its root radius", ts?.Add?.item?.Section?.name === "HEB 300" && Math.abs(ts.Add.item.Section.shape.r - 0.027) < 1e-12, JSON.stringify(ts));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   check("Escape closes the dialog left open under a closed one (0.3.3 bug: focus was lost)", (await p.$$(".ov")).length === 0);
+  // 0.4.0: analysis steps and large deflection, on Lee's frame (snap-through).
+  await open("lee"); await p.waitForTimeout(200);
+  const leeM = fix.lee.m;
+  await p.click('.tabs > button:text-is("Solve")'); await p.waitForTimeout(100);
+  check("Solve › Steps shows on when the model has a large-deflection step", await p.$eval('.ribbon button:has-text("Steps")', b => b.classList.contains("on")));
+  await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
+  const stD = await p.textContent(".dlg");
+  check("the steps dialog lists the step, how it is solved and the node it follows", (await p.$eval(".dlg table.steps input", i => i.value)) === "Past the limit" && (await p.$eval(".dlg table.steps select", s => s.value)) === "arc" && (await p.$$eval(".dlg table.steps tbody tr", r => r.length)) === 1, stD.slice(0, 300) + " | " + (await p.$$eval(".dlg table.steps select", ss => ss.map(s => s.value).join())));
+  await p.selectOption(".dlg table.steps select >> nth=0", "newton"); await p.waitForTimeout(150);
+  const stO = await lastOp();
+  check("changing how a step is solved sets the step", stO?.Set?.item?.Step?.kind === "newton" && stO.Set.item.Step.id === leeM.steps[0].id, JSON.stringify(stO));
+  await p.click('.dlg button:has-text("Add a large-deflection step")'); await p.waitForTimeout(150);
+  const stA = await lastOp();
+  check("adding a step adds a large-deflection step", stA?.Add?.item?.Step?.kind === "newton" && stA.Add.item.Step.factor === 1, JSON.stringify(stA));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__solveKey = "lee_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(150);
+  check("Results › Load–Deflection is offered after a large-deflection solve", !(await p.$eval('.ribbon button:has-text("Load–Deflection")', b => b.disabled)), JSON.stringify(await p.evaluate(() => window.__calls.filter(c => c[0] === "solve").slice(-1))) + (await p.textContent(".status, .toast").catch(() => "")));
+  await p.click('.ribbon button:has-text("Load–Deflection")'); await p.waitForTimeout(250);
+  const crv = await p.textContent(".dlg");
+  const leeR = fix.lee_results;
+  check("the curve has a point per increment and marks the unstable ones", (await p.$$(".dlg svg.curve circle.pt")).length === leeR.path.load.length && (await p.$$(".dlg svg.curve circle.unstable")).length === leeR.path.stable.filter(x => !x).length && leeR.path.stable.some(x => !x));
+  check("the curve dialog names the first limit load", crv.includes("first limit") && crv.includes(String(+leeR.path.peak.toPrecision(5))), crv.slice(0, 200));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "lee-curve.png") });
+  await p.click('.dlg button:text-is("Rotation")'); await p.waitForTimeout(100);
+  check("the curve can show the rotation instead", (await p.textContent(".dlg svg.curve")).includes("Rotation"));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  check("a large-deflection shape is drawn true to size", (await p.textContent(".legend")).includes("true to size"), await p.textContent(".legend"));
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

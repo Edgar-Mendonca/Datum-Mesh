@@ -923,6 +923,6 @@ svg.curve { display: block; margin: 6px auto; max-width: 100%; height: auto; }
 svg.curve .ax { stroke: var(--line3); stroke-width: 1; }
 svg.curve .line { stroke: var(--blue); stroke-width: 1.6; }
 svg.curve .pt { fill: var(--blue); }
-svg.curve .pt.unstable { fill: var(--bg2); stroke: var(--blue); stroke-width: 1.2; }
+svg.curve .pt.unstable { fill: var(--bg2); stroke: var(--blue); stroke-width: 1.5; }
 svg.curve .lbl { font-size: 11px; fill: var(--muted); }
 table.steps select { max-width: 13em; }

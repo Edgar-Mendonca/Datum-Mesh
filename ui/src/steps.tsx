@@ -71,13 +71,13 @@ export const pathDialog = () => openDialog(() => {
       <Show when={plot()}>{p => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against movement">
         <line class="ax" x1={P} y1={p().sy(0)} x2={W - P} y2={p().sy(0)} /><line class="ax" x1={p().sx(0)} y1={P} x2={p().sx(0)} y2={H - P} />
         <path class="line" d={p().d} fill="none" />
-        <For each={p().xs}>{(x, i) => <circle class="pt" classList={{ unstable: !cv().stable[i()] }} cx={p().sx(x)} cy={p().sy(p().ys[i()])} r="2.5"><title>{`Load × ${num(p().ys[i()], 5)}, ${num(x, 4)} ${unit(p().q as any)}`}</title></circle>}</For>
+        <For each={p().xs}>{(x, i) => <circle class="pt" classList={{ unstable: !cv().stable[i()] }} cx={p().sx(x)} cy={p().sy(p().ys[i()])} r="3"><title>{`Load × ${num(p().ys[i()], 5)}, ${num(x, 4)} ${unit(p().q as any)}`}</title></circle>}</For>
         <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">{comp() === "rz" ? "Rotation" : comp() === "ux" ? "Movement in x" : "Movement in y"} ({unit(p().q as any)})</text>
         <text x={P - 6} y={P - 10} class="lbl">Load factor</text>
         <text x={P - 6} y={p().sy(p().y1) + 4} text-anchor="end" class="lbl">{num(p().y1, 3)}</text>
         <Show when={p().y0 < 0}><text x={P - 6} y={p().sy(p().y0) + 4} text-anchor="end" class="lbl">{num(p().y0, 3)}</text></Show>
-        <text x={p().sx(p().x1)} y={H - P + 14} text-anchor="end" class="lbl">{num(p().x1, 3)}</text>
-        <Show when={p().x0 < 0}><text x={p().sx(p().x0)} y={H - P + 14} class="lbl">{num(p().x0, 3)}</text></Show>
+        <text x={p().sx(p().x1)} y={H - P + 18} text-anchor="end" class="lbl">{num(p().x1, 3)}</text>
+        <Show when={p().x0 < 0}><text x={p().sx(p().x0)} y={H - P + 18} class="lbl">{num(p().x0, 3)}</text></Show>
       </svg>}</Show>
       <p class="muted small">Hollow points are where the frame is not stable (its stiffness is not positive): past a limit load, on the way down. The load factor is how many times the step's case or combination is on the frame. Last point: {fmt("len", Math.hypot(cv().ux[cv().ux.length - 1], cv().uy[cv().uy.length - 1]))} from where the node started.</p>
     </>}</Show>

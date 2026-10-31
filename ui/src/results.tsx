@@ -131,7 +131,7 @@ export const ResultsLegend = () => {
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <Show when={diagInfo()}>{d => <div><b>{d().name}</b><span>max {fmt(d().q, clean(d().max, d().big))} · min {fmt(d().q, clean(d().min, d().big))}</span><small>{show().diagram === "m" ? "Drawn on the tension side." : "Positive drawn on the member's left side (looking from start to end); tension positive."}</small></div>}</Show>
-        <Show when={show().deformed}><div><b>Deflected shape</b><span>{deformFactor(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deformFactor(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
+        <Show when={show().deformed}><div><b>Deflected shape</b><span>{r()!.path ? <>largest {fmt("len", dmax())} · drawn true to size{show().scale !== 1 ? ` × ${num(show().scale, 3)}` : ""} (large deflection)</> : deformFactor(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deformFactor(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={show().util}><div><b>Utilisation</b><span class="ukey"><i style={{ background: "var(--green)" }} />below 50 %<i style={{ background: "var(--amber)" }} />50–100 %<i style={{ background: "var(--crit)" }} />over 100 % (yields)</span></div></Show>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
@@ -196,7 +196,8 @@ export const ResultsPage = () => {
         <table class="tbl"><tbody>
           <tr><td>Equations</td><td class="r">{rr().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{rr().stats.nonzeros.toLocaleString()}</td></tr>
           <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{rr().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(rr().stats.ms, 3)} ms</td></tr>
-          <tr><td>Method</td><td>2D Euler–Bernoulli beam and truss elements; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+          <Show when={rr().path}>{c => <tr><td>Path</td><td class="r">{c().load.length - 1} increments, {c().iterations} Newton iterations</td></tr>}</Show>
+          <tr><td>Method</td><td>{rr().path ? "Large deflection: corotational 2D beam and truss elements, every beam cut into pieces; Newton or arc-length path; sparse Cholesky, or LU past a limit load" : "2D Euler–Bernoulli beam and truss elements; sparse Cholesky with a fill-reducing ordering"}</td></tr></tbody></table>
       </>}</Show></Show>
     </div>
   );

@@ -128,7 +128,7 @@ const Report = (p: { m: Model }) => {
       <h4>Members</h4>
       <table class="tbl"><thead><tr><th>Member</th><th class="r">N max / min</th><th class="r">|M| max</th><th class="r">Deflection</th><th class="r">Stress</th><th class="r">Utilisation</th></tr></thead><tbody>
         <For each={r.members}>{(x, i) => <tr><td>{i() + 1}</td><td class="r">{fmt("force", Math.max(...x.n))} / {fmt("force", Math.min(...x.n))}</td><td class="r">{fmt("moment", Math.max(...x.m.map(Math.abs)))}</td><td class="r">{fmt("len", Math.max(...x.d.map(d => Math.hypot(d[0], d[1]))))}</td><td class="r">{fmt("stress", x.stress)}</td><td class="r">{x.util ? `${num(x.util * 100, 3)} %` : "—"}</td></tr>}</For></tbody></table>
-      <p class="muted">Solved by Datum Mesh {version()}: {r.stats.equations} equations, residual {r.stats.residual.toExponential(1)}. 2D Euler–Bernoulli beam and truss elements.</p>
+      <p class="muted">Solved by Datum Mesh {version()}: {r.stats.equations} equations, residual {r.stats.residual.toExponential(1)}. {r.path ? `Large deflection: corotational 2D beam and truss elements, ${r.path.load.length - 1} increments; first limit at ${num(r.path.peak, 4)} times the load.` : "2D Euler–Bernoulli beam and truss elements."}</p>
     </>; }}</Show>
   </div>;
 };
