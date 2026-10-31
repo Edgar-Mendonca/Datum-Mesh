@@ -575,7 +575,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     s.geom = p.geom;
                 } else {
                     let name = shape_name(m, hole);
-                    m.shapes.push(Shape { id, name, hole, material: sa.material, geom: p.geom });
+                    m.shapes.push(Shape { id, name, hole, material: sa.material, geom: p.geom, plate: sa.plate });
                     created.push(id);
                 }
             }
@@ -651,7 +651,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let material = material.or(m.materials.first().map(|s| s.id)).ok_or("Add a material first.")?;
             let id = fresh(m);
             let name = shape_name(m, hole);
-            m.shapes.push(Shape { id, name, hole, material, geom });
+            m.shapes.push(Shape { id, name, hole, material, geom, plate: None });
             created.push(id);
         }
         Op::SetSettings { s } => {
@@ -969,6 +969,7 @@ fn prune(m: &mut Model) {
         Target::Node { id } => nodes.contains(id),
         Target::Member { id } => members.contains(id),
         Target::Edge { shape, edge } | Target::Line { shape, edge, .. } => edges.get(shape).is_some_and(|n| (*edge as usize) < *n),
+        Target::Plate { shape } => edges.contains_key(shape),
         Target::Point { .. } | Target::Body | Target::End { .. } => true,
     };
     m.supports.retain(|s| alive(&s.at));

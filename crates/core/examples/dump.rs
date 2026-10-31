@@ -29,7 +29,7 @@ fn main() {
     // A part with the sample DXF imported (0.3.5), as the shell sends it back.
     let imp = datum_core::dxf::read(datum_core::dxf::SAMPLE_PUB, None).unwrap();
     let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Stress));
-    let created = d.apply(datum_core::doc::Op::Batch(imp.shapes.into_iter().map(|(geom, hole)| datum_core::doc::Op::Add { item: datum_core::doc::Item::Shape(datum_core::model::Shape { id: 0, name: String::new(), hole, material: 1, geom }) }).collect())).unwrap();
+    let created = d.apply(datum_core::doc::Op::Batch(imp.shapes.into_iter().map(|(geom, hole)| datum_core::doc::Op::Add { item: datum_core::doc::Item::Shape(datum_core::model::Shape { id: 0, name: String::new(), hole, material: 1, geom, plate: None }) }).collect())).unwrap();
     let dxf_out = json!({ "m": d.m, "path": null, "dirty": true, "undo": true, "redo": false, "created": created, "warnings": std::iter::once("Imported 1 shape and 2 holes from plate.dxf.".to_string()).chain(imp.warnings).collect::<Vec<_>>() });
     let out_m = |m: &datum_core::model::Model| json!({ "m": m, "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] });
     let fix = json!({

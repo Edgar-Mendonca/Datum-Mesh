@@ -288,11 +288,68 @@ pub struct Shape {
     pub hole: bool,
     pub material: u32,
     pub geom: Geom,
+    /// 3D frames (0.4.1): a plate, the shape drawn on a working plane at a depth; None for parts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plate: Option<Plate>,
 }
 
 impl Default for Shape {
     fn default() -> Self {
-        Shape { id: 0, name: String::new(), hole: false, material: 0, geom: Geom::rect(0.0, 0.0, 1.0, 1.0) }
+        Shape { id: 0, name: String::new(), hole: false, material: 0, geom: Geom::rect(0.0, 0.0, 1.0, 1.0), plate: None }
+    }
+}
+
+/// The working planes of a 3D frame (as the window names them): Front (x across, y up, at a
+/// depth z), Side (z across, y up, at a depth x), Plan (x across, −z up the screen, at a height y).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PlaneKind {
+    Xy,
+    Zy,
+    Xz,
+}
+
+/// Where a plate lies and how thick it is (0.4.1).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Plate {
+    pub plane: PlaneKind,
+    pub depth: f64,
+    /// Thickness (m).
+    pub t: f64,
+}
+
+impl Plate {
+    /// A point (u, v) of the plane in 3D.
+    pub fn at(&self, u: f64, v: f64) -> [f64; 3] {
+        match self.plane {
+            PlaneKind::Xy => [u, v, self.depth],
+            PlaneKind::Zy => [self.depth, v, u],
+            PlaneKind::Xz => [u, self.depth, -v],
+        }
+    }
+    /// The plane's u and v directions in 3D.
+    pub fn axes(&self) -> [[f64; 3]; 2] {
+        match self.plane {
+            PlaneKind::Xy => [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0]],
+            PlaneKind::Zy => [[0.0, 0.0, 1.0], [0.0, 1.0, 0.0]],
+            PlaneKind::Xz => [[1.0, 0.0, 0.0], [0.0, 0.0, -1.0]],
+        }
+    }
+    /// The axis the depth is measured along (a positive pressure pushes against it).
+    pub fn across(&self) -> [f64; 3] {
+        match self.plane {
+            PlaneKind::Xy => [0.0, 0.0, 1.0],
+            PlaneKind::Zy => [1.0, 0.0, 0.0],
+            PlaneKind::Xz => [0.0, 1.0, 0.0],
+        }
+    }
+    /// A 3D point's (u, v) on the plane and its distance off it.
+    pub fn local(&self, p: [f64; 3]) -> ([f64; 2], f64) {
+        match self.plane {
+            PlaneKind::Xy => ([p[0], p[1]], p[2] - self.depth),
+            PlaneKind::Zy => ([p[2], p[1]], p[0] - self.depth),
+            PlaneKind::Xz => ([p[0], -p[2]], p[1] - self.depth),
+        }
     }
 }
 
@@ -314,6 +371,8 @@ pub enum Target {
     /// 3D solids (0.3.2): a line on the side face of edge `edge` of shape `shape`, a fraction `at`
     /// of the way through the thickness (or round the turn of a revolved part); for line supports.
     Line { shape: u32, edge: u32, at: f64 },
+    /// 3D frames (0.4.1): the whole face of a plate (pressure on it).
+    Plate { shape: u32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -760,6 +819,12 @@ impl Model {
         }
         for s in &self.shapes {
             self.material(s.material).ok_or("A shape uses a material that does not exist.")?;
+            if let Some(p) = &s.plate {
+                pos(p.t, "A plate's thickness")?;
+                fin(p.depth, "A plate's depth")?;
+            } else if self.analysis == Analysis::Space {
+                return Err("In a 3D frame a shape is a plate: it needs its plane, depth and thickness.".into());
+            }
             match &s.geom {
                 Geom::Circle { c, r } => {
                     fin(c[0], "A circle's centre")?;
@@ -838,7 +903,7 @@ impl Model {
                 (LoadKind::Force { fx, fy, fz }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Moment { m, mx, my }, Target::Node { .. }) => m.is_finite() && mx.is_finite() && my.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
-                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. }) => p.is_finite(),
+                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. } | Target::Plate { .. }) => p.is_finite(),
                 (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
                 (LoadKind::Gravity { gx, gy, gz }, Target::Body) => gx.is_finite() && gy.is_finite() && gz.is_finite(),
@@ -873,6 +938,10 @@ impl Model {
                 _ => Err("That edge does not exist.".into()),
             },
             Target::Line { .. } => Err("Lines on faces belong to 3D solids.".into()),
+            Target::Plate { shape } => match self.shape(*shape) {
+                Some(s) if s.plate.is_some() => Ok(()),
+                _ => Err("That plate does not exist.".into()),
+            },
         }
     }
 }
@@ -1086,7 +1155,7 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
         if let Geom::Poly { pts, bulge } = &mut s.geom {
             bulge.resize(pts.len(), 0.0);
         }
-        let probe = Model { shapes: vec![s.clone()], materials: m.materials.clone(), next: m.next, ..Model::default() };
+        let probe = Model { shapes: vec![s.clone()], materials: m.materials.clone(), next: m.next, analysis: m.analysis, ..Model::default() };
         probe.check().is_ok()
     });
     // Supports and loads must point at something that still exists and make sense there.

@@ -1318,6 +1318,65 @@ fn large() -> Vec<Check> {
     v
 }
 
+/// Navier's series for a simply supported a × b plate under uniform q: the deflection at (x, y)
+/// times D/q (Timoshenko and Woinowsky-Krieger, *Theory of Plates and Shells*, §30).
+fn navier(a: f64, b: f64, x: f64, y: f64) -> f64 {
+    let pi = std::f64::consts::PI;
+    let mut w = 0.0;
+    for m in (1..200).step_by(2) {
+        for n in (1..200).step_by(2) {
+            let (mf, nf) = (m as f64, n as f64);
+            w += 16.0 / (pi.powi(6) * mf * nf * ((mf / a).powi(2) + (nf / b).powi(2)).powi(2)) * (mf * pi * x / a).sin() * (nf * pi * y / b).sin();
+        }
+    }
+    w
+}
+
+/// Benchmark 22 (0.4.1): plates and shells. The flat shell triangle (Allman's membrane with
+/// drilling rotations, the Discrete Kirchhoff plate) on its own and in 3D frame models.
+fn plates() -> Vec<Check> {
+    use crate::frames::shell::cases;
+    use crate::model::{Plate, PlaneKind};
+    let mut v = vec![];
+    let tw = "Timoshenko and Woinowsky-Krieger, Theory of Plates and Shells (Navier's series)";
+    v.push(check(22, "Square plate, simply supported, uniform pressure (32 × 32 × 2 triangles)", "Deflection at the middle × D/qa⁴", "ratio", navier(1.0, 1.0, 0.5, 0.5), cases::plate(32, false), 0.005, tw));
+    v.push(check(22, "Square plate, clamped, uniform pressure (32 × 32 × 2 triangles)", "Deflection at the middle × D/qa⁴", "ratio", 0.00126, cases::plate(32, true), 0.01, "Timoshenko and Woinowsky-Krieger, Table 35 (0.00126)"));
+    v.push(check(22, "Panel bent in its plane by an end moment (8 triangles deep)", "End deflection over ML²/2EI (plane-stress elasticity)", "ratio", 1.0, cases::bending(8), 0.01, "Plane-stress elasticity, pure bending (exact)"));
+    let steps: Vec<[f64; 2]> = [8usize, 16, 32].iter().map(|&n| [(2 * n * n) as f64, (cases::scordelis(n) - 0.3024).abs() / 0.3024]).collect();
+    v.push(with_steps(check(22, "Scordelis–Lo roof under its own weight (a quarter, 32 × 32 × 2 triangles)", "Vertical movement at the middle of the free edge", "len", 0.3024, cases::scordelis(32), 0.01, "MacNeal and Harder 1985, standard set of problems"), steps));
+    let steps: Vec<[f64; 2]> = [8usize, 16, 32].iter().map(|&n| [(2 * n * n) as f64, (cases::pinched(n) - 1.8248e-5).abs() / 1.8248e-5]).collect();
+    v.push(with_steps(check(22, "Pinched cylinder with end diaphragms (an eighth, 32 × 32 × 2 triangles)", "Movement under the load", "len", 1.8248e-5, cases::pinched(32), 0.01, "MacNeal and Harder 1985, standard set of problems"), steps));
+    // A slab drawn on the Plan plane of a 3D frame, meshed, its edges pinned, under pressure.
+    let slab = |size: f64, rho: f64| {
+        let mut d = Doc::new(Model::new(Analysis::Space));
+        d.m.materials[0].rho = rho;
+        d.m.mesh.size = size;
+        let id = d.apply(Op::Add { item: Item::Shape(Shape { geom: Geom::rect(0.0, 0.0, 4.0, 4.0), material: d.m.materials[0].id, plate: Some(Plate { plane: PlaneKind::Xz, depth: 3.0, t: 0.2 }), ..Shape::default() }) }).expect("slab")[0];
+        for e in 0..4 {
+            add(&mut d, Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: e }, kind: SupportKind::Pinned }) });
+        }
+        (d, id)
+    };
+    let (mut d, id) = slab(0.25, 0.0);
+    let q = 10e3;
+    load(&mut d, Target::Plate { shape: id }, LoadKind::Pressure { p: q });
+    let r = crate::space::solve(&d.m).expect("slab");
+    let p = r.plates.as_ref().expect("plates");
+    let mat = d.m.materials[0].clone();
+    let dd = mat.e * 0.2f64.powi(3) / (12.0 * (1.0 - mat.nu * mat.nu));
+    let k = (0..p.nodes.len()).min_by(|&i, &j| (p.nodes[i][0] - 2.0).hypot(p.nodes[i][2] + 2.0).total_cmp(&(p.nodes[j][0] - 2.0).hypot(p.nodes[j][2] + 2.0))).expect("node");
+    let name = "Slab on the Plan plane of a 3D frame, edges pinned, 10 kPa (automatic mesh)";
+    v.push(check(22, name, "Deflection near the middle (Navier's series at that node)", "len", q / dd * navier(4.0, 4.0, p.nodes[k][0], -p.nodes[k][2]), -p.disp[k][1], 0.01, tw));
+    let fy: f64 = r.reactions.iter().map(|x| x.f[1]).sum();
+    v.push(check(22, name, "Edge reactions, all together, against the load", "force", q * 16.0, fy, 1e-9, "Statics"));
+    // Its first natural frequency: f = (π/2)(2/a²)√(D/ρt).
+    let (d, _) = slab(0.25, 2500.0);
+    let f11 = std::f64::consts::PI / 2.0 * 2.0 / 16.0 * (dd / (2500.0 * 0.2)).sqrt();
+    let modes = crate::space::modes(&d.m, 1).expect("modes");
+    v.push(check(22, "The slab's first natural frequency (lumped masses)", "Frequency", "hz", f11, modes.modes[0].f, 0.02, "Timoshenko, Young and Weaver, Vibration Problems in Engineering (simply supported plate)"));
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1388,6 +1447,7 @@ pub fn run() -> Vec<Check> {
     v.extend(solids_more());
     v.extend(dxf());
     v.extend(large());
+    v.extend(plates());
     v
 }
 
@@ -1405,7 +1465,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=21 {
+        for b in 1..=22 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

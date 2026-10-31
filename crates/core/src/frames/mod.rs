@@ -3,7 +3,9 @@
 
 pub mod corot;
 pub mod frame;
+pub mod plates;
 pub(crate) mod release;
 pub mod sections;
+pub mod shell;
 pub mod space;
 pub mod steel;

@@ -741,4 +741,51 @@ mod tests {
         }
         assert!(read > 50, "{read}");
     }
+
+    #[test]
+    fn random_plates_solve_or_say_why_and_balance() {
+        use crate::model::{Plate, PlaneKind, Shape};
+        let mut r = Rng(4242);
+        let (mut solved, mut refused) = (0, 0);
+        for _ in 0..40 {
+            let mut d = Doc::new(Model::new(Analysis::Space));
+            d.m.mesh.size = r.f(0.3, 0.8);
+            let planes = [PlaneKind::Xy, PlaneKind::Zy, PlaneKind::Xz];
+            let mut ids = vec![];
+            for _ in 0..1 + r.below(2) {
+                let (x0, y0) = (r.f(-2.0, 2.0), r.f(-2.0, 2.0));
+                let geom = Geom::rect(x0, y0, x0 + r.f(1.0, 4.0), y0 + r.f(1.0, 4.0));
+                let plate = Plate { plane: planes[r.below(3)], depth: r.f(-1.0, 3.0), t: r.f(0.01, 0.3) };
+                if let Ok(c) = d.apply(Op::Add { item: Item::Shape(Shape { geom, material: d.m.materials[0].id, plate: Some(plate), ..Shape::default() }) }) {
+                    ids.push(c[0]);
+                }
+            }
+            for &id in &ids {
+                for e in 0..4 {
+                    if r.below(3) == 0 {
+                        let kind = if r.below(2) == 0 { SupportKind::Fixed } else { SupportKind::Pinned };
+                        let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: e }, kind }) });
+                    }
+                }
+                let _ = d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Plate { shape: id }, kind: LoadKind::Pressure { p: r.f(-1e4, 1e4) } }) });
+            }
+            if r.below(2) == 0 {
+                let _ = d.apply(Op::AddMember { from: [r.f(-2.0, 2.0), 0.0], to: [r.f(-2.0, 2.0), 3.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0, 0.0] });
+            }
+            d.m.loads.push(Load { case: 0, id: d.m.next, at: Target::Body, kind: LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 } });
+            d.m.next += 1;
+            match crate::space::solve(&d.m) {
+                Ok(res) => {
+                    assert!(res.imbalance < 1e-6, "imbalance {:e}", res.imbalance);
+                    assert!(res.plates.as_ref().is_none_or(|p| p.fields.iter().all(|f| f.v.iter().all(|x| x.is_finite()))));
+                    solved += 1;
+                }
+                Err(e) => {
+                    assert!(!e.is_empty());
+                    refused += 1;
+                }
+            }
+        }
+        assert!(solved > 5, "{solved} solved, {refused} refused");
+    }
 }

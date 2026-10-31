@@ -33,6 +33,7 @@ pub fn list() -> Vec<Example> {
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
+        e("slab", "Floor slab", "A 6 × 4 m floor slab 200 mm thick on four columns with edge beams, carrying 5 kPa and its own weight: a plate joined to a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
 }
@@ -148,6 +149,37 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 load(at, LoadKind::Force { fx: 0.0, fy: -3e3, fz: 0.0 }),
                 Op::Add { item: Item::Step(crate::model::Step { name: "Past the limit".into(), kind: crate::model::StepKind::Arc, increments: 20, pieces: 10, monitor: Some(mon), ..Default::default() }) },
             ]))?;
+        }
+        "slab" => {
+            d.m.notes = "A floor 3 m up: a 6 × 4 m slab 200 mm thick (plate on the Plan plane) on four fixed columns, with edge beams joined to the slab along its edges. Concrete-like material (E = 30 GPa, ν = 0.2, 2 500 kg/m³). 5 kPa imposed load on the slab and self-weight.".into();
+            let mut mt = d.m.materials[0].clone();
+            mt.name = "Concrete C30/37 (elastic)".into();
+            mt.e = 30e9;
+            mt.nu = 0.2;
+            mt.rho = 2500.0;
+            mt.fy = 0.0;
+            mt.alpha = 10e-6;
+            d.m.materials[0] = mt;
+            d.m.sections[0].name = "Rectangle 300 × 300".into();
+            d.m.sections[0].shape = crate::model::SectionShape::Rect { b: 0.3, h: 0.3 };
+            let (w, dp, h) = (6.0, 4.0, 3.0);
+            for [x, z] in [[0.0, 0.0], [w, 0.0], [0.0, -dp], [w, -dp]] {
+                d.apply(Op::AddMember { from: [x, 0.0], to: [x, h], kind: MemberKind::Beam, section: None, material: None, z: [z, z] })?;
+            }
+            for (a, b) in [([0.0, 0.0], [w, 0.0]), ([w, 0.0], [w, -dp]), ([w, -dp], [0.0, -dp]), ([0.0, -dp], [0.0, 0.0])] {
+                d.apply(Op::AddMember { from: [a[0], h], to: [b[0], h], kind: MemberKind::Beam, section: None, material: None, z: [a[1], b[1]] })?;
+            }
+            let plate = crate::model::Plate { plane: crate::model::PlaneKind::Xz, depth: h, t: 0.2 };
+            let id = d.apply(Op::Add { item: Item::Shape(Shape { name: "Slab".into(), geom: Geom::rect(0.0, 0.0, w, dp), material: d.m.materials[0].id, plate: Some(plate), ..Shape::default() }) })?[0];
+            d.m.mesh.size = 0.25;
+            let at = |d: &Doc, p: [f64; 3]| d.m.nodes.iter().find(|n| crate::model::dist3(n.at(), p) < 1e-9).map(|n| n.id).unwrap_or(0);
+            let mut ops = vec![];
+            for [x, z] in [[0.0, 0.0], [w, 0.0], [0.0, -dp], [w, -dp]] {
+                ops.push(sup(Target::Node { id: at(d, [x, 0.0, z]) }, SupportKind::Fixed));
+            }
+            ops.push(load(Target::Plate { shape: id }, LoadKind::Pressure { p: 5e3 }));
+            ops.push(load(Target::Body, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }));
+            d.apply(Op::Batch(ops))?;
         }
         "portal" => {
             d.m.notes = "Span 12 m, eaves 5 m, ridge 6.5 m; fixed bases. Wind 2 kN/m on the left column, 6 kN/m down on the rafters.".into();
