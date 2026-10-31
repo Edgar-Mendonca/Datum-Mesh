@@ -37,7 +37,8 @@ export const C = {
       if (first) setTimeout(fit, 40);
       const bad = r.imbalance > 1e-6, ms = r.stats.ms < 1 ? "under 1 ms" : r.stats.ms < 2000 ? `${Math.round(r.stats.ms)} ms` : `${(r.stats.ms / 1000).toFixed(1)} s`;
       const what = r.kind === "frame" || r.kind === "space" ? `${r.stats.equations} equations` : r.kind === "solid" || r.kind === "solidheat" ? `${r.elements.toLocaleString()} elements in ${r.layers} ${r.layers === 1 ? "layer" : "layers"}, ${r.stats.equations.toLocaleString()} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
-      const bal = r.kind === "heat" || r.kind === "solidheat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : "Reactions balance the loads.";
+      const dy = (r.kind === "frame" || r.kind === "space") ? r.dynamic : undefined;
+      const bal = dy?.kind === "spectrum" ? `${dy.modes.length} modes combined by ${dy.combined} (${(dy.share * 100).toPrecision(3)} % of the mass): see Results › Dynamics.` : r.kind === "heat" || r.kind === "solidheat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : dy ? `Shown at t = ${dy.peak_t.toPrecision(4)} s; reactions balance the loads with the inertia.` : "Reactions balance the loads.";
       toast(r.warnings.length ? r.warnings.join(" ") : `Solved${w ? ` (${whichName(m, w)})` : ""}: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
     } catch (e) { setResults(null); toast(String(e)); }
     finally { setSolving(false); }

@@ -117,6 +117,9 @@ pub struct DynInfo {
     pub peak: Vec<f64>,
     pub steps: usize,
     pub notes: Vec<String>,
+    /// Warnings for the results (too few modes, too coarse a step).
+    #[serde(skip)]
+    pub warnings: Vec<String>,
 }
 
 /// Mass-normalised participation of a mode in the shaking `r`: (Γ, generalised mass φᵀMφ).

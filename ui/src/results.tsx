@@ -12,6 +12,7 @@ import { Help } from "./help";
 import { Icon } from "./ui";
 import { PartResultsPage } from "./parts";
 import { ModesTable } from "./modes";
+import { dynDialog } from "./steps";
 
 const DIAG: Record<string, [string, "force" | "moment"]> = { n: ["Axial force", "force"], v: ["Shear force", "force"], m: ["Bending moment", "moment"] };
 
@@ -134,7 +135,8 @@ export const ResultsLegend = () => {
         <Show when={show().deformed}><div><b>Deflected shape</b><span>{r()!.path ? <>largest {fmt("len", dmax())} · drawn true to size{show().scale !== 1 ? ` × ${num(show().scale, 3)}` : ""} (large deflection)</> : deformFactor(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deformFactor(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={show().util}><div><b>Utilisation</b><span class="ukey"><i style={{ background: "var(--green)" }} />below 50 %<i style={{ background: "var(--amber)" }} />50–100 %<i style={{ background: "var(--crit)" }} />over 100 % (yields)</span></div></Show>
-        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
+        <Show when={r()!.dynamic?.kind !== "spectrum"} fallback={<div class="eqline"><Icon n="info" /><span>Peak values of the modes combined by {r()!.dynamic!.combined}: no balance to check</span><button class="lnk" onClick={dynDialog}>Modes</button></div>}>
+        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : r()!.dynamic ? `Equilibrium at t = ${num(r()!.dynamic!.peak_t, 4)} s, inertia included` : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div></Show>
       </div>
     </Show>
   );

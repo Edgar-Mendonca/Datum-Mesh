@@ -49,6 +49,18 @@ fn main() {
         "braced": out("braced"),
         "lee": out("lee"),
         "slab": out("slab"),
+        "quake": out("quake"),
+        "quake_results": sent(&datum_core::solve_for(&examples::get("quake").unwrap(), None).unwrap()),
+        "quake_history": sent(&datum_core::solve_for(&{
+            let mut m = examples::get("quake").unwrap();
+            let st = &mut m.steps[0];
+            st.kind = datum_core::model::StepKind::History;
+            st.ground = true;
+            st.time = vec![[0.0, 0.0], [0.2, 3.0], [0.4, -3.0], [0.6, 2.0], [0.8, 0.0]];
+            st.dt = 0.005;
+            st.duration = 3.0;
+            m
+        }, None).unwrap()),
         "slab_results": sent(&datum_core::solve(&examples::get("slab").unwrap()).unwrap()),
         "slab_modes": sent(&datum_core::modes(&examples::get("slab").unwrap(), 4).unwrap()),
         "lee_results": sent(&datum_core::solve_for(&examples::get("lee").unwrap(), None).unwrap()),

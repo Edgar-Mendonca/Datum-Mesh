@@ -23,6 +23,7 @@ pub fn list() -> Vec<Example> {
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("braced", "Braced frame", "A two-storey steel frame: HEB columns, IPE beams pinned at their ends, one braced bay, and dead, imposed and wind load cases with combinations.", Analysis::Frame),
+        e("quake", "Frame in an earthquake", "A three-storey steel frame with its floors' masses, shaken sideways by a design response spectrum: the modes, their share of the mass, and the peak forces combined by CQC (Results › Dynamics).", Analysis::Frame),
         e("lee", "Snap-through frame", "Lee's frame: two slender members at right angles, pinned at their far ends, loaded near the knee. Solved past its limit load by arc length: it snaps through (Results › Load–Deflection).", Analysis::Frame),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
@@ -126,6 +127,32 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 ops.push(load(Target::Node { id: at(d, [0.0, h, z]) }, LoadKind::Force { fx: 4e3, fy: 0.0, fz: 0.0 }));
             }
             ops.push(load(Target::Body, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }));
+            d.apply(Op::Batch(ops))?;
+        }
+        "quake" => {
+            d.m.notes = "Three storeys of 3.5 m, one bay of 6 m: HEB 300 columns fixed at the base, IPE 400 beams, rigid joints. Each floor carries 40 t (20 t at each end of its beam). One response spectrum step along x, 5 % damping, 6 modes combined by CQC; the spectrum rises to a plateau of 7.36 m/s² from 0.15 to 0.5 s and falls as 1/T after (an example shape: use your own code's).".into();
+            let sec = |d: &mut Doc, name: &str| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Section(crate::model::Section { id: 0, name: name.into(), shape: crate::steel::find(name).ok_or("table")?.shape }) })?[0]) };
+            let (col, beam) = (sec(d, "HEB 300")?, sec(d, "IPE 400")?);
+            d.apply(Op::Delete { ids: vec![d.m.sections[0].id] })?;
+            for k in 0..3 {
+                let (y0, y1) = (3.5 * k as f64, 3.5 * (k + 1) as f64);
+                for x in [0.0, 6.0] {
+                    d.apply(Op::AddMember { from: [x, y0], to: [x, y1], kind: MemberKind::Beam, section: Some(col), material: None, z: [0.0; 2] })?;
+                }
+                d.apply(Op::AddMember { from: [0.0, y1], to: [6.0, y1], kind: MemberKind::Beam, section: Some(beam), material: None, z: [0.0; 2] })?;
+            }
+            let mut ops = vec![sup(node(d, 0.0, 0.0), SupportKind::Fixed), sup(node(d, 6.0, 0.0), SupportKind::Fixed)];
+            for k in 1..=3 {
+                for x in [0.0, 6.0] {
+                    ops.push(load(node(d, x, 3.5 * k as f64), LoadKind::Mass { m: 20_000.0 }));
+                }
+            }
+            let sa = 7.36;
+            let mut spec = vec![[0.0, 0.4 * sa], [0.15, sa], [0.5, sa]];
+            for t in [0.75, 1.0, 1.5, 2.0, 3.0, 4.0] {
+                spec.push([t, sa * 0.5 / t]);
+            }
+            ops.push(Op::Add { item: Item::Step(crate::model::Step { name: "Earthquake along x".into(), kind: crate::model::StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: spec, damping: 0.05, modes: 6, cqc: true, pieces: 4, ..Default::default() }) });
             d.apply(Op::Batch(ops))?;
         }
         "lee" => {

@@ -133,7 +133,7 @@ fn dynamic(m: &Model, which: Option<Which>, st: &Step) -> Result<Results, String
         Analysis::Frame => {
             let s = crate::frame::Dyn::new(base, pieces)?;
             let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else { history(&s, st, s.load(), m)? };
-            r.warnings.extend(info.notes.iter().cloned());
+            r.warnings.extend(info.warnings.iter().cloned());
             r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
             r.dynamic = Some(info);
             Ok(Results::Frame(r))
@@ -141,7 +141,7 @@ fn dynamic(m: &Model, which: Option<Which>, st: &Step) -> Result<Results, String
         Analysis::Space => {
             let s = crate::space::Dyn::new(base, pieces)?;
             let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else { history(&s, st, s.load(), m)? };
-            r.warnings.extend(info.notes.iter().cloned());
+            r.warnings.extend(info.warnings.iter().cloned());
             r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
             r.dynamic = Some(info);
             Ok(Results::Space(r))
@@ -160,7 +160,7 @@ fn spectrum<S: Structure>(s: &S, st: &Step, combine: impl Fn(&[S::Out], &[Vec<f6
     let (modes, _) = crate::modal::lowest(s.k(), s.mass(), s.held(), (st.modes as usize).min(free))?;
     let (outs, rho, mut info) = dynamics::spectrum(s, &modes, unit(st.along), &st.spectrum, st.damping, st.cqc);
     if info.share < 0.9 {
-        info.notes.push(format!("The {} modes reach {:.0} % of the mass along the shaking; add modes (Solve › Steps) until they reach 90 % or more.", info.modes.len(), info.share * 100.0));
+        info.warnings.push(format!("The {} modes reach {:.0} % of the mass along the shaking; add modes (Solve › Steps) until they reach 90 % or more.", info.modes.len(), info.share * 100.0));
     }
     info.notes.push(format!("Peak values of the modes combined by {}: each number is a largest size, without its sign, and the reactions and loads do not balance as a static solve's do.", info.combined));
     Ok((combine(&outs, &rho), info))
@@ -216,7 +216,7 @@ fn history<S: Structure>(s: &S, st: &Step, load: &[f64], m: &Model) -> Result<(S
     }
     let tp = std::f64::consts::TAU / w[0];
     if st.dt > tp / 10.0 {
-        info.notes.push(format!("The time step is over a tenth of the first period ({:.3} s): the motion is followed coarsely; use a smaller step.", tp));
+        info.warnings.push(format!("The time step is over a tenth of the first period ({:.3} s): the motion is followed coarsely; use a smaller step.", tp));
     }
     info.notes.push(format!("The results shown are at t = {:.3} s, when {} moves most{}; the largest movement of every node over the whole history is in the record.", best.1, m.nodes.get(node).map_or("the model".to_string(), |_| format!("node {}", node + 1)), if ground { " (relative to the ground)" } else { "" }));
     let out = s.results(&best.2, &best.3, best.4);

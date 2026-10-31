@@ -10,6 +10,7 @@ import { fmt, unit, fromU, Q } from "./units";
 import { setPlane, plane, PLANES, space, solid, depth, setDepth, depths, depthAxis } from "./plane3";
 import { C, imbalanceOf } from "./cmds";
 import { Icon } from "./ui";
+import { dynDialog } from "./steps";
 
 export type P3 = [number, number, number];
 export const at3 = (m: Model) => new Map(m.nodes.map(n => [n.id, [n.x, n.y, n.z ?? 0] as P3]));
@@ -68,7 +69,8 @@ export const SpaceLegend = () => {
           <Show when={plateRange()}>{rg => <span class="cbar"><span class="cb">{cols().map((c, k) => <i style={{ background: c }}><Show when={k % 3 === 0}><small>{num(+fmt(pd()[2], rg()[0] + (rg()[1] - rg()[0]) * k / BANDS, 3).split(" ")[0].replace("−", "-"), 3)}</small></Show></i>)}<b><small>{num(+fmt(pd()[2], rg()[1], 3).split(" ")[0].replace("−", "-"), 3)}</small></b></span><em>{unit(pd()[2])}</em></span>}</Show></Show>
         <div><b>Deflected shape</b><span>{deform3(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deform3(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
-        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
+        <Show when={r()!.dynamic?.kind !== "spectrum"} fallback={<div class="eqline"><Icon n="info" /><span>Peak values of the modes combined by {r()!.dynamic!.combined}: no balance to check</span><button class="lnk" onClick={dynDialog}>Modes</button></div>}>
+        <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : r()!.dynamic ? `Equilibrium at t = ${num(r()!.dynamic!.peak_t, 4)} s, inertia included` : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div></Show>
       </div>
     </Show>
   );

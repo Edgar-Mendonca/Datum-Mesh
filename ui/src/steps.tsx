@@ -2,25 +2,73 @@
 // curve of a large-deflection solution (Results › Load–Deflection). The engine runs the steps and
 // follows the path (crates/core/src/steps.rs, engine/path.rs, frames/corot.rs).
 import { For, Show, createSignal } from "solid-js";
-import { Step, StepKind, Which, Curve, num } from "./api";
-import { openDialog, act, model, frameRes } from "./store";
+import { Step, StepKind, Which, Curve, DynInfo, num, parseNum } from "./api";
+import { openDialog, act, model, frameRes, spaceRes } from "./store";
 import { numIn } from "./panels";
 import { Dialog } from "./ui";
 import { fmt, unit, toU } from "./units";
 
-const KINDS: [StepKind, string][] = [["linear", "Linear (small deflections)"], ["newton", "Large deflection (P-delta)"], ["arc", "Large deflection, past limit loads"]];
+const KINDS: [StepKind, string][] = [["linear", "Linear (small deflections)"], ["newton", "Large deflection (P-delta)"], ["arc", "Large deflection, past limit loads"], ["spectrum", "Response spectrum (dynamics)"], ["history", "Time history (dynamics)"]];
+const isDyn = (k: StepKind) => k === "spectrum" || k === "history";
+/** A table typed as lines of two numbers ("0.5, 2.5"), and back. */
+const toTable = (t: string): [number, number][] | null => { const rows = t.split(/\n+/).map(l => l.trim()).filter(Boolean).map(l => l.split(/[\s,;]+/).map(x => parseNum(x))); return rows.every(r => r.length === 2 && r[0] !== null && r[1] !== null) && rows.length ? rows.map(r => [r[0]!, r[1]!]) : null; };
+const fromTable = (t: [number, number][]) => t.map(p => `${num(p[0], 6)}, ${num(p[1], 6)}`).join("\n");
+/** The dynamic results shown, if any. */
+export const dynOf = (): DynInfo | undefined => frameRes()?.dynamic ?? spaceRes()?.dynamic;
 const key = (w: Which | null) => w ? `${w.on}:${w.id}` : "";
 const unkey = (k: string): Which | null => { const [on, id] = k.split(":"); return on === "case" || on === "combo" ? { on, id: +id } as Which : null; };
 
 /** Does the model have large-deflection steps? */
 export const isNonlinear = () => (model()?.steps ?? []).some(s => s.kind !== "linear");
 
+/** Results › Dynamics: a spectrum's modes, or a time history's record of a node. */
+export const dynDialog = () => openDialog(() => {
+  const [comp, setComp] = createSignal<"ux" | "uy" | "uz">("ux");
+  const d = () => dynOf();
+  const nodeName = (id: number) => `Node ${(model()?.nodes.findIndex(n => n.id === id) ?? -1) + 1}`;
+  const W = 560, H = 260, P = 48;
+  const plot = () => {
+    const x = d(); if (!x || x.kind !== "history") return null;
+    const ys = x[comp()].map(v => toU("len", v)), ts = x.t;
+    const [y0, y1] = [Math.min(0, ...ys), Math.max(0, ...ys)], t1 = Math.max(...ts, 1e-9);
+    const sx = (t: number) => P + t / t1 * (W - 2 * P), sy = (v: number) => H - P - (v - y0) / ((y1 - y0) || 1) * (H - 2 * P);
+    return { d: ys.map((y, i) => `${i ? "L" : "M"}${sx(ts[i]).toFixed(1)} ${sy(y).toFixed(1)}`).join(""), sx, sy, y0, y1, t1 };
+  };
+  const top = () => { const x = d(), m = model(); if (!x || !m) return []; return x.peak.map((p, i) => [i, p] as [number, number]).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([i, p]) => [m.nodes[i]?.id ?? 0, p] as [number, number]); };
+  return <Dialog title="Dynamics" wide help="dynamics">
+    <Show when={d()} fallback={<p class="muted">No dynamic results: add a response spectrum or a time history step (Solve › Steps) and solve.</p>}>{x => <>
+      <Show when={x().kind === "spectrum"}>
+        <p class="small">{x().modes.length} modes, combined by <b>{x().combined}</b>. Together they move <b>{num(x().share * 100, 3)} %</b> of the mass along the shaking ({fmt("mass", x().total_mass)}); aim for 90 % or more.</p>
+        <table class="tbl"><thead><tr><th>Mode</th><th class="r">Frequency (Hz)</th><th class="r">Period (s)</th><th class="r">Sa (m/s²)</th><th class="r">Participation Γ</th><th class="r">Effective mass ({unit("mass")})</th><th class="r">Share</th></tr></thead><tbody>
+          <For each={x().modes}>{(r, i) => { const g = Math.max(...x().modes.map(q => Math.abs(q.gamma)), 1e-300), tiny = Math.abs(r.gamma) < 1e-9 * g; return <tr><td>{i() + 1}</td><td class="r">{num(r.f, 4)}</td><td class="r">{num(r.period, 4)}</td><td class="r">{num(r.sa, 4)}</td><td class="r">{tiny ? "0" : num(r.gamma, 4)}</td><td class="r">{tiny ? "0" : num(toU("mass", r.mass), 4)}</td><td class="r">{tiny ? "0" : num(r.share * 100, 3)} %</td></tr>; }}</For>
+        </tbody></table>
+      </Show>
+      <Show when={x().kind === "history"}>
+        <p class="small">{x().steps.toLocaleString()} steps (Newmark, average acceleration). Following {nodeName(x().node)}; the results shown on the model are at <b>t = {num(x().peak_t, 4)} s</b>, when it moves most.</p>
+        <p class="ibtns"><For each={[["ux", "x"], ["uy", "y"], ...(model()?.analysis === "space" ? [["uz", "z"]] : [])] as [("ux" | "uy" | "uz"), string][]}>{([k, l]) => <button class="btn sm" classList={{ on: comp() === k }} onClick={() => setComp(k)}>Movement in {l}</button>}</For></p>
+        <Show when={plot()}>{p => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Movement against time">
+          <line class="ax" x1={P} y1={p().sy(0)} x2={W - P} y2={p().sy(0)} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
+          <line class="ax" x1={p().sx(x().peak_t)} y1={P} x2={p().sx(x().peak_t)} y2={H - P} stroke-dasharray="3 3" />
+          <path class="line" d={p().d} fill="none" />
+          <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">Time (s)</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(p().t1, 3)}</text>
+          <text x={P - 6} y={P - 10} class="lbl">Movement ({unit("len")})</text>
+          <text x={P - 6} y={p().sy(p().y1) + 4} text-anchor="end" class="lbl">{num(p().y1, 3)}</text>
+          <Show when={p().y0 < 0}><text x={P - 6} y={p().sy(p().y0) + 4} text-anchor="end" class="lbl">{num(p().y0, 3)}</text></Show>
+        </svg>}</Show>
+        <h4>Largest movements over the whole history</h4>
+        <table class="tbl"><thead><tr><th>Node</th><th class="r">Largest movement</th></tr></thead><tbody><For each={top()}>{([id, v]) => <tr><td>{nodeName(id)}</td><td class="r">{fmt("len", v)}</td></tr>}</For></tbody></table>
+      </Show>
+      <For each={x().notes}>{n => <p class="muted small">{n}</p>}</For>
+    </>}</Show>
+  </Dialog>;
+});
+
 /** Solve › Steps: the analysis steps, run in order. */
 export const stepsDialog = () => openDialog(() => {
   const m = () => model()!;
   const sts = () => m().steps ?? [];
   const set = (s: Step, ch: Partial<Step>) => act({ Set: { item: { Step: { ...s, ...ch } } } });
-  const add = (kind: StepKind) => act({ Add: { item: { Step: { id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: 10, monitor: null } } } });
+  const add = (kind: StepKind) => act({ Add: { item: { Step: { id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : [[0, 1], [10, 1]], ground: kind === "history", dt: 0.005, duration: 2 } } } });
   const plane = () => m().analysis === "frame";
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
@@ -43,8 +91,28 @@ export const stepsDialog = () => openDialog(() => {
           <td><button class="x" title="Delete this step" onClick={() => act({ Delete: { ids: [s.id] } })}>×</button></td>
         </tr>}</For></tbody></table>
     </Show>
-    <p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
-    <Show when={!plane() && sts().some(s => s.kind !== "linear")}><p class="warn small">Large-deflection steps are for plane frames in this release; 3D frames and parts come later.</p></Show>
+    <For each={sts().filter(s => isDyn(s.kind))}>{s => <div class="dynset">
+      <h4>{s.name}: {s.kind === "spectrum" ? "response spectrum" : "time history"}</h4>
+      <div class="dyngrid">
+        <label>Shaking along<select value={s.along.findIndex(v => v !== 0)} onChange={e => set(s, { along: [0, 1, 2].map(k => k === +e.currentTarget.value ? 1 : 0) as [number, number, number] })}><For each={[["0", "x"], ["1", "y"], ...(m().analysis === "space" ? [["2", "z"]] : [])]}>{([k, l]) => <option value={k} selected={String(s.along.findIndex(v => v !== 0)) === k}>{l}</option>}</For></select></label>
+        <label>Damping<input class="mono fac" value={num(s.damping * 100, 4)} onChange={numIn(v => v >= 0 && v < 100 && set(s, { damping: v / 100 }), () => num(s.damping * 100, 4))} /><span class="unit">%</span></label>
+        <Show when={s.kind === "spectrum"}>
+          <label>Modes<input class="mono fac" value={s.modes} onChange={numIn(v => set(s, { modes: Math.round(v) }), () => String(s.modes))} /></label>
+          <label>Combined by<select value={s.cqc ? "cqc" : "srss"} onChange={e => set(s, { cqc: e.currentTarget.value === "cqc" })}><option value="cqc" selected={s.cqc}>CQC</option><option value="srss" selected={!s.cqc}>SRSS</option></select></label>
+        </Show>
+        <Show when={s.kind === "history"}>
+          <label class="chk"><input type="checkbox" checked={s.ground} onChange={e => set(s, { ground: e.currentTarget.checked })} />The ground shakes (the record is its acceleration)</label>
+          <label>Time step<input class="mono fac" value={num(s.dt, 6)} onChange={numIn(v => v > 0 && set(s, { dt: v }), () => num(s.dt, 6))} /><span class="unit">s</span></label>
+          <label>Length<input class="mono fac" value={num(s.duration, 6)} onChange={numIn(v => v > 0 && set(s, { duration: v }), () => num(s.duration, 6))} /><span class="unit">s</span></label>
+        </Show>
+      </div>
+      <Show when={s.kind === "spectrum"} fallback={<label class="tbl2">{s.ground ? "Ground acceleration (m/s²) against time (s)" : "Factor on the step's load against time (s)"}: one “time, value” a line, straight between<textarea class="mono" rows={5} value={fromTable(s.time)} onChange={e => { const t = toTable(e.currentTarget.value); if (t) set(s, { time: t }); else e.currentTarget.value = fromTable(s.time); }} /></label>}>
+        <label class="tbl2">Spectral acceleration (m/s²) against period (s): one “period, acceleration” a line, straight between, flat beyond the ends<textarea class="mono" rows={5} value={fromTable(s.spectrum)} onChange={e => { const t = toTable(e.currentTarget.value); if (t) set(s, { spectrum: t }); else e.currentTarget.value = fromTable(s.spectrum); }} /></label>
+      </Show>
+    </div>}</For>
+    <p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button> <button class="btn sm" onClick={() => add("spectrum")}>Add a response spectrum</button> <button class="btn sm" onClick={() => add("history")}>Add a time history</button></p>
+    <Show when={sts().some(s => isDyn(s.kind)) && sts().length > 1}><p class="warn small">A dynamic step stands on its own: make it the only step to solve it.</p></Show>
+    <Show when={!plane() && sts().some(s => s.kind === "newton" || s.kind === "arc")}><p class="warn small">Large-deflection steps are for plane frames in this release; 3D frames and parts come later.</p></Show>
     <p class="muted small">Each large-deflection step starts where the one before ended and takes the loads to its own: its case or combination times its factor. <b>Large deflection</b> applies the load in increments, each corrected until the frame is in balance in its deflected shape (second-order and P-delta effects, large rotations). <b>Past limit loads</b> follows the path by arc length, so it goes on past the largest load a frame can carry (snap-through) and shows the load falling. Loads keep their directions as the frame deflects.</p>
   </Dialog>;
 });

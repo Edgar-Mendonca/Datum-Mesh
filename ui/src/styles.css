@@ -930,3 +930,12 @@ table.steps select { max-width: 13em; }
 .ribnum { display: flex; align-items: center; gap: 4px; font-size: 12px; }
 .ribnum input { width: 5em; }
 .ribnum .unit { color: var(--muted); }
+/* Point masses (0.4.2) */
+.lmass { fill: var(--text); stroke: var(--bg2); stroke-width: 1.5; }
+/* Dynamic steps (0.4.2) */
+.dynset { border-top: 1px solid var(--line2); margin-top: 10px; padding-top: 6px; }
+.dyngrid { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 4px 0 8px; }
+.dyngrid label { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.dyngrid .unit { color: var(--muted); }
+label.tbl2 { display: block; font-size: 12px; color: var(--text2); }
+label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 12px; }

@@ -300,6 +300,7 @@ export const View3D = () => {
       const k = l.kind, on = selSet.has(l.id), colour = on ? accent : load;
       if (k.kind === "force" && l.at.on === "node") { const p = P.get(l.at.id); if (p) arrow(p, [k.fx, k.fy, k.fz ?? 0], L, colour); }
       if (k.kind === "moment" && l.at.on === "node") { const p = P.get(l.at.id); if (p) arrow(p, [k.mx ?? 0, k.my ?? 0, k.m], L * 0.8, colour, true); }
+      if (k.kind === "mass" && l.at.on === "node") { const p = P.get(l.at.id); if (p) { const b = new THREE.Mesh(new THREE.SphereGeometry(span * 0.018, 16, 12), new THREE.MeshLambertMaterial({ color: new THREE.Color(on ? accent : ink) })); b.position.set(...p); world.add(b); } }
       if (k.kind === "dist" && l.at.on === "member") {
         const b = m.members.find(x => x.id === (l.at as any).id), a = b && P.get(b.a), c = b && P.get(b.b); if (!a || !c) continue;
         const res = r?.members.find(x => x.id === b!.id);

@@ -20,6 +20,7 @@ const srv = http.createServer((q, r) => {
   fs.readFile(f, (e, b) => { if (e) { r.writeHead(404); return r.end(); } r.writeHead(200, { "content-type": types[path.extname(f)] ?? "application/octet-stream" }); r.end(b); });
 });
 let failed = 0;
+const num3 = v => String(+v.toPrecision(3));
 const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : "  " + info}`); if (!ok) failed++; };
 
 (async () => {
@@ -42,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -532,6 +533,45 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("adding a table section adds it with its root radius", ts?.Add?.item?.Section?.name === "HEB 300" && Math.abs(ts.Add.item.Section.shape.r - 0.027) < 1e-12, JSON.stringify(ts));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   check("Escape closes the dialog left open under a closed one (0.3.3 bug: focus was lost)", (await p.$$(".ov")).length === 0);
+  // 0.4.2: dynamics, on the frame in an earthquake.
+  await open("quake"); await p.waitForTimeout(250);
+  const qm = fix.quake.m, qs = qm.steps[0];
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
+  check("the steps dialog shows a spectrum step's settings: direction, damping, modes, combination and the spectrum", (await p.$$(".dlg .dynset")).length === 1 && (await p.$eval(".dlg .dynset textarea", t => t.value)).split("\n").length === qs.spectrum.length && (await p.textContent(".dlg .dynset")).includes("Combined by"));
+  await p.fill(".dlg .dynset input.fac >> nth=1", "8"); await p.keyboard.press("Tab"); await p.waitForTimeout(150);
+  const qo = await lastOp();
+  check("changing the number of modes sets the step", qo?.Set?.item?.Step?.modes === 8, JSON.stringify(qo?.Set?.item?.Step?.modes));
+  await p.click('.dlg button:has-text("Add a time history")'); await p.waitForTimeout(150);
+  const qh = await lastOp();
+  check("adding a time history adds a ground-shaking step with a record", qh?.Add?.item?.Step?.kind === "history" && qh.Add.item.Step.ground === true && qh.Add.item.Step.time.length >= 2, JSON.stringify(qh));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button[title^="A mass at a node"]'); await p.waitForTimeout(80);
+  const qn = await center(`.dsvg [data-id="${qm.nodes[0].id}"]`).catch(() => null);
+  if (qn) { await p.mouse.click(qn[0], qn[1]); await p.waitForTimeout(150); }
+  const qmass = await lastOp();
+  check("Loads › Mass puts a mass on the node clicked", qmass?.Add?.item?.Load?.kind?.kind === "mass" && qmass.Add.item.Load.at.on === "node", JSON.stringify(qmass));
+  check("masses are drawn at their nodes", (await p.$$(".dsvg .lmass")).length >= 6);
+  await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
+  await p.evaluate(() => { window.__solveKey = "quake_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__solveKey = null; });
+  check("a spectrum's legend says its peaks are combined, with no balance to check", (await p.textContent(".legend")).includes("combined by CQC"));
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(100);
+  await p.click('.ribbon button:has-text("Dynamics")'); await p.waitForTimeout(250);
+  const qd = await p.textContent(".dlg");
+  const qr = fix.quake_results.dynamic;
+  check("Results › Dynamics lists each mode's period, participation and share of the mass", (await p.$$(".dlg table.tbl tbody tr")).length === qr.modes.length && qd.includes("CQC") && qd.includes(num3(qr.share * 100)), qd.slice(0, 300));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "quake-modes.png") });
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => { window.__solveKey = "quake_history"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__solveKey = null; });
+  check("a time history's legend says when its results are, inertia included", (await p.textContent(".legend")).includes("Equilibrium at t ="));
+  await p.click('.ribbon button:has-text("Dynamics")'); await p.waitForTimeout(250);
+  const qhd = await p.textContent(".dlg");
+  check("Results › Dynamics plots a time history's movement against time and lists the largest movements", (await p.$$(".dlg svg.curve path.line")).length === 1 && qhd.includes("Largest movements") && qhd.includes("Newmark"), qhd.slice(0, 200));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "quake-history.png") });
+  await p.keyboard.press("Escape");
   // 0.4.1: plates in a 3D frame, on the floor slab.
   await open("slab"); await p.waitForTimeout(400);
   const slm = fix.slab.m, slabId = slm.shapes[0].id;

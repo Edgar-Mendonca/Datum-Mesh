@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.2 — 2026-10-31
+
+Dynamics for structures: response spectrum and time history.
+
+**Dynamics**
+- Loads › **Mass**: a mass at a node, for natural frequencies and dynamics (it is in every load case and adds no weight to a static solve). Natural frequencies now include point masses, also on weightless members.
+- Solve › Steps › **Add a response spectrum**: shake a frame (plane or 3D, with its plates) along x, y or z by a design spectrum you type as (period, acceleration) points; choose the damping, the number of modes and CQC or SRSS. The peak forces, moments, movements and reactions are combined from the modes.
+- Solve › Steps › **Add a time history**: a factor on a load case against time, or the ground's acceleration against time, followed step by step (Newmark's average acceleration, Rayleigh damping at the first two modes). The model shows the results at the time of the largest movement, with the inertia forces among the loads so the reactions balance.
+- Results › **Dynamics**: a spectrum's modes with their periods, spectral accelerations, participation and share of the mass (aim for 90 %); a time history's movement against time and every node's largest movement.
+- New example: a three-storey steel frame in an earthquake.
+
+**Trust**
+- Help › Verification: 170 checks, all passing. New: benchmark 23, a mass on a cantilever column against the closed forms (frequency exact; a step load's peak 2H/k, the ground stepping, resonance with 5 % damping, all within 0.01 %; a flat spectrum's movement and base shear exact), a two-storey shear frame's frequencies and spectrum (within 0.003 %), and the dynamic balance of a time history on the floor slab with its plates.
+- Random dynamic steps on every frame example solve and balance, or say why.
+
 ## 0.4.1 — 2026-10-31
 
 Plates and shells: slabs, walls and panels in 3D frames.

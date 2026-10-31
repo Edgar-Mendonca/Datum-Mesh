@@ -8,7 +8,7 @@ import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
 import * as K from "./sketch";
 import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
-import { stepsDialog, pathDialog, isNonlinear } from "./steps";
+import { stepsDialog, pathDialog, isNonlinear, dynDialog, dynOf } from "./steps";
 import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
@@ -181,7 +181,7 @@ export const Ribbon = () => {
             <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /><Show when={solid3()}><T i="roller" l="Hold Directions" t="sup:hold" title="Hold only chosen directions (x, y, z) of a face; set them in the Inspector, or make it a line along the face" /></Show></>}><T i="roller" l="Roller (along x)" t="sup:rollerx" /><T i="roller" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
           <G l="Loads" h="loads"><T big i="force" l="Force" t="load:force" />
             <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><Show when={m()?.analysis !== "axi" && !solid3()}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
-              <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /><Show when={sp()}><T i="pressure" l="Plate Pressure" t="load:platepressure" title="Pressure on a plate: click inside it (positive pushes a floor down)" /></Show></S></Show></G>
+              <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /><T i="mass" l="Mass" t="load:mass" title="A mass at a node, for natural frequencies and dynamics (in every load case; no weight in a static solve)" /><Show when={sp()}><T i="pressure" l="Plate Pressure" t="load:platepressure" title="Pressure on a plate: click inside it (positive pushes a floor down)" /></Show></S></Show></G>
         </Show>
         <Show when={heat()}>
           <G l="Heat" h="heat"><T big i="temp" l="Temperature" t="sup:temperature" /><S><T i="flux" l="Heat Flux" t="load:flux" /><T i="convection" l="Convection" t="load:convection" /><B i="heatgen" l="Heat Generation" run={() => C.body("heat")} /></S></G>
@@ -211,6 +211,7 @@ export const Ribbon = () => {
           <Show when={!sp()}><G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
             <S><B i="diagram" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="diagram" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
           <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G></Show>
+          <G l="Dynamics" h="dynamics"><B big i="wave" l="Dynamics" run={dynDialog} off={!dynOf()} title="A dynamic solve's modes (response spectrum) or its record over time (time history)" /></G>
           <Show when={!sp()}><G l="Path" h="steps"><B big i="curve" l="Load–Deflection" run={pathDialog} off={!frameRes()?.path} title="The load against the movement of a node, through a large-deflection solution" /></G></Show>
           <G l="Combinations" h="cases"><B big i="table" l="Envelope" run={envelope} off={!hasEnvelope()} title="The largest and smallest member forces and reactions over every combination" /></G>
         </Show>

@@ -203,6 +203,11 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean; np: Map<
       const l2 = Math.hypot(dir[0], dir[1]);
       return <><path d={arrowPath(s, dir)} class="la" /><text x={s[0] - dir[0] / l2 * (ARROW + 6)} y={s[1] - dir[1] / l2 * (ARROW + 6)} class="ltxt" text-anchor="middle">{fmt("force", Math.hypot(k.fx, k.fy), 3)}</text></>;
     }
+    if (k.kind === "mass" && at.on === "node") {
+      const w = np().get(at.id); if (!w) return null;
+      const s = toS(w);
+      return <><circle cx={s[0] + 11} cy={s[1] - 11} r={7} class="lmass" /><text x={s[0] + 21} y={s[1] - 14} class="ltxt">{fmt("mass", k.m, 3)}</text></>;
+    }
     if (k.kind === "moment" && at.on === "node") {
       const w = np().get(at.id); if (!w) return null;
       const [x, y] = toS(w), r = 18, ccw = k.m >= 0;

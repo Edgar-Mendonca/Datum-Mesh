@@ -26,6 +26,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "dist": return { kind: "dist", w1: -5e3, w2: -5e3, dir: "y" };
     case "pressure": return { kind: "pressure", p: 1e6 };
     case "platepressure": return { kind: "pressure", p: 5e3 };
+    case "mass": return { kind: "mass", m: 1000 };
     case "traction": return { kind: "traction", fx: 0, fy: -1e3, total: true };
     case "bearing": return { kind: "bearing", fx: 0, fy: 1e3 };
     case "gravity": return { kind: "gravity", gx: 0, gy: -9.81 };
@@ -38,7 +39,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass" };
 
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
@@ -267,6 +268,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
     <Show when={k().kind === "convection"}><NumField label="Film coefficient h" q="film" v={f("convection").h} min={0} set={h => put({ ...f("convection"), h })} /><NumField label="Fluid temperature" q="temp" v={f("convection").t_inf} set={t_inf => put({ ...f("convection"), t_inf })} /></Show>
     <Show when={k().kind === "warming"}><NumField label="Change" q="dtemp" v={f("warming").dt} set={dt => put({ kind: "warming", dt })} hint={isFrame(p.m.analysis) ? "Every member grows by αΔT per length; where it cannot, it pushes on its supports." : "A uniform change from the stress-free temperature (Inspector, with nothing selected); added to any temperatures set on edges."} /></Show>
     <Show when={k().kind === "heat"}><NumField label="Heat generated" q="heatgen" v={f("heat").q} set={q => put({ kind: "heat", q })} /></Show>
+    <Show when={k().kind === "mass"}><NumField label="Mass" q="mass" v={f("mass").m} min={0} set={m => m >= 0 && put({ kind: "mass", m })} hint="Moves with the node in every direction, for natural frequencies and dynamics. It is in every load case and adds no weight to a static solve (use loads for that)." /></Show>
   </>;
 };
 
