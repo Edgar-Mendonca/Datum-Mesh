@@ -3,7 +3,7 @@
 //! leaves the model exactly as it was (Plan's pattern: ops in, whole-model snapshots for undo).
 
 use crate::sketch::{How, Make};
-use crate::model::{Case, Combo, dist3, Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
+use crate::model::{Case, Combo, Step, dist3, Analysis, Geom, Load, LoadKind, Material, Member, MemberKind, MeshSettings, Model, Node, Section, Shape, Support, Target};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -20,6 +20,8 @@ pub enum Item {
     /// Load cases and combinations (0.3.3).
     Case(Case),
     Combo(Combo),
+    /// Analysis steps (0.4.0).
+    Step(Step),
 }
 
 /// The model-wide settings, edited together.
@@ -273,6 +275,13 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     }
                     m.combos.push(x);
                 }
+                Item::Step(mut x) => {
+                    x.id = id;
+                    if x.name.trim().is_empty() {
+                        x.name = format!("Step {}", m.steps.len() + 1);
+                    }
+                    m.steps.push(x);
+                }
             }
         }
         Op::Set { item } => {
@@ -296,6 +305,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Load(x) => put(&mut m.loads, |y| y.id, x)?,
                 Item::Case(x) => put(&mut m.cases, |y| y.id, x)?,
                 Item::Combo(x) => put(&mut m.combos, |y| y.id, x)?,
+                Item::Step(x) => put(&mut m.steps, |y| y.id, x)?,
             }
         }
         Op::AddMember { from, to, kind, section, material, z } => {
@@ -484,6 +494,15 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 }
             }
             m.combos.retain(|x| !set.contains(&x.id));
+            m.steps.retain(|x| !set.contains(&x.id));
+            // A step whose case or combination went loses it (it takes the window's choice).
+            for st in m.steps.iter_mut() {
+                if let Some(crate::cases::Which::Case { id } | crate::cases::Which::Combo { id }) = st.load {
+                    if set.contains(&id) || gone.contains(&id) {
+                        st.load = None;
+                    }
+                }
+            }
             m.loads.retain(|x| !set.contains(&x.id));
         }
         Op::InsertCorner { shape, edge } => {

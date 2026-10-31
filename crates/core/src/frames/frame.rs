@@ -64,6 +64,9 @@ pub struct FrameResults {
     pub imbalance: f64,
     pub stats: Stats,
     pub warnings: Vec<String>,
+    /// A nonlinear solution's load–deflection curve (0.4.0).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<crate::frames::corot::Curve>,
 }
 
 impl FrameResults {
@@ -71,7 +74,7 @@ impl FrameResults {
     pub fn imbalance(&self) -> f64 {
         self.imbalance
     }
-    fn check_balance(&mut self) {
+    pub(crate) fn check_balance(&mut self) {
         let f = if self.scale[0] > 0.0 { (self.applied[0] + self.reacted[0]).abs().max((self.applied[1] + self.reacted[1]).abs()) / self.scale[0] } else { 0.0 };
         let mo = if self.scale[1] > 0.0 { (self.applied[2] + self.reacted[2]).abs() / self.scale[1] } else { 0.0 };
         self.imbalance = f.max(mo);
@@ -80,26 +83,26 @@ impl FrameResults {
 
 #[derive(Clone)]
 pub(crate) struct Elem {
-    id: u32,
-    kind: MemberKind,
-    a: usize,
-    b: usize,
-    l: f64,
-    c: f64,
-    s: f64,
-    ea: f64,
-    ei: f64,
-    area: f64,
-    z: f64,
-    fy: f64,
+    pub(crate) id: u32,
+    pub(crate) kind: MemberKind,
+    pub(crate) a: usize,
+    pub(crate) b: usize,
+    pub(crate) l: f64,
+    pub(crate) c: f64,
+    pub(crate) s: f64,
+    pub(crate) ea: f64,
+    pub(crate) ei: f64,
+    pub(crate) area: f64,
+    pub(crate) z: f64,
+    pub(crate) fy: f64,
     /// Distributed load in local axes, linear from end a to end b: (px1, px2, qy1, qy2) in N/m.
-    p: [f64; 4],
+    pub(crate) p: [f64; 4],
     /// Free thermal strain αΔT from a uniform temperature change.
-    at: f64,
+    pub(crate) at: f64,
     /// Mass per length ρA (kg/m), for natural frequencies.
-    rho_a: f64,
+    pub(crate) rho_a: f64,
     /// Hinges at the start and end (beams).
-    hinge: [bool; 2],
+    pub(crate) hinge: [bool; 2],
 }
 
 /// The condensation of a hinged beam (0.3.3), or None.
@@ -115,7 +118,7 @@ fn cond(e: &Elem, k: [[f64; 6]; 6]) -> [[f64; 6]; 6] {
     released(e).map_or(k, |r| r.mat(&k))
 }
 /// The member's own end loads with the hinges condensed out.
-fn cond_load(e: &Elem) -> [f64; 6] {
+pub(crate) fn cond_load(e: &Elem) -> [f64; 6] {
     let f = equivalent(e);
     released(e).map_or(f, |r| r.load(&f))
 }
@@ -124,12 +127,12 @@ fn ends_of(e: &Elem, ul: [f64; 6], loaded: bool) -> [f64; 6] {
     released(e).map_or(ul, |r| r.full(&ul, loaded))
 }
 /// Does the member hold the node's rotation at this end (a beam end without a hinge)?
-fn holds_turn(e: &Elem, n: usize) -> bool {
+pub(crate) fn holds_turn(e: &Elem, n: usize) -> bool {
     e.kind == MemberKind::Beam && !((n == e.a && e.hinge[0]) || (n == e.b && e.hinge[1]))
 }
 
 /// The 6×6 stiffness in local axes (dofs u_a, v_a, θ_a, u_b, v_b, θ_b).
-fn k_local(e: &Elem) -> [[f64; 6]; 6] {
+pub(crate) fn k_local(e: &Elem) -> [[f64; 6]; 6] {
     let mut k = [[0.0; 6]; 6];
     let (l, ea, ei) = (e.l, e.ea, e.ei);
     let a = ea / l;
@@ -206,7 +209,7 @@ fn scatter(e: &Elem, k: &[[f64; 6]; 6], mut out: impl FnMut(usize, usize, f64)) 
 
 /// Cut a beam into `pieces` equal elements; the inner nodes are numbered from `first`. Its
 /// distributed load is shared out along the pieces. A truss bar is not cut.
-fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
+pub(crate) fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
     if e.kind != MemberKind::Beam || pieces <= 1 {
         return vec![e.clone()];
     }
@@ -226,16 +229,16 @@ fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
 }
 
 /// Rotation from global to local for one node's (x, y, θ).
-fn rot(e: &Elem, g: [f64; 3]) -> [f64; 3] {
+pub(crate) fn rot(e: &Elem, g: [f64; 3]) -> [f64; 3] {
     [e.c * g[0] + e.s * g[1], -e.s * g[0] + e.c * g[1], g[2]]
 }
-fn unrot(e: &Elem, l: [f64; 3]) -> [f64; 3] {
+pub(crate) fn unrot(e: &Elem, l: [f64; 3]) -> [f64; 3] {
     [e.c * l[0] - e.s * l[1], e.s * l[0] + e.c * l[1], l[2]]
 }
 
 /// Nodal loads (local axes) equivalent to the member's distributed load: fixed-end values for a
 /// beam, simple-span values (no end moments) for a truss bar.
-fn equivalent(e: &Elem) -> [f64; 6] {
+pub(crate) fn equivalent(e: &Elem) -> [f64; 6] {
     let [p1, p2, q1, q2] = e.p;
     let l = e.l;
     // Axial: uniform p1 plus a triangle rising to (p2 − p1) at b.
@@ -270,6 +273,9 @@ pub(crate) struct Assembly {
     pub has_beam: Vec<bool>,
     pub applied: [f64; 3],
     pub warnings: Vec<String>,
+    /// Every node's place (inner nodes of cut beams too), and the springs: (unknown, stiffness).
+    pub pos: Vec<[f64; 2]>,
+    pub springs: Vec<(usize, f64)>,
 }
 
 pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
@@ -369,6 +375,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     }
     // Supports.
     let mut held = vec![false; 3 * nt];
+    let mut springs = vec![];
     for s in &m.supports {
         let Target::Node { id } = s.at else {
             warnings.push("A support that is not on a node was left out.".into());
@@ -381,6 +388,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             SupportKind::RollerX => held[3 * i + 1] = true,
             SupportKind::RollerY => held[3 * i] = true,
             SupportKind::Spring { kx, ky, kr, .. } => {
+                springs.extend([(3 * i, *kx), (3 * i + 1, *ky), (3 * i + 2, *kr)].into_iter().filter(|x| x.1 != 0.0));
                 sys.add(3 * i, 3 * i, *kx);
                 sys.add(3 * i + 1, 3 * i + 1, *ky);
                 sys.add(3 * i + 2, 3 * i + 2, *kr);
@@ -422,7 +430,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             held[3 * i + 1] = true;
         }
     }
-    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, warnings })
+    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, warnings, pos, springs })
 }
 
 /// Solve a frame or truss model.
@@ -468,7 +476,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     if umax > 0.1 * span {
         warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span * 100.0));
     }
-    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings };
+    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None };
     r.check_balance();
     Ok(r)
 }
@@ -685,7 +693,7 @@ fn k_name(k: &SupportKind) -> &'static str {
 }
 
 /// End forces, diagrams, deflected shape and stresses of one member.
-fn member_result(e: &Elem, u: &[f64]) -> MemberResult {
+pub(crate) fn member_result(e: &Elem, u: &[f64]) -> MemberResult {
     let ga = [u[3 * e.a], u[3 * e.a + 1], u[3 * e.a + 2]];
     let gb = [u[3 * e.b], u[3 * e.b + 1], u[3 * e.b + 2]];
     let (la, lb) = (rot(e, ga), rot(e, gb));

@@ -5,26 +5,23 @@
 #![allow(clippy::needless_range_loop, clippy::too_many_arguments, clippy::type_complexity, clippy::neg_cmp_op_on_partial_ord)]
 
 pub mod bench;
-pub mod cases;
 pub mod doc;
 pub mod dxf;
+pub mod engine;
 pub mod examples;
-pub mod frame;
+pub mod frames;
 mod hardening;
-pub mod heat;
-pub mod materials;
-pub mod modal;
-pub mod mesh;
 pub mod model;
-pub mod plane;
-mod release;
-pub mod sections;
 pub mod sketch;
-pub mod solid;
-pub mod space;
-pub mod steel;
-pub mod sparse;
+pub mod solids;
+pub mod steps;
 pub mod wire;
+
+// The modules' files by their old names, so every path that worked before still does.
+pub use engine::{cases, modal, sparse};
+pub use frames::{frame, sections, space, steel};
+pub(crate) use frames::release;
+pub use solids::{heat, materials, mesh, plane, solid};
 
 use serde::Serialize;
 
@@ -82,7 +79,7 @@ pub fn buckling(m: &model::Model, count: usize) -> Result<Modes, String> {
 
 /// Solve one load case or combination (0.3.3; None: every load as it is).
 pub fn solve_for(m: &model::Model, which: Option<cases::Which>) -> Result<Results, String> {
-    solve(&cases::select(m, which)?)
+    steps::run(m, which)
 }
 
 /// Buckling under one load case or combination (0.3.3).
@@ -108,7 +105,7 @@ mod tests {
     fn every_example_solves_and_balances() {
         for e in crate::examples::list().into_iter().filter(|e| !e.id.starts_with("blank")) {
             let m = crate::examples::get(e.id).unwrap();
-            let r = crate::solve(&m).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+            let r = crate::solve_for(&m, None).unwrap_or_else(|x| panic!("{}: {x}", e.id));
             let (imb, warnings) = match &r {
                 crate::Results::Frame(r) => (r.imbalance, &r.warnings),
                 crate::Results::Plane(r) => (r.imbalance, &r.warnings),

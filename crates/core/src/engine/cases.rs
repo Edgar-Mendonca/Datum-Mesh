@@ -32,6 +32,17 @@ fn scaled(k: &LoadKind, f: f64) -> Option<LoadKind> {
     })
 }
 
+/// The model with every load times `f` (0.4.0: a step's factor).
+pub fn scale(m: &Model, f: f64) -> Result<Model, String> {
+    let mut out = m.clone();
+    if f != 1.0 {
+        for l in out.loads.iter_mut() {
+            l.kind = scaled(&l.kind, f).ok_or("Convection cannot be scaled by a factor.")?;
+        }
+    }
+    Ok(out)
+}
+
 /// The model with only the loads of a case, or of a combination scaled by its factors. None:
 /// every load as it is.
 pub fn select(m: &Model, which: Option<Which>) -> Result<Model, String> {

@@ -23,6 +23,7 @@ pub fn list() -> Vec<Example> {
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("braced", "Braced frame", "A two-storey steel frame: HEB columns, IPE beams pinned at their ends, one braced bay, and dead, imposed and wind load cases with combinations.", Analysis::Frame),
+        e("lee", "Snap-through frame", "Lee's frame: two slender members at right angles, pinned at their far ends, loaded near the knee. Solved past its limit load by arc length: it snaps through (Results › Load–Deflection).", Analysis::Frame),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
@@ -125,6 +126,28 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             }
             ops.push(load(Target::Body, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }));
             d.apply(Op::Batch(ops))?;
+        }
+        "lee" => {
+            d.m.notes = "Lee's frame (NAFEMS NL7), without self-weight: a 1.2 m column and a 1.2 m beam joined rigidly at the knee, pinned at the base and at the beam's far end; 3 kN down on the beam 0.24 m from the knee. A 30 × 20 mm bar of E = 7.2 GPa, so EI/L² = 100 N: the frame's first limit is near PL²/EI = 18.5, 1.85 kN. One step past limit loads (arc length) follows it over the top, down and back up to the full load.".into();
+            let mut mt = d.m.materials[0].clone();
+            mt.name = "Lee's frame material (E = 7.2 GPa)".into();
+            mt.e = 7.2e9;
+            mt.rho = 2700.0;
+            mt.fy = 0.0;
+            d.m.materials[0] = mt;
+            d.m.sections[0].name = "Bar 30 × 20".into();
+            d.m.sections[0].shape = crate::model::SectionShape::Rect { b: 0.03, h: 0.02 };
+            for (a, b) in [([0.0, 0.0], [0.0, 1.2]), ([0.0, 1.2], [0.24, 1.2]), ([0.24, 1.2], [1.2, 1.2])] {
+                d.apply(Op::AddMember { from: a, to: b, kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] })?;
+            }
+            let at = node(d, 0.24, 1.2);
+            let Target::Node { id: mon } = at else { unreachable!() };
+            d.apply(Op::Batch(vec![
+                sup(node(d, 0.0, 0.0), SupportKind::Pinned),
+                sup(node(d, 1.2, 1.2), SupportKind::Pinned),
+                load(at, LoadKind::Force { fx: 0.0, fy: -3e3, fz: 0.0 }),
+                Op::Add { item: Item::Step(crate::model::Step { name: "Past the limit".into(), kind: crate::model::StepKind::Arc, increments: 20, pieces: 10, monitor: Some(mon), ..Default::default() }) },
+            ]))?;
         }
         "portal" => {
             d.m.notes = "Span 12 m, eaves 5 m, ridge 6.5 m; fixed bases. Wind 2 kN/m on the left column, 6 kN/m down on the rafters.".into();

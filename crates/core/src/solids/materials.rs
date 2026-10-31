@@ -27,7 +27,7 @@ impl LibMaterial {
 }
 
 pub fn library() -> Vec<LibMaterial> {
-    serde_json::from_str(include_str!("../data/materials.json")).expect("the materials library is valid JSON")
+    serde_json::from_str(include_str!("../../data/materials.json")).expect("the materials library is valid JSON")
 }
 
 pub fn get(id: &str) -> Option<LibMaterial> {

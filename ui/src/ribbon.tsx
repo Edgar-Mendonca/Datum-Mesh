@@ -2,12 +2,13 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view } from "./store";
+import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
 import * as K from "./sketch";
 import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
+import { stepsDialog, pathDialog, isNonlinear } from "./steps";
 import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
@@ -189,6 +190,7 @@ export const Ribbon = () => {
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
           <S><B i="table" l="Results Tables" run={() => C.view("results")} off={!results()} /><B i="verify" l="Verification" run={() => D.verification()} /></S></G>
         <G l="Studies" h="solve"><S><B i="modes" l="Natural Frequencies" run={() => C.modes()} off={solving() || heat()} title="The lowest natural frequencies and their mode shapes" /><B i="buckle" l="Buckling" run={() => C.buckling()} off={solving() || !frame()} title="The lowest buckling load factors of a frame and their shapes" /><Planned i="mesh" l="Mesh Convergence" v="a later release" /></S></G>
+        <G l="Steps" h="steps"><B big i="list" l="Steps" on={isNonlinear()} run={stepsDialog} title="Analysis steps: linear, or large deflection (P-delta, large rotations, snap-through)" /></G>
       </Show>
       <Show when={tab() === "results"}>
         <Show when={frame()} fallback={<>
@@ -205,6 +207,7 @@ export const Ribbon = () => {
           <Show when={!sp()}><G l="Diagrams" h="diagrams"><B big i="diagram" l="Bending Moment" on={show().diagram === "m"} run={() => C.show({ diagram: show().diagram === "m" ? "none" : "m" })} off={!results()} />
             <S><B i="diagram" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="diagram" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
           <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="check" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G></Show>
+          <Show when={!sp()}><G l="Path" h="steps"><B big i="curve" l="Load–Deflection" run={pathDialog} off={!frameRes()?.path} title="The load against the movement of a node, through a large-deflection solution" /></G></Show>
           <G l="Combinations" h="cases"><B big i="table" l="Envelope" run={envelope} off={!hasEnvelope()} title="The largest and smallest member forces and reactions over every combination" /></G>
         </Show>
         <Show when={modes()}>{r => <Show when={isBuckle(r())} fallback={<G l="Vibration" h="modes"><B big i="modes" l="Mode Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the natural modes on the drawing instead of the static results" /></G>}><G l="Buckling" h="buckle"><B big i="buckle" l="Buckled Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the buckled shapes on the drawing instead of the static results" /></G></Show>}</Show>

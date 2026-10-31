@@ -162,6 +162,80 @@ impl System {
     }
 }
 
+impl System {
+    /// Solve K x = b for several right-hand sides at once, with the held unknowns at zero, for a
+    /// tangent stiffness that may not be positive (past a limit point, 0.4.0): a Cholesky
+    /// factorisation when it is positive, else a sparse LU. Returns the answers and whether the
+    /// matrix was positive definite (the structure is stable there). `f` is not read.
+    pub fn solve_many(&self, held: &[bool], rhs: &[&[f64]]) -> Result<(Vec<Vec<f64>>, bool), String> {
+        let mut map = vec![usize::MAX; self.n];
+        let mut m = 0;
+        for i in 0..self.n {
+            if !held[i] {
+                map[i] = m;
+                m += 1;
+            }
+        }
+        let mut out = vec![vec![0.0; self.n]; rhs.len()];
+        if m == 0 {
+            return Ok((out, true));
+        }
+        let mut tri = Vec::with_capacity(self.k.len() * if self.half { 2 } else { 1 });
+        let mut diag = vec![0.0f64; m];
+        for &(i, j, v) in &self.k {
+            let (a, b) = (map[i], map[j]);
+            if a == usize::MAX || b == usize::MAX {
+                continue;
+            }
+            tri.push(Triplet::new(a, b, v));
+            if self.half && a != b {
+                tri.push(Triplet::new(b, a, v));
+            }
+            if a == b {
+                diag[a] += v;
+            }
+        }
+        if !diag.iter().all(|d| d.is_finite()) {
+            return Err(mechanism());
+        }
+        let a = SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &tri).map_err(|e| format!("Could not build the stiffness matrix: {e:?}"))?;
+        let mut b = Mat::<f64>::zeros(m, rhs.len() + 1);
+        for (c, r) in rhs.iter().enumerate() {
+            for i in 0..self.n {
+                if map[i] != usize::MAX {
+                    b[(map[i], c)] = r[i];
+                }
+            }
+        }
+        // The probe column, as in `solve`: enormous answers mean a zero pivot (a mechanism).
+        let scale = diag.iter().fold(0.0f64, |x, d| x.max(d.abs())).max(f64::MIN_POSITIVE);
+        for i in 0..m {
+            b[(i, rhs.len())] = if diag[i].abs() > 0.0 { diag[i] } else { scale };
+        }
+        let lower: Vec<Triplet<usize, usize, f64>> = tri.iter().filter(|t| t.row >= t.col).copied().collect();
+        let pd = diag.iter().all(|d| *d > 0.0);
+        let llt = if pd { SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &lower).ok().and_then(|l| l.sp_cholesky(Side::Lower).ok()) } else { None };
+        let (x, stable) = match llt {
+            Some(l) => (l.solve(&b), true),
+            None => (a.sp_lu().map_err(|_| mechanism())?.solve(&b), false),
+        };
+        if (0..m).any(|i| !(x[(i, rhs.len())].abs() < 1e15)) {
+            return Err(mechanism());
+        }
+        for (c, o) in out.iter_mut().enumerate() {
+            for i in 0..self.n {
+                if map[i] != usize::MAX {
+                    o[i] = x[(map[i], c)];
+                }
+            }
+            if !o.iter().all(|v| v.is_finite()) {
+                return Err(mechanism());
+            }
+        }
+        Ok((out, stable))
+    }
+}
+
 fn mechanism() -> String {
     "The model can move without resistance: add supports so it cannot slide or turn as a whole, and check that every part is connected (a truss needs triangles).".into()
 }
@@ -192,6 +266,34 @@ mod tests {
         let (ub, _) = b.solve(&held, &fixed).unwrap();
         assert!(ua.iter().zip(&ub).all(|(x, y)| (x - y).abs() < 1e-12), "{ua:?} {ub:?}");
         assert!(a.mul(&ua).iter().zip(b.mul(&ub)).all(|(x, y)| (x - y).abs() < 1e-12));
+    }
+
+    #[test]
+    fn an_indefinite_system_solves_and_says_so() {
+        // Springs 1 and −0.5 in a row (a negative stiffness, as past a limit point): K = [[0.5, 0.5], [0.5, −0.5]] after the held end.
+        let mut s = System::new(3);
+        for (a, k) in [(0, 1.0), (1, -0.5)] {
+            s.add(a, a, k);
+            s.add(a + 1, a + 1, k);
+            s.add(a, a + 1, -k);
+            s.add(a + 1, a, -k);
+        }
+        let (x, stable) = s.solve_many(&[true, false, false], &[&[0.0, 0.0, 1.0]]).unwrap();
+        assert!(!stable);
+        // Series springs: 1/(1/1 + 1/−0.5) = −1, so the end moves −1; the middle node moves the force over spring 1.
+        assert!((x[0][2] + 1.0).abs() < 1e-12 && (x[0][1] - 1.0).abs() < 1e-12, "{:?}", x[0]);
+        // A positive one says stable and agrees with `solve`.
+        let mut p = System::new(3);
+        for (a, k) in [(0, 1.0), (1, 2.0)] {
+            p.add(a, a, k);
+            p.add(a + 1, a + 1, k);
+            p.add(a, a + 1, -k);
+            p.add(a + 1, a, -k);
+        }
+        let (x, stable) = p.solve_many(&[true, false, false], &[&[0.0, 0.0, 1.0], &[0.0, 1.0, 0.0]]).unwrap();
+        assert!(stable && (x[0][2] - 1.5).abs() < 1e-12 && (x[1][2] - 1.0).abs() < 1e-12);
+        // A loose chain is a mechanism.
+        assert!(p.solve_many(&[false; 3], &[&[0.0, 0.0, 1.0]]).is_err());
     }
 
     #[test]

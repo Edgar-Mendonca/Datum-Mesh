@@ -22,6 +22,8 @@ const span = (m: Model) => {
 };
 /** How many times the deflections are drawn larger than they are. */
 export const deformFactor = (m: Model, r: FrameResults) => {
+  // Large deflection (0.4.0): the shape as it truly is, not exaggerated.
+  if (r.path) return show().scale;
   const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))));
   // Nothing moves (no loads): no exaggeration to speak of (0.1.1 showed "× 2e+299").
   if (!(dmax > 1e-12 * span(m))) return 0;

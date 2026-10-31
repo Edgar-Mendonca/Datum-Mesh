@@ -37,11 +37,16 @@ export interface Load { id: number; at: Target; kind: LoadKind; case?: number }
 export interface Case { id: number; name: string }
 export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
 export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
+/** An analysis step (0.4.0). */
+export type StepKind = "linear" | "newton" | "arc";
+export interface Step { id: number; name: string; kind: StepKind; load: Which | null; factor: number; increments: number; pieces: number; monitor: number | null }
+/** A nonlinear solution's load–deflection curve (0.4.0). */
+export interface Curve { node: number; step: number[]; load: number[]; ux: number[]; uy: number[]; rz: number[]; stable: boolean[]; peak: number; peak_step: number; iterations: number }
 export interface Envelope { over: string[]; members: { id: number; n_max: number; n_min: number; v: number; m: number; t: number; deflection: number; util: number; governs: string }[]; reactions: { node: number; max: number[]; min: number[] }[]; warnings: string[] }
 export interface LibSection { name: string; family: string; shape: SectionShape; table_area: number }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; cases?: Case[]; combos?: Combo[];
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; cases?: Case[]; combos?: Combo[]; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }
@@ -79,7 +84,7 @@ export const num = (v: number, sig = 4) => {
 export interface MemberResult { id: number; length: number; x: number[]; n: number[]; v: number[]; m: number[]; d: Pt[]; stress: number; util: number; ends: number[] }
 export interface Reaction { node: number; fx: number; fy: number; m: number }
 export interface SolveStats { equations: number; nonzeros: number; residual: number; ms: number }
-export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
+export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[]; path?: Curve }
 export interface Check { bench: number; name: string; quantity: string; q: string; reference: number; result: number; error: number; tolerance: number; source: string; pass: boolean; steps: [number, number][] }
 
 // Parts: the mesh, nodal and element fields, and the results of plane stress, strain and heat.

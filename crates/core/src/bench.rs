@@ -1143,6 +1143,181 @@ fn dxf() -> Vec<Check> {
     ]
 }
 
+/// Solve a frame by its steps (0.4.0) and give the results.
+fn stepped(d: &Doc) -> frame::FrameResults {
+    match crate::solve_for(&d.m, None).expect("benchmark steps") {
+        crate::Results::Frame(r) => r,
+        _ => unreachable!(),
+    }
+}
+fn step(kind: crate::model::StepKind, factor: f64, increments: u32, pieces: u32, monitor: Option<u32>) -> Item {
+    Item::Step(crate::model::Step { kind, factor, increments, pieces, monitor, ..Default::default() })
+}
+
+/// K(m) and E(m), the complete elliptic integrals (parameter m = k²), by the arithmetic–geometric
+/// mean (Abramowitz and Stegun 17.6).
+fn elliptic(m: f64) -> (f64, f64) {
+    let (mut a, mut b, mut c) = (1.0f64, (1.0 - m).sqrt(), m.sqrt());
+    let (mut sum, mut pw) = (0.5 * c * c, 0.5);
+    for _ in 0..40 {
+        let (a1, b1) = ((a + b) / 2.0, (a * b).sqrt());
+        c = (a - b) / 2.0;
+        a = a1;
+        b = b1;
+        pw *= 2.0;
+        sum += pw * c * c;
+    }
+    let k = std::f64::consts::PI / (2.0 * a);
+    (k, k * (1.0 - sum))
+}
+
+/// The elastica of a cantilever under an end load along its axis, past buckling: for
+/// P* = PL²/EI, K(k) = √P* with k = sin(α/2), α the tip rotation; the tip moves 2k/K·L sideways
+/// and (2 − 2E/K)·L along the axis (Timoshenko and Gere, *Theory of Elastic Stability*, §2.7).
+fn elastica(p: f64) -> (f64, f64, f64) {
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..200 {
+        let mid = (lo + hi) / 2.0;
+        if elliptic(mid).0 < p.sqrt() {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let (k, e) = elliptic(lo);
+    let s = lo.sqrt();
+    (2.0 * s / k, 2.0 - 2.0 * e / k, 2.0 * s.asin())
+}
+
+/// Benchmark 21 (0.4.0): large deflection and second-order (P-delta) frames, by corotational
+/// beams and the Newton and arc-length path solver.
+fn large() -> Vec<Check> {
+    use crate::model::StepKind::{Arc, Newton};
+    use std::f64::consts::PI;
+    let rect = SectionShape::Rect { b: 0.1, h: 0.2 };
+    let (e, i) = (200e9, 0.1 * 0.2f64.powi(3) / 12.0);
+    let ei = e * i;
+    let mut v = vec![];
+    // AISC 360 Commentary C2, case 1: a pinned beam-column, uniform load w and axial load P.
+    // u = (L/2)√(P/EI): M_mid = (wEI/P)(sec u − 1), δ_mid = (5wL⁴/384EI)·12(2 sec u − 2 − u²)/(5u⁴).
+    {
+        let (l, w) = (8.0, -10e3);
+        let p = 0.4 * PI * PI * ei / (l * l);
+        let mut d = frame(e, rect.clone());
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l / 2.0, 0.0], MemberKind::Beam);
+        member(&mut d, [l / 2.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, l, 0.0, SupportKind::RollerX);
+        for id in d.m.members.iter().map(|m| m.id).collect::<Vec<_>>() {
+            load(&mut d, Target::Member { id }, LoadKind::Dist { w1: w, w2: w, dir: Dir::Y });
+        }
+        let end = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: end }, LoadKind::Force { fx: -p, fy: 0.0, fz: 0.0 });
+        add(&mut d, Op::Add { item: step(Newton, 1.0, 5, 20, None) });
+        let r = stepped(&d);
+        let u = l / 2.0 * (p / ei).sqrt();
+        let sec = 1.0 / u.cos();
+        let mm = w.abs() * ei / p * (sec - 1.0);
+        let dd = 5.0 * w.abs() * l.powi(4) / (384.0 * ei) * 12.0 * (2.0 * sec - 2.0 - u * u) / (5.0 * u.powi(4));
+        let mid = node(&d, l / 2.0, 0.0);
+        let k = d.m.nodes.iter().position(|n| n.id == mid).unwrap();
+        let src = "AISC 360-16 Commentary C2, benchmark case 1 (closed form)";
+        v.push(check(21, "Second-order beam-column, P = 0.4 P_e", "Mid-span moment, amplified", "moment", mm, r.members[0].m.last().unwrap().abs(), 0.005, src));
+        v.push(check(21, "Second-order beam-column, P = 0.4 P_e", "Mid-span deflection, amplified", "len", dd, r.disp[k][1].abs(), 0.005, src));
+    }
+    // Case 2: a flagpole (fixed base, free top) with an axial load P and a side load H at the top.
+    // k = √(P/EI): Δ = (H/(kP))(tan kL − kL), M_base = H tan(kL)/k.
+    {
+        let (l, h) = (5.0, 10e3);
+        let p = 0.5 * PI * PI * ei / (4.0 * l * l);
+        let mut d = frame(e, rect.clone());
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [0.0, l], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let top = node(&d, 0.0, l);
+        load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: h, fy: -p, fz: 0.0 });
+        add(&mut d, Op::Add { item: step(Newton, 1.0, 5, 20, None) });
+        let r = stepped(&d);
+        let k = (p / ei).sqrt();
+        let src = "AISC 360-16 Commentary C2, benchmark case 2 (closed form)";
+        v.push(check(21, "Second-order flagpole, P = 0.5 P_cr", "Top deflection, amplified", "len", h / (k * p) * ((k * l).tan() - k * l), r.disp[1][0], 0.005, src));
+        v.push(check(21, "Second-order flagpole, P = 0.5 P_cr", "Base moment, amplified", "moment", h * (k * l).tan() / k, r.reactions[0].m.abs(), 0.005, src));
+    }
+    // NAFEMS NL5: a cantilever rolled into a circle by an end moment. κ = M/EI; with φ = ML/EI
+    // the tip is at (L sin φ/φ, L(1 − cos φ)/φ): at φ = π it is 2L/π above the root line, right
+    // above the root; at φ = 2π the cantilever is a full circle, the tip back at the root.
+    // Two steps: to φ = π, then on to 2π.
+    {
+        let l = 1.0;
+        let mut d = frame(e, rect.clone());
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Moment { m: 2.0 * PI * ei / l, mx: 0.0, my: 0.0 });
+        add(&mut d, Op::Add { item: step(Newton, 0.5, 10, 40, Some(tip)) });
+        add(&mut d, Op::Add { item: step(Newton, 1.0, 10, 40, Some(tip)) });
+        let r = stepped(&d);
+        let c = r.path.as_ref().expect("a curve");
+        let half = c.step.iter().rposition(|s| *s == 1).unwrap();
+        let src = "NAFEMS NL5; Euler's elastica, κ = M/EI";
+        v.push(check(21, "Cantilever rolled up by an end moment (NAFEMS NL5)", "Half turn: tip height 2L/π", "len", 2.0 * l / PI, c.uy[half], 0.005, src));
+        v.push(check(21, "Cantilever rolled up by an end moment (NAFEMS NL5)", "Full turn: tip movement back to the root, −L", "len", -l, r.disp[1][0], 0.001, src));
+        v.push(check(21, "Cantilever rolled up by an end moment (NAFEMS NL5)", "Full turn: tip rotation 2π", "rad", 2.0 * PI, r.disp[1][2], 0.001, src));
+    }
+    // NAFEMS NL6: a cantilever under an end load along its axis, bent far past buckling (a side
+    // load of 10⁻³ P starts it off), at P* = PL²/EI = 3.190 and on to 22.493.
+    {
+        let l = 10.0; // slender (L/r = 173), so its axial strain (P/EA, 0.08 % at most) is small as the elastica assumes
+        let mut d = frame(e, rect.clone());
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [0.0, l], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = node(&d, 0.0, l);
+        let p = 22.493 * ei / (l * l);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 1e-3 * p, fy: -p, fz: 0.0 });
+        add(&mut d, Op::Add { item: step(Newton, 3.190 / 22.493, 20, 40, Some(tip)) });
+        add(&mut d, Op::Add { item: step(Newton, 1.0, 40, 40, Some(tip)) });
+        let r = stepped(&d);
+        let c = r.path.as_ref().expect("a curve");
+        let first = c.step.iter().rposition(|s| *s == 1).unwrap();
+        let src = "NAFEMS NL6; the elastica in elliptic integrals (Timoshenko and Gere §2.7)";
+        let (s1, a1, t1) = elastica(3.190);
+        let (s2, a2, t2) = elastica(22.493);
+        let name = "Post-buckled cantilever, axial end load (NAFEMS NL6)";
+        v.push(check(21, name, "P* = 3.190: tip sideways", "len", s1 * l, c.ux[first], 0.005, src));
+        v.push(check(21, name, "P* = 3.190: tip shortening", "len", -a1 * l, c.uy[first], 0.005, src));
+        v.push(check(21, name, "P* = 3.190: tip rotation", "rad", -t1, c.rz[first], 0.005, src));
+        v.push(check(21, name, "P* = 22.493: tip sideways", "len", s2 * l, r.disp[1][0], 0.005, src));
+        v.push(check(21, name, "P* = 22.493: tip shortening", "len", -a2 * l, r.disp[1][1], 0.005, src));
+        v.push(check(21, name, "P* = 22.493: tip rotation", "rad", -t2, r.disp[1][2], 0.005, src));
+    }
+    // NAFEMS NL7, Lee's frame: two 1.2 m members at right angles, pinned at both far ends, a
+    // load down on the beam 0.24 m from the knee. E = 7.2 GPa, A = 6 cm², I = 2 cm⁴. Arc length
+    // follows it over its first limit (snap-through), PL²/EI = 18.54 to 18.55 in the literature.
+    {
+        let l = 1.2;
+        let mut d = frame(7.2e9, SectionShape::Rect { b: 0.03, h: 0.02 });
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [0.0, l], MemberKind::Beam);
+        member(&mut d, [0.0, l], [0.24, l], MemberKind::Beam);
+        member(&mut d, [0.24, l], [l, l], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, l, l, SupportKind::Pinned);
+        let eil = 7.2e9 * 2e-8 / (l * l);
+        let at = node(&d, 0.24, l);
+        load(&mut d, Target::Node { id: at }, LoadKind::Force { fx: 0.0, fy: -1.0, fz: 0.0 });
+        add(&mut d, Op::Add { item: step(Arc, 30.0 * eil, 60, 20, Some(at)) });
+        let r = stepped(&d);
+        let c = r.path.as_ref().expect("a curve");
+        let src = "NAFEMS NL7 (Lee, Manuel and Rossow 1968; Schweizerhof and Wriggers 1986): PL²/EI ≈ 18.54";
+        v.push(check(21, "Lee's frame, snap-through by arc length (NAFEMS NL7)", "First limit load PL²/EI", "ratio", 18.54, c.peak / eil, 0.005, src));
+        v.push(check(21, "Lee's frame, snap-through by arc length (NAFEMS NL7)", "Equilibrium at the end of the path (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics on the deflected frame"));
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1212,6 +1387,7 @@ pub fn run() -> Vec<Check> {
     v.extend(frames_more());
     v.extend(solids_more());
     v.extend(dxf());
+    v.extend(large());
     v
 }
 
@@ -1229,7 +1405,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=20 {
+        for b in 1..=21 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }

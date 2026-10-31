@@ -455,6 +455,46 @@ pub struct Factor {
     pub f: f64,
 }
 
+/// How a step is solved (0.4.0).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StepKind {
+    /// Small deflections: one linear solve.
+    #[default]
+    Linear,
+    /// Large deflections and second-order (P-delta) effects: the load in increments, each
+    /// corrected by Newton iterations.
+    Newton,
+    /// Large deflections, following the path past limit points (snap-through) by arc length.
+    Arc,
+}
+
+/// An analysis step (0.4.0): a load, its factor, and how it is solved. Nonlinear steps carry on
+/// from where the one before ended.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Step {
+    pub id: u32,
+    pub name: String,
+    pub kind: StepKind,
+    /// The load case or combination; None: the one chosen in the window (or every load).
+    pub load: Option<crate::cases::Which>,
+    /// The load is this many times the case or combination.
+    pub factor: f64,
+    /// Increments to apply it in (Newton), or the first increment's share (arc length).
+    pub increments: u32,
+    /// Pieces each beam is cut into, so it can bend and turn along its length.
+    pub pieces: u32,
+    /// The node whose movement the load–deflection curve follows; None: the one that moves most.
+    pub monitor: Option<u32>,
+}
+
+impl Default for Step {
+    fn default() -> Self {
+        Step { id: 0, name: String::new(), kind: StepKind::Newton, load: None, factor: 1.0, increments: 10, pieces: 10, monitor: None }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Refine {
     pub at: Target,
@@ -511,6 +551,9 @@ pub struct Model {
     /// Load cases and combinations (0.3.3). No cases: every load is in one case.
     pub cases: Vec<Case>,
     pub combos: Vec<Combo>,
+    /// Analysis steps (0.4.0), run in order. None: one linear static step.
+    #[serde(default)]
+    pub steps: Vec<Step>,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -537,6 +580,7 @@ impl Default for Model {
             mesh: MeshSettings::default(),
             cases: vec![],
             combos: vec![],
+            steps: vec![],
             next: 1,
         }
     }
@@ -576,6 +620,7 @@ impl Model {
             .chain(self.supports.iter().map(|x| x.id))
             .chain(self.cases.iter().map(|x| x.id))
             .chain(self.combos.iter().map(|x| x.id))
+            .chain(self.steps.iter().map(|x| x.id))
             .chain(self.loads.iter().map(|x| x.id))
             .max()
             .unwrap_or(0)
@@ -624,7 +669,7 @@ impl Model {
         let fin = |v: f64, what: &str| if v.is_finite() { Ok(()) } else { Err(format!("{what} must be a number.")) };
         let pos = |v: f64, what: &str| if v.is_finite() && v > 0.0 { Ok(()) } else { Err(format!("{what} must be greater than zero.")) };
         let mut ids = std::collections::HashSet::new();
-        for id in self.nodes.iter().map(|x| x.id).chain(self.members.iter().map(|x| x.id)).chain(self.shapes.iter().map(|x| x.id)).chain(self.sections.iter().map(|x| x.id)).chain(self.materials.iter().map(|x| x.id)).chain(self.supports.iter().map(|x| x.id)).chain(self.loads.iter().map(|x| x.id)).chain(self.cases.iter().map(|x| x.id)).chain(self.combos.iter().map(|x| x.id)) {
+        for id in self.nodes.iter().map(|x| x.id).chain(self.members.iter().map(|x| x.id)).chain(self.shapes.iter().map(|x| x.id)).chain(self.sections.iter().map(|x| x.id)).chain(self.materials.iter().map(|x| x.id)).chain(self.supports.iter().map(|x| x.id)).chain(self.loads.iter().map(|x| x.id)).chain(self.cases.iter().map(|x| x.id)).chain(self.combos.iter().map(|x| x.id)).chain(self.steps.iter().map(|x| x.id)) {
             if id == 0 || !ids.insert(id) {
                 return Err("Two items share an id.".into());
             }
@@ -646,6 +691,15 @@ impl Model {
         }
         if !(5.0..=33.0).contains(&self.mesh.min_angle) {
             return Err("The minimum angle must be between 5° and 33°.".into());
+        }
+        for st in &self.steps {
+            fin(st.factor, "A step's load factor")?;
+            if !(1..=1000).contains(&st.increments) {
+                return Err("A step has 1 to 1 000 increments.".into());
+            }
+            if !(1..=200).contains(&st.pieces) {
+                return Err("Beams are cut into 1 to 200 pieces in a step.".into());
+            }
         }
         for r in &self.mesh.refine {
             pos(r.size, "A local element size")?;
@@ -830,7 +884,7 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
     let mut v = migrate(v)?;
     let mut warn = vec![];
     // Read lists item by item so one bad item does not lose the rest.
-    let lists = ["nodes", "members", "shapes", "sections", "materials", "supports", "loads", "cases", "combos"];
+    let lists = ["nodes", "members", "shapes", "sections", "materials", "supports", "loads", "cases", "combos", "steps"];
     let mut keep: Vec<(String, Vec<Value>)> = vec![];
     if let Some(o) = v.as_object_mut() {
         for k in lists {
@@ -875,6 +929,7 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
             "loads" => m.loads = read(a, "loads", &mut warn),
             "cases" => m.cases = read(a, "load cases", &mut warn),
             "combos" => m.combos = read(a, "combinations", &mut warn),
+            "steps" => m.steps = read(a, "steps", &mut warn),
             _ => {}
         }
     }
@@ -925,6 +980,7 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     let old: Vec<u32> = m.cases.iter().map(|c| c.id).collect();
     m.cases.iter_mut().for_each(|x| fix(&mut x.id));
     m.combos.iter_mut().for_each(|x| fix(&mut x.id));
+    m.steps.iter_mut().for_each(|x| fix(&mut x.id));
     m.next = next;
     // Combinations keep only cases that exist (renumbered cases are not guessed at), and names.
     let renamed: Vec<u32> = old.iter().zip(&m.cases).filter(|(a, c)| **a != c.id).map(|(a, _)| *a).collect();
@@ -956,6 +1012,31 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     }
     if !(m.thickness.is_finite() && m.thickness > 0.0) {
         m.thickness = d.thickness;
+    }
+    if !(m.revolve.is_finite() && (0.0..=std::f64::consts::TAU + 1e-9).contains(&m.revolve)) {
+        warn.push("The revolve angle was out of range; the part is extruded.".into());
+        m.revolve = 0.0;
+    }
+    // Steps (0.4.0): numbers in range, and references that exist.
+    let (nodes, combos): (Vec<u32>, Vec<u32>) = (m.nodes.iter().map(|n| n.id).collect(), m.combos.iter().map(|c| c.id).collect());
+    let cases: Vec<u32> = m.cases.iter().map(|c| c.id).collect();
+    for st in m.steps.iter_mut() {
+        if !st.factor.is_finite() {
+            st.factor = 1.0;
+        }
+        st.increments = st.increments.clamp(1, 1000);
+        st.pieces = st.pieces.clamp(1, 200);
+        if st.monitor.is_some_and(|id| !nodes.contains(&id)) {
+            st.monitor = None;
+        }
+        match st.load {
+            Some(crate::cases::Which::Case { id }) if !cases.contains(&id) => st.load = None,
+            Some(crate::cases::Which::Combo { id }) if !combos.contains(&id) => st.load = None,
+            _ => {}
+        }
+        if st.name.trim().is_empty() {
+            st.name = "Step".into();
+        }
     }
     if m.units != "SI" && m.units != "US" {
         m.units = "SI".into();

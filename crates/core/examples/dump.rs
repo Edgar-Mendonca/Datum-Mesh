@@ -47,6 +47,8 @@ fn main() {
         "solid": out("blank-solid"),
         "bracket3d_results": sent(&datum_core::solve(&examples::get("bracket3d").unwrap()).unwrap()),
         "braced": out("braced"),
+        "lee": out("lee"),
+        "lee_results": sent(&datum_core::solve_for(&examples::get("lee").unwrap(), None).unwrap()),
         "braced_results": sent(&datum_core::solve(&examples::get("braced").unwrap()).unwrap()),
         "braced_envelope": datum_core::cases::envelope(&examples::get("braced").unwrap()).unwrap(),
         "sections": datum_core::steel::library(),
