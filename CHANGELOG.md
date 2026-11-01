@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.3 — 2026-11-01
+
+A clearer model tree, and a guided start.
+
+**The model tree**
+- Every branch and every item has its own icon (beams and truss bars, nodes, shapes and holes, materials, sections, each kind of support and load), and each branch folds with a guide line down its items; long lists start folded.
+- Each branch says whether it is done (✓) or needs something (!), and why when you point at it: no supports yet, no loads, a material without the yield strength an elastic-plastic step needs, results out of date.
+- An empty branch shows what to add and starts the right tool when clicked.
+- New branches, in the order a model is built: loads grouped by load case, combinations, the analysis steps, and the results (the drawing, the tables and equilibrium, the report).
+- Right-click an item to delete it. The ? and + on every branch stay.
+
+**New study**
+- File › New (Ctrl+N) asks what you are analysing (a 2D truss, 2D frame, 3D frame, 2D part, 3D solid, or heat in a part or solid), which kind (plane stress, plane strain or turned; extruded or revolved) and what you want to know (static, large deflection, plastic, rubber, earthquake…), then makes the model with that analysis set up and the right drawing tool ready.
+
 ## 0.5.2 — 2026-11-01
 
 Rubber, and 3D solids that move far.

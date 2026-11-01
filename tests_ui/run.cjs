@@ -574,6 +574,15 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const ypd = await p.textContent(".dlg").catch(() => "");
   check("Results › Load–Deflection works for a 3D solid", ypd.includes("first yields") && ypd.includes("carries the whole load") && (await p.$$(".dlg svg.curve circle.unstable")).length > 0, ypd.slice(0, 200));
   await p.keyboard.press("Escape");
+  // 0.5.3: File › New asks what is being analysed, then makes the model.
+  await p.keyboard.press("Control+n"); await p.waitForTimeout(250);
+  check("Ctrl+N opens the New study page with the kinds of study", (await p.$$(".newstudy .kcard[data-kind]")).length === 7);
+  await p.click('.newstudy .kcard[data-kind="truss"]'); await p.waitForTimeout(120);
+  check("a 2D truss offers what you can find out about it", (await p.$$(".newstudy .kcard[data-want]")).length >= 3 && (await p.textContent(".newstudy")).includes("Large deflection"));
+  await p.click('.newstudy .ncreate .btn.pri'); await p.waitForTimeout(400);
+  const nm = await p.evaluate(() => window.__calls.filter(c => c[0] === "new_model").slice(-1)[0]?.[1]);
+  const ns = (await ops()).filter(o => o.SetSettings).slice(-1)[0];
+  check("Create makes a frame model marked as a truss, with the truss bar tool ready", nm?.analysis === "frame" && nm?.example === null && ns?.SetSettings?.s?.study === "truss" && !(await p.$(".bs")), JSON.stringify([nm, ns]));
   // 0.5.2: large deformation of a 3D solid, on the rubber finger.
   await open("rubber"); await p.waitForTimeout(400);
   await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);

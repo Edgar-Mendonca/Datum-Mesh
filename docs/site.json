@@ -25,6 +25,7 @@
     }
   ],
   "highlights": [
+    "A model tree that shows what is done and what is missing, with an icon for everything, and a New study page that asks what you are analysing",
     "Plasticity: parts and 3D solids that yield (von Mises with hardening), solved in increments by Newton's method up to collapse, checked against Hill's limit analysis",
     "Rubber and large deformation: 3D solids followed through large movements and strains (neo-Hookean), checked against the exact stretch of a rubber bar and the elastica",
     "Rigid floors for 3D buildings and rigid end zones at joints, in static, second-order and earthquake analysis",
