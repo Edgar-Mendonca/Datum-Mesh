@@ -109,6 +109,9 @@ pub(crate) struct Elem {
     pub(crate) rho_a: f64,
     /// Hinges at the start and end (beams).
     pub(crate) hinge: [bool; 2],
+    /// Rigid zones at the ends (m, 0.4.5), and whether this piece is one.
+    pub(crate) off: [f64; 2],
+    pub(crate) rigid: bool,
 }
 
 /// The condensation of a hinged beam (0.3.3), or None.
@@ -216,18 +219,43 @@ fn scatter(e: &Elem, k: &[[f64; 6]; 6], mut out: impl FnMut(usize, usize, f64)) 
 /// Cut a beam into `pieces` equal elements; the inner nodes are numbered from `first`. Its
 /// distributed load is shared out along the pieces. A truss bar is not cut.
 pub(crate) fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
-    if e.kind != MemberKind::Beam || pieces <= 1 {
-        return vec![e.clone()];
+    // The cuts, as fractions of the length: the rigid zones' ends (0.4.5), and equal pieces of
+    // the flexible part between them.
+    let (oa, ob) = if e.kind == MemberKind::Beam { (e.off[0] / e.l, e.off[1] / e.l) } else { (0.0, 0.0) };
+    let n = if e.kind == MemberKind::Beam { pieces.max(1) } else { 1 };
+    let mut cuts = vec![0.0];
+    if oa > 0.0 {
+        cuts.push(oa);
+    }
+    for k in 1..n {
+        cuts.push(oa + (1.0 - oa - ob) * k as f64 / n as f64);
+    }
+    if ob > 0.0 {
+        cuts.push(1.0 - ob);
+    }
+    cuts.push(1.0);
+    if cuts.len() == 2 {
+        return vec![Elem { off: [0.0; 2], ..e.clone() }];
     }
     let [p1, p2, q1, q2] = e.p;
-    (0..pieces)
+    let last = cuts.len() - 2;
+    // A hinge belongs at the flexible part's end, at the face of the rigid zone.
+    let (fa, fb) = (usize::from(oa > 0.0), last - usize::from(ob > 0.0));
+    (0..=last)
         .map(|k| {
-            let (s0, s1) = (k as f64 / pieces as f64, (k + 1) as f64 / pieces as f64);
+            let (s0, s1) = (cuts[k], cuts[k + 1]);
             let mut c = e.clone();
             c.a = if k == 0 { e.a } else { first + k - 1 };
-            c.b = if k == pieces - 1 { e.b } else { first + k };
-            c.l = e.l / pieces as f64;
-            c.hinge = [k == 0 && e.hinge[0], k == pieces - 1 && e.hinge[1]];
+            c.b = if k == last { e.b } else { first + k };
+            c.l = e.l * (s1 - s0);
+            c.off = [0.0; 2];
+            c.rigid = (k == 0 && oa > 0.0) || (k == last && ob > 0.0);
+            if c.rigid {
+                c.ea *= 1e5;
+                c.ei *= 1e5;
+                c.at = 0.0;
+            }
+            c.hinge = [k == fa && e.hinge[0], k == fb && e.hinge[1]];
             c.p = [p1 + (p2 - p1) * s0, p1 + (p2 - p1) * s1, q1 + (q2 - q1) * s0, q1 + (q2 - q1) * s1];
             c
         })
@@ -312,7 +340,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let sec = m.section(mb.section).ok_or("A member's section is missing.")?;
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a, hinge: mb.hinge };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a, hinge: mb.hinge, off: mb.offset, rigid: false };
         // Self-weight: ρ A g per length, resolved into the member's axes.
         let w = [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1]];
         let (wx, wy) = (e.c * w[0] + e.s * w[1], -e.s * w[0] + e.c * w[1]);
@@ -344,10 +372,15 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     let mut nt = nn;
     let mut pos: Vec<[f64; 2]> = m.nodes.iter().map(|n| [n.x, n.y]).collect();
     for e in &elems {
+        if e.kind == MemberKind::Beam && !(e.off[0] >= 0.0 && e.off[1] >= 0.0 && e.off[0] + e.off[1] < e.l) {
+            return Err(format!("Member {}'s rigid ends are as long as the member: make them shorter.", m.members.iter().position(|b| b.id == e.id).map_or(0, |k| k + 1)));
+        }
         let pcs = split(e, pieces, nt);
         let (a, b) = (pos[e.a], pos[e.b]);
-        for k in 1..pcs.len() {
-            let t = k as f64 / pcs.len() as f64;
+        let mut along = 0.0;
+        for pc in &pcs[..pcs.len() - 1] {
+            along += pc.l;
+            let t = along / e.l;
             pos.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
         }
         nt += pcs.len() - 1;
@@ -465,7 +498,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
 
 /// Solve a frame or truss model.
 pub fn solve(m: &Model) -> Result<FrameResults, String> {
-    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings, fixed, .. } = assemble(m, 1)?;
+    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings, fixed, parts: assembled_parts, spans: assembled_spans, .. } = assemble(m, 1)?;
     let nn = m.nodes.len();
     // The size of the loads, for judging the equilibrium check: forces added up without their
     // signs, and moments about the origin likewise (so loads that cancel still give a scale).
@@ -503,7 +536,8 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     // With only settlements the reactions balance each other: judge them by their own size.
     let scale = if scale[0] == 0.0 && settles { let s: f64 = reactions.iter().map(|r| r.fx.abs() + r.fy.abs()).sum(); [s, s * reach + reactions.iter().map(|r| r.m.abs()).sum::<f64>()] } else { scale };
     let disp: Vec<[f64; 3]> = (0..nn).map(|i| [u[3 * i], u[3 * i + 1], if free_rot[i] || !has_beam[i] { 0.0 } else { u[3 * i + 2] }]).collect();
-    let members = elems.iter().map(|e| member_result(e, &u)).collect();
+    let parts_all = &assembled_parts;
+    let members = elems.iter().zip(&assembled_spans).map(|(e, sp)| stitch(e, &parts_all[sp.clone()], &u)).collect();
     let span = m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(1.0);
     let umax = disp.iter().map(|d| d[0].hypot(d[1])).fold(0.0, f64::max);
     if umax > 0.1 * span {

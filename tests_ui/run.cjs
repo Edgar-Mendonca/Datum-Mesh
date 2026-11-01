@@ -572,6 +572,12 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   // 0.4.2: dynamics, on the frame in an earthquake.
   await open("quake"); await p.waitForTimeout(250);
   const qm = fix.quake.m, qs = qm.steps[0];
+  check("rigid end zones are drawn thick at the beams' ends", (await p.$$(".dsvg line.rigidz")).length === 2 * qm.members.filter(b => b.offset).length && qm.members.some(b => b.offset));
+  const qb = qm.members.find(b => b.offset);
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(80);
+  await p.click(`.dsvg [data-id="${qb.id}"] line >> nth=0`, { force: true }).catch(() => {}); await p.waitForTimeout(150);
+  check("a beam's Inspector has its rigid ends", (await p.textContent(".insp")).includes("Rigid end at the start") && (await p.textContent(".insp")).includes("Rigid end at the end"));
+  await p.keyboard.press("Escape");
   await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   check("the steps dialog shows a spectrum step's settings: direction, damping, modes, combination and the spectrum", (await p.$$(".dlg .dynset")).length === 1 && (await p.$eval(".dlg .dynset textarea", t => t.value)).split("\n").length === qs.spectrum.length && (await p.textContent(".dlg .dynset")).includes("Combined by"));
   await p.fill(".dlg .dynset input.fac >> nth=1", "8"); await p.keyboard.press("Tab"); await p.waitForTimeout(150);

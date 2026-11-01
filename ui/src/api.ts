@@ -14,7 +14,7 @@ export const isSolidA = (a?: string) => a === "solid" || a === "solidheat";
 /** Frames and trusses: in the plane, or in space (0.2.4). */
 export const isFrame = (a?: Analysis) => a === undefined || a === "frame" || a === "space";
 export interface Node { id: number; x: number; y: number; z?: number }
-export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number; roll?: number; hinge?: [boolean, boolean]; only?: "both" | "tension" | "compression" }
+export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number; roll?: number; hinge?: [boolean, boolean]; only?: "both" | "tension" | "compression"; offset?: [number, number] }
 export type SectionShape =
   | { kind: "rect"; b: number; h: number } | { kind: "circle"; d: number } | { kind: "tube"; d: number; t: number } | { kind: "box"; b: number; h: number; t: number }
   | { kind: "i"; h: number; b: number; tw: number; tf: number; r?: number } | { kind: "channel"; h: number; b: number; tw: number; tf: number }

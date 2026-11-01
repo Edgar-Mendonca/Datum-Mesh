@@ -129,6 +129,9 @@ struct Elem {
     /// Second order (0.4.3): the axial force (tension positive) whose geometric stiffness is
     /// in the member's stiffness; 0 for a first-order solve.
     pn: f64,
+    /// Rigid zones at the ends (m, 0.4.5), and whether this piece is one.
+    off: [f64; 2],
+    rigid: bool,
 }
 
 /// The condensation of a hinged beam (0.3.3), or None.
@@ -393,18 +396,44 @@ fn cut(e: &Elem, at: &[(f64, usize)]) -> Vec<Elem> {
 /// Cut a beam into `pieces` equal elements, inner nodes numbered from `first`; its distributed
 /// load is shared out along the pieces. A truss bar is not cut.
 fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
-    if e.kind != MemberKind::Beam || pieces <= 1 {
-        return vec![e.clone()];
+    // The cuts, as fractions of the length: the rigid zones' ends (0.4.5), and equal pieces of
+    // the flexible part between them.
+    let (oa, ob) = if e.kind == MemberKind::Beam { (e.off[0] / e.l, e.off[1] / e.l) } else { (0.0, 0.0) };
+    let n = if e.kind == MemberKind::Beam { pieces.max(1) } else { 1 };
+    let mut cuts = vec![0.0];
+    if oa > 0.0 {
+        cuts.push(oa);
+    }
+    for k in 1..n {
+        cuts.push(oa + (1.0 - oa - ob) * k as f64 / n as f64);
+    }
+    if ob > 0.0 {
+        cuts.push(1.0 - ob);
+    }
+    cuts.push(1.0);
+    if cuts.len() == 2 {
+        return vec![Elem { off: [0.0; 2], ..e.clone() }];
     }
     let p = e.p;
-    (0..pieces)
+    let last = cuts.len() - 2;
+    let (fa, fb) = (usize::from(oa > 0.0), last - usize::from(ob > 0.0));
+    (0..=last)
         .map(|k| {
-            let (s0, s1) = (k as f64 / pieces as f64, (k + 1) as f64 / pieces as f64);
+            let (s0, s1) = (cuts[k], cuts[k + 1]);
             let mut c = e.clone();
             c.a = if k == 0 { e.a } else { first + k - 1 };
-            c.b = if k == pieces - 1 { e.b } else { first + k };
-            c.l = e.l / pieces as f64;
-            c.hinge = [k == 0 && e.hinge[0], k == pieces - 1 && e.hinge[1]];
+            c.b = if k == last { e.b } else { first + k };
+            c.l = e.l * (s1 - s0);
+            c.off = [0.0; 2];
+            c.rigid = (k == 0 && oa > 0.0) || (k == last && ob > 0.0);
+            if c.rigid {
+                c.ea *= 1e5;
+                c.eiz *= 1e5;
+                c.eiy *= 1e5;
+                c.gj *= 1e5;
+                c.at = 0.0;
+            }
+            c.hinge = [k == fa && e.hinge[0], k == fb && e.hinge[1]];
             for j in 0..3 {
                 let (q1, q2) = (p[2 * j], p[2 * j + 1]);
                 c.p[2 * j] = q1 + (q2 - q1) * s0;
@@ -434,7 +463,7 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
         let gm = mat.e / (2.0 * (1.0 + mat.nu));
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2], pn: 0.0 };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2], pn: 0.0, off: mb.offset, rigid: false };
         let w = to_local(&e, [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1], mat.rho * pr.a * g[2]]);
         e.p = [w[0], w[0], w[1], w[1], w[2], w[2]];
         elems.push(e);
@@ -492,10 +521,15 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             parts.extend(pcs);
             continue;
         }
+        if e.kind == MemberKind::Beam && !(e.off[0] >= 0.0 && e.off[1] >= 0.0 && e.off[0] + e.off[1] < e.l) {
+            return Err(format!("Member {}'s rigid ends are as long as the member: make them shorter.", m.members.iter().position(|b| b.id == e.id).map_or(0, |k| k + 1)));
+        }
         let pcs = split(e, pieces, pos.len());
         let (a, b) = (pos[e.a], pos[e.b]);
-        for k in 1..pcs.len() {
-            let t = k as f64 / pcs.len() as f64;
+        let mut along = 0.0;
+        for pc in &pcs[..pcs.len() - 1] {
+            along += pc.l;
+            let t = along / e.l;
             pos.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
         }
         spans.push(parts.len()..parts.len() + pcs.len());

@@ -324,7 +324,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let a = node_at(m, from, created);
             let b = node_at(m, to, created);
             let id = fresh(m);
-            m.members.push(Member { id, a, b, kind, section, material, roll: 0.0, hinge: [false; 2], only: Default::default() });
+            m.members.push(Member { id, a, b, kind, section, material, roll: 0.0, hinge: [false; 2], only: Default::default(), offset: [0.0; 2] });
             created.push(id);
         }
         Op::JoinCrossings { ids } => {
@@ -423,7 +423,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                         let (a, c) = (prev[&n], now[&n]);
                         if a != c && !m.members.iter().any(|x| (x.a == a && x.b == c) || (x.a == c && x.b == a)) {
                             let id = fresh(m);
-                            m.members.push(Member { id, a, b: c, kind, section: sec, material: mat, roll: 0.0, hinge: [false; 2], only: Default::default() });
+                            m.members.push(Member { id, a, b: c, kind, section: sec, material: mat, roll: 0.0, hinge: [false; 2], only: Default::default(), offset: [0.0; 2] });
                             created.push(id);
                         }
                     }
@@ -948,7 +948,8 @@ fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
         m.members[i].b = n;
         // A hinge at the far end goes with the far piece.
         m.members[i].hinge[1] = false;
-        m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material, roll: b.roll, hinge: [false, b.hinge[1]], only: b.only });
+        m.members[i].offset[1] = 0.0;
+        m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material, roll: b.roll, hinge: [false, b.hinge[1]], only: b.only, offset: [0.0, b.offset[1]] });
         let mut extra = vec![];
         for l in m.loads.iter_mut() {
             if let (Target::Member { id }, LoadKind::Dist { w1, w2, dir }) = (&l.at, &mut l.kind) {

@@ -88,6 +88,14 @@ pub struct Member {
     /// resting on a bearing): it drops out of the solve when it would carry the other kind.
     #[serde(default, skip_serializing_if = "Only::is_both")]
     pub only: Only,
+    /// Beams (0.4.5): rigid zones at the start and end (m), where the member runs inside a deep
+    /// column or beam; the member bends only between them.
+    #[serde(default, skip_serializing_if = "is_zero2")]
+    pub offset: [f64; 2],
+}
+
+fn is_zero2(v: &[f64; 2]) -> bool {
+    v[0] == 0.0 && v[1] == 0.0
 }
 
 /// What axial force a member can carry (0.4.3).

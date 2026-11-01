@@ -25,7 +25,7 @@
     }
   ],
   "highlights": [
-    "Rigid floors for 3D buildings: floors sway and twist as one, in static, second-order and earthquake analysis",
+    "Rigid floors for 3D buildings and rigid end zones at joints, in static, second-order and earthquake analysis",
     "Tension-only and compression-only members, support settlement, and second-order (P-delta) analysis of 3D frames",
     "Dynamics for structures: response spectrum (CQC or SRSS) and time history (Newmark) for frames and plates, with point masses",
     "Plates and shells: slabs, walls and panels drawn on the planes of a 3D frame, joined to its beams, solved for stress, deflection and vibration",
@@ -59,20 +59,20 @@
   ],
   "roadmap": [
     {
-      "v": "0.4.5",
-      "title": "Structures, finishing touches",
+      "v": "0.5",
+      "title": "Nonlinear solids",
       "when": "Next",
       "items": [
-        "Member end offsets (rigid zones at joints)",
+        "Plasticity and rubber",
+        "Tetrahedra and mesh import",
         "Large rotations in 3D frames"
       ]
     },
     {
-      "v": "0.5–0.7",
-      "title": "Nonlinear and dynamic solids",
+      "v": "0.6–0.7",
+      "title": "Dynamic solids and contact",
       "when": "Later",
       "items": [
-        "Plasticity and rubber, tetrahedra, mesh import",
         "Implicit and explicit dynamics, transient heat",
         "Contact"
       ]

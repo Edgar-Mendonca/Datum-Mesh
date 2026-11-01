@@ -942,3 +942,5 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 /* Tension-only and compression-only members (0.4.3) */
 .dsvg .mem.slack line { stroke-dasharray: 6 5; opacity: 0.55; }
 .la.settle { stroke-width: 2; }
+/* Rigid end zones (0.4.5) */
+.dsvg .mem line.rigidz { stroke-width: 7; opacity: 0.55; stroke-linecap: butt; }

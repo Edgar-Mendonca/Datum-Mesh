@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.5 — 2026-11-01
+
+Rigid end zones at joints.
+
+**Member end offsets**
+- Inspector › **Rigid end at the start / end**: the length of a beam inside a deep column (or of a column inside a deep beam) where it cannot bend. The member bends only between its rigid zones, which are drawn thick; a hinge sits at the face of the joint. They act in every solve: static, second order, large deflection, natural frequencies, buckling and dynamics, plane and 3D.
+- The frame in an earthquake now has rigid ends of half a column's depth on its beams.
+
+**Fixes**
+- Time histories keep their balance check sharp on frames with very stiff parts (rigid zones, rigid floors): each step is refined with the same factors.
+
+**Trust**
+- Help › Verification: 188 checks, all passing. New in benchmark 24: a cantilever with a rigid zone at its root (tip deflection over its flexible length, within 0.001 %; root moment exact) and a 3D beam fixed at both ends with rigid zones under a uniform load (within 0.001 %, balanced).
+
 ## 0.4.4 — 2026-11-01
 
 Rigid floors for buildings.

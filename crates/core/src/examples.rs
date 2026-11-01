@@ -161,7 +161,7 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             d.apply(Op::Batch(ops))?;
         }
         "quake" => {
-            d.m.notes = "Three storeys of 3.5 m, one bay of 6 m: HEB 300 columns fixed at the base, IPE 400 beams, rigid joints. Each floor carries 40 t (20 t at each end of its beam). One response spectrum step along x, 5 % damping, 6 modes combined by CQC; the spectrum rises to a plateau of 7.36 m/s² from 0.15 to 0.5 s and falls as 1/T after (an example shape: use your own code's).".into();
+            d.m.notes = "Three storeys of 3.5 m, one bay of 6 m: HEB 300 columns fixed at the base, IPE 400 beams, rigid joints, the beams rigid for 0.15 m at each end (half the columns' depth). Each floor carries 40 t (20 t at each end of its beam). One response spectrum step along x, 5 % damping, 6 modes combined by CQC; the spectrum rises to a plateau of 7.36 m/s² from 0.15 to 0.5 s and falls as 1/T after (an example shape: use your own code's).".into();
             let sec = |d: &mut Doc, name: &str| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Section(crate::model::Section { id: 0, name: name.into(), shape: crate::steel::find(name).ok_or("table")?.shape }) })?[0]) };
             let (col, beam) = (sec(d, "HEB 300")?, sec(d, "IPE 400")?);
             d.apply(Op::Delete { ids: vec![d.m.sections[0].id] })?;
@@ -172,6 +172,9 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 }
                 d.apply(Op::AddMember { from: [0.0, y1], to: [6.0, y1], kind: MemberKind::Beam, section: Some(beam), material: None, z: [0.0; 2] })?;
             }
+            // The beams are rigid for half a column's depth at each end (0.15 m): end offsets.
+            let beams: Vec<crate::model::Member> = d.m.members.iter().filter(|b| b.section == beam).cloned().collect();
+            d.apply(Op::Batch(beams.into_iter().map(|b| Op::Set { item: Item::Member(crate::model::Member { offset: [0.15, 0.15], ..b }) }).collect()))?;
             let mut ops = vec![sup(node(d, 0.0, 0.0), SupportKind::Fixed), sup(node(d, 6.0, 0.0), SupportKind::Fixed)];
             for k in 1..=3 {
                 for x in [0.0, 6.0] {

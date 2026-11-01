@@ -148,6 +148,10 @@ const MemberInsp = (p: { b: Member; m: Model }) => {
       <Show when={p.b.kind === "beam"}><div class="cks">
         <label class="chk" title="The member carries no bending moment at its start (a pinned connection)"><input type="checkbox" checked={p.b.hinge?.[0] ?? false} onChange={e => set("Member", { ...p.b, hinge: [e.currentTarget.checked, p.b.hinge?.[1] ?? false] })} />Hinge at the start</label>
         <label class="chk" title="The member carries no bending moment at its end (a pinned connection)"><input type="checkbox" checked={p.b.hinge?.[1] ?? false} onChange={e => set("Member", { ...p.b, hinge: [p.b.hinge?.[0] ?? false, e.currentTarget.checked] })} />Hinge at the end</label></div></Show>
+      <Show when={p.b.kind === "beam"}>
+        <NumField label="Rigid end at the start" q="len" v={p.b.offset?.[0] ?? 0} min={0} set={v => v >= 0 && set("Member", { ...p.b, offset: [v, p.b.offset?.[1] ?? 0] })} hint="The length inside a deep column or beam at its start, where it does not bend (an end offset); 0 for none." />
+        <NumField label="Rigid end at the end" q="len" v={p.b.offset?.[1] ?? 0} min={0} set={v => v >= 0 && set("Member", { ...p.b, offset: [p.b.offset?.[0] ?? 0, v] })} />
+      </Show>
       <Show when={sp() && p.b.kind === "beam"}><div class="iprow"><label>Roll<span class="unit">°</span></label><input class="mono" value={num((p.b.roll ?? 0) * 180 / Math.PI)} onChange={numIn(v => set("Member", { ...p.b, roll: v * Math.PI / 180 }), () => num((p.b.roll ?? 0) * 180 / Math.PI))} /><span class="hint">Turns the section about the member. At 0 the depth h stands upright, or lies along z for a column.</span></div></Show>
       <table class="vmini"><tbody>
         <tr><td>Length</td><td class="r">{fmt("len", len())}</td></tr>

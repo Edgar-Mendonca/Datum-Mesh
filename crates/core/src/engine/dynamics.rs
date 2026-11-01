@@ -216,7 +216,17 @@ pub fn history<S: Structure>(s: &S, damping: (f64, f64), dt: f64, steps: usize, 
         let cterm: Vec<f64> = (0..n).map(|i| c1 * u[i] + v[i]).collect();
         let (mm, cc) = (mul(s.mass(), &mterm), cmul(&cterm));
         let rhs: Vec<f64> = (0..n).map(|i| f[i] + mm[i] + cc[i]).collect();
-        let un = fac.solve(&rhs);
+        let mut un = fac.solve(&rhs);
+        // One step of refinement with the same factors: stiff parts (rigid end zones, rigid
+        // floors' links) cost digits that the balance check would show.
+        for _ in 0..2 {
+            let (ku, mu) = (s.k().mul(&un), mul(s.mass(), &un));
+            let res: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { rhs[i] - (1.0 + c1 * beta) * ku[i] - (c0 + c1 * alpha) * mu[i] }).collect();
+            let fix = fac.solve(&res);
+            for i in 0..n {
+                un[i] += fix[i];
+            }
+        }
         let an: Vec<f64> = (0..n).map(|i| c0 * (un[i] - u[i]) - 4.0 / dt * v[i] - a[i]).collect();
         let vn: Vec<f64> = (0..n).map(|i| v[i] + dt / 2.0 * (a[i] + an[i])).collect();
         u = un;

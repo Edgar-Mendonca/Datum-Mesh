@@ -1640,6 +1640,43 @@ fn details() -> Vec<Check> {
         v.push(check(24, name, "Movement of the opposite corner, H/4k − Ha²/4Kθ", "len", h / (4.0 * k) - h * a * a / (4.0 * kt), r.disp[k3][0], 1e-5, src));
         v.push(check(24, name, "Balance of the loads and reactions (the floor's ties are internal)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics"));
     }
+    // Member end offsets (0.4.5): rigid zones bend nothing, so a member bends as if it were
+    // only its flexible length.
+    {
+        let (l, o, pp) = (4.0f64, 0.5f64, 5e3);
+        let mut d = frame(200e9, rect.clone());
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        d.m.members[0].offset = [o, 0.0];
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -pp, fz: 0.0 });
+        let Ok(crate::Results::Frame(r)) = crate::solve(&d.m) else { panic!("offset cantilever") };
+        let lf = l - o;
+        let src = "Beam theory over the flexible length (the rigid zone, 10⁵ times stiffer, bends about 10⁻⁵ as much)";
+        v.push(check(24, "Cantilever with a 0.5 m rigid zone at its root", "Tip deflection P(L − o)³/3EI", "len", pp * lf.powi(3) / (3.0 * ei), -r.disp[1][1], 2e-5, src));
+        v.push(check(24, "Cantilever with a 0.5 m rigid zone at its root", "Root moment PL (the whole lever)", "moment", pp * l, r.reactions[0].m.abs(), 1e-9, "Statics"));
+        // 3D: a beam fixed at both ends with 0.4 m rigid zones, a uniform load: it deflects as a
+        // fixed-ended beam of the flexible length, wLf⁴/384EI.
+        let (l, o, w) = (6.0f64, 0.4f64, -10e3);
+        let mut d = frame(200e9, rect.clone());
+        d.m.analysis = Analysis::Space;
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l / 2.0, 0.0], MemberKind::Beam);
+        member(&mut d, [l / 2.0, 0.0], [l, 0.0], MemberKind::Beam);
+        d.m.members[0].offset = [o, 0.0];
+        d.m.members[1].offset = [0.0, o];
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        support(&mut d, l, 0.0, SupportKind::Fixed);
+        for id in d.m.members.iter().map(|b| b.id).collect::<Vec<_>>() {
+            load(&mut d, Target::Member { id }, LoadKind::Dist { w1: w, w2: w, dir: Dir::Y });
+        }
+        let Ok(crate::Results::Space(r)) = crate::solve(&d.m) else { panic!("offset beam") };
+        let mid = d.m.nodes.iter().position(|n| (n.x - l / 2.0).abs() < 1e-9).expect("mid");
+        let lf = l - 2.0 * o;
+        v.push(check(24, "3D beam fixed at both ends, 0.4 m rigid zones, uniform load", "Mid-span deflection wLf⁴/384EI", "len", w.abs() * lf.powi(4) / (384.0 * ei), -r.disp[mid][1], 2e-5, src));
+        v.push(check(24, "3D beam fixed at both ends, 0.4 m rigid zones, uniform load", "Balance of the loads and reactions", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics"));
+    }
     v
 }
 
@@ -1764,7 +1801,7 @@ pub fn building(nx: usize, ny: usize, nz: usize) -> Model {
     }
     let mut next = 100 + ((ny + 1) * (nz + 1) * (nx + 1)) as u32;
     let mut member = |m: &mut Model, a: u32, b: u32| {
-        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0, hinge: [false; 2], only: Default::default() });
+        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0, hinge: [false; 2], only: Default::default(), offset: [0.0; 2] });
         next += 1;
     };
     for j in 0..=ny {
@@ -1833,6 +1870,7 @@ pub fn timings() -> Vec<Timing> {
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
     out
 }
+
 
 
 
