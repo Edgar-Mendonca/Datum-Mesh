@@ -27,8 +27,17 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
             None => crate::solve(&cases::select(m, which)?),
         };
     }
+    if m.analysis == Analysis::Space {
+        // 3D frames (0.4.3): second order (P-delta) for the last step's load; no arc length.
+        if m.steps.iter().any(|s| s.kind == StepKind::Arc) {
+            return Err("Following a 3D frame past its limit load (arc length) comes later; use a large-deflection step (second order, P-delta) for 3D frames.".into());
+        }
+        let st = m.steps.last().expect("steps");
+        let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+        return crate::space::pdelta(&mm, st.pieces as usize).map(Results::Space);
+    }
     if m.analysis != Analysis::Frame {
-        return Err("Large-deflection steps are for plane frames in this release; 3D frames and solids come later. Make the steps linear (Home › Steps).".into());
+        return Err("Large-deflection steps are for frames in this release; solids come later. Make the steps linear (Home › Steps).".into());
     }
     if m.steps.iter().any(|s| s.kind == StepKind::Linear) {
         return Err("A linear step cannot follow or lead a large-deflection one: make every step large-deflection, or every step linear (Home › Steps).".into());
@@ -47,6 +56,12 @@ fn frame(m: &Model, which: Option<Which>) -> Result<Results, String> {
     let (c, _) = &loads[0];
     let n = c.asm.sys.n;
     let mut warnings = c.asm.warnings.clone();
+    if m.members.iter().any(|b| b.only != crate::model::Only::Both) {
+        warnings.push("Tension-only and compression-only members act both ways in large-deflection steps in this release.".into());
+    }
+    if m.loads.iter().any(|l| matches!(l.kind, LoadKind::Settlement { .. })) {
+        warnings.push("Support settlements are left out of large-deflection steps in this release.".into());
+    }
     let mut u = vec![0.0; n];
     let mut base = vec![0.0; n];
     let mut curve = Curve::default();

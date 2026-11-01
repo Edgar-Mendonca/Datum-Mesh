@@ -939,3 +939,6 @@ table.steps select { max-width: 13em; }
 .dyngrid .unit { color: var(--muted); }
 label.tbl2 { display: block; font-size: 12px; color: var(--text2); }
 label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 12px; }
+/* Tension-only and compression-only members (0.4.3) */
+.dsvg .mem.slack line { stroke-dasharray: 6 5; opacity: 0.55; }
+.la.settle { stroke-width: 2; }

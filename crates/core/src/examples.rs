@@ -23,6 +23,7 @@ pub fn list() -> Vec<Example> {
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("braced", "Braced frame", "A two-storey steel frame: HEB columns, IPE beams pinned at their ends, one braced bay, and dead, imposed and wind load cases with combinations.", Analysis::Frame),
+        e("xbrace", "Tension-only bracing", "A two-storey frame braced with crossed rods that only pull: under wind the rods being squeezed go slack and the others carry the push; one support has settled 10 mm.", Analysis::Frame),
         e("quake", "Frame in an earthquake", "A three-storey steel frame with its floors' masses, shaken sideways by a design response spectrum: the modes, their share of the mass, and the peak forces combined by CQC (Results › Dynamics).", Analysis::Frame),
         e("lee", "Snap-through frame", "Lee's frame: two slender members at right angles, pinned at their far ends, loaded near the knee. Solved past its limit load by arc length: it snaps through (Results › Load–Deflection).", Analysis::Frame),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
@@ -127,6 +128,35 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 ops.push(load(Target::Node { id: at(d, [0.0, h, z]) }, LoadKind::Force { fx: 4e3, fy: 0.0, fz: 0.0 }));
             }
             ops.push(load(Target::Body, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }));
+            d.apply(Op::Batch(ops))?;
+        }
+        "xbrace" => {
+            d.m.notes = "Two storeys of 3.5 m, one bay of 5 m: HEB 200 columns pinned at the base, IPE 300 beams pinned to them, so only the bracing keeps it standing. Each storey is braced by two crossed 20 mm rods that only pull (Inspector › Carries). Wind 20 kN and 10 kN from the left at the floors, 15 kN/m down on each beam; the right support has settled 10 mm. Solve: the rods running down to the right carry the wind; the others are slack, shown dashed.".into();
+            let sec = |d: &mut Doc, name: &str, shape: crate::model::SectionShape| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Section(crate::model::Section { id: 0, name: name.into(), shape }) })?[0]) };
+            let col = sec(d, "HEB 200", crate::steel::find("HEB 200").ok_or("table")?.shape)?;
+            let beam = sec(d, "IPE 300", crate::steel::find("IPE 300").ok_or("table")?.shape)?;
+            let rod = sec(d, "Round bar 20", crate::model::SectionShape::Circle { d: 0.02 })?;
+            d.apply(Op::Delete { ids: vec![d.m.sections[0].id] })?;
+            let add = |d: &mut Doc, a: [f64; 2], b: [f64; 2], kind: MemberKind, section: u32| d.apply(Op::AddMember { from: a, to: b, kind, section: Some(section), material: None, z: [0.0; 2] }).map(|_| ());
+            for (y0, y1) in [(0.0, 3.5), (3.5, 7.0)] {
+                add(d, [0.0, y0], [0.0, y1], MemberKind::Beam, col)?;
+                add(d, [5.0, y0], [5.0, y1], MemberKind::Beam, col)?;
+                add(d, [0.0, y1], [5.0, y1], MemberKind::Beam, beam)?;
+                add(d, [0.0, y0], [5.0, y1], MemberKind::Truss, rod)?;
+                add(d, [5.0, y0], [0.0, y1], MemberKind::Truss, rod)?;
+            }
+            let ms: Vec<crate::model::Member> = d.m.members.iter().filter(|b| b.section != col).cloned().collect();
+            d.apply(Op::Batch(ms.into_iter().map(|b| {
+                let (hinge, only) = if b.section == beam { ([true, true], crate::model::Only::Both) } else { (b.hinge, crate::model::Only::Tension) };
+                Op::Set { item: Item::Member(crate::model::Member { hinge, only, ..b }) }
+            }).collect()))?;
+            let mut ops = vec![sup(node(d, 0.0, 0.0), SupportKind::Pinned), sup(node(d, 5.0, 0.0), SupportKind::Pinned)];
+            ops.push(load(node(d, 0.0, 3.5), LoadKind::Force { fx: 20e3, fy: 0.0, fz: 0.0 }));
+            ops.push(load(node(d, 0.0, 7.0), LoadKind::Force { fx: 10e3, fy: 0.0, fz: 0.0 }));
+            for y in [3.5, 7.0] {
+                ops.push(load(member(d, [0.0, y], [5.0, y]), LoadKind::Dist { w1: -15e3, w2: -15e3, dir: Dir::Y }));
+            }
+            ops.push(load(node(d, 5.0, 0.0), LoadKind::Settlement { dx: 0.0, dy: -0.01, dz: 0.0 }));
             d.apply(Op::Batch(ops))?;
         }
         "quake" => {

@@ -70,6 +70,9 @@ pub struct FrameResults {
     /// A dynamic solution (0.4.2): the modes of a spectrum, or a time history's record.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<crate::engine::dynamics::DynInfo>,
+    /// Tension-only or compression-only members slack under these loads (0.4.3).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub slack: Vec<u32>,
 }
 
 impl FrameResults {
@@ -279,6 +282,8 @@ pub(crate) struct Assembly {
     /// Every node's place (inner nodes of cut beams too), and the springs: (unknown, stiffness).
     pub pos: Vec<[f64; 2]>,
     pub springs: Vec<(usize, f64)>,
+    /// Prescribed movements at held unknowns (support settlements, 0.4.3).
+    pub fixed: Vec<f64>,
 }
 
 pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
@@ -372,7 +377,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         match (&l.kind, &l.at) {
             (LoadKind::Force { fx, fy, .. }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, 0.0]),
             (LoadKind::Moment { m: mz, mx: 0.0, my: 0.0 }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. } | LoadKind::Settlement { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -433,22 +438,45 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             held[3 * i + 1] = true;
         }
     }
-    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, warnings, pos, springs })
+    // Support settlements (0.4.3): the held directions of a node move by the amount given.
+    let mut fixed = vec![0.0; 3 * nt];
+    for l in &m.loads {
+        if let (LoadKind::Settlement { dx, dy, dz }, Target::Node { id }) = (&l.kind, &l.at) {
+            let i = idx[id];
+            let mut used = false;
+            for (k, v) in [(0, *dx), (1, *dy)] {
+                if v != 0.0 {
+                    if held[3 * i + k] && has_member[i] {
+                        fixed[3 * i + k] += v;
+                        used = true;
+                    } else {
+                        warnings.push(format!("A settlement at node {} moves it along {} where no support holds it; that part was left out.", i + 1, ["x", "y"][k]));
+                    }
+                }
+            }
+            if *dz != 0.0 {
+                warnings.push("A settlement along z is out of the plane and was left out: solve as a 3D frame.".into());
+            }
+            let _ = used;
+        }
+    }
+    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, applied, warnings, pos, springs, fixed })
 }
 
 /// Solve a frame or truss model.
 pub fn solve(m: &Model) -> Result<FrameResults, String> {
-    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings, .. } = assemble(m, 1)?;
+    let Assembly { sys, held, elems, free_rot, has_member, has_beam, applied, mut warnings, fixed, .. } = assemble(m, 1)?;
     let nn = m.nodes.len();
     // The size of the loads, for judging the equilibrium check: forces added up without their
     // signs, and moments about the origin likewise (so loads that cancel still give a scale).
     let reach = m.nodes.iter().map(|n| n.x.hypot(n.y)).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
     let fscale: f64 = (0..nn).map(|i| sys.f[3 * i].abs() + sys.f[3 * i + 1].abs()).sum();
     let scale = [fscale, fscale * reach + (0..nn).map(|i| sys.f[3 * i + 2].abs()).sum::<f64>()];
-    if scale[0] == 0.0 && scale[1] == 0.0 {
+    let settles = fixed.iter().any(|v| *v != 0.0);
+    if scale[0] == 0.0 && scale[1] == 0.0 && !settles {
         warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
     }
-    let (u, stats) = sys.solve(&held, &vec![0.0; 3 * nn])?;
+    let (u, stats) = sys.solve(&held, &fixed)?;
     // Reactions: K u − f at the held unknowns, and the spring forces.
     let ku = sys.mul(&u);
     let mut reactions = vec![];
@@ -472,6 +500,8 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
             reacted[2] += r[2] + n.x * r[1] - n.y * r[0];
         }
     }
+    // With only settlements the reactions balance each other: judge them by their own size.
+    let scale = if scale[0] == 0.0 && settles { let s: f64 = reactions.iter().map(|r| r.fx.abs() + r.fy.abs()).sum(); [s, s * reach + reactions.iter().map(|r| r.m.abs()).sum::<f64>()] } else { scale };
     let disp: Vec<[f64; 3]> = (0..nn).map(|i| [u[3 * i], u[3 * i + 1], if free_rot[i] || !has_beam[i] { 0.0 } else { u[3 * i + 2] }]).collect();
     let members = elems.iter().map(|e| member_result(e, &u)).collect();
     let span = m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(1.0);
@@ -479,7 +509,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     if umax > 0.1 * span {
         warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span * 100.0));
     }
-    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, dynamic: None };
+    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, dynamic: None, slack: vec![] };
     r.check_balance();
     Ok(r)
 }
@@ -846,7 +876,7 @@ impl crate::engine::dynamics::Structure for Dyn {
             let pcs: Vec<Elem> = asm.parts[sp.clone()].iter().map(|x| Elem { p: x.p.map(|v| v * p), at: x.at * p, ..x.clone() }).collect();
             stitch(e, &pcs, u)
         }).collect();
-        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats: Stats { equations: asm.held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings: vec![], path: None, dynamic: None };
+        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats: Stats { equations: asm.held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings: vec![], path: None, dynamic: None, slack: vec![] };
         r.check_balance();
         r
     }

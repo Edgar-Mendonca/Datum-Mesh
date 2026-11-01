@@ -90,7 +90,9 @@ pub fn buckling_for(m: &model::Model, count: usize, which: Option<cases::Which>)
 /// Solve the model as its analysis says: frames, plane stress or strain, or heat conduction.
 pub fn solve(m: &model::Model) -> Result<Results, String> {
     match m.analysis {
+        model::Analysis::Frame if m.members.iter().any(|b| b.only != model::Only::Both) => frames::only::frame(m).map(Results::Frame),
         model::Analysis::Frame => frame::solve(m).map(Results::Frame),
+        model::Analysis::Space if m.members.iter().any(|b| b.only != model::Only::Both) => frames::only::space(m).map(Results::Space),
         model::Analysis::Stress | model::Analysis::Strain | model::Analysis::Axi => plane::solve(m).map(Results::Plane),
         model::Analysis::Heat => heat::solve(m).map(Results::Heat),
         model::Analysis::Space => space::solve(m).map(Results::Space),

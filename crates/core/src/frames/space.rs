@@ -71,6 +71,9 @@ pub struct SpaceResults {
     /// A dynamic solution (0.4.2).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<crate::engine::dynamics::DynInfo>,
+    /// Tension-only or compression-only members slack under these loads (0.4.3).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub slack: Vec<u32>,
 }
 
 /// Plate results (0.4.1): the mesh in 3D, the movements of its nodes and fields averaged at them:
@@ -123,6 +126,9 @@ struct Elem {
     /// except where the node has no beam holding it rigidly (`twist`: a ball joint there).
     hinge: [bool; 2],
     twist: [bool; 2],
+    /// Second order (0.4.3): the axial force (tension positive) whose geometric stiffness is
+    /// in the member's stiffness; 0 for a first-order solve.
+    pn: f64,
 }
 
 /// The condensation of a hinged beam (0.3.3), or None.
@@ -209,7 +215,77 @@ fn k_local(e: &Elem) -> [[f64; 12]; 12] {
         let (k1, k2, k3, k4) = (12.0 * ei / l.powi(3), 6.0 * ei / l.powi(2), 4.0 * ei / l, 2.0 * ei / l);
         put(&[2, 4, 8, 10], &[&[k1, -k2, -k1, -k2], &[-k2, k3, k2, k4], &[-k1, k2, k1, k2], &[-k2, k4, k2, k3]]);
     }
+    if e.pn != 0.0 {
+        let g = kg_local(e, e.pn);
+        for i in 0..12 {
+            for j in 0..12 {
+                k[i][j] += g[i][j];
+            }
+        }
+    }
     k
+}
+
+/// Second-order (P-delta) solve of a 3D frame (0.4.3): beams cut into `pieces`, each piece's
+/// stiffness with the geometric stiffness of its axial force, the axial forces found again from
+/// the movements and the solve repeated until they settle (the P-Δ of the frame's sway and the
+/// P-δ of each member's bow). Linear in the material, small rotations.
+pub fn pdelta(m: &Model, pieces: usize) -> Result<SpaceResults, String> {
+    let t0 = std::time::Instant::now();
+    let mut asm = assemble(m, pieces.max(1))?;
+    if !asm.shells.is_empty() {
+        asm.warnings.push("Plates are solved first-order here: their membrane forces add no geometric stiffness in this release.".into());
+    }
+    let base = asm.sys.k.clone();
+    let mut u = asm.sys.solve(&asm.held, &asm.fixed)?.0;
+    let mut its = 0;
+    let mut settled = false;
+    for it in 1..=60 {
+        its = it;
+        // Axial forces from the movements (linear stiffness), then the stiffness with them.
+        let ns: Vec<f64> = asm
+            .parts
+            .iter()
+            .map(|e| {
+                let e0 = Elem { pn: 0.0, ..e.clone() };
+                let ul = ends_of(&e0, &u, true);
+                let (k, eq) = (k_local(&e0), equivalent(&e0));
+                let end = |i: usize| (0..12).map(|j| k[i][j] * ul[j]).sum::<f64>() - eq[i];
+                (-end(0) + end(6)) / 2.0
+            })
+            .collect();
+        let mut sys = System::new(asm.sys.n);
+        sys.k = base.clone();
+        sys.f = asm.sys.f.clone();
+        for (e, n) in asm.parts.iter_mut().zip(&ns) {
+            e.pn = *n;
+            let e0 = Elem { pn: 0.0, ..e.clone() };
+            let (a, b) = (cond(e, k_local(e)), cond(&e0, k_local(&e0)));
+            let mut d = [[0.0; 12]; 12];
+            for i in 0..12 {
+                for j in 0..12 {
+                    d[i][j] = a[i][j] - b[i][j];
+                }
+            }
+            scatter(e, &d, |i, j, v| sys.add(i, j, v));
+        }
+        let un = sys.solve(&asm.held, &asm.fixed).map_err(|_| "The frame cannot carry these loads in its deflected shape: they are at or beyond its buckling load (Solve › Buckling).".to_string())?.0;
+        let du = un.iter().zip(&u).map(|(a, b)| (a - b) * (a - b)).sum::<f64>().sqrt();
+        let un2 = un.iter().map(|a| a * a).sum::<f64>().sqrt();
+        u = un;
+        asm.sys.k = sys.k;
+        if du <= 1e-10 * un2.max(f64::MIN_POSITIVE) {
+            settled = true;
+            break;
+        }
+        asm.sys.k = base.clone();
+    }
+    if !settled {
+        asm.warnings.push(format!("The second-order solve did not settle in {its} rounds: the loads are close to the frame's buckling load."));
+    }
+    let mut r = results_at(m, &asm, &u, &asm.sys.f, 1.0, true);
+    r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
+    Ok(r)
 }
 
 /// Nodal loads (local axes) equivalent to the member's distributed load and warming.
@@ -287,6 +363,8 @@ struct Assembly {
     plate_nodes: Vec<usize>,
     edge_sup: Vec<(u32, Vec<usize>)>,
     pos: Vec<[f64; 3]>,
+    /// Prescribed movements at held unknowns (support settlements, 0.4.3).
+    fixed: Vec<f64>,
 }
 
 /// Cut a member at plate nodes along it (`at`: the fraction along it and the node).
@@ -356,7 +434,7 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
         let gm = mat.e / (2.0 * (1.0 + mat.nu));
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2] };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2], pn: 0.0 };
         let w = to_local(&e, [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1], mat.rho * pr.a * g[2]]);
         e.p = [w[0], w[0], w[1], w[1], w[2], w[2]];
         elems.push(e);
@@ -507,7 +585,7 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             (LoadKind::Pressure { .. }, Target::Plate { .. }) => {}
             (LoadKind::Force { fx, fy, fz }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, *fz, 0.0, 0.0, 0.0]),
             (LoadKind::Moment { m: mz, mx, my }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, 0.0, *mx, *my, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. } | LoadKind::Settlement { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -582,14 +660,29 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         }
     }
     let _ = applied;
-    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos })
+    // Support settlements (0.4.3): the held directions of a node move by the amount given.
+    let mut fixed = vec![0.0; 6 * nt];
+    for l in &m.loads {
+        if let (LoadKind::Settlement { dx, dy, dz }, Target::Node { id }) = (&l.kind, &l.at) {
+            let i = idx[id];
+            for (k, v) in [(0, *dx), (1, *dy), (2, *dz)] {
+                if v != 0.0 {
+                    if held[6 * i + k] && has_member[i] {
+                        fixed[6 * i + k] += v;
+                    } else {
+                        warnings.push(format!("A settlement at node {} moves it along {} where no support holds it; that part was left out.", i + 1, ["x", "y", "z"][k]));
+                    }
+                }
+            }
+        }
+    }
+    Ok(Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos, fixed })
 }
 
 /// Solve a 3D frame or truss model, with its plates (0.4.1).
 pub fn solve(m: &Model) -> Result<SpaceResults, String> {
     let asm = assemble(m, 1)?;
-    let n_all = asm.pos.len();
-    let (u, stats) = asm.sys.solve(&asm.held, &vec![0.0; 6 * n_all]).map_err(|e| {
+    let (u, stats) = asm.sys.solve(&asm.held, &asm.fixed).map_err(|e| {
         if asm.elems.iter().any(|e| e.kind == MemberKind::Beam) {
             format!("{e} In 3D, a beam held only by pins at its ends can spin about its own axis: fix one end, or hold its turning with a spring.")
         } else {
@@ -599,7 +692,17 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
     let mut r = results_from(m, &asm, &u, &asm.sys.f, 1.0);
     r.stats = stats;
     if r.scale[0] == 0.0 && r.scale[1] == 0.0 {
-        r.warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
+        if asm.fixed.iter().any(|v| *v != 0.0) {
+            // With only settlements the reactions balance each other: judge them by their size.
+            let s: f64 = r.reactions.iter().map(|x| x.f[..3].iter().map(|v| v.abs()).sum::<f64>()).sum();
+            let reach = asm.pos.iter().map(|q| dist3(*q, [0.0; 3])).fold(0.0, f64::max) + span(m);
+            r.scale = [s, s * reach + r.reactions.iter().map(|x| x.f[3..].iter().map(|v| v.abs()).sum::<f64>()).sum::<f64>()];
+            let fb = (0..3).map(|k| (r.applied[k] + r.reacted[k]).abs()).fold(0.0, f64::max) / s.max(f64::MIN_POSITIVE);
+            let mo = (3..6).map(|k| (r.applied[k] + r.reacted[k]).abs()).fold(0.0, f64::max) / r.scale[1].max(f64::MIN_POSITIVE);
+            r.imbalance = fb.max(mo);
+        } else {
+            r.warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
+        }
     }
     let umax = r.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()).chain(r.plates.iter().flat_map(|p| p.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()))).fold(0.0, f64::max);
     if umax > 0.1 * span(m) {
@@ -610,16 +713,23 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
 
 /// Results for movements `u` under nodal loads `f`, the members' own loads times `p`.
 fn results_from(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64) -> SpaceResults {
-    let Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos } = asm;
+    results_at(m, asm, u, f, p, false)
+}
+
+/// As `results_from`; `moved`: moments of loads and reactions about where the nodes are now
+/// (second order: the frame balances in its deflected shape).
+fn results_at(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64, moved: bool) -> SpaceResults {
+    let Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos, .. } = asm;
     let mut warnings = warnings.clone();
     let nn = m.nodes.len();
     let n_all = pos.len();
     let reach = pos.iter().map(|q| dist3(*q, [0.0; 3])).fold(0.0, f64::max) + span(m);
     let fscale: f64 = (0..n_all).map(|i| (0..3).map(|k| f[6 * i + k].abs()).sum::<f64>()).sum();
     let scale = [fscale, fscale * reach + (0..n_all).map(|i| (3..6).map(|k| f[6 * i + k].abs()).sum::<f64>()).sum::<f64>()];
+    let arm = |i: usize| if moved { [pos[i][0] + u[6 * i], pos[i][1] + u[6 * i + 1], pos[i][2] + u[6 * i + 2]] } else { pos[i] };
     let mut applied = [0.0; 6];
     for i in 0..n_all {
-        let mo = cross(pos[i], [f[6 * i], f[6 * i + 1], f[6 * i + 2]]);
+        let mo = cross(arm(i), [f[6 * i], f[6 * i + 1], f[6 * i + 2]]);
         for k in 0..3 {
             applied[k] += f[6 * i + k];
             applied[3 + k] += f[6 * i + 3 + k] + mo[k];
@@ -649,7 +759,7 @@ fn results_from(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64) -> Spac
                 }
             }
         }
-        react(r, n.at(), &mut reacted);
+        react(r, arm(i), &mut reacted);
         reactions.push(SpaceReaction { node: n.id, support: sp.id, f: r });
     }
     // A plate's edge support: the forces of every node on it, and their moments about the
@@ -670,7 +780,7 @@ fn results_from(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64) -> Spac
                     r[d] = ku[6 * k + d] - f[6 * k + d];
                 }
             }
-            react(r, pos[k], &mut reacted);
+            react(r, arm(k), &mut reacted);
             let mo = cross(sub3(pos[k], c), [r[0], r[1], r[2]]);
             for d in 0..3 {
                 tot[d] += r[d];
@@ -692,7 +802,7 @@ fn results_from(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64) -> Spac
     let fb = if scale[0] > 0.0 { (0..3).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[0] } else { 0.0 };
     let mo = if scale[1] > 0.0 { (3..6).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[1] } else { 0.0 };
     warnings.dedup();
-    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None }
+    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None, slack: vec![] }
 }
 
 fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {

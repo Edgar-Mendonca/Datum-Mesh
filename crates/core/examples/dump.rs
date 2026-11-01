@@ -50,6 +50,8 @@ fn main() {
         "lee": out("lee"),
         "slab": out("slab"),
         "quake": out("quake"),
+        "xbrace": out("xbrace"),
+        "xbrace_results": sent(&datum_core::solve(&examples::get("xbrace").unwrap()).unwrap()),
         "quake_results": sent(&datum_core::solve_for(&examples::get("quake").unwrap(), None).unwrap()),
         "quake_history": sent(&datum_core::solve_for(&{
             let mut m = examples::get("quake").unwrap();

@@ -25,6 +25,7 @@
     }
   ],
   "highlights": [
+    "Tension-only and compression-only members, support settlement, and second-order (P-delta) analysis of 3D frames",
     "Dynamics for structures: response spectrum (CQC or SRSS) and time history (Newmark) for frames and plates, with point masses",
     "Plates and shells: slabs, walls and panels drawn on the planes of a 3D frame, joined to its beams, solved for stress, deflection and vibration",
     "Frames that bend far: large deflection and second-order (P-delta) analysis in steps, followed past the limit load by arc length, with the load–deflection curve",
@@ -57,12 +58,12 @@
   ],
   "roadmap": [
     {
-      "v": "0.4.3",
-      "title": "Structures, complete",
+      "v": "0.4.4",
+      "title": "Structures, finishing touches",
       "when": "Next",
       "items": [
-        "Large deflection for 3D frames",
-        "Tension-only and compression-only members, support settlement, member offsets, rigid floors"
+        "Rigid floors (diaphragms) and member end offsets",
+        "Large rotations in 3D frames"
       ]
     },
     {

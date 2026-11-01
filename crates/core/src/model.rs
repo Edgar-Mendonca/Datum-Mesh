@@ -84,6 +84,26 @@ pub struct Member {
     /// Beams (0.3.3): a hinge at the start or end, where the member carries no bending moment.
     #[serde(default)]
     pub hinge: [bool; 2],
+    /// 0.4.3: a member that only pulls (a slender brace, a cable) or only pushes (a strut
+    /// resting on a bearing): it drops out of the solve when it would carry the other kind.
+    #[serde(default, skip_serializing_if = "Only::is_both")]
+    pub only: Only,
+}
+
+/// What axial force a member can carry (0.4.3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Only {
+    #[default]
+    Both,
+    Tension,
+    Compression,
+}
+
+impl Only {
+    pub fn is_both(&self) -> bool {
+        *self == Only::Both
+    }
 }
 
 impl Node {
@@ -485,6 +505,14 @@ pub enum LoadKind {
     /// Frames (0.4.2): a mass at a node (kg), for natural frequencies and dynamics. It is in
     /// every load case and is not scaled by combinations; it adds no weight to a static solve.
     Mass { m: f64 },
+    /// Frames (0.4.3): a support that moves by (dx, dy, dz) (m), the node held at that place in
+    /// the directions its support holds.
+    Settlement {
+        dx: f64,
+        dy: f64,
+        #[serde(default)]
+        dz: f64,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -973,6 +1001,7 @@ impl Model {
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
                 (LoadKind::Mass { m }, Target::Node { .. }) => m.is_finite() && *m >= 0.0,
+                (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 _ => return Err("That load cannot go there.".into()),
             };

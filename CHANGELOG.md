@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.4.3 — 2026-11-01
+
+Structural details: bracing that only pulls, supports that settle, and second order in 3D.
+
+**Members that only pull or only push**
+- Inspector › **Carries**: tension only (a rod, a cable, a slender brace) or compression only (a strut on a bearing). Under the loads, a member that would carry the other kind of force drops out and the frame is solved again, until nothing changes. Slack members are drawn dashed and counted under the drawing.
+- New example: a two-storey frame braced with crossed rods that only pull, under wind, with one support settled.
+
+**Support settlement**
+- Loads › **Settlement**: a support that sinks or slides by a set amount, in the directions it holds; the moments and reactions it causes are in the results. It belongs to a load case and is scaled by combinations. Plane and 3D frames.
+
+**Second order in 3D frames**
+- A large-deflection step on a 3D frame now solves it to second order (P-delta): every member's axial force softens or stiffens it, found again until it settles; the frame balances in its deflected shape.
+
+**Trust**
+- Help › Verification: 181 checks, all passing. New: benchmark 24, an X-braced panel with tension-only braces against statics (exact, both ways), a beam on a compression-only post that lets go (exact), a propped cantilever whose prop sinks, plane and 3D (exact), and a 3D flagpole bent about its weak axis to second order against the closed form (within 0.0001 %), balanced in its deflected shape.
+
 ## 0.4.2 — 2026-10-31
 
 Dynamics for structures: response spectrum and time history.

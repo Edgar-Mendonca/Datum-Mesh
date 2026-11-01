@@ -43,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -533,6 +533,26 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("adding a table section adds it with its root radius", ts?.Add?.item?.Section?.name === "HEB 300" && Math.abs(ts.Add.item.Section.shape.r - 0.027) < 1e-12, JSON.stringify(ts));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   check("Escape closes the dialog left open under a closed one (0.3.3 bug: focus was lost)", (await p.$$(".ov")).length === 0);
+  // 0.4.3: tension-only bracing and support settlement.
+  await open("xbrace"); await p.waitForTimeout(250);
+  const xm = fix.xbrace.m, rod = xm.members.find(b => b.only === "tension");
+  check("a settlement is drawn at its support", (await p.$$(".dsvg .la.settle")).length === 1);
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(80);
+  await p.click(`.dsvg [data-id="${rod.id}"] line`, { force: true }).catch(() => {}); await p.waitForTimeout(150);
+  check("a member's Inspector says what it carries", (await p.$eval(".insp select >> nth=2", s => s.value).catch(() => "")) === "tension" || (await p.textContent(".insp")).includes("Tension only"));
+  await p.evaluate(() => { window.__solveKey = "xbrace_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(400);
+  await p.evaluate(() => { window.__solveKey = null; });
+  const xr = fix.xbrace_results;
+  check("slack braces are drawn dashed and counted under the drawing", xr.slack.length === 2 && (await p.$$(".dsvg .mem.slack")).length === xr.slack.length && (await p.textContent(".legend")).includes("Slack"), `${(await p.$$(".dsvg .mem.slack")).length}`);
+  check("the slack braces carry nothing and the others carry the wind", xr.members.filter(x => xr.slack.includes(x.id)).every(x => x.n.every(v => v === 0)) && xr.members.filter(x => !xr.slack.includes(x.id) && xm.members.find(b => b.id === x.id).only === "tension").every(x => x.n[20] > 0));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "xbrace.png") });
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Settlement")'); await p.waitForTimeout(80);
+  const xs = await center(`.dsvg [data-id="${xm.nodes[0].id}"]`).catch(() => null);
+  if (xs) { await p.mouse.click(xs[0], xs[1]); await p.waitForTimeout(150); }
+  const xo = await lastOp();
+  check("Loads › Settlement moves the support clicked, 10 mm down to start", xo?.Add?.item?.Load?.kind?.kind === "settlement" && xo.Add.item.Load.kind.dy === -0.01, JSON.stringify(xo));
+  await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
   // 0.4.2: dynamics, on the frame in an earthquake.
   await open("quake"); await p.waitForTimeout(250);
   const qm = fix.quake.m, qs = qm.steps[0];

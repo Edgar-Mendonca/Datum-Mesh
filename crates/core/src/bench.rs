@@ -1507,6 +1507,106 @@ fn dynamics() -> Vec<Check> {
     v
 }
 
+/// Benchmark 24 (0.4.3): structural details. Tension-only braces, a compression-only post, and
+/// support settlement, in plane and 3D frames, against statics and beam theory.
+fn details() -> Vec<Check> {
+    use crate::model::{Analysis, Only};
+    let mut v = vec![];
+    let rect = SectionShape::Rect { b: 0.1, h: 0.2 };
+    // An X-braced square panel of pinned bars, a push H at the top: with the braces tension-only
+    // the squeezed one goes slack and the other carries H√2; statics, exactly.
+    let (a, h) = (4.0, 10e3);
+    let mut d = frame(200e9, rect.clone());
+    d.m.materials[0].rho = 0.0;
+    for (p, q) in [([0.0, 0.0], [0.0, a]), ([a, 0.0], [a, a]), ([0.0, a], [a, a])] {
+        member(&mut d, p, q, MemberKind::Truss);
+    }
+    member(&mut d, [0.0, 0.0], [a, a], MemberKind::Truss);
+    member(&mut d, [a, 0.0], [0.0, a], MemberKind::Truss);
+    let n = d.m.members.len();
+    for k in [n - 2, n - 1] {
+        d.m.members[k].only = Only::Tension;
+    }
+    support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+    support(&mut d, a, 0.0, SupportKind::Pinned);
+    let top = node(&d, 0.0, a);
+    load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: h, fy: 0.0, fz: 0.0 });
+    let Ok(crate::Results::Frame(r)) = crate::solve(&d.m) else { panic!("braced panel") };
+    let src = "Statics of the panel with one brace";
+    v.push(check(24, "X-braced panel, tension-only braces, a push at the top", "Force in the stretched brace, H√2", "force", h * 2f64.sqrt(), r.members[n - 2].n[20], 1e-9, src));
+    v.push(check(24, "X-braced panel, tension-only braces, a push at the top", "Force in the slack brace, 0 (against H)", "ratio", 1.0, 1.0 + r.members[n - 1].n[20].abs() / h, 1e-12, src));
+    // The push reversed: the other brace takes it.
+    d.m.loads[0].kind = LoadKind::Force { fx: -h, fy: 0.0, fz: 0.0 };
+    let Ok(crate::Results::Frame(r)) = crate::solve(&d.m) else { panic!("braced panel") };
+    v.push(check(24, "X-braced panel, the push reversed", "Force in the other brace, H√2", "force", h * 2f64.sqrt(), r.members[n - 1].n[20], 1e-9, src));
+    // A beam on end supports and a compression-only post at mid-span, lifted at the middle: the
+    // post lets go, and the beam deflects as simply supported, PL³/48EI.
+    let (l, p) = (6.0, 5e3);
+    let ei = 200e9 * 0.1 * 0.2f64.powi(3) / 12.0;
+    let mut d = frame(200e9, rect.clone());
+    d.m.materials[0].rho = 0.0;
+    member(&mut d, [0.0, 1.0], [l / 2.0, 1.0], MemberKind::Beam);
+    member(&mut d, [l / 2.0, 1.0], [l, 1.0], MemberKind::Beam);
+    member(&mut d, [l / 2.0, 0.0], [l / 2.0, 1.0], MemberKind::Truss);
+    d.m.members[2].only = Only::Compression;
+    support(&mut d, 0.0, 1.0, SupportKind::Pinned);
+    support(&mut d, l, 1.0, SupportKind::RollerX);
+    support(&mut d, l / 2.0, 0.0, SupportKind::Pinned);
+    let mid = node(&d, l / 2.0, 1.0);
+    load(&mut d, Target::Node { id: mid }, LoadKind::Force { fx: 0.0, fy: p, fz: 0.0 });
+    let Ok(crate::Results::Frame(r)) = crate::solve(&d.m) else { panic!("post") };
+    let k = d.m.nodes.iter().position(|x| x.id == mid).unwrap();
+    v.push(check(24, "Beam on a compression-only post, lifted at mid-span", "Mid-span rise PL³/48EI (the post lets go)", "len", p * l.powi(3) / (48.0 * ei), r.disp[k][1], 1e-9, "Beam theory, simply supported"));
+    // Support settlement: a propped cantilever whose prop sinks by δ: the prop's reaction
+    // 3EIδ/L³ and the fixed end's moment 3EIδ/L². Plane and 3D.
+    let delta = -0.01;
+    for (an, name) in [(Analysis::Frame, "Propped cantilever, the prop sinks 10 mm"), (Analysis::Space, "Propped cantilever in 3D, the prop sinks 10 mm")] {
+        let mut d = frame(200e9, rect.clone());
+        d.m.analysis = an;
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        support(&mut d, l, 0.0, if an == Analysis::Frame { SupportKind::RollerX } else { SupportKind::Pinned });
+        let end = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: end }, LoadKind::Settlement { dx: 0.0, dy: delta, dz: 0.0 });
+        let (prop, root) = match crate::solve(&d.m).expect("settlement") {
+            crate::Results::Frame(r) => (r.reactions[1].fy, r.reactions[0].m),
+            crate::Results::Space(r) => (r.reactions[1].f[1], r.reactions[0].f[5]),
+            _ => unreachable!(),
+        };
+        let src = "Beam theory: a propped cantilever with its prop moved (slope–deflection)";
+        v.push(check(24, name, "Prop reaction 3EIδ/L³", "force", 3.0 * ei * delta / l.powi(3), prop, 1e-9, src));
+        v.push(check(24, name, "Fixed-end moment 3EIδ/L²", "moment", (3.0 * ei * delta / (l * l)).abs(), root.abs(), 1e-9, src));
+    }
+    // Second order in 3D frames (P-delta): the AISC 360 C2 cases again, bending about the
+    // section's weak axis (EIy = E h b³/12), out of the drawing plane.
+    {
+        use crate::model::{Step, StepKind};
+        use std::f64::consts::PI;
+        let eiy = 200e9 * 0.2 * 0.1f64.powi(3) / 12.0;
+        let step = |d: &mut Doc| add(d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, pieces: 10, ..Default::default() }) });
+        // Flagpole along y, the side load along z.
+        let (lf, hf) = (5.0, 2e3);
+        let p = 0.5 * PI * PI * eiy / (4.0 * lf * lf);
+        let mut d = frame(200e9, rect.clone());
+        d.m.analysis = Analysis::Space;
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [0.0, lf], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let top = node(&d, 0.0, lf);
+        load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: 0.0, fy: -p, fz: hf });
+        step(&mut d);
+        let Ok(crate::Results::Space(r)) = crate::solve_for(&d.m, None) else { panic!("3D flagpole") };
+        let k = (p / eiy).sqrt();
+        let src = "AISC 360-16 Commentary C2, benchmark case 2 (closed form), in 3D";
+        v.push(check(24, "3D flagpole, second order (P-delta), P = 0.5 P_cr about the weak axis", "Top deflection, amplified", "len", hf / (k * p) * ((k * lf).tan() - k * lf), r.disp[1][2], 0.005, src));
+        v.push(check(24, "3D flagpole, second order (P-delta), P = 0.5 P_cr about the weak axis", "Base moment, amplified", "moment", hf * (k * lf).tan() / k, r.reactions[0].f[3].abs(), 0.005, src));
+        v.push(check(24, "3D flagpole, second order (P-delta), P = 0.5 P_cr about the weak axis", "Balance of loads and reactions in the deflected shape", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics on the deflected frame"));
+        let _ = step;
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1579,6 +1679,7 @@ pub fn run() -> Vec<Check> {
     v.extend(large());
     v.extend(plates());
     v.extend(dynamics());
+    v.extend(details());
     v
 }
 
@@ -1596,7 +1697,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=23 {
+        for b in 1..=24 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -1627,7 +1728,7 @@ pub fn building(nx: usize, ny: usize, nz: usize) -> Model {
     }
     let mut next = 100 + ((ny + 1) * (nz + 1) * (nx + 1)) as u32;
     let mut member = |m: &mut Model, a: u32, b: u32| {
-        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0, hinge: [false; 2] });
+        m.members.push(Member { id: next, a, b, kind: MemberKind::Beam, section: 2, material: 1, roll: 0.0, hinge: [false; 2], only: Default::default() });
         next += 1;
     };
     for j in 0..=ny {
@@ -1696,4 +1797,6 @@ pub fn timings() -> Vec<Timing> {
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
     out
 }
+
+
 

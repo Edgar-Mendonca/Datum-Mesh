@@ -14,7 +14,7 @@ export const isSolidA = (a?: string) => a === "solid" || a === "solidheat";
 /** Frames and trusses: in the plane, or in space (0.2.4). */
 export const isFrame = (a?: Analysis) => a === undefined || a === "frame" || a === "space";
 export interface Node { id: number; x: number; y: number; z?: number }
-export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number; roll?: number; hinge?: [boolean, boolean] }
+export interface Member { id: number; a: number; b: number; kind: "beam" | "truss"; section: number; material: number; roll?: number; hinge?: [boolean, boolean]; only?: "both" | "tension" | "compression" }
 export type SectionShape =
   | { kind: "rect"; b: number; h: number } | { kind: "circle"; d: number } | { kind: "tube"; d: number; t: number } | { kind: "box"; b: number; h: number; t: number }
   | { kind: "i"; h: number; b: number; tw: number; tf: number; r?: number } | { kind: "channel"; h: number; b: number; tw: number; tf: number }
@@ -33,7 +33,7 @@ export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number; fz?: number } | { kind: "moment"; m: number; mx?: number; my?: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "z" | "local" }
   | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean; fz?: number } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
-  | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number } | { kind: "mass"; m: number };
+  | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number } | { kind: "mass"; m: number } | { kind: "settlement"; dx: number; dy: number; dz?: number };
 export interface Load { id: number; at: Target; kind: LoadKind; case?: number }
 /** Load cases and combinations (0.3.3). */
 export interface Case { id: number; name: string }
@@ -89,7 +89,7 @@ export const num = (v: number, sig = 4) => {
 export interface MemberResult { id: number; length: number; x: number[]; n: number[]; v: number[]; m: number[]; d: Pt[]; stress: number; util: number; ends: number[] }
 export interface Reaction { node: number; fx: number; fy: number; m: number }
 export interface SolveStats { equations: number; nonzeros: number; residual: number; ms: number }
-export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[]; path?: Curve; dynamic?: DynInfo }
+export interface FrameResults { disp: [number, number, number][]; reactions: Reaction[]; members: MemberResult[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[]; path?: Curve; dynamic?: DynInfo; slack?: number[] }
 export interface Check { bench: number; name: string; quantity: string; q: string; reference: number; result: number; error: number; tolerance: number; source: string; pass: boolean; steps: [number, number][] }
 
 // Parts: the mesh, nodal and element fields, and the results of plane stress, strain and heat.
@@ -106,7 +106,7 @@ export type P3 = [number, number, number];
 export interface SpaceMember { id: number; length: number; x: number[]; n: number[]; vy: number[]; vz: number[]; t: number[]; my: number[]; mz: number[]; d: P3[]; stress: number; util: number; axes: [P3, P3, P3] }
 /** Plate results (0.4.1): mesh, movements and fields at the plate nodes. */
 export interface PlateResults { nodes: P3[]; tris: [number, number, number][]; disp: P3[]; fields: Field3[] }
-export interface SpaceResults { kind: "space"; dynamic?: DynInfo; plates?: PlateResults; disp: number[][]; reactions: { node: number; support?: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
+export interface SpaceResults { kind: "space"; dynamic?: DynInfo; slack?: number[]; plates?: PlateResults; disp: number[][]; reactions: { node: number; support?: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
 /** 3D solids (0.3.0): the outer surface with its displacements and fields; min and max over every node. */
 export interface Field3 { key: string; v: number[]; min: number; max: number; at_min: P3; at_max: P3 }
 /** 3D heat conduction (0.3.4): temperatures and heat flux over the surface, flows and the balance. */

@@ -27,6 +27,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "pressure": return { kind: "pressure", p: 1e6 };
     case "platepressure": return { kind: "pressure", p: 5e3 };
     case "mass": return { kind: "mass", m: 1000 };
+    case "settlement": return { kind: "settlement", dx: 0, dy: -0.01, dz: 0 };
     case "traction": return { kind: "traction", fx: 0, fy: -1e3, total: true };
     case "bearing": return { kind: "bearing", fx: 0, fy: 1e3 };
     case "gravity": return { kind: "gravity", gx: 0, gy: -9.81 };
@@ -39,7 +40,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement" };
 
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
@@ -143,6 +144,7 @@ const MemberInsp = (p: { b: Member; m: Model }) => {
       <Row label="Kind"><Choice v={p.b.kind} set={v => set("Member", { ...p.b, kind: v })} opts={[["beam", "Beam (bending and axial)"], ["truss", "Truss bar (axial only)"]]} /></Row>
       <Row label="Section"><Choice v={String(p.b.section)} set={v => set("Member", { ...p.b, section: +v })} opts={p.m.sections.map(s => [String(s.id), s.name])} /></Row>
       <Row label="Material"><Choice v={String(p.b.material)} set={v => set("Member", { ...p.b, material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row>
+      <Row label="Carries"><Choice v={p.b.only ?? "both"} set={v => set("Member", { ...p.b, only: v as any })} opts={[["both", "Tension and compression"], ["tension", "Tension only (a rod, a cable)"], ["compression", "Compression only (a strut on a bearing)"]]} /></Row>
       <Show when={p.b.kind === "beam"}><div class="cks">
         <label class="chk" title="The member carries no bending moment at its start (a pinned connection)"><input type="checkbox" checked={p.b.hinge?.[0] ?? false} onChange={e => set("Member", { ...p.b, hinge: [e.currentTarget.checked, p.b.hinge?.[1] ?? false] })} />Hinge at the start</label>
         <label class="chk" title="The member carries no bending moment at its end (a pinned connection)"><input type="checkbox" checked={p.b.hinge?.[1] ?? false} onChange={e => set("Member", { ...p.b, hinge: [p.b.hinge?.[0] ?? false, e.currentTarget.checked] })} />Hinge at the end</label></div></Show>
@@ -268,6 +270,11 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
     <Show when={k().kind === "convection"}><NumField label="Film coefficient h" q="film" v={f("convection").h} min={0} set={h => put({ ...f("convection"), h })} /><NumField label="Fluid temperature" q="temp" v={f("convection").t_inf} set={t_inf => put({ ...f("convection"), t_inf })} /></Show>
     <Show when={k().kind === "warming"}><NumField label="Change" q="dtemp" v={f("warming").dt} set={dt => put({ kind: "warming", dt })} hint={isFrame(p.m.analysis) ? "Every member grows by αΔT per length; where it cannot, it pushes on its supports." : "A uniform change from the stress-free temperature (Inspector, with nothing selected); added to any temperatures set on edges."} /></Show>
     <Show when={k().kind === "heat"}><NumField label="Heat generated" q="heatgen" v={f("heat").q} set={q => put({ kind: "heat", q })} /></Show>
+    <Show when={k().kind === "settlement"}>
+      <NumField label="Moves x" q="len" v={f("settlement").dx} set={dx => put({ ...f("settlement"), dx })} />
+      <NumField label="Moves y" q="len" v={f("settlement").dy} set={dy => put({ ...f("settlement"), dy })} hint="Down is negative." />
+      <Show when={p.m.analysis === "space"}><NumField label="Moves z" q="len" v={f("settlement").dz ?? 0} set={dz => put({ ...f("settlement"), dz })} /></Show>
+      <p class="hint">The support moves by this much in the directions it holds; the frame follows, and the forces it takes to make it are in the results.</p></Show>
     <Show when={k().kind === "mass"}><NumField label="Mass" q="mass" v={f("mass").m} min={0} set={m => m >= 0 && put({ kind: "mass", m })} hint="Moves with the node in every direction, for natural frequencies and dynamics. It is in every load case and adds no weight to a static solve (use loads for that)." /></Show>
   </>;
 };

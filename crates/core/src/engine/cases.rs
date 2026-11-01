@@ -30,6 +30,7 @@ fn scaled(k: &LoadKind, f: f64) -> Option<LoadKind> {
         Heat { q } => Heat { q: q * f },
         // A mass is the structure's, not a load: never scaled.
         Mass { m } => Mass { m },
+        Settlement { dx, dy, dz } => Settlement { dx: dx * f, dy: dy * f, dz: dz * f },
         Convection { .. } => return None,
     })
 }

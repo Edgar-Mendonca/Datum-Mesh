@@ -4,7 +4,7 @@
 // model: the canvas only draws it and sends edits.
 import { For, Show, JSX, createSignal, createMemo, onMount, onCleanup, batch } from "solid-js";
 import { Pt, Geom, Model, Target, Support, Load, Shape, Member, isFrame } from "./api";
-import { model as model0, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act as act0, opts, setCursor, openMenu, Item, toast, partRes, view, meshed, modeOn, modes } from "./store";
+import { model as model0, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act as act0, opts, setCursor, openMenu, Item, toast, partRes, view, meshed, modeOn, modes, frameRes, stale } from "./store";
 import { C } from "./cmds";
 import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient, area } from "./geom";
 import { fmt } from "./units";
@@ -202,6 +202,11 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean; np: Map<
       if (!k.fx && !k.fy) return <circle cx={s[0]} cy={s[1]} r={4} class="lf" />;
       const l2 = Math.hypot(dir[0], dir[1]);
       return <><path d={arrowPath(s, dir)} class="la" /><text x={s[0] - dir[0] / l2 * (ARROW + 6)} y={s[1] - dir[1] / l2 * (ARROW + 6)} class="ltxt" text-anchor="middle">{fmt("force", Math.hypot(k.fx, k.fy), 3)}</text></>;
+    }
+    if (k.kind === "settlement" && at.on === "node") {
+      const w = np().get(at.id); if (!w) return null;
+      const s = toS(w), y = s[1] + 30;
+      return <><path d={`M${s[0] - 14} ${y}h28M${s[0]} ${y}v14M${s[0] - 5} ${y + 9}l5 5l5 -5`} class="la settle" /><text x={s[0] + 10} y={y + 14} class="ltxt">{fmt("len", Math.hypot(k.dx, k.dy, k.dz ?? 0), 3)}</text></>;
     }
     if (k.kind === "mass" && at.on === "node") {
       const w = np().get(at.id); if (!w) return null;
@@ -493,7 +498,7 @@ export const Canvas = () => {
         <For each={supportsOnEdges()}>{s => { const sh = () => shapeAt((s.at as any).shape); return <Show when={sh()}><EdgeSupport s={s} sh={sh()!} on={selSet().has(s.id)} /></Show>; }}</For>
         {/* frames: members off the working plane first, faint */}
         <For each={ghosts()}>{g => <line x1={S(g[0])[0]} y1={S(g[0])[1]} x2={S(g[1])[0]} y2={S(g[1])[1]} class="ghost" />}</For>
-        <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id) }} data-id={mb.id}>
+        <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id), slack: !!frameRes()?.slack?.includes(mb.id) && !stale() }} data-id={mb.id}>
           <line x1={e()[0][0]} y1={e()[0][1]} x2={e()[1][0]} y2={e()[1][1]} />
           <Show when={mb.kind === "beam" && mb.hinge?.[0]}><circle cx={e()[0][0] + (e()[1][0] - e()[0][0]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} cy={e()[0][1] + (e()[1][1] - e()[0][1]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} r={3.5} class="hinge" /></Show>
           <Show when={mb.kind === "beam" && mb.hinge?.[1]}><circle cx={e()[1][0] - (e()[1][0] - e()[0][0]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} cy={e()[1][1] - (e()[1][1] - e()[0][1]) * Math.min(0.15, 9 / (Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1))} r={3.5} class="hinge" /></Show>
