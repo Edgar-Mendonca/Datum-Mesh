@@ -43,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat, bend45: f.bend45 }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -823,6 +823,26 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the curve can show the rotation instead", (await p.textContent(".dlg svg.curve")).includes("Rotation"));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   check("a large-deflection shape is drawn true to size", (await p.textContent(".legend")).includes("true to size"), await p.textContent(".legend"));
+  // 0.5.8: large rotations in 3D frames: the 45° bend pushed out of its plane.
+  await open("bend45"); await p.waitForTimeout(200);
+  await p.click('.tabs > button:text-is("Solve")'); await p.waitForTimeout(100);
+  await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
+  check("a 3D frame's steps can be solved past limit loads (arc length)", (await p.$eval(".dlg table.steps select", s => [...s.options].map(o => o.value))).includes("arc") && (await p.textContent(".dlg")).includes("corotational"), await p.textContent(".dlg"));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__solveKey = "bend45_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(150);
+  check("Results › Load–Deflection is offered for a 3D frame's large rotations", !(await p.$eval('.ribbon button:has-text("Load–Deflection")', b => b.disabled)));
+  const bMax = Math.max(...fix.bend45_results.members.flatMap(mr => mr.d.map(d => Math.hypot(...d))));
+  check("a 3D frame's large rotations are drawn true to size, as far as the nodes went (0.5.8: the pieces' small local movements were drawn)", (await p.textContent(".legend")).includes("true to size") && bMax > 1.4 && (await p.textContent(".legend")).includes(String(Math.round(bMax * 1000)).slice(0, 3)), await p.textContent(".legend") + " " + bMax);
+  await p.click('.ribbon button:has-text("Load–Deflection")'); await p.waitForTimeout(250);
+  const bR = fix.bend45_results;
+  check("the 3D curve has a point per increment", (await p.$$(".dlg svg.curve circle.pt")).length === bR.path.load.length && bR.path.load.length > 2, String(bR.path.load.length));
+  await p.click('.dlg button:text-is("Movement in z")'); await p.waitForTimeout(100);
+  check("the 3D curve can show the movement in z and the turn", (await p.textContent(".dlg svg.curve")).includes("Movement in z") && (await p.$$('.dlg button:text-is("Turn")')).length === 1);
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "bend45-curve.png") });
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

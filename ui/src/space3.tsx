@@ -35,6 +35,8 @@ export const span3 = (m: Model) => {
 export const dlen = (d: P3) => Math.hypot(d[0], d[1], d[2]);
 /** How many times the deflections are drawn larger: a round number, as for plane frames. */
 export const deform3 = (m: Model, r: SpaceResults) => {
+  // Large rotations (0.5.8): the shape as it truly is.
+  if (r.path) return show().scale;
   const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(dlen)), ...(r.plates?.disp.map(dlen) ?? []));
   if (!(dmax > 1e-12 * span3(m))) return 0;
   const f = 0.08 * span3(m) / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p;
@@ -68,7 +70,7 @@ export const SpaceLegend = () => {
         <Show when={r()!.slack?.length}><div><b>Slack</b><span>{r()!.slack!.length} tension-only or compression-only member{r()!.slack!.length > 1 ? "s" : ""}, carrying nothing (faint)</span></div></Show>
         <Show when={r()!.plates}><div><b>Plates by</b><select class="fpick plates" value={pq()} onChange={e => setPq(e.currentTarget.value)}>{PQS.map(([k, l]) => <option value={k} selected={k === pq()}>{l}</option>)}</select></div>
           <Show when={plateRange()}>{rg => <span class="cbar"><span class="cb">{cols().map((c, k) => <i style={{ background: c }}><Show when={k % 3 === 0}><small>{num(+fmt(pd()[2], rg()[0] + (rg()[1] - rg()[0]) * k / BANDS, 3).split(" ")[0].replace("−", "-"), 3)}</small></Show></i>)}<b><small>{num(+fmt(pd()[2], rg()[1], 3).split(" ")[0].replace("−", "-"), 3)}</small></b></span><em>{unit(pd()[2])}</em></span>}</Show></Show>
-        <div><b>Deflected shape</b><span>{deform3(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deform3(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
+        <div><b>Deflected shape</b><span>{r()!.path ? <>largest {fmt("len", dmax())} · drawn true to size{show().scale !== 1 ? ` × ${num(show().scale, 3)}` : ""} (large deflection)</> : deform3(m()!, r()!) > 0 ? <>largest {fmt("len", dmax())} · drawn × {num(deform3(m()!, r()!), 3)}</> : "nothing moves: there are no loads"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div>
         <Show when={r()!.dynamic?.kind !== "spectrum"} fallback={<div class="eqline"><Icon n="info" /><span>Peak values of the modes combined by {r()!.dynamic!.combined}: no balance to check</span><button class="lnk" onClick={dynDialog}>Modes</button></div>}>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : r()!.dynamic ? `Equilibrium at t = ${num(r()!.dynamic!.peak_t, 4)} s, inertia included` : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div></Show>

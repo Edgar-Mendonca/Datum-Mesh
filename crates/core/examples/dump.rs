@@ -78,6 +78,8 @@ fn main() {
         }, None).unwrap()),
         "slab_results": sent(&datum_core::solve(&examples::get("slab").unwrap()).unwrap()),
         "slab_modes": sent(&datum_core::modes(&examples::get("slab").unwrap(), 4).unwrap()),
+        "bend45": out("bend45"),
+        "bend45_results": sent(&datum_core::solve_for(&examples::get("bend45").unwrap(), None).unwrap()),
         "lee_results": sent(&datum_core::solve_for(&examples::get("lee").unwrap(), None).unwrap()),
         "braced_results": sent(&datum_core::solve(&examples::get("braced").unwrap()).unwrap()),
         "braced_envelope": datum_core::cases::envelope(&examples::get("braced").unwrap()).unwrap(),

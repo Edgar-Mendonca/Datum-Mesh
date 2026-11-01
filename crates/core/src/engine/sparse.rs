@@ -16,6 +16,10 @@ pub struct System {
     /// Only the lower triangle (row ≥ column) is kept; the upper half is implied (0.3.0: 3D
     /// solids, whose elements add many entries, store half as much).
     pub half: bool,
+    /// The matrix is not symmetric (0.5.8: the tangent of large 3D rotations, taken with respect
+    /// to rotation vectors): `solve_many` factorises it by LU, and judges stability from its
+    /// symmetric part.
+    pub general: bool,
 }
 
 /// How the solve went, for the solver report.
@@ -32,7 +36,7 @@ pub struct Stats {
 
 impl System {
     pub fn new(n: usize) -> System {
-        System { n, k: Vec::new(), f: vec![0.0; n], half: false }
+        System { n, k: Vec::new(), f: vec![0.0; n], half: false, general: false }
     }
     /// A system that keeps only the lower triangle: entries above the diagonal are dropped as
     /// they are added (add both halves, or only the lower one).
@@ -212,12 +216,18 @@ impl System {
         for i in 0..m {
             b[(i, rhs.len())] = if diag[i].abs() > 0.0 { diag[i] } else { scale };
         }
-        let lower: Vec<Triplet<usize, usize, f64>> = tri.iter().filter(|t| t.row >= t.col).copied().collect();
+        // A general matrix: the symmetric part (A + Aᵀ)/2 for the stability check, LU to solve.
+        let lower: Vec<Triplet<usize, usize, f64>> = if self.general {
+            tri.iter().flat_map(|t| [Triplet::new(t.row, t.col, 0.5 * t.val), Triplet::new(t.col, t.row, 0.5 * t.val)]).filter(|t| t.row >= t.col).collect()
+        } else {
+            tri.iter().filter(|t| t.row >= t.col).copied().collect()
+        };
         let pd = diag.iter().all(|d| *d > 0.0);
         let llt = if pd { SparseColMat::<usize, f64>::try_new_from_triplets(m, m, &lower).ok().and_then(|l| l.sp_cholesky(Side::Lower).ok()) } else { None };
-        let (x, stable) = match llt {
-            Some(l) => (l.solve(&b), true),
-            None => (a.sp_lu().map_err(|_| mechanism())?.solve(&b), false),
+        let (x, stable) = match (llt, self.general) {
+            (Some(l), false) => (l.solve(&b), true),
+            (l, true) => (a.sp_lu().map_err(|_| mechanism())?.solve(&b), l.is_some()),
+            (None, false) => (a.sp_lu().map_err(|_| mechanism())?.solve(&b), false),
         };
         if (0..m).any(|i| !(x[(i, rhs.len())].abs() < 1e15)) {
             return Err(mechanism());

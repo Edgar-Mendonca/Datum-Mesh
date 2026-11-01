@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes } from "./store";
+import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes, spaceRes } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
@@ -213,7 +213,7 @@ export const Ribbon = () => {
             <S><B i="dshear" l="Shear Force" on={show().diagram === "v"} run={() => C.show({ diagram: show().diagram === "v" ? "none" : "v" })} off={!results()} /><B i="daxial" l="Axial Force" on={show().diagram === "n"} run={() => C.show({ diagram: show().diagram === "n" ? "none" : "n" })} off={!results()} /></S></G>
           <G l="Inspect" h="results"><S><B i="reactions" l="Reactions" on={show().reactions} run={() => C.show({ reactions: !show().reactions })} off={!results()} /><B i="util" l="Utilisation" on={show().util} run={() => C.show({ util: !show().util })} off={!results()} /><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!results()} /></S></G></Show>
           <G l="Dynamics" h="dynamics"><B big i="wave" l="Dynamics" run={dynDialog} off={!dynOf()} title="A dynamic solve's modes (response spectrum) or its record over time (time history)" /></G>
-          <Show when={!sp()}><G l="Path" h="steps"><B big i="curve" l="Load–Deflection" run={pathDialog} off={!frameRes()?.path} title="The load against the movement of a node, through a large-deflection solution" /></G></Show>
+          <G l="Path" h="steps"><B big i="curve" l="Load–Deflection" run={pathDialog} off={!(frameRes()?.path ?? spaceRes()?.path)} title="The load against the movement of a node, through a large-deflection solution" /></G>
           <G l="Combinations" h="cases"><B big i="table" l="Envelope" run={envelope} off={!hasEnvelope()} title="The largest and smallest member forces and reactions over every combination" /></G>
         </Show>
         <Show when={modes()}>{r => <Show when={isBuckle(r())} fallback={<G l="Vibration" h="modes"><B big i="modes" l="Mode Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the natural modes on the drawing instead of the static results" /></G>}><G l="Buckling" h="buckle"><B big i="buckle" l="Buckled Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the buckled shapes on the drawing instead of the static results" /></G></Show>}</Show>

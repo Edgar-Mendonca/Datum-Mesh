@@ -41,6 +41,7 @@ pub fn list() -> Vec<Example> {
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("building", "Building in an earthquake", "A three-storey steel building in 3D, 2 × 1 bays, with rigid concrete floors carrying their mass, shaken along x by a design spectrum: the floors sway and twist as one (Results › Dynamics).", Analysis::Space),
+        e("bend45", "Curved cantilever bent out of its plane", "A 45° curved bar of radius 2.54 m, 25.4 mm square, fixed at one end and pushed 2.67 kN down at the other, out of the bend's plane: a large-deflection step follows it as it bends and twists far in 3D, drawn true to size (Results › Load–Deflection).", Analysis::Space),
         e("slab", "Floor slab", "A 6 × 4 m floor slab 200 mm thick on four columns with edge beams, carrying 5 kPa and its own weight: a plate joined to a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
@@ -282,6 +283,31 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             }
             ops.push(Op::Add { item: Item::Step(crate::model::Step { name: "Earthquake along x".into(), kind: crate::model::StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: spec, damping: 0.05, modes: 9, cqc: true, pieces: 2, ..Default::default() }) });
             d.apply(Op::Batch(ops))?;
+        }
+        "bend45" => {
+            d.m.notes = "The 45° bend of Bathe and Bolourchi: radius 100 in (2.54 m), a 1 in (25.4 mm) square bar, E = 10⁷ psi (68.95 GPa), ν = 0; fixed at one end, 600 lbf (2.669 kN) down at the free end, across the plane the bend lies in. Eight straight members along the arc, each cut into four pieces. The free end moves about 1.36 m down, a third of the radius back towards the root, as the bar bends and twists.".into();
+            let mut mt = d.m.materials[0].clone();
+            mt.name = "Aluminium-like (E = 68.95 GPa, ν = 0)".into();
+            mt.e = 68.95e9;
+            mt.nu = 0.0;
+            mt.rho = 2700.0;
+            mt.fy = 0.0;
+            d.m.materials[0] = mt;
+            d.m.sections[0].name = "Bar 25.4 × 25.4".into();
+            d.m.sections[0].shape = crate::model::SectionShape::Rect { b: 0.0254, h: 0.0254 };
+            let r = 2.54;
+            let p = |k: usize| { let t = std::f64::consts::FRAC_PI_4 * k as f64 / 8.0; [r * t.sin(), 0.0, r * (1.0 - t.cos())] };
+            for k in 0..8 {
+                let (a, b) = (p(k), p(k + 1));
+                d.apply(Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind: MemberKind::Beam, section: None, material: None, z: [a[2], b[2]] })?;
+            }
+            let at = |d: &Doc, q: [f64; 3]| d.m.nodes.iter().find(|n| crate::model::dist3(n.at(), q) < 1e-9).map(|n| n.id).unwrap_or(0);
+            let (root, tip) = (at(d, p(0)), at(d, p(8)));
+            d.apply(Op::Batch(vec![
+                sup(Target::Node { id: root }, SupportKind::Fixed),
+                load(Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -2669.0, fz: 0.0 }),
+                Op::Add { item: Item::Step(crate::model::Step { name: "Large deflection".into(), kind: crate::model::StepKind::Newton, increments: 10, pieces: 4, monitor: Some(tip), ..Default::default() }) },
+            ]))?;
         }
         "slab" => {
             d.m.notes = "A floor 3 m up: a 6 × 4 m slab 200 mm thick (plate on the Plan plane) on four fixed columns, with edge beams joined to the slab along its edges. Concrete-like material (E = 30 GPa, ν = 0.2, 2 500 kg/m³). 5 kPa imposed load on the slab and self-weight.".into();

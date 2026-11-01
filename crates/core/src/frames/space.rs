@@ -74,6 +74,9 @@ pub struct SpaceResults {
     /// Tension-only or compression-only members slack under these loads (0.4.3).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub slack: Vec<u32>,
+    /// Large rotations (0.5.8): the load against the movement of the node followed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<super::corot::Curve>,
 }
 
 /// Plate results (0.4.1): the mesh in 3D, the movements of its nodes and fields averaged at them:
@@ -98,24 +101,24 @@ struct Shell {
 }
 
 #[derive(Clone)]
-struct Elem {
-    id: u32,
-    kind: MemberKind,
-    a: usize,
-    b: usize,
-    l: f64,
+pub(super) struct Elem {
+    pub(super) id: u32,
+    pub(super) kind: MemberKind,
+    pub(super) a: usize,
+    pub(super) b: usize,
+    pub(super) l: f64,
     /// Rows: local x, y, z in global terms.
-    r: [[f64; 3]; 3],
-    ea: f64,
-    eiz: f64,
-    eiy: f64,
-    gj: f64,
+    pub(super) r: [[f64; 3]; 3],
+    pub(super) ea: f64,
+    pub(super) eiz: f64,
+    pub(super) eiy: f64,
+    pub(super) gj: f64,
     area: f64,
     zz: f64,
     zy: f64,
     fy: f64,
     /// Distributed load in local axes, linear from a to b: (px1, px2, qy1, qy2, qz1, qz2) N/m.
-    p: [f64; 6],
+    pub(super) p: [f64; 6],
     at: f64,
     /// Mass per length ρA and polar mass per length ρ(Iz + Iy), for natural frequencies; the
     /// weaker EI, for a truss bar buckling on its own.
@@ -128,7 +131,7 @@ struct Elem {
     twist: [bool; 2],
     /// Second order (0.4.3): the axial force (tension positive) whose geometric stiffness is
     /// in the member's stiffness; 0 for a first-order solve.
-    pn: f64,
+    pub(super) pn: f64,
     /// Rigid zones at the ends (m, 0.4.5), and whether this piece is one.
     off: [f64; 2],
     rigid: bool,
@@ -148,7 +151,7 @@ fn released(e: &Elem) -> Option<Release<12>> {
     }
     Some(Release::new(&k_local(e), &equivalent(e), &rel))
 }
-fn cond(e: &Elem, k: [[f64; 12]; 12]) -> [[f64; 12]; 12] {
+pub(super) fn cond(e: &Elem, k: [[f64; 12]; 12]) -> [[f64; 12]; 12] {
     released(e).map_or(k, |r| r.mat(&k))
 }
 fn cond_load(e: &Elem) -> [f64; 12] {
@@ -194,7 +197,7 @@ fn to_global(e: &Elem, l: [f64; 3]) -> [f64; 3] {
 }
 
 /// The 12×12 stiffness in local axes (u, v, w, θx, θy, θz at a, then at b).
-fn k_local(e: &Elem) -> [[f64; 12]; 12] {
+pub(super) fn k_local(e: &Elem) -> [[f64; 12]; 12] {
     let mut k = [[0.0; 12]; 12];
     let l = e.l;
     let mut put = |idx: &[usize], t: &[&[f64]]| {
@@ -286,7 +289,7 @@ pub fn pdelta(m: &Model, pieces: usize) -> Result<SpaceResults, String> {
     if !settled {
         asm.warnings.push(format!("The second-order solve did not settle in {its} rounds: the loads are close to the frame's buckling load."));
     }
-    let mut r = results_at(m, &asm, &u, &asm.sys.f, 1.0, true);
+    let mut r = results_at(m, &asm, &u, &asm.sys.f, 1.0, true, None);
     r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
     Ok(r)
 }
@@ -313,7 +316,7 @@ fn equivalent(e: &Elem) -> [f64; 12] {
 }
 
 /// A local 12×12 matrix turned into global axes, entry by entry (global dof, global dof, value).
-fn scatter(e: &Elem, k: &[[f64; 12]; 12], mut out: impl FnMut(usize, usize, f64)) {
+pub(super) fn scatter(e: &Elem, k: &[[f64; 12]; 12], mut out: impl FnMut(usize, usize, f64)) {
     // T is block diagonal with R in each 3×3 block: K_global = Tᵀ k T.
     let t = |i: usize, j: usize| if i / 3 == j / 3 { e.r[i % 3][j % 3] } else { 0.0 };
     let mut kt = [[0.0; 12]; 12];
@@ -350,22 +353,22 @@ fn load_name(k: &LoadKind) -> &'static str {
 /// A 3D frame's equations before solving, as for plane frames (`frame::Assembly`): `parts` are
 /// the elements solved for (beams cut into pieces on request), `spans[i]` those of member i;
 /// nodes from `m.nodes.len()` on are the pieces' inner nodes, at `pos`.
-struct Assembly {
-    sys: System,
-    held: Vec<bool>,
+pub(crate) struct Assembly {
+    pub(crate) sys: System,
+    pub(crate) held: Vec<bool>,
     elems: Vec<Elem>,
-    parts: Vec<Elem>,
+    pub(super) parts: Vec<Elem>,
     spans: Vec<std::ops::Range<usize>>,
     free_rot: Vec<bool>,
     has_member: Vec<bool>,
     has_beam: Vec<bool>,
-    warnings: Vec<String>,
+    pub(super) warnings: Vec<String>,
     /// Plates: their triangles, the assembly node of each plate mesh node, and the nodes held
     /// by each support on a plate's edge.
     shells: Vec<Shell>,
     plate_nodes: Vec<usize>,
     edge_sup: Vec<(u32, Vec<usize>)>,
-    pos: Vec<[f64; 3]>,
+    pub(super) pos: Vec<[f64; 3]>,
     /// Prescribed movements at held unknowns (support settlements, 0.4.3).
     fixed: Vec<f64>,
 }
@@ -444,7 +447,14 @@ fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
         .collect()
 }
 
-fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
+impl Assembly {
+    /// The frame carries plates.
+    pub(super) fn plated(&self) -> bool {
+        !self.shells.is_empty()
+    }
+}
+
+pub(super) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
     m.check()?;
     let pm = if m.shapes.iter().any(|s| s.plate.is_some()) { plates::mesh(m)? } else { plates::PlateMesh::default() };
     if m.members.is_empty() && pm.tris.is_empty() {
@@ -785,12 +795,14 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
 
 /// Results for movements `u` under nodal loads `f`, the members' own loads times `p`.
 fn results_from(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64) -> SpaceResults {
-    results_at(m, asm, u, f, p, false)
+    results_at(m, asm, u, f, p, false, None)
 }
 
 /// As `results_from`; `moved`: moments of loads and reactions about where the nodes are now
 /// (second order: the frame balances in its deflected shape).
-fn results_at(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64, moved: bool) -> SpaceResults {
+/// `corot` (0.5.8): after large rotations, the internal forces and each piece's end movements in
+/// its own turned axes, in place of the linear K u and the movements read in the original axes.
+pub(super) fn results_at(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64, moved: bool, corot: Option<(&[f64], &[[f64; 12]])>) -> SpaceResults {
     let Assembly { sys, held, elems, parts, spans, free_rot, has_member, has_beam, warnings, shells, plate_nodes, edge_sup, pos, .. } = asm;
     let mut warnings = warnings.clone();
     let nn = m.nodes.len();
@@ -807,7 +819,10 @@ fn results_at(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64, moved: bo
             applied[3 + k] += f[6 * i + 3 + k] + mo[k];
         }
     }
-    let ku = sys.mul(u);
+    let ku = match corot {
+        Some((fi, _)) => fi.to_vec(),
+        None => sys.mul(u),
+    };
     let mut reactions = vec![];
     let mut reacted = [0.0; 6];
     let react = |r: [f64; 6], at: [f64; 3], reacted: &mut [f64; 6]| {
@@ -867,14 +882,33 @@ fn results_at(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64, moved: bo
         .zip(spans)
         .map(|(e, sp)| {
             let pcs: Vec<Elem> = parts[sp.clone()].iter().map(|x| Elem { p: x.p.map(|v| v * p), at: x.at * p, ..x.clone() }).collect();
-            if pcs.len() == 1 { member_result(&pcs[0], u) } else { stitched(e, &pcs, u) }
+            let uls: Vec<[f64; 12]> = match corot {
+                Some((_, ls)) => ls[sp.clone()].to_vec(),
+                None => pcs.iter().map(|x| ends_of(x, u, true)).collect(),
+            };
+            let mut mr = if pcs.len() == 1 { member_result(&pcs[0], uls[0]) } else { stitched(e, &pcs, &uls) };
+            // Large rotations (0.5.8): the local movements are in each piece's turned frame, so
+            // the stations' movements come from the pieces' ends in global terms (straight
+            // between them; the pieces are short).
+            if corot.is_some() {
+                for (x, d) in mr.x.iter().zip(mr.d.iter_mut()) {
+                    let (mut k, mut at) = (0, 0.0);
+                    while k + 1 < pcs.len() && x - at > pcs[k].l * (1.0 + 1e-9) {
+                        at += pcs[k].l;
+                        k += 1;
+                    }
+                    let t = ((x - at) / pcs[k].l).clamp(0.0, 1.0);
+                    *d = std::array::from_fn(|c| (1.0 - t) * u[6 * pcs[k].a + c] + t * u[6 * pcs[k].b + c]);
+                }
+            }
+            mr
         })
         .collect();
     let plates = (!shells.is_empty()).then(|| plate_results(shells, plate_nodes, pos, u));
     let fb = if scale[0] > 0.0 { (0..3).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[0] } else { 0.0 };
     let mo = if scale[1] > 0.0 { (3..6).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[1] } else { 0.0 };
     warnings.dedup();
-    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None, slack: vec![] }
+    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None, slack: vec![], path: None }
 }
 
 fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -882,12 +916,12 @@ fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 }
 
 /// A member cut into pieces (where a plate joins it): each piece's results end to end.
-fn stitched(e: &Elem, pieces: &[Elem], u: &[f64]) -> SpaceMember {
+fn stitched(e: &Elem, pieces: &[Elem], uls: &[[f64; 12]]) -> SpaceMember {
     let mut out = SpaceMember { id: e.id, length: e.l, x: vec![], n: vec![], vy: vec![], vz: vec![], t: vec![], my: vec![], mz: vec![], d: vec![], stress: 0.0, util: 0.0, axes: e.r };
     let mut at = 0.0;
     // Stations per piece so the member has about as many as an uncut one.
     for (k, p) in pieces.iter().enumerate() {
-        let r = member_result(p, u);
+        let r = member_result(p, uls[k]);
         let step = (STATIONS - 1) / pieces.len().clamp(1, STATIONS - 1);
         let idx: Vec<usize> = (0..STATIONS).step_by(step.max(1)).chain(std::iter::once(STATIONS - 1)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
         for &i in idx.iter().skip(usize::from(k > 0)) {
@@ -987,8 +1021,7 @@ fn span(m: &Model) -> f64 {
     (0..3).map(|k| hi[k] - lo[k]).fold(0.0, f64::max).max(1e-9)
 }
 
-fn member_result(e: &Elem, u: &[f64]) -> SpaceMember {
-    let ul = ends_of(e, u, true);
+fn member_result(e: &Elem, ul: [f64; 12]) -> SpaceMember {
     let k = k_local(e);
     let eq = equivalent(e);
     let f: Vec<f64> = (0..12).map(|i| (0..12).map(|j| k[i][j] * ul[j]).sum::<f64>() - eq[i]).collect();

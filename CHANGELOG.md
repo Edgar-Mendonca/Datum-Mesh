@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.8 — 2026-11-01
+
+3D frames turn far.
+
+**Large rotations in 3D frames**
+- A large-deflection step on a 3D frame now follows large rotations in space: every beam is cut into pieces that turn as rigid bodies and bend a little on their own (corotational beams), so bending both ways, twist and their coupling are all taken in. Before, a 3D frame's large-deflection step was second order (P-delta) only.
+- Past limit loads (arc length) works for 3D frames too, so snap-through shows in 3D as it does in plane frames.
+- Results › Load–Deflection for 3D frames: the load against the movement in x, y or z of the node the step follows, or how far it has turned; the deflected shape is drawn true to size. Send to Datum Plot takes the curve.
+- A new example, the curved cantilever bent out of its plane: a 45° bend pushed down at its tip, bending and twisting far.
+- With plates in the model, a large-deflection step on a 3D frame stays second order (P-delta), as before.
+
+**Trust**
+- Help › Verification: 246 checks, all passing. New: benchmark 31, large rotations in 3D frames: a cantilever rolled a quarter turn about either axis (within 0.05 % of the elastica), a skew cantilever bent far by a load across it (within 0.1 %), a bar twisted 2 rad (exact), and the 45° bend of Bathe and Bolourchi (within 1.1 % of the published tip, whose sources differ by about 1 %). Lee's frame built in 3D snaps through at the plane frame's limit load.
+
 ## 0.5.7 — 2026-11-01
 
 Imported meshes yield and stretch.

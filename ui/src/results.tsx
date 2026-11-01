@@ -249,7 +249,8 @@ export const SpaceResultsPage = (p: { r: SpaceResults }) => {
     <table class="tbl"><tbody>
       <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
       <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
-      <tr><td>Method</td><td>3D beam elements (axial, torsion, bending about both axes) and truss bars{r().plates ? "; flat shell triangles for the plates (Allman's membrane with drilling rotations, Discrete Kirchhoff bending)" : ""}; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+      <Show when={r().path}>{c => <tr><td>Path</td><td class="r">{c().load.length - 1} increments, {c().iterations} Newton iterations</td></tr>}</Show>
+      <tr><td>Method</td><td>{r().path ? "Large rotations: corotational 3D beams (every beam cut into pieces that turn as rigid bodies in space) and truss bars; Newton or arc-length path; sparse LU" : "3D beam elements (axial, torsion, bending about both axes) and truss bars"}{r().plates ? "; flat shell triangles for the plates (Allman's membrane with drilling rotations, Discrete Kirchhoff bending)" : ""}; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
   </>;
 };
 

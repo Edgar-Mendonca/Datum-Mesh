@@ -70,7 +70,7 @@ export const stepOf = (kind: StepKind): Step => ({ id: 0, name: "", kind, load: 
 export const analysesFor = (a: string): [StepKind, string, string][] => {
   const lin: [StepKind, string, string] = ["linear", "Static, linear", "Small movements, elastic materials: most design checks"];
   if (a === "frame") return [lin, ["newton", "Large deflection", "Second-order (P-delta) effects and large rotations, in increments"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
-  if (a === "space") return [lin, ["newton", "Second order (P-delta)", "The axial forces' effect on bending, in increments"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
+  if (a === "space") return [lin, ["newton", "Large deflection", "Large rotations and second-order effects, in increments (P-delta with plates)"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length (no plates)"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
   if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"]];
   if (["stress", "strain", "axi"].includes(a)) return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"]];
   return [];
@@ -140,7 +140,7 @@ export const stepsDialog = () => openDialog(() => {
       <p class="muted small">An elastic-plastic step puts the load on in increments; where the von Mises stress reaches a material's yield strength it yields, hardening as its Hardening says (0 for perfectly plastic). If the part cannot carry the whole load it collapses, and the solve says at what share of it. Small strains.</p></Show>
     <Show when={!part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button> <button class="btn sm" onClick={() => add("spectrum")}>Add a response spectrum</button> <button class="btn sm" onClick={() => add("history")}>Add a time history</button></p></Show>
     <Show when={sts().some(s => isDyn(s.kind)) && sts().length > 1}><p class="warn small">A dynamic step stands on its own: make it the only step to solve it.</p></Show>
-    <Show when={m().analysis === "space" && sts().some(s => s.kind === "newton")}><p class="muted small">In a 3D frame a large-deflection step is second order (P-delta): the axial forces' geometric stiffness, found again until it settles; large rotations and arc length are for plane frames.</p></Show>
+    <Show when={m().analysis === "space" && sts().some(s => s.kind === "newton" || s.kind === "arc")}><p class="muted small">{(m().shapes ?? []).some(s => s.plate) ? "With plates, a large-deflection step in a 3D frame is second order (P-delta): the axial forces' geometric stiffness, found again until it settles. Arc length and large rotations are for 3D frames without plates." : "In a 3D frame a large-deflection step follows large rotations in space: every beam is cut into pieces that turn as rigid bodies and bend a little on their own (corotational). Twist, bending both ways and their coupling are all taken in."}</p></Show>
     <Show when={!plane() && !part() && m().analysis !== "space" && sts().some(s => s.kind === "newton" || s.kind === "arc")}><p class="warn small">Large-deflection steps are for frames; parts come later.</p></Show>
     <p class="muted small">Each large-deflection step starts where the one before ended and takes the loads to its own: its case or combination times its factor. <b>Large deflection</b> applies the load in increments, each corrected until the frame is in balance in its deflected shape (second-order and P-delta effects, large rotations). <b>Past limit loads</b> follows the path by arc length, so it goes on past the largest load a frame can carry (snap-through) and shows the load falling. Loads keep their directions as the frame deflects.</p>
   </Dialog>;
@@ -175,14 +175,15 @@ export const partPathDialog = () => openDialog(() => {
 
 /** Results › Load–Deflection: the curve of the node a step follows. */
 export const pathDialog = () => openDialog(() => {
-  const [comp, setComp] = createSignal<"uy" | "ux" | "rz">("uy");
-  const c = (): Curve | undefined => frameRes()?.path;
+  const [comp, setComp] = createSignal<"uy" | "ux" | "uz" | "rz">("uy");
+  const c = (): Curve | undefined => frameRes()?.path ?? spaceRes()?.path;
+  const sp = () => !!spaceRes()?.path;
   const nodeName = (id: number) => `Node ${(model()?.nodes.findIndex(n => n.id === id) ?? -1) + 1}`;
   const W = 520, H = 300, P = 44;
   const plot = () => {
     const cv = c(); if (!cv) return null;
     const q = comp() === "rz" ? "rad" : "len";
-    const xs = cv[comp()].map(v => toU(q, v)), ys = cv.load;
+    const xs = (cv[comp()] ?? []).map(v => toU(q, v)), ys = cv.load;
     const [x0, x1] = [Math.min(0, ...xs), Math.max(0, ...xs)], [y0, y1] = [Math.min(0, ...ys), Math.max(0, ...ys)];
     const sx = (v: number) => P + (v - x0) / ((x1 - x0) || 1) * (W - 2 * P), sy = (v: number) => H - P - (v - y0) / ((y1 - y0) || 1) * (H - 2 * P);
     const d = xs.map((x, i) => `${i ? "L" : "M"}${sx(x).toFixed(1)} ${sy(ys[i]).toFixed(1)}`).join("");
@@ -191,19 +192,19 @@ export const pathDialog = () => openDialog(() => {
   return <Dialog title="Load–deflection curve" wide help="steps">
     <Show when={c()} fallback={<p class="muted">No curve: add a large-deflection step (Solve › Steps) and solve.</p>}>{cv => <>
       <p class="small">Following {nodeName(cv().node)}: {cv().load.length - 1} increments, {cv().iterations} iterations. The first limit (largest load before it falls): <b>{num(cv().peak, 5)}</b> times the load{(model()?.steps?.length ?? 0) > 1 ? `, in step ${cv().peak_step}` : ""}.</p>
-      <p class="ibtns"><For each={[["uy", "Movement in y"], ["ux", "Movement in x"], ["rz", "Rotation"]] as const}>{([k, l]) => <button class="btn sm" classList={{ on: comp() === k }} onClick={() => setComp(k)}>{l}</button>}</For></p>
+      <p class="ibtns"><For each={(sp() ? [["uy", "Movement in y"], ["ux", "Movement in x"], ["uz", "Movement in z"], ["rz", "Turn"]] : [["uy", "Movement in y"], ["ux", "Movement in x"], ["rz", "Rotation"]]) as ["uy" | "ux" | "uz" | "rz", string][]}>{([k, l]) => <button class="btn sm" classList={{ on: comp() === k }} onClick={() => setComp(k)}>{l}</button>}</For></p>
       <Show when={plot()}>{p => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against movement">
         <line class="ax" x1={P} y1={p().sy(0)} x2={W - P} y2={p().sy(0)} /><line class="ax" x1={p().sx(0)} y1={P} x2={p().sx(0)} y2={H - P} />
         <path class="line" d={p().d} fill="none" />
         <For each={p().xs}>{(x, i) => <circle class="pt" classList={{ unstable: !cv().stable[i()] }} cx={p().sx(x)} cy={p().sy(p().ys[i()])} r="3"><title>{`Load × ${num(p().ys[i()], 5)}, ${num(x, 4)} ${unit(p().q as any)}`}</title></circle>}</For>
-        <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">{comp() === "rz" ? "Rotation" : comp() === "ux" ? "Movement in x" : "Movement in y"} ({unit(p().q as any)})</text>
+        <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">{comp() === "rz" ? (sp() ? "Turn (angle of the rotation)" : "Rotation") : `Movement in ${comp().slice(1)}`} ({unit(p().q as any)})</text>
         <text x={P - 6} y={P - 10} class="lbl">Load factor</text>
         <text x={P - 6} y={p().sy(p().y1) + 4} text-anchor="end" class="lbl">{num(p().y1, 3)}</text>
         <Show when={p().y0 < 0}><text x={P - 6} y={p().sy(p().y0) + 4} text-anchor="end" class="lbl">{num(p().y0, 3)}</text></Show>
         <text x={p().sx(p().x1)} y={H - P + 18} text-anchor="end" class="lbl">{num(p().x1, 3)}</text>
         <Show when={p().x0 < 0}><text x={p().sx(p().x0)} y={H - P + 18} class="lbl">{num(p().x0, 3)}</text></Show>
       </svg>}</Show>
-      <p class="muted small">Hollow points are where the frame is not stable (its stiffness is not positive): past a limit load, on the way down. The load factor is how many times the step's case or combination is on the frame. Last point: {fmt("len", Math.hypot(cv().ux[cv().ux.length - 1], cv().uy[cv().uy.length - 1]))} from where the node started.</p>
+      <p class="muted small">Hollow points are where the frame is not stable (its stiffness is not positive): past a limit load, on the way down. The load factor is how many times the step's case or combination is on the frame. Last point: {fmt("len", Math.hypot(cv().ux[cv().ux.length - 1], cv().uy[cv().uy.length - 1], cv().uz?.[cv().uz!.length - 1] ?? 0))} from where the node started.</p>
     </>}</Show>
   </Dialog>;
 });

@@ -22,6 +22,11 @@ pub trait Problem {
     fn held(&self) -> &[bool];
     /// The internal forces and the tangent stiffness at movements `u`.
     fn state(&self, u: &[f64]) -> Result<(Vec<f64>, System), String>;
+    /// Movements `u` moved on by an increment `du` the tangent was solved for: a plain sum, unless
+    /// the module's unknowns compose otherwise (finite rotations in 3D, 0.5.8).
+    fn add(&self, u: &[f64], du: &[f64]) -> Vec<f64> {
+        u.iter().zip(du).map(|(a, b)| a + b).collect()
+    }
 }
 
 /// How to follow the path.
@@ -121,9 +126,7 @@ fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64,
         if it == max_iter {
             break;
         }
-        for i in 0..u.len() {
-            u[i] += x[0][i];
-        }
+        u = p.add(&u, &x[0]);
     }
     Ok(None)
 }
@@ -198,10 +201,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
         let mut dlam = sign * dl / tt;
         // Close to the end of the step on a rising stable path: finish exactly at λ = 1.
         if lambda + dlam >= 1.0 - 1e-12 && dlam > 0.0 {
-            let mut guess = u.clone();
-            for i in 0..n {
-                guess[i] += (1.0 - lambda) * t[i];
-            }
+            let guess = p.add(&u, &t.iter().map(|x| (1.0 - lambda) * x).collect::<Vec<f64>>());
             if let Some((un, it, stable)) = correct(p, base, load, held, tol, 1.0, guess, ctl.max_iter)? {
                 path.iterations += it;
                 path.points.push(Point { lambda: 1.0, u: un, iterations: it, stable });
@@ -213,7 +213,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
         let mut du: Vec<f64> = t.iter().map(|x| dlam * x).collect();
         let mut done = None;
         for it in 1..=ctl.max_iter {
-            let ut: Vec<f64> = (0..n).map(|i| u[i] + du[i]).collect();
+            let ut = p.add(&u, &du);
             let (fint, k) = p.state(&ut)?;
             let r = residual(base, load, lambda + dlam, &fint, held);
             let rn = norm_free(&r, held);

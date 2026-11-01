@@ -34,7 +34,7 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 - **Parts, meshed and solved**: plane stress, plane strain, axisymmetric solids (vessels, shafts), steady heat conduction and thermal stress on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
 - **Natural frequencies** and mode shapes of frames and parts, moving on screen.
 - **Buckling of frames**: load factors and buckled shapes, with every squeezed truss bar checked as a strut.
-- **Large deflection and P-delta**: plane frames solved in steps in their deflected shape, by Newton increments or by arc length past the limit load (snap-through), with the load–deflection curve.
+- **Large deflection and P-delta**: plane and 3D frames solved in steps in their deflected shape (large rotations in space for 3D frames), by Newton increments or by arc length past the limit load (snap-through), with the load–deflection curve.
 - **3D solids**: a part's section extruded by its thickness or revolved about an axis (shafts, hubs, vessels), solved in 3D for stress, natural frequencies or heat conduction, coloured in a 3D view, with a cutting plane to see inside; faces picked by clicking them.
 - **3D frames and trusses**: drawn on front, side and plan planes, repeated into bays, seen in a 3D view and coloured by their results, with natural frequencies and buckling.
 - **Structural details**: tension-only and compression-only members (bracing, cables), support settlement, rigid floors, rigid end zones at joints, and second order (P-delta) in 3D frames.

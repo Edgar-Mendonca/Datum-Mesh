@@ -34,6 +34,9 @@ pub struct Curve {
     pub ux: Vec<f64>,
     pub uy: Vec<f64>,
     pub rz: Vec<f64>,
+    /// 3D frames (0.5.8): the movement along z (empty in a plane frame).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uz: Vec<f64>,
     /// The structure was stable there (its tangent stiffness positive definite).
     pub stable: Vec<bool>,
     /// The first limit: the largest load factor before the load first falls (the largest of

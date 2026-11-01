@@ -2125,6 +2125,100 @@ fn tetra_nonlinear() -> Vec<Check> {
     v
 }
 
+/// Benchmark 31 (0.5.8): large rotations in 3D frames, by the corotational 3D beam, against
+/// exact answers: cantilevers rolled up by end moments about either axis, a skew cantilever bent
+/// far by an end load (the elastica in a plane at an angle to every axis), and a large twist.
+fn space_large() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    use std::f64::consts::PI;
+    let mut v = vec![];
+    let e = 200e9;
+    let solve = |d: &Doc| -> crate::space::SpaceResults { let Ok(crate::Results::Space(r)) = crate::solve_for(&d.m, None) else { panic!("{:?}", crate::solve_for(&d.m, None).err()) }; r };
+    let step = |d: &mut Doc, n: u32, pieces: u32| { add(d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, increments: n, pieces, ..Default::default() }) }); };
+    let tip_of = |d: &Doc, p: [f64; 3]| d.m.nodes.iter().position(|n| crate::model::dist3(n.at(), p) < 1e-9).expect("tip");
+    // A cantilever 1 m along x, rolled a quarter turn by an end moment: about z (bending in x-y)
+    // with M = (π/2) EIz/L, and about y (bending in x-z) with M = (π/2) EIy/L. The tip moves to
+    // (2L/π, ±2L/π) and turns π/2 (Euler's elastica: κ = M/EI).
+    let (b, h, l) = (0.05, 0.1, 1.0);
+    let shape = SectionShape::Rect { b, h };
+    let (eiz, eiy) = (e * b * h.powi(3) / 12.0, e * h * b.powi(3) / 12.0);
+    for (axis, name) in [(2usize, "Cantilever rolled a quarter turn about z, 3D frame"), (1, "Cantilever rolled a quarter turn about y, 3D frame")] {
+        let mut d = space_frame(e, shape.clone());
+        member3(&mut d, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+        support3(&mut d, [0.0; 3], SupportKind::Fixed);
+        let tip = node3(&d, [l, 0.0, 0.0]);
+        let m = PI / 2.0 * if axis == 2 { eiz } else { eiy } / l;
+        let kind = if axis == 2 { LoadKind::Moment { m, mx: 0.0, my: 0.0 } } else { LoadKind::Moment { m: 0.0, mx: 0.0, my: m } };
+        add(&mut d, Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: tip }, kind }) });
+        step(&mut d, 6, 20);
+        let r = solve(&d);
+        let i = tip_of(&d, [l, 0.0, 0.0]);
+        let src = "NAFEMS NL5 in 3D; Euler's elastica, κ = M/EI";
+        v.push(check(31, name, "Tip moves in (2/π − 1) L", "len", (2.0 / PI - 1.0) * l, r.disp[i][0], 2e-3, src));
+        let across = if axis == 2 { r.disp[i][1] } else { -r.disp[i][2] };
+        v.push(check(31, name, "Tip moves across 2L/π", "len", 2.0 * l / PI, across, 2e-3, src));
+        let turn = if axis == 2 { r.disp[i][5] } else { r.disp[i][4] };
+        v.push(check(31, name, "Tip turns π/2", "rad", PI / 2.0, turn, 2e-3, src));
+    }
+    // A square cantilever 1 m long along the diagonal (1, 1, 1)/√3, a dead end load across it
+    // (along (1, −1, 0)/√2) with PL²/EI = 2: the elastica, in a plane at an angle to every axis.
+    {
+        let a = 0.05;
+        let mut d = space_frame(e, SectionShape::Rect { b: a, h: a });
+        let ei = e * a.powi(4) / 12.0;
+        let dir = [1.0 / 3f64.sqrt(); 3];
+        let across = [1.0 / 2f64.sqrt(), -1.0 / 2f64.sqrt(), 0.0];
+        let end = dir.map(|c| c * l);
+        member3(&mut d, [0.0; 3], end, MemberKind::Beam);
+        support3(&mut d, [0.0; 3], SupportKind::Fixed);
+        let tip = node3(&d, end);
+        let p = 2.0 * ei / (l * l);
+        add(&mut d, Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: tip }, kind: LoadKind::Force { fx: p * across[0], fy: p * across[1], fz: p * across[2] } }) });
+        step(&mut d, 10, 20);
+        let r = solve(&d);
+        let i = tip_of(&d, end);
+        let u = [r.disp[i][0], r.disp[i][1], r.disp[i][2]];
+        let (dv, du, _) = elastica_tip(2.0);
+        let name = "Skew cantilever bent far by an end load across it, 3D frame (PL²/EI = 2)";
+        let src = "The elastica (Mattiasson 1981: 0.49346 L across, 0.16064 L in)";
+        v.push(check(31, name, "Tip moves across, along the load", "len", dv * l, u.iter().zip(&across).map(|(a, b)| a * b).sum::<f64>(), 5e-3, src));
+        v.push(check(31, name, "Tip moves in towards the root", "len", -du * l, u.iter().zip(&dir).map(|(a, b)| a * b).sum::<f64>(), 5e-3, src));
+        v.push(check(31, name, "Equilibrium (moments about the bent shape)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics on the deflected frame"));
+    }
+    // A round bar twisted through 2 rad by an end torque: θ = TL/GJ, exactly (St Venant torsion
+    // of a circle stays linear however far it turns).
+    {
+        let dia = 0.05;
+        let mut d = space_frame(e, SectionShape::Circle { d: dia });
+        member3(&mut d, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+        support3(&mut d, [0.0; 3], SupportKind::Fixed);
+        let tip = node3(&d, [l, 0.0, 0.0]);
+        let gj = e / 2.6 * PI * dia.powi(4) / 32.0;
+        add(&mut d, Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Node { id: tip }, kind: LoadKind::Moment { m: 0.0, mx: 2.0 * gj / l, my: 0.0 } }) });
+        step(&mut d, 4, 4);
+        let r = solve(&d);
+        let i = tip_of(&d, [l, 0.0, 0.0]);
+        v.push(check(31, "Round bar twisted far by an end torque, 3D frame", "Twist TL/GJ = 2 rad", "rad", 2.0, r.disp[i][3], 1e-6, "St Venant torsion of a circular bar (exact)"));
+    }
+    // The 45° bend (Bathe and Bolourchi 1979): a curved cantilever pushed out of its plane, bending
+    // and twisting far. The tip's place at the full load, as published (Simo and Vu-Quoc 1986:
+    // 47.23, 15.79, 53.37 in, from the root, radius 100 in); published solutions differ among
+    // themselves by about 1 % (the bar's torsion constant), hence the tolerance.
+    {
+        let m = crate::examples::get("bend45").expect("bend45");
+        let Ok(crate::Results::Space(r)) = crate::solve_for(&m, None) else { panic!("bend45") };
+        let i = m.nodes.iter().position(|n| n.x > 1.7).expect("tip");
+        let p = m.nodes[i].at();
+        let name = "45° bend pushed out of its plane, 3D frame (large rotations)";
+        let src = "Bathe and Bolourchi 1979; Simo and Vu-Quoc 1986";
+        let inch = 0.0254;
+        v.push(check(31, name, "Tip along the first tangent", "len", 47.23 * inch, p[0] + r.disp[i][0], 2e-2, src));
+        v.push(check(31, name, "Tip across, in the bend's plane", "len", 15.79 * inch, p[2] + r.disp[i][2], 2e-2, src));
+        v.push(check(31, name, "Tip down, out of the plane", "len", 53.37 * inch, -r.disp[i][1], 2e-2, src));
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -2204,6 +2298,7 @@ pub fn run() -> Vec<Check> {
     v.extend(tetra());
     v.extend(tetra_more());
     v.extend(tetra_nonlinear());
+    v.extend(space_large());
     v
 }
 
@@ -2321,10 +2416,3 @@ pub fn timings() -> Vec<Timing> {
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
     out
 }
-
-
-
-
-
-
-

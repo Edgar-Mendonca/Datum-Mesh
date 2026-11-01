@@ -46,7 +46,7 @@ export interface Step { id: number; name: string; kind: StepKind; load: Which | 
 export interface ModeRow { f: number; period: number; sa: number; gamma: number; mass: number; share: number }
 export interface DynInfo { kind: "spectrum" | "history"; modes: ModeRow[]; total_mass: number; share: number; combined: string; node: number; t: number[]; ux: number[]; uy: number[]; uz: number[]; peak_t: number; peak: number[]; steps: number; notes: string[] }
 /** A nonlinear solution's load–deflection curve (0.4.0). */
-export interface Curve { node: number; step: number[]; load: number[]; ux: number[]; uy: number[]; rz: number[]; stable: boolean[]; peak: number; peak_step: number; iterations: number }
+export interface Curve { node: number; step: number[]; load: number[]; ux: number[]; uy: number[]; uz?: number[]; rz: number[]; stable: boolean[]; peak: number; peak_step: number; iterations: number }
 export interface Envelope { over: string[]; members: { id: number; n_max: number; n_min: number; v: number; m: number; t: number; deflection: number; util: number; governs: string }[]; reactions: { node: number; max: number[]; min: number[] }[]; warnings: string[] }
 export interface LibSection { name: string; family: string; shape: SectionShape; table_area: number }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
@@ -111,7 +111,7 @@ export type P3 = [number, number, number];
 export interface SpaceMember { id: number; length: number; x: number[]; n: number[]; vy: number[]; vz: number[]; t: number[]; my: number[]; mz: number[]; d: P3[]; stress: number; util: number; axes: [P3, P3, P3] }
 /** Plate results (0.4.1): mesh, movements and fields at the plate nodes. */
 export interface PlateResults { nodes: P3[]; tris: [number, number, number][]; disp: P3[]; fields: Field3[] }
-export interface SpaceResults { kind: "space"; dynamic?: DynInfo; slack?: number[]; plates?: PlateResults; disp: number[][]; reactions: { node: number; support?: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
+export interface SpaceResults { kind: "space"; dynamic?: DynInfo; slack?: number[]; plates?: PlateResults; disp: number[][]; reactions: { node: number; support?: number; f: number[] }[]; members: SpaceMember[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[]; path?: Curve }
 /** 3D solids (0.3.0): the outer surface with its displacements and fields; min and max over every node. */
 export interface Field3 { key: string; v: number[]; min: number; max: number; at_min: P3; at_max: P3 }
 /** 3D heat conduction (0.3.4): temperatures and heat flux over the surface, flows and the balance. */
