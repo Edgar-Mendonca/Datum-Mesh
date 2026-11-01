@@ -8,7 +8,7 @@
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
-    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
+    "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both; 3D solids also follow large deformation, rubber included (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
   ],
   "steps": [
     {
@@ -26,6 +26,7 @@
   ],
   "highlights": [
     "Plasticity: parts and 3D solids that yield (von Mises with hardening), solved in increments by Newton's method up to collapse, checked against Hill's limit analysis",
+    "Rubber and large deformation: 3D solids followed through large movements and strains (neo-Hookean), checked against the exact stretch of a rubber bar and the elastica",
     "Rigid floors for 3D buildings and rigid end zones at joints, in static, second-order and earthquake analysis",
     "Tension-only and compression-only members, support settlement, and second-order (P-delta) analysis of 3D frames",
     "Dynamics for structures: response spectrum (CQC or SRSS) and time history (Newmark) for frames and plates, with point masses",
@@ -64,9 +65,9 @@
       "title": "Nonlinear solids",
       "when": "Next",
       "items": [
-        "Rubber (hyperelastic)",
         "Tetrahedra and mesh import",
-        "Large rotations in 3D frames"
+        "Large rotations in 3D frames",
+        "Rubber and large deformation for plane parts"
       ]
     },
     {

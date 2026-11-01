@@ -72,7 +72,8 @@ export const stepsDialog = () => openDialog(() => {
   const plane = () => m().analysis === "frame";
   /** Parts (0.5.0) and 3D solids (0.5.1): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
   const part = () => ["stress", "strain", "axi", "solid"].includes(m().analysis);
-  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"]] : KINDS;
+  const solid = () => m().analysis === "solid";
+  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["large", "Large deformation (rubber, large movements)"] as [StepKind, string]] : [])] : KINDS;
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
       <table class="tbl cases steps"><thead><tr><th>Name</th><th>How</th><th>Load</th><th class="r">Factor</th><th class="r">Increments</th><th class="r">Pieces</th><th>Curve follows</th><th /></tr></thead><tbody>
@@ -113,7 +114,8 @@ export const stepsDialog = () => openDialog(() => {
         <label class="tbl2">Spectral acceleration (m/s²) against period (s): one “period, acceleration” a line, straight between, flat beyond the ends<textarea class="mono" rows={5} value={fromTable(s.spectrum)} onChange={e => { const t = toTable(e.currentTarget.value); if (t) set(s, { spectrum: t }); else e.currentTarget.value = fromTable(s.spectrum); }} /></label>
       </Show>
     </div>}</For>
-    <Show when={part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add an elastic-plastic step</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
+    <Show when={part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add an elastic-plastic step</button> <Show when={solid()}><button class="btn sm" onClick={() => add("large")}>Add a large-deformation step</button> </Show><button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
+      <Show when={solid()}><p class="muted small">A large-deformation step follows the solid through large movements and strains: every material is a neo-Hookean solid with its own E and ν (rubber: a few MPa, ν 0.49 or so; steel stays elastic, however far it bends). The loads keep their size and direction as it moves. The shape is drawn true to size.</p></Show>
       <p class="muted small">An elastic-plastic step puts the load on in increments; where the von Mises stress reaches a material's yield strength it yields, hardening as its Hardening says (0 for perfectly plastic). If the part cannot carry the whole load it collapses, and the solve says at what share of it. Small strains.</p></Show>
     <Show when={!part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button> <button class="btn sm" onClick={() => add("spectrum")}>Add a response spectrum</button> <button class="btn sm" onClick={() => add("history")}>Add a time history</button></p></Show>
     <Show when={sts().some(s => isDyn(s.kind)) && sts().length > 1}><p class="warn small">A dynamic step stands on its own: make it the only step to solve it.</p></Show>
@@ -137,7 +139,7 @@ export const partPathDialog = () => openDialog(() => {
   };
   return <Dialog title="Load–deflection curve" wide help="plasticity">
     <Show when={p()} fallback={<p class="muted">No curve: add an elastic-plastic step (Solve › Steps) and solve.</p>}>{x => <>
-      <p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. {x().first_yield !== null ? <>It first yields at <b>{num(x().first_yield! * 100, 3)} %</b> of the load</> : "Nothing yields"}{x().reached ? "; it carries the whole load." : <>; it <b>collapses</b> at about {num(x().load[x().load.length - 1] * 100, 3)} % of it.</>}</p>
+      <p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. {(results() as any)?.large ? "Large deformation (neo-Hookean)" : x().first_yield !== null ? <>It first yields at <b>{num(x().first_yield! * 100, 3)} %</b> of the load</> : "Nothing yields"}{x().reached ? "; it carries the whole load." : <>; it <b>collapses</b> at about {num(x().load[x().load.length - 1] * 100, 3)} % of it.</>}</p>
       <Show when={plot()}>{q => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against the largest movement">
         <line class="ax" x1={P} y1={H - P} x2={W - P} y2={H - P} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
         <path class="line" d={q().d} fill="none" />
@@ -145,7 +147,7 @@ export const partPathDialog = () => openDialog(() => {
         <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">Largest movement ({unit("len")})</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(q().x1, 3)}</text>
         <text x={P - 6} y={P - 10} class="lbl">Load factor</text><text x={P - 6} y={q().sy(q().y1) + 4} text-anchor="end" class="lbl">{num(q().y1, 3)}</text>
       </svg>}</Show>
-      <p class="muted small">Hollow points: the part has yielded somewhere. As it yields it softens, and the curve bends over; at collapse it would run flat.</p>
+      <Show when={(results() as any)?.large} fallback={<p class="muted small">Hollow points: the part has yielded somewhere. As it yields it softens, and the curve bends over; at collapse it would run flat.</p>}><p class="muted small">A stiffening curve (bending up) is the solid carrying load by stretching, as rubber and slender parts do once they move far; a softening one (bending over) is heading for buckling or snap-through.</p></Show>
     </>}</Show>
   </Dialog>;
 });

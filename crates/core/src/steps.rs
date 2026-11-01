@@ -27,6 +27,9 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
             None => crate::solve(&cases::select(m, which)?),
         };
     }
+    if m.analysis != Analysis::Solid && m.steps.iter().any(|s| s.kind == StepKind::Large) {
+        return Err("Large-deformation steps (rubber) are for 3D solids in this release; frames use large-deflection steps.".into());
+    }
     if m.analysis == Analysis::Space {
         // 3D frames (0.4.3): second order (P-delta) for the last step's load; no arc length.
         if m.steps.iter().any(|s| s.kind == StepKind::Arc) {
@@ -53,6 +56,9 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
         }
         let st = m.steps.last().expect("steps");
         let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+        if st.kind == StepKind::Large {
+            return crate::solid::solve_large(&mm, st.increments as usize).map(Results::Solid);
+        }
         return crate::solid::solve_plastic(&mm, st.increments as usize).map(Results::Solid);
     }
     if m.analysis != Analysis::Frame {

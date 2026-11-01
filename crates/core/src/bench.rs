@@ -1799,6 +1799,97 @@ fn solid_plasticity() -> Vec<Check> {
     v
 }
 
+/// The elastica of a cantilever under a dead transverse end load (0.5.2): θ'' = −α cos θ along
+/// s ∈ [0, 1] with α = PL²/EI, θ(0) = 0 and θ'(1) = 0, shot on θ'(0) by bisection with a
+/// fourth-order Runge–Kutta march. Returns the tip's movement across and along (over L) and its
+/// rotation. Mattiasson (1981) tabulates the same: for α = 2, 0.49346, 0.16064 and 0.78175.
+fn elastica_tip(alpha: f64) -> (f64, f64, f64) {
+    let march = |k0: f64| -> (f64, f64, f64, f64) {
+        let n = 20_000;
+        let h = 1.0 / n as f64;
+        let (mut t, mut k, mut x, mut y) = (0.0f64, k0, 0.0f64, 0.0f64);
+        let f = |t: f64, k: f64| (k, -alpha * t.cos(), t.cos(), t.sin());
+        for _ in 0..n {
+            let a = f(t, k);
+            let b = f(t + h / 2.0 * a.0, k + h / 2.0 * a.1);
+            let c = f(t + h / 2.0 * b.0, k + h / 2.0 * b.1);
+            let d = f(t + h * c.0, k + h * c.1);
+            x += h / 6.0 * (a.2 + 2.0 * b.2 + 2.0 * c.2 + d.2);
+            y += h / 6.0 * (a.3 + 2.0 * b.3 + 2.0 * c.3 + d.3);
+            t += h / 6.0 * (a.0 + 2.0 * b.0 + 2.0 * c.0 + d.0);
+            k += h / 6.0 * (a.1 + 2.0 * b.1 + 2.0 * c.1 + d.1);
+        }
+        (k, x, y, t)
+    };
+    let (mut lo, mut hi) = (0.0, alpha);
+    for _ in 0..60 {
+        let mid = (lo + hi) / 2.0;
+        if march(mid).0 > 0.0 {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    let (_, x, y, t) = march((lo + hi) / 2.0);
+    (y, 1.0 - x, t)
+}
+
+/// Benchmark 27 (0.5.2): large deformation of 3D solids. A rubber bar stretched to twice its
+/// length and squeezed to 0.6 of it, against the neo-Hookean model's exact uniaxial answer; and a
+/// slender steel cantilever bent far by an end load, against the elastica.
+fn rubber() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    use crate::solids::hyper::NeoHooke;
+    let mut v = vec![];
+    let large = |d: &mut Doc, n: u32| { add(d, Op::Add { item: Item::Step(Step { kind: StepKind::Large, increments: n, ..Default::default() }) }); };
+    // A rubber bar 0.2 × 0.02 × 0.02 m (a quarter of it by symmetry is not needed: rollers on
+    // three faces leave it free to thin), μ = 1 MPa, ν = 0.49.
+    let (e, nu) = (2.98e6, 0.49);
+    let nh = NeoHooke::new(e, nu);
+    let src = "Neo-Hookean uniaxial tension, exact (Bonet and Wood §6.5): the sides' stretch found so the stress across is zero; Rivlin's P = μ(λ − λ⁻²) in the incompressible limit";
+    for (lam, name) in [(2.0, "Rubber bar stretched to twice its length (neo-Hookean, ν = 0.49)"), (0.6, "Rubber bar squeezed to 0.6 of its length (neo-Hookean, ν = 0.49)")] {
+        let (p, side) = nh.uniaxial(lam);
+        let (mut d, ids) = part(Analysis::Solid, e, nu, vec![(Geom::rect(0.0, 0.0, 0.2, 0.02), false)]);
+        d.m.materials[0].rho = 0.0;
+        d.m.thickness = 0.02;
+        d.m.mesh.size = 0.01;
+        d.m.mesh.layers = 1;
+        let id = ids[0];
+        edge_support(&mut d, id, 3, SupportKind::Symmetry);
+        edge_support(&mut d, id, 0, SupportKind::Symmetry);
+        add_id(&mut d, Item::Support(Support { id: 0, at: Target::End { front: false }, kind: SupportKind::Symmetry }));
+        edge_load(&mut d, id, 1, LoadKind::Traction { fx: p * 0.02 * 0.02, fy: 0.0, total: true, fz: 0.0 });
+        large(&mut d, 10);
+        let Ok(crate::Results::Solid(r)) = crate::solve_for(&d.m, None) else { panic!("rubber bar") };
+        v.push(check(27, name, "End movement (λ − 1) L", "len", (lam - 1.0) * 0.2, at_solid(&r, "ux", [0.2, 0.01, 0.01]), 1e-6, src));
+        v.push(check(27, name, "Side movement (λ⊥ − 1) b", "len", (side - 1.0) * 0.02, at_solid(&r, "uy", [0.1, 0.02, 0.01]), 1e-6, src));
+        v.push(check(27, name, "True stress along it, force over the deformed area", "stress", p / (side * side), at_solid(&r, "sx", [0.1, 0.01, 0.01]), 1e-6, src));
+        v.push(check(27, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics on the deformed solid"));
+    }
+    // A steel cantilever 1 m long, 50 × 50 mm, under a dead end load P = 2 EI/L²: it bends to
+    // half its length down.
+    let (e, l, h) = (200e9, 1.0, 0.05f64);
+    let ei = e * h * h.powi(3) / 12.0;
+    let alpha = 2.0;
+    let (mut d, ids) = part(Analysis::Solid, e, 0.3, vec![(Geom::rect(0.0, 0.0, l, h), false)]);
+    d.m.materials[0].rho = 0.0;
+    d.m.thickness = h;
+    d.m.mesh.size = 0.025;
+    d.m.mesh.layers = 1;
+    let id = ids[0];
+    edge_support(&mut d, id, 3, SupportKind::Fixed);
+    edge_load(&mut d, id, 1, LoadKind::Traction { fx: 0.0, fy: -alpha * ei / (l * l), total: true, fz: 0.0 });
+    large(&mut d, 10);
+    let Ok(crate::Results::Solid(r)) = crate::solve_for(&d.m, None) else { panic!("cantilever") };
+    let (dv, du, _) = elastica_tip(alpha);
+    let name = "Steel cantilever bent far by a dead end load, 3D solid (PL²/EI = 2)";
+    let src = "The elastica of a cantilever under an end load (Bisshopp and Drucker 1945; Mattiasson 1981: 0.49346 L down, 0.16064 L in)";
+    v.push(check(27, name, "Tip movement down", "len", -dv * l, at_solid(&r, "uy", [l, h / 2.0, h / 2.0]), 0.01, src));
+    v.push(check(27, name, "Tip movement in towards the root", "len", -du * l, at_solid(&r, "ux", [l, h / 2.0, h / 2.0]), 0.01, src));
+    v.push(check(27, name, "Equilibrium (load over reactions, moments about the bent shape)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics on the deformed solid"));
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1874,6 +1965,7 @@ pub fn run() -> Vec<Check> {
     v.extend(details());
     v.extend(plasticity());
     v.extend(solid_plasticity());
+    v.extend(rubber());
     v
 }
 

@@ -76,6 +76,9 @@ pub struct SolidResults {
     /// Plasticity (0.5.1): the load factor against the largest movement, as for plane parts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<crate::plane::PartPath>,
+    /// Large deformation (0.5.2): the movements are drawn true to size.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub large: bool,
 }
 
 impl SolidResults {
@@ -417,7 +420,17 @@ pub fn solve_plastic(m: &Model, increments: usize) -> Result<SolidResults, Strin
         return Err("This model is not a 3D solid.".into());
     }
     let sw = swept_of(m)?;
-    solve_swept(m, sw, Some(increments.max(1)))
+    solve_swept(m, sw, Some((increments.max(1), false)))
+}
+
+/// Large deformation of a 3D solid (0.5.2): rubber, and any solid followed through large
+/// movements and strains (neo-Hookean), the load in `increments`.
+pub fn solve_large(m: &Model, increments: usize) -> Result<SolidResults, String> {
+    if m.analysis != Analysis::Solid {
+        return Err("This model is not a 3D solid.".into());
+    }
+    let sw = swept_of(m)?;
+    solve_swept(m, sw, Some((increments.max(1), true)))
 }
 
 /// The solid's stiffness, loads and supports, ready to solve (shared by the static solve and the
@@ -637,23 +650,33 @@ fn build(m: &Model, sw: &Swept) -> Result<Built, String> {
     Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, ne })
 }
 
-pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Result<SolidResults, String> {
+/// `nl`: an elastic-plastic solve (increments, false) or a large-deformation one (increments, true).
+pub(crate) fn solve_swept(m: &Model, sw: Swept, nl: Option<(usize, bool)>) -> Result<SolidResults, String> {
     let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, ne } = build(m, &sw)?;
     let o = sw.order;
     let nn = sw.count();
     let layers = (sw.levels - 1) / o;
     let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
     let mut pl = None;
-    let (u, stats) = match plastic {
-        Some(inc) => {
+    let large = nl.is_some_and(|x| x.1);
+    let (u, stats) = match nl {
+        Some((inc, large)) => {
             let t0 = std::time::Instant::now();
-            let p = plastic3(m, &sw, &sys, &held, inc, &mut warnings)?;
+            let p = if large { large3(m, &sw, &sys, &held, &penalties, kpen, inc, &mut warnings)? } else { plastic3(m, &sw, &sys, &held, inc, &mut warnings)? };
             // The loads it carried (all of them, unless it collapsed first).
             for v in sys.f.iter_mut() {
                 *v *= p.lam;
             }
             applied.sum = applied.sum.map(|v| v * p.lam);
             applied.scale *= p.lam;
+            if large {
+                // Moments about the points where the loads now act.
+                applied = Tally::default();
+                for q in 0..nn {
+                    let x = sw.at(q);
+                    applied.add([x[0] + p.u[3 * q], x[1] + p.u[3 * q + 1], x[2] + p.u[3 * q + 2]], [sys.f[3 * q], sys.f[3 * q + 1], sys.f[3 * q + 2]]);
+                }
+            }
             let nz = sys.k.len();
             let u = p.u.clone();
             pl = Some(p);
@@ -664,6 +687,8 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Resul
     if stats.residual > 1e-8 {
         warnings.push(format!("The supports barely hold the part (the equations were solved only to {:.0e}): it can probably turn or slide. Add a fixed face, or rollers on faces at angles to each other.", stats.residual));
     }
+    // Where each node is for the balance of moments: moved, after a large deformation.
+    let pos = |q: usize| { let x = sw.at(q); if large { [x[0] + u[3 * q], x[1] + u[3 * q + 1], x[2] + u[3 * q + 2]] } else { x } };
     // Reactions (from the true internal forces when the part yields).
     let ku = match &pl {
         Some(p) => p.kint.clone(),
@@ -682,7 +707,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Resul
                     f[c] = ku[3 * n + c] - sys.f[3 * n + c];
                 }
             }
-            reacted.add(sw.at(*n), f);
+            reacted.add(pos(*n), f);
             for c in 0..3 {
                 r[c] += f[c];
             }
@@ -691,7 +716,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Resul
             if s2 == *sid {
                 let un = (0..3).map(|c| u[3 * n + c] * nv[c]).sum::<f64>();
                 let f = nv.map(|c| -kpen * un * c);
-                reacted.add(sw.at(n), f);
+                reacted.add(pos(n), f);
                 for c in 0..3 {
                     r[c] += f[c];
                 }
@@ -763,7 +788,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Resul
             all[c].push(*v);
         }
     }
-    if let Some(p) = &pl {
+    if let Some(p) = pl.as_ref().filter(|p| !p.peeq.is_empty()) {
         keys.push("peeq");
         all.push(p.peeq.clone());
     }
@@ -817,6 +842,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Resul
         quality: sw.ms.quality.clone(),
         volume,
         path: pl.map(|p| p.path),
+        large,
     })
 }
 
@@ -1535,6 +1561,230 @@ fn compact(k: &mut Vec<(usize, usize, f64)>) {
         }
     }
     k.truncate(w);
+}
+
+/// Large deformation of a swept solid (0.5.2), total Lagrangian: every material a neo-Hookean
+/// solid with its own E and ν (rubber, and steel followed through large movements), the loads
+/// fixed in size and direction as the solid moves (gravity, forces on faces, and pressures as set
+/// on the undeformed faces), Newton's method with the tangent ∂P/∂F, the load in increments,
+/// halved when an increment will not settle.
+fn large3(m: &Model, sw: &Swept, sys: &System, held: &[bool], penalties: &[(u32, usize, [f64; 3])], kpen: f64, inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
+    use crate::solids::hyper::{NeoHooke, M3};
+    let o = sw.order;
+    let nn = sw.count();
+    let n = sys.n;
+    let layers = (sw.levels - 1) / o;
+    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
+    struct Pt {
+        g: Vec<[f64; 3]>,
+        w: f64,
+        mat: NeoHooke,
+    }
+    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
+    let mut pts = vec![];
+    let mut els: Vec<(Vec<usize>, f64, (usize, usize))> = vec![];
+    for k in 0..sw.ms.tris.len() {
+        let mt = mats.get(&sw.ms.mat[k]).ok_or("A shape's material is missing.")?;
+        if mt.nu >= 0.5 || mt.nu <= -1.0 {
+            return Err("A material's Poisson's ratio must be below 0.5 (rubber: 0.49 to 0.499).".into());
+        }
+        let nh = NeoHooke::new(mt.e, mt.nu);
+        for l in 0..layers {
+            let en = sw.element(k, l);
+            let xyz: Vec<[f64; 3]> = en.iter().map(|&q| sw.at(q)).collect();
+            let g0 = pts.len();
+            let mut vol = 0.0;
+            for &(xi, eta, wt) in &rule_t {
+                for &(zeta, wz) in &rule_z {
+                    let (g, _, det) = wedge(&xyz, o, xi, eta, zeta);
+                    if det <= 0.0 {
+                        return Err("The mesh has a folded element; try a different element size.".into());
+                    }
+                    vol += wt * wz * det;
+                    pts.push(Pt { g, w: wt * wz * det, mat: nh });
+                }
+            }
+            els.push((en, vol, (g0, pts.len())));
+        }
+    }
+    let fnorm = sys.f.iter().zip(held).filter(|(_, h)| !**h).map(|(v, _)| v * v).sum::<f64>().sqrt();
+    if fnorm == 0.0 {
+        return Err("There are no loads on the solid, so nothing moves. Add loads on the Loads tab.".into());
+    }
+    // The stiff springs of rollers on sloping faces (linear: they hold a fixed normal).
+    let mut kp: Vec<(usize, usize, f64)> = vec![];
+    for &(_, q, nv) in penalties {
+        for a in 0..3 {
+            for b in 0..3 {
+                kp.push((3 * q + a, 3 * q + b, kpen * nv[a] * nv[b]));
+            }
+        }
+    }
+    let fgrad = |p: &Pt, en: &[usize], u: &[f64]| -> M3 {
+        let mut f = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        for (i, &q) in en.iter().enumerate() {
+            for a in 0..3 {
+                for c in 0..3 {
+                    f[a][c] += u[3 * q + a] * p.g[i][c];
+                }
+            }
+        }
+        f
+    };
+    // Internal forces (and the tangent, lower half, when asked) at movements u; None where an
+    // element turns inside out.
+    let eval = |u: &[f64], tangent: bool| -> Option<(Vec<f64>, Vec<(usize, usize, f64)>)> {
+        let mut fi = vec![0.0; n];
+        for &(i, j, v) in &kp {
+            fi[i] += v * u[j];
+        }
+        let mut kt = vec![];
+        for (en, _, (g0, g1)) in &els {
+            let nd = en.len();
+            let mut buf = if tangent { vec![0.0; 9 * nd * nd] } else { vec![] };
+            for p in &pts[*g0..*g1] {
+                let f = fgrad(p, en, u);
+                let pk = p.mat.piola(&f)?;
+                for (i, &q) in en.iter().enumerate() {
+                    for a in 0..3 {
+                        fi[3 * q + a] += p.w * (0..3).map(|c| pk[a][c] * p.g[i][c]).sum::<f64>();
+                    }
+                }
+                if tangent {
+                    let at = p.mat.tangent(&f)?;
+                    // K(ia, jb) = Σ_JL g_iJ A[aJ][bL] g_jL.
+                    for j in 0..nd {
+                        // A g_j: for each (a, J, b).
+                        let mut ag = [[[0.0; 3]; 3]; 3];
+                        for a in 0..3 {
+                            for c in 0..3 {
+                                for b in 0..3 {
+                                    ag[a][c][b] = (0..3).map(|l| at[3 * a + c][3 * b + l] * p.g[j][l]).sum();
+                                }
+                            }
+                        }
+                        for i in 0..nd {
+                            for a in 0..3 {
+                                for b in 0..3 {
+                                    buf[(3 * i + a) * 3 * nd + 3 * j + b] += p.w * (0..3).map(|c| p.g[i][c] * ag[a][c][b]).sum::<f64>();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if tangent {
+                for i in 0..3 * nd {
+                    for j in 0..3 * nd {
+                        let (r, c) = (3 * en[i / 3] + i % 3, 3 * en[j / 3] + j % 3);
+                        if r >= c && buf[i * 3 * nd + j] != 0.0 {
+                            kt.push((r, c, 0.5 * (buf[i * 3 * nd + j] + buf[j * 3 * nd + i])));
+                        }
+                    }
+                }
+            }
+        }
+        if tangent {
+            kt.extend(kp.iter().filter(|e| e.0 >= e.1));
+            compact(&mut kt);
+        }
+        Some((fi, kt))
+    };
+    let mut u = vec![0.0; n];
+    let mut lam = 0.0;
+    let first = 1.0 / inc.max(1) as f64;
+    let mut step = first;
+    let mut path = crate::plane::PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
+    while lam < 1.0 - 1e-12 {
+        let target = (lam + step).min(1.0);
+        let mut ut = u.clone();
+        let mut done = None;
+        let mut best = f64::INFINITY;
+        for it in 1..=30 {
+            let Some((fi, kt)) = eval(&ut, true) else { break };
+            let r: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { target * sys.f[i] - fi[i] }).collect();
+            let rn = r.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if !rn.is_finite() {
+                break;
+            }
+            if rn <= 1e-8 * fnorm || (rn <= 1e-6 * fnorm && rn > 0.5 * best) {
+                done = Some(it);
+                break;
+            }
+            if it > 4 && rn > 10.0 * best {
+                break;
+            }
+            best = best.min(rn);
+            let mut ks = System::lower(n);
+            ks.k = kt;
+            let du = match ks.factor(held, &[]) {
+                Ok(f) => f.solve(&r),
+                Err(_) => match ks.solve_many(held, &[&r]) {
+                    Ok((x, _)) => x.into_iter().next().unwrap_or_default(),
+                    Err(_) => break,
+                },
+            };
+            // Keep a step from turning an element inside out: shorten it until none does.
+            let mut s = 1.0;
+            loop {
+                let trial: Vec<f64> = (0..n).map(|i| ut[i] + s * du[i]).collect();
+                if eval(&trial, false).is_some() || s < 1e-3 {
+                    ut = trial;
+                    break;
+                }
+                s /= 2.0;
+            }
+        }
+        match done {
+            Some(it) => {
+                u = ut;
+                lam = target;
+                path.iterations += it;
+                path.load.push(lam);
+                path.umax.push((0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max));
+                path.peeq.push(0.0);
+                if it < 6 {
+                    step = (step * 1.5).min(first);
+                }
+            }
+            None => {
+                step /= 2.0;
+                if step < first * 1e-3 {
+                    warnings.push(format!("The solid would not settle beyond about {:.1} % of the load: it may buckle, snap through or be squeezed inside out there. The results shown are at the last load it carried.", lam * 100.0));
+                    break;
+                }
+            }
+        }
+    }
+    path.reached = lam >= 1.0 - 1e-12;
+    let (kint, _) = eval(&u, false).ok_or("The solid turned inside out.")?;
+    // True (Cauchy) stresses: element means, then the nodes by volume.
+    let mut stress = vec![[0.0; 6]; nn];
+    let mut wsum = vec![0.0; nn];
+    for (en, vol, (g0, g1)) in &els {
+        let mut s = [0.0; 6];
+        let mut w = 0.0;
+        for p in &pts[*g0..*g1] {
+            let c = p.mat.cauchy(&fgrad(p, en, &u)).unwrap_or([0.0; 6]);
+            for r in 0..6 {
+                s[r] += p.w * c[r];
+            }
+            w += p.w;
+        }
+        for &q in en {
+            for r in 0..6 {
+                stress[q][r] += s[r] / w * vol;
+            }
+            wsum[q] += vol;
+        }
+    }
+    for q in 0..nn {
+        let w = wsum[q].max(1e-300);
+        for r in 0..6 {
+            stress[q][r] /= w;
+        }
+    }
+    Ok(Plastic3 { u, kint, lam, stress, peeq: vec![], path })
 }
 
 #[cfg(test)]

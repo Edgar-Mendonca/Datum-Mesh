@@ -131,7 +131,7 @@ export const SolidLegend = () => {
         <div><b>Result</b><select class="fpick" value={fd().key} onChange={e => C.show({ field: e.currentTarget.value })}>{fieldsFor(r()!.kind).map(f => <option value={f.key} selected={f.key === fd().key}>{f.name}</option>)}</select>
           <span>max {fmt(fd().q, fld()?.max ?? 0)} · min {fmt(fd().q, fld()?.min ?? 0)}</span></div>
         <ColourBar d={fd()} range={fld() ? rangeOf(fd(), fld()!.v) : null} colours={cols()} />
-        <Show when={!hot()}><div><b>Deformed shape</b><span>{show().deformed && dmax() > 0 ? <>largest {fmt("len", r()!.fields.find(f => f.key === "umag")!.max)}</> : "off"}</span>
+        <Show when={!hot()}><div><b>Deformed shape</b><span>{show().deformed && dmax() > 0 ? <>largest {fmt("len", r()!.fields.find(f => f.key === "umag")!.max)}{r()!.kind === "solid" && (r() as any).large ? ` · drawn true to size${show().scale !== 1 ? ` × ${num(show().scale, 3)}` : ""}` : ""}</> : "off"}</span>
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={r()!.volume}><div><b>Cut</b><span class="seg">{(["off", "x", "y", "z"] as CutAxis[]).map(a => <button classList={{ on: cut().axis === a }} title={a === "off" ? "The whole part" : `Cut across ${a}: the part beyond the plane is hidden and the inside shown`} onClick={() => setCut({ ...cut(), axis: a })}>{a === "off" ? "Off" : a}</button>)}</span>
           <Show when={cut().axis !== "off"}><input type="range" min="0" max="1" step="0.01" value={cut().at} onInput={e => setCut({ ...cut(), at: +e.currentTarget.value })} title="Where the plane cuts, across the part" /></Show></div></Show>

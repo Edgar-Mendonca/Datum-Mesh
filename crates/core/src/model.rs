@@ -577,6 +577,9 @@ pub enum StepKind {
     Spectrum,
     /// Dynamics (0.4.2): a time history by direct integration (Newmark, average acceleration).
     History,
+    /// Large deformation of 3D solids (0.5.2): rubber and large movements, every material a
+    /// neo-Hookean solid, the load in increments.
+    Large,
 }
 
 /// An analysis step (0.4.0): a load, its factor, and how it is solved. Nonlinear steps carry on

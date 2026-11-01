@@ -40,7 +40,7 @@ export interface Case { id: number; name: string }
 export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
 export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
 /** An analysis step (0.4.0). */
-export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history";
+export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large";
 export interface Step { id: number; name: string; kind: StepKind; load: Which | null; factor: number; increments: number; pieces: number; monitor: number | null; along: [number, number, number]; spectrum: [number, number][]; damping: number; modes: number; cqc: boolean; time: [number, number][]; ground: boolean; dt: number; duration: number }
 /** A dynamic solution (0.4.2): a spectrum's modes, or a time history's record. */
 export interface ModeRow { f: number; period: number; sa: number; gamma: number; mass: number; share: number }
@@ -128,6 +128,8 @@ export interface SolidResults {
   volume?: { nodes: P3[]; disp: P3[]; tets: [number, number, number, number][]; v: number[][] };
   /** An elastic-plastic solve's record (0.5.1). */
   path?: PartPath;
+  /** Large deformation (0.5.2): drawn true to size. */
+  large?: boolean;
 }
 export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults | SolidResults | SolidHeatResults;
 export type PartResults = PlaneResults | HeatResults;

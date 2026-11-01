@@ -91,7 +91,7 @@ export const View3D = () => {
       const fd = curField(), fld = r.fields.find(f => f.key === fd.key) ?? r.fields[0];
       const cs = palette(opts().contours, fd.reverse).map(c => new THREE.Color(c)), rg = rangeOf(fd, fld.v) ?? [fld.min, fld.max];
       const disp = solidDisp(r), dmax = Math.max(0, ...disp.map(d => Math.hypot(d[0], d[1], d[2])));
-      solidF = show().deformed && dmax > 1e-12 * size ? (() => { const f = 0.08 * size / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p; return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale; })() : 0;
+      solidF = show().deformed && r.kind === "solid" && r.large ? show().scale : show().deformed && dmax > 1e-12 * size ? (() => { const f = 0.08 * size / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p; return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale; })() : 0;
       const pos = new Float32Array(r.surface.nodes.length * 3), col = new Float32Array(r.surface.nodes.length * 3);
       r.surface.nodes.forEach((p, i) => {
         const d = disp[i];

@@ -55,6 +55,8 @@ fn main() {
         "tube": out("tube"),
         "tube_results": sent(&datum_core::solve_for(&examples::get("tube").unwrap(), None).unwrap()),
         "yield3d": out("yield3d"),
+        "rubber": out("rubber"),
+        "rubber_results": sent(&datum_core::solve_for(&examples::get("rubber").unwrap(), None).unwrap()),
         "yield3d_results": sent(&datum_core::solve_for(&examples::get("yield3d").unwrap(), None).unwrap()),
         "building_results": sent(&datum_core::solve_for(&examples::get("building").unwrap(), None).unwrap()),
         "xbrace_results": sent(&datum_core::solve(&examples::get("xbrace").unwrap()).unwrap()),

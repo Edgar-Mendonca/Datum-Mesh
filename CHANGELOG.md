@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.2 — 2026-11-01
+
+Rubber, and 3D solids that move far.
+
+**Large deformation of 3D solids**
+- Solve › Steps › **Add a large-deformation step** on a 3D solid: it is followed through large movements and strains, every material a neo-Hookean solid with its own E and ν. Rubber stretches and squashes as it really does; steel parts bend far while staying elastic. Newton's method on the deformed solid (total Lagrangian), the load in increments.
+- The deformed shape is drawn true to size; stresses are true stresses on the deformed solid; Results › **Load–Deflection** draws the load against the largest movement.
+- Help › Rubber and large deformation.
+- New example: a soft rubber finger curling down under a push at its tip.
+
+**Trust**
+- Help › Verification: 208 checks, all passing. New: benchmark 27, a rubber bar stretched to twice its length and squeezed to 0.6 of it (stretch, thinning and true stress exact to 1e-14 against the neo-Hookean answer), and a slender cantilever bent far by an end load against the elastica (tip within 0.1 % down and 0.4 % in), balanced about the bent shape.
+
 ## 0.5.1 — 2026-11-01
 
 3D solids that yield.

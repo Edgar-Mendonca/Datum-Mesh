@@ -35,6 +35,7 @@ pub fn list() -> Vec<Example> {
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
         e("yield3d", "Holed plate yielding in 3D", "A steel plate 100 mm wide and 10 mm thick with a 20 mm hole, pulled at 250 MPa: as a 3D solid, the plastic zones grow from the hole's edges across the net section (Equivalent plastic strain; Results › Load–Deflection).", Analysis::Solid),
+        e("rubber", "Rubber finger bending far", "A soft rubber finger 100 mm long, 10 × 10 mm, held at its root and pushed down 0.75 N at its tip: a large-deformation step follows it as it curls down, drawn true to size (Results › Load–Deflection).", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("building", "Building in an earthquake", "A three-storey steel building in 3D, 2 × 1 bays, with rigid concrete floors carrying their mass, shaken along x by a design spectrum: the floors sway and twist as one (Results › Dynamics).", Analysis::Space),
@@ -411,6 +412,30 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             d.m.mesh.size = 8.0 * mm;
             d.m.mesh.layers = 1;
             d.m.mesh.refine.push(crate::model::Refine { at: edge(s, 4), size: 3.0 * mm });
+        }
+        "rubber" => {
+            d.m.notes = "A finger of soft natural rubber (E = 3 MPa, ν = 0.49: neo-Hookean, μ = 1 MPa), 100 mm long and 10 × 10 mm, fixed at its root; 0.75 N pushes down at its tip (PL²/EI = 3), in a large-deformation step of 10 increments. Small-deflection theory would put the tip 300 mm down, three times the finger's length; followed through the large deformation it curls to about 62 mm down, and the force, held vertical, bends it less and less as it turns.".into();
+            d.m.grid = 5.0 * mm;
+            d.m.thickness = 10.0 * mm;
+            let mut mt = d.m.materials[0].clone();
+            mt.name = "Natural rubber, soft".into();
+            mt.e = 3e6;
+            mt.nu = 0.49;
+            mt.rho = 1100.0;
+            mt.fy = 0.0;
+            mt.k = 0.15;
+            mt.alpha = 200e-6;
+            mt.source = "Typical values for a soft vulcanised natural rubber (Gent, Engineering with Rubber, ch. 1)".into();
+            d.m.materials[0] = mt;
+            let s = d.apply(shape(poly(&[[0.0, 0.0], [100.0, 0.0], [100.0, 10.0], [0.0, 10.0]], &[]), false))?[0];
+            d.apply(Op::Batch(vec![
+                sup(edge(s, 3), SupportKind::Fixed),
+                load(edge(s, 1), LoadKind::Traction { fx: 0.0, fy: -0.75, total: true, fz: 0.0 }),
+                Op::Add { item: Item::Step(crate::model::Step { name: "Push, large deformation".into(), kind: crate::model::StepKind::Large, increments: 10, ..Default::default() }) },
+            ]))?;
+            // Two quadratic elements through the depth: within 0.1 % of the elastica (benchmark 27).
+            d.m.mesh.size = 5.0 * mm;
+            d.m.mesh.layers = 1;
         }
         "bracket3d" => {
             d.m.notes = "The L-bracket as a 3D solid: legs 100 mm long and 20 mm thick, 10 mm deep (the extrusion), a 10 mm fillet inside the corner. The top end is bolted to a wall (fixed face); 1.5 kN pulls down on the free end's face.".into();
