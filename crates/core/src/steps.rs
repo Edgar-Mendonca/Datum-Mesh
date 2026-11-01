@@ -36,8 +36,18 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
         let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
         return crate::space::pdelta(&mm, st.pieces as usize).map(Results::Space);
     }
+    if matches!(m.analysis, Analysis::Stress | Analysis::Strain | Analysis::Axi) {
+        // Parts (0.5.0): an elastic-plastic solve (von Mises with each material's hardening),
+        // small strains, for the last step's load; no arc length.
+        if m.steps.iter().any(|s| s.kind == StepKind::Arc) {
+            return Err("Following a part past its collapse load (arc length) comes later; use a nonlinear step (load in increments) for plasticity.".into());
+        }
+        let st = m.steps.last().expect("steps");
+        let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+        return crate::plane::solve_plastic(&mm, st.increments as usize).map(Results::Plane);
+    }
     if m.analysis != Analysis::Frame {
-        return Err("Large-deflection steps are for frames in this release; solids come later. Make the steps linear (Home › Steps).".into());
+        return Err("Nonlinear steps are for frames and plane parts in this release; 3D solids come later. Make the steps linear (Home › Steps).".into());
     }
     if m.steps.iter().any(|s| s.kind == StepKind::Linear) {
         return Err("A linear step cannot follow or lead a large-deflection one: make every step large-deflection, or every step linear (Home › Steps).".into());

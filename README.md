@@ -30,6 +30,7 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 ## What it does
 
 - **Frames and trusses, solved**: draw beams and truss bars on a grid, put on supports and loads, press Solve (F5). See the deflected shape, the moment, shear and axial diagrams, the reactions, stresses and utilisation; hover a member to read the values there.
+- **Plasticity**: parts that yield (von Mises with hardening), in increments up to collapse, with plastic strain contours and the load–deflection curve.
 - **Parts, meshed and solved**: plane stress, plane strain, axisymmetric solids (vessels, shafts), steady heat conduction and thermal stress on automatic triangle meshes (6-node by default), finer where you ask. Contours of von Mises and principal stress, displacement, safety factor, temperature and heat flux; the deformed shape; hover anywhere to read the values.
 - **Natural frequencies** and mode shapes of frames and parts, moving on screen.
 - **Buckling of frames**: load factors and buckled shapes, with every squeezed truss bar checked as a strut.
@@ -39,14 +40,14 @@ Draw a frame of beams and truss bars, or the outline of a part with its holes; p
 - **Structural details**: tension-only and compression-only members (bracing, cables), support settlement, rigid floors, rigid end zones at joints, and second order (P-delta) in 3D frames.
 - **Dynamics**: response spectrum (CQC or SRSS) and time history (Newmark) for frames and plates, with point masses; the modes' share of the mass, and the motion over time.
 - **Plates and shells**: slabs, walls and panels drawn on those planes, joined to the beams, coloured by stress, moments or deflection in 3D, and vibrating with the frame.
-- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 188 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and LE10, conduction through a fin and the NAFEMS large-deflection beams (NL5 to NL7), plates against Navier's series and the Scordelis–Lo roof and pinched cylinder, dynamics against the closed forms of one and two masses, with mesh convergence.
+- **The equilibrium check** after every solve (the heat balance for heat models), and **Help › Verification**: 192 benchmark checks with known answers solved in front of you, from beam theory, Euler columns and 3D frames to the plate with a hole, the thick cylinder, NAFEMS LE1 and LE10, conduction through a fin and the NAFEMS large-deflection beams (NL5 to NL7), plates against Navier's series and the Scordelis–Lo roof and pinched cylinder, dynamics against the closed forms of one and two masses, plasticity against Hill's limit analysis, with mesh convergence.
 - **Materials** from Datum Atlas (54 metals and plastics), each with its source.
 - **Sections** (rectangle, round bar, tube, box, I, channel, angle, or your own values) with their properties worked out, and European steel tables (IPE, HEA, HEB).
 - **Load cases and combinations** with your own factors, an envelope of every member's forces over all combinations, and **hinged member ends**.
 - **DXF**: import a section drawn in CAD (outlines, arcs and holes) and export one back.
 - **Drawing parts**: rectangles, circles and polygons with arc edges, and holes; slots, rounded rectangles and regular polygons; rounded and bevelled corners; union, subtract and intersect with arcs kept true; offsets and patterns of holes; supports and loads on edges and points, including a pin load that bears on one side of a hole.
 - **Units**: SI (mm, kN, MPa) or US (in, kip, ksi); files keep SI.
-- **Worked examples**: a portal frame, a roof truss, a braced steel frame with load cases, a snap-through frame, a steel platform in 3D, a floor slab on columns, a frame and a 3D building in an earthquake, tension-only bracing, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink (also in 3D), a pressure vessel (also revolved in 3D) and a heated plate.
+- **Worked examples**: a portal frame, a roof truss, a braced steel frame with load cases, a snap-through frame, a steel platform in 3D, a floor slab on columns, a frame and a 3D building in an earthquake, tension-only bracing, a thick tube yielding, a lifting lug, an L-bracket with a fillet, a flange plate, a heat sink (also in 3D), a pressure vessel (also revolved in 3D) and a heated plate.
 - **Print to PDF**: the model with a title block and a report with the mesh, contour pictures, the largest values, reactions and the equilibrium check; a `?` card beside every tool, light and dark themes, recovery of unsaved work, updates from inside the app.
 
 | Release | What arrives |

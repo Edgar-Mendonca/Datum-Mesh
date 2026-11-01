@@ -52,6 +52,8 @@ fn main() {
         "quake": out("quake"),
         "xbrace": out("xbrace"),
         "building": out("building"),
+        "tube": out("tube"),
+        "tube_results": sent(&datum_core::solve_for(&examples::get("tube").unwrap(), None).unwrap()),
         "building_results": sent(&datum_core::solve_for(&examples::get("building").unwrap(), None).unwrap()),
         "xbrace_results": sent(&datum_core::solve(&examples::get("xbrace").unwrap()).unwrap()),
         "quake_results": sent(&datum_core::solve_for(&examples::get("quake").unwrap(), None).unwrap()),

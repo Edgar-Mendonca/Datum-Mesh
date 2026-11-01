@@ -20,7 +20,7 @@ export type SectionShape =
   | { kind: "i"; h: number; b: number; tw: number; tf: number; r?: number } | { kind: "channel"; h: number; b: number; tw: number; tf: number }
   | { kind: "angle"; h: number; b: number; t: number } | { kind: "custom"; a: number; i: number; c: number; iy?: number; j?: number };
 export interface Section { id: number; name: string; shape: SectionShape }
-export interface Material { id: number; name: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string }
+export interface Material { id: number; name: string; e: number; nu: number; rho: number; fy: number; k: number; alpha: number; source: string; hardening?: number }
 export type Geom = { kind: "poly"; pts: Pt[]; bulge: number[] } | { kind: "circle"; c: Pt; r: number };
 /** A plate of a 3D frame (0.4.1): the shape on a working plane at a depth, and its thickness. */
 export interface Plate { plane: "xy" | "zy" | "xz"; depth: number; t: number }
@@ -98,7 +98,9 @@ export interface Quality { min_angle: number; max_aspect: number; good: number }
 export interface Mesh { nodes: Pt[]; tris: number[][]; order: number; mat: number[]; edges: BEdge[]; points: [Pt, number][]; size: number; quality: Quality }
 export interface Field { key: string; v: number[]; min: number; max: number; at_min: Pt; at_max: Pt }
 export interface PlaneReaction { support: number; fx: number; fy: number }
-export interface PlaneResults { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; disp: Pt[]; fields: Field[]; elem: Field[]; reactions: PlaneReaction[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[] }
+export interface PlaneResults { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; disp: Pt[]; fields: Field[]; elem: Field[]; reactions: PlaneReaction[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[]; path?: PartPath }
+/** An elastic-plastic solve's record (0.5.0). */
+export interface PartPath { load: number[]; umax: number[]; peeq: number[]; first_yield: number | null; reached: boolean; iterations: number }
 export interface Flow { id: number; q: number }
 export interface HeatResults { kind: "heat"; mesh: Mesh; draw: [number, number, number][]; fields: Field[]; elem: Field[]; supports: Flow[]; loads: Flow[]; imbalance: number; stats: SolveStats; warnings: string[] }
 /** 3D frames (0.2.4): six movements per node, forces along and moments about both section axes. */

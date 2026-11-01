@@ -26,6 +26,7 @@ pub fn list() -> Vec<Example> {
         e("xbrace", "Tension-only bracing", "A two-storey frame braced with crossed rods that only pull: under wind the rods being squeezed go slack and the others carry the push; one support has settled 10 mm.", Analysis::Frame),
         e("quake", "Frame in an earthquake", "A three-storey steel frame with its floors' masses, shaken sideways by a design response spectrum: the modes, their share of the mass, and the peak forces combined by CQC (Results › Dynamics).", Analysis::Frame),
         e("lee", "Snap-through frame", "Lee's frame: two slender members at right angles, pinned at their far ends, loaded near the knee. Solved past its limit load by arc length: it snaps through (Results › Load–Deflection).", Analysis::Frame),
+        e("tube", "Thick tube yielding", "A thick steel tube (bore 200 mm, outside 400 mm) under 250 MPa inside, in plane strain: past its first yield the plastic zone spreads out from the bore (Equivalent plastic strain), short of collapse at 284 MPa (Results › Load–Deflection).", Analysis::Strain),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
@@ -188,6 +189,19 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             }
             ops.push(Op::Add { item: Item::Step(crate::model::Step { name: "Earthquake along x".into(), kind: crate::model::StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: spec, damping: 0.05, modes: 6, cqc: true, pieces: 4, ..Default::default() }) });
             d.apply(Op::Batch(ops))?;
+        }
+        "tube" => {
+            d.m.notes = "A quarter of a thick tube, bore radius 100 mm, outside 200 mm, in plane strain (a long tube), of S355 steel, perfectly plastic. 250 MPa inside, in an elastic-plastic step of 10 increments. It first yields at the bore near 177 MPa; the plastic zone then spreads outwards. Hill's limit analysis gives collapse at 2(σy/√3) ln 2 = 284 MPa: try 300 MPa and it collapses.".into();
+            let (a, b) = (100.0, 200.0);
+            d.apply(shape(poly(&[[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], &[(1, QUARTER), (3, -QUARTER)]), false))?;
+            d.m.mesh.size = 0.012;
+            let id = d.m.shapes[0].id;
+            d.apply(Op::Batch(vec![
+                sup(Target::Edge { shape: id, edge: 0 }, SupportKind::Roller),
+                sup(Target::Edge { shape: id, edge: 2 }, SupportKind::Roller),
+                load(Target::Edge { shape: id, edge: 3 }, LoadKind::Pressure { p: 250e6 }),
+                Op::Add { item: Item::Step(crate::model::Step { name: "Pressure, elastic-plastic".into(), kind: crate::model::StepKind::Newton, increments: 10, ..Default::default() }) },
+            ]))?;
         }
         "lee" => {
             d.m.notes = "Lee's frame (NAFEMS NL7), without self-weight: a 1.2 m column and a 1.2 m beam joined rigidly at the knee, pinned at the base and at the beam's far end; 3 kN down on the beam 0.24 m from the knee. A 30 × 20 mm bar of E = 7.2 GPa, so EI/L² = 100 N: the frame's first limit is near PL²/EI = 18.5, 1.85 kN. One step past limit loads (arc length) follows it over the top, down and back up to the full load.".into();

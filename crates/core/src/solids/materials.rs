@@ -22,7 +22,7 @@ pub struct LibMaterial {
 impl LibMaterial {
     /// The library entry as a model material with the given id.
     pub fn to_material(&self, id: u32) -> Material {
-        Material { id, name: self.name.clone(), e: self.e, nu: self.nu, rho: self.rho, fy: self.fy, k: self.k, alpha: self.alpha, source: self.source.clone() }
+        Material { id, name: self.name.clone(), e: self.e, nu: self.nu, rho: self.rho, fy: self.fy, k: self.k, alpha: self.alpha, source: self.source.clone(), hardening: 0.0 }
     }
 }
 

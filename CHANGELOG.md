@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0 — 2026-11-01
+
+Parts that yield: the first nonlinear material.
+
+**Plasticity**
+- Solve › Steps › **Add an elastic-plastic step** on a part (plane stress, plane strain or axisymmetric): the load goes on in increments and, where the von Mises stress reaches a material's yield strength, it yields, hardening as its new **Hardening** value says (Materials; 0 for perfectly plastic). The stress spreads to the rest of the part.
+- Each increment is solved by Newton's method with the consistent tangent of the von Mises return mapping; plane strain and turned parts use B-bar so yielding, which keeps the volume, does not lock the elements. If the part cannot carry the whole load it collapses, and the solve says at what share of it.
+- Results: **Equivalent plastic strain** contours, and Results › **Load–Deflection**: the load against the largest movement, with when it first yields.
+- New example: a thick steel tube yielding under internal pressure.
+
+**Trust**
+- Help › Verification: 192 checks, all passing. New: benchmark 25, the collapse pressure of a thick cylinder in plane strain (within 0.4 %) and of a thick sphere (axisymmetric, converging to within 0.6 %) against Hill's limit analysis, and a strip pulled past yield with hardening (stretch and plastic strain exact).
+
 ## 0.4.5 — 2026-11-01
 
 Rigid end zones at joints.

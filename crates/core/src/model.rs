@@ -191,6 +191,14 @@ pub struct Material {
     pub alpha: f64,
     /// Where the values come from.
     pub source: String,
+    /// Plasticity (0.5.0): the slope of stress against plastic strain past yield (Pa); 0 for
+    /// perfectly plastic. Used by large-deflection (nonlinear) steps on parts.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub hardening: f64,
+}
+
+fn is_zero(v: &f64) -> bool {
+    *v == 0.0
 }
 
 impl Default for Material {
@@ -201,7 +209,7 @@ impl Default for Material {
 
 impl Material {
     pub fn steel(id: u32) -> Material {
-        Material { id, name: "Structural steel S355".into(), e: 210e9, nu: 0.3, rho: 7850.0, fy: 355e6, k: 50.0, alpha: 12e-6, source: "EN 1993-1-1 §3.2 (E, ν, α, density); EN 10025-2 (yield)".into() }
+        Material { id, name: "Structural steel S355".into(), e: 210e9, nu: 0.3, rho: 7850.0, fy: 355e6, k: 50.0, alpha: 12e-6, source: "EN 1993-1-1 §3.2 (E, ν, α, density); EN 10025-2 (yield)".into(), hardening: 0.0 }
     }
 }
 
@@ -896,7 +904,7 @@ impl Model {
             if !(mt.nu > -1.0 && mt.nu < 0.5) {
                 return Err(format!("{}: Poisson's ratio must be between −1 and 0.5.", mt.name));
             }
-            for (v, w) in [(mt.rho, "density"), (mt.fy, "yield strength"), (mt.k, "conductivity")] {
+            for (v, w) in [(mt.rho, "density"), (mt.fy, "yield strength"), (mt.k, "conductivity"), (mt.hardening, "hardening")] {
                 if !(v.is_finite() && v >= 0.0) {
                     return Err(format!("{}: the {w} must be zero or more.", mt.name));
                 }

@@ -35,6 +35,7 @@ export const materials = (focus?: number) => openDialog(() => {
           <label>Poisson's ratio ν</label><input class="mono" value={mm().nu} onChange={numIn(v => put({ nu: v }), () => mm().nu)} />
           <F l="Density" q="density" v={mm().rho} set={rho => put({ rho })} />
           <F l="Yield strength" q="stress" v={mm().fy} set={fy => put({ fy })} />
+          <F l="Hardening (past yield)" q="stress" v={mm().hardening ?? 0} set={hardening => put({ hardening })} />
           <F l="Conductivity" q="cond" v={mm().k} set={k => put({ k })} />
           <F l="Thermal expansion" q="expansion" v={mm().alpha} set={alpha => put({ alpha })} />
           <label>Source</label><input value={mm().source} onChange={e => put({ source: e.currentTarget.value })} />

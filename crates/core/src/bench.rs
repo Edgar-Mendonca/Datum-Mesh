@@ -1680,6 +1680,63 @@ fn details() -> Vec<Check> {
     v
 }
 
+/// Benchmark 25 (0.5.0): plasticity of parts, von Mises (J2) with Newton's method and the
+/// consistent tangent, against the closed forms of limit analysis and of a pulled strip.
+fn plasticity() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    let mut v = vec![];
+    let fy = 250e6;
+    let q = 0.414_213_562_373_095; // tan(90°/4): a quarter-circle arc
+    let ring = |a: f64, b: f64| Geom::Poly { pts: vec![[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], bulge: vec![0.0, q, 0.0, -q] };
+    let collapse = |analysis: Analysis, over: f64, size: f64| -> (f64, usize) {
+        let (mut d, ids) = part(analysis, 200e9, 0.3, vec![(ring(0.1, 0.2), false)]);
+        d.m.materials[0].fy = fy;
+        d.m.materials[0].rho = 0.0;
+        d.m.mesh.size = size;
+        let id = ids[0];
+        edge_support(&mut d, id, 0, SupportKind::Roller);
+        if analysis != Analysis::Axi {
+            edge_support(&mut d, id, 2, SupportKind::Roller);
+        }
+        edge_load(&mut d, id, 3, LoadKind::Pressure { p: over });
+        add(&mut d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, increments: 12, ..Default::default() }) });
+        let Ok(crate::Results::Plane(r)) = crate::solve_for(&d.m, None) else { panic!("plastic part") };
+        (r.path.as_ref().map_or(0.0, |p| p.load.last().copied().unwrap_or(0.0)) * over, r.mesh.tris.len())
+    };
+    // A thick cylinder (a = 0.1, b = 0.2 m) in plane strain under internal pressure, perfectly
+    // plastic: it collapses at p = 2k ln(b/a), k = σy/√3 (Hill, The Mathematical Theory of
+    // Plasticity, 1950, ch. V).
+    let pc = 2.0 * fy / 3f64.sqrt() * 2f64.ln();
+    let src = "Hill 1950, The Mathematical Theory of Plasticity, ch. V (limit analysis: independent of E and ν); the largest load carried, so it is reached from below";
+    v.push(check(25, "Thick cylinder under internal pressure, plane strain, perfectly plastic (b/a = 2)", "Collapse pressure 2k ln(b/a), k = σy/√3", "stress", pc, collapse(Analysis::Strain, 1.1 * pc, 0.02).0, 0.01, src));
+    // A thick sphere, as an axisymmetric solid: it collapses at p = 2σy ln(b/a).
+    let ps = 2.0 * fy * 2f64.ln();
+    let runs: Vec<(f64, usize)> = [0.025, 0.0125].iter().map(|&h| collapse(Analysis::Axi, 1.1 * ps, h)).collect();
+    let steps = runs.iter().map(|(p, n)| [*n as f64, (p - ps).abs() / ps]).collect();
+    v.push(with_steps(check(25, "Thick sphere under internal pressure, axisymmetric, perfectly plastic (b/a = 2)", "Collapse pressure 2σy ln(b/a)", "stress", ps, runs[1].0, 0.01, src), steps));
+    // A strip 1 m × 0.1 m in plane stress pulled to 1.5 σy, hardening H = 2 GPa: it stretches
+    // L(σ/E + (σ − σy)/H), exactly (a uniform state).
+    let (mut d, ids) = part(Analysis::Stress, 200e9, 0.3, vec![(Geom::rect(0.0, 0.0, 1.0, 0.1), false)]);
+    let h = 2e9;
+    d.m.materials[0].fy = fy;
+    d.m.materials[0].hardening = h;
+    d.m.materials[0].rho = 0.0;
+    d.m.mesh.size = 0.05;
+    let id = ids[0];
+    edge_support(&mut d, id, 3, SupportKind::Roller);
+    edge_support(&mut d, id, 0, SupportKind::Roller);
+    let sig = 1.5 * fy;
+    let force = sig * 0.1 * d.m.thickness;
+    edge_load(&mut d, id, 1, LoadKind::Traction { fx: force, fy: 0.0, total: true, fz: 0.0 });
+    add(&mut d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, increments: 6, ..Default::default() }) });
+    let Ok(crate::Results::Plane(r)) = crate::solve_for(&d.m, None) else { panic!("strip") };
+    let ux = r.field("ux").max;
+    let e = 200e9;
+    v.push(check(25, "Strip pulled past yield, plane stress, hardening H = 2 GPa", "Stretch L(σ/E + (σ − σy)/H)", "len", sig / e + (sig - fy) / h, ux, 1e-6, "Uniaxial stress with linear hardening (exact)"));
+    v.push(check(25, "Strip pulled past yield, plane stress, hardening H = 2 GPa", "Equivalent plastic strain (σ − σy)/H", "ratio", (sig - fy) / h, r.field("peeq").max, 1e-6, "Uniaxial stress with linear hardening (exact)"));
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1753,6 +1810,7 @@ pub fn run() -> Vec<Check> {
     v.extend(plates());
     v.extend(dynamics());
     v.extend(details());
+    v.extend(plasticity());
     v
 }
 
@@ -1770,7 +1828,7 @@ mod tests {
                 assert!(b[1] < a[1], "{}: {:?}", r.quantity, r.steps);
             }
         }
-        for b in 1..=24 {
+        for b in 1..=25 {
             assert!(rows.iter().any(|r| r.bench == b), "benchmark {b} has no rows");
         }
     }
@@ -1870,6 +1928,8 @@ pub fn timings() -> Vec<Timing> {
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
     out
 }
+
+
 
 
 

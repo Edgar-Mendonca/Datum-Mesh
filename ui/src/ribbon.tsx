@@ -8,7 +8,7 @@ import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
 import * as K from "./sketch";
 import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
-import { stepsDialog, pathDialog, isNonlinear, dynDialog, dynOf } from "./steps";
+import { stepsDialog, pathDialog, partPathDialog, isNonlinear, dynDialog, dynOf } from "./steps";
 import { Icon } from "./ui";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
@@ -203,6 +203,7 @@ export const Ribbon = () => {
             <S><B i="contour" l="More Results" dd={e => openMenu(e, fieldsFor(m()!.analysis).map(f => ({ label: f.name, on: curField().key === f.key, run: () => C.show({ field: f.key }) })))} off={!pres()} /></S></G>
           <G l="Show" h="contours"><S><Show when={!heat()}><B i="deform" l="Deformed Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!pres()} /></Show><B i="mesh" l="Mesh Lines" on={show().mesh} run={() => C.show({ mesh: !show().mesh })} off={!pres()} /><Show when={!solid3()}><B i="tri3" l="Per Element" on={show().elem} run={() => C.show({ elem: !show().elem })} off={!partRes()} /></Show></S></G>
           <G l="Inspect" h="results"><S><B i="table" l="Tables and Equilibrium" run={() => C.view("results")} off={!pres()} /><B i="reactions" l="Report" run={() => C.view("report")} /></S></G>
+          <Show when={!solid3() && !heat()}><G l="Path" h="plasticity"><B big i="curve" l="Load–Deflection" run={partPathDialog} off={!(partRes() as any)?.path} title="The load against the largest movement, through an elastic-plastic solve" /></G></Show>
         </>}>
           <G l="Shape" h="results"><B big i="deform" l="Deflected Shape" on={show().deformed} run={() => C.show({ deformed: !show().deformed })} off={!results()} /></G>
           <Show when={sp()}>{(() => { const Q = (p: { k: Q3; l: string; big?: boolean }) => <B big={p.big} i={p.k === "util" ? "check" : p.k === "d" ? "deform" : "diagram"} l={p.l} on={q3() === p.k} run={() => { setQ3(q3() === p.k ? "none" : p.k); setPlane("3d"); }} off={!results()} />; return <>

@@ -51,6 +51,25 @@ pub struct PlaneResults {
     pub imbalance: f64,
     pub stats: Stats,
     pub warnings: Vec<String>,
+    /// Plasticity (0.5.0): the load factor against the largest movement, increment by
+    /// increment, and how far it got.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<PartPath>,
+}
+
+/// An elastic-plastic solve's record (0.5.0).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct PartPath {
+    /// The load factor of each converged increment, the largest movement and the largest
+    /// equivalent plastic strain then.
+    pub load: Vec<f64>,
+    pub umax: Vec<f64>,
+    pub peeq: Vec<f64>,
+    /// The load factor at which the part first yields (by its first plastic increment), the
+    /// largest reached, and whether it reached the whole load.
+    pub first_yield: Option<f64>,
+    pub reached: bool,
+    pub iterations: usize,
 }
 
 impl PlaneResults {
@@ -194,7 +213,7 @@ pub fn solve(m: &Model) -> Result<PlaneResults, String> {
 pub fn modes(m: &Model, count: usize) -> Result<PartModes, String> {
     check_part(m)?;
     let ms = mesh::mesh(m)?;
-    match run(m, ms, Some(count))? {
+    match run(m, ms, Some(count), None)? {
         Out::Modes(r) => Ok(*r),
         Out::Static(_) => unreachable!(),
     }
@@ -237,7 +256,7 @@ fn check_part(m: &Model) -> Result<(), String> {
 }
 
 pub fn solve_mesh(m: &Model, ms: Mesh) -> Result<PlaneResults, String> {
-    match run(m, ms, None)? {
+    match run(m, ms, None, None)? {
         Out::Static(r) => Ok(*r),
         Out::Modes(_) => unreachable!(),
     }
@@ -274,7 +293,21 @@ fn mass(m: &Model, ms: &Mesh, area_w: &dyn Fn([f64; 2]) -> f64) -> Vec<(usize, u
     out
 }
 
-fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> {
+/// An elastic-plastic solve of a part (0.5.0): the loads in `increments` steps, every material
+/// with a yield strength yielding by von Mises (J2) with its hardening.
+pub fn solve_plastic(m: &Model, increments: usize) -> Result<PlaneResults, String> {
+    check_part(m)?;
+    if m.analysis == Analysis::Heat {
+        return Err("Plasticity is for parts in stress, not heat conduction.".into());
+    }
+    let ms = mesh::mesh(m)?;
+    match run(m, ms, None, Some(increments.max(1)))? {
+        Out::Static(r) => Ok(*r),
+        Out::Modes(_) => unreachable!(),
+    }
+}
+
+fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>, plastic: Option<usize>) -> Result<Out, String> {
     let axi = m.analysis == Analysis::Axi;
     let t = if m.analysis == Analysis::Strain { 1.0 } else { m.thickness };
     // What an area or a length of the drawing stands for: the thickness in plane stress, a metre
@@ -544,7 +577,34 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
         let draw = draw_tris(&ms);
         return Ok(Out::Modes(Box::new(PartModes { mesh: ms, draw, modes, equations, iterations, ms: t0.elapsed().as_secs_f64() * 1e3 })));
     }
-    let (u, stats) = sys.solve(&held, &vec![0.0; 2 * nn])?;
+    // Plasticity (0.5.0): the elastic-plastic solve gives the movements, the correction of the
+    // internal forces (K u minus them) and each element's stresses and plastic strain.
+    let mut path = None;
+    let mut corr = vec![0.0; 2 * nn];
+    let mut gauss_out: Option<Vec<([f64; 4], f64)>> = None;
+    let (u, stats) = if let Some(inc) = plastic {
+        let t0 = std::time::Instant::now();
+        let pe = plastic_solve(m, &ms, &sys, &held, inc, &area_w, dt.as_deref(), &mut warnings)?;
+        corr = pe.corr;
+        gauss_out = Some(pe.elem);
+        // Stopped short (collapse): the loads it carries are that share of them.
+        let lam = pe.path.load.last().copied().unwrap_or(1.0);
+        if lam < 1.0 {
+            for v in applied.sum.iter_mut() {
+                *v *= lam;
+            }
+            for v in applied.scale.iter_mut() {
+                *v *= lam;
+            }
+            for v in sys.f.iter_mut() {
+                *v *= lam;
+            }
+        }
+        path = Some(pe.path);
+        (pe.u, Stats { equations: held.iter().filter(|h| !**h).count(), ms: t0.elapsed().as_secs_f64() * 1e3, ..Default::default() })
+    } else {
+        sys.solve(&held, &vec![0.0; 2 * nn])?
+    };
     if stats.residual > 1e-8 {
         // Rollers on curved or sloping edges are stiff springs, so a part they hold only nearly
         // (a roller on one arc lets it turn about the arc's centre) is not caught as a mechanism.
@@ -552,7 +612,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
     }
     // Reactions: K u − f at held unknowns (each node counted once, for the support that holds it
     // first), plus the stiff springs of rollers on sloping edges and the springs.
-    let ku = sys.mul(&u);
+    let ku: Vec<f64> = sys.mul(&u).iter().zip(&corr).map(|(a, c)| a - c).collect();
     let mut taken = vec![false; 2 * nn];
     let mut reactions = vec![];
     let mut reacted = Tally::default();
@@ -615,14 +675,20 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
                 eps[r] -= e0[r];
             }
             let s4 = dot4(&d, eps);
-            let s = [s4[0], s4[1], s4[2]];
+            let mut s = [s4[0], s4[1], s4[2]];
             // The stress across the plane: plane strain holds the length along the body
             // (σz = ν(σx + σy) − EαΔT); a turned solid has its hoop stress σθ.
-            let sz = match m.analysis {
+            let mut sz = match m.analysis {
                 Analysis::Strain => mt.nu * (s[0] + s[1]) - mt.e * mt.alpha * dtn,
                 Analysis::Axi => s4[3],
                 _ => 0.0,
             };
+            // Elastic-plastic: the element's own stress (the mean of its points').
+            if let Some(g) = &gauss_out {
+                let (sg, _) = g[k];
+                s = [sg[0], sg[1], sg[3]];
+                sz = sg[2];
+            }
             let n = tri[q] as usize;
             for r in 0..3 {
                 acc[n][r] += s[r] * area;
@@ -659,6 +725,20 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
         }
     }
     let mut fields: Vec<Field> = cols.into_iter().map(|(key, v)| field(key, v, &ms.nodes)).collect();
+    if let Some(g) = &gauss_out {
+        // Equivalent plastic strain at the nodes, from the elements round each (by area).
+        let mut acc = vec![0.0; nn];
+        let mut w = vec![0.0; nn];
+        for (k, tri) in ms.tris.iter().enumerate() {
+            let xy: Vec<[f64; 2]> = tri.iter().map(|&i| ms.nodes[i as usize]).collect();
+            let (_, _, det0) = bmat(&xy, ord, 1.0 / 3.0, 1.0 / 3.0, axi);
+            for &n in tri {
+                acc[n as usize] += g[k].1 * det0.abs();
+                w[n as usize] += det0.abs();
+            }
+        }
+        fields.push(field("peeq", (0..nn).map(|i| if w[i] > 0.0 { acc[i] / w[i] } else { 0.0 }).collect(), &ms.nodes));
+    }
     if let Some(t) = temps {
         fields.push(field("t", t, &ms.nodes));
     }
@@ -681,7 +761,259 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>) -> Result<Out, String> 
     } else {
         imbalance(applied.sum, reacted.sum, applied.scale)
     };
-    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings })))
+    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings, path })))
+}
+
+/// What the elastic-plastic solve hands back to `run`.
+struct PlasticOut {
+    u: Vec<f64>,
+    /// K u minus the true internal forces: Σ ∫ Bᵀ (D ε − σ) dV.
+    corr: Vec<f64>,
+    /// Each element's mean stress (xx, yy, zz, xy) and equivalent plastic strain.
+    elem: Vec<([f64; 4], f64)>,
+    path: PartPath,
+}
+
+/// Initial-stress iterations (0.5.0): the elastic stiffness factorised once; every iteration
+/// takes the out-of-balance force from the stresses the J2 return gives at each point, and
+/// solves for a correction. The load goes on in increments; one that will not converge is
+/// halved, and when no smaller one helps the part has reached its collapse load.
+fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, area_w: &dyn Fn([f64; 2]) -> f64, dt: Option<&[f64]>, warnings: &mut Vec<String>) -> Result<PlasticOut, String> {
+    use crate::solids::j2::{State, J2};
+    let axi = m.analysis == Analysis::Axi;
+    let stress_plane = m.analysis == Analysis::Stress;
+    let ord = ms.order;
+    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
+    if !ms.mat.iter().any(|id| mats.get(id).is_some_and(|mt| mt.fy > 0.0)) {
+        warnings.push("No material has a yield strength, so nothing yields: the answer is elastic.".into());
+    }
+    // Every integration point: element, B, weight, the material, the free thermal strain.
+    struct Pt {
+        el: usize,
+        b: Vec<[f64; 4]>,
+        /// B-bar: the volumetric part of the strain replaced by the element's mean (so flow
+        /// that keeps volume does not lock the element); row 4 is εzz (plane strain) or εθ.
+        bb: Vec<[f64; 4]>,
+        w: f64,
+        mat: J2,
+        d: [[f64; 4]; 4],
+        e0: [f64; 4],
+        dofs: Vec<usize>,
+    }
+    let mut pts = vec![];
+    for (k, tri) in ms.tris.iter().enumerate() {
+        let mt = mats.get(&ms.mat[k]).ok_or("A shape's material is missing.")?;
+        let xy: Vec<[f64; 2]> = tri.iter().map(|&i| ms.nodes[i as usize]).collect();
+        let dofs: Vec<usize> = tri.iter().flat_map(|&i| [2 * i as usize, 2 * i as usize + 1]).collect();
+        for &(xi, eta, w) in gauss(ord) {
+            let (b, n, det) = bmat(&xy, ord, xi, eta, axi);
+            let pt = [n.iter().zip(&xy).map(|(ni, p)| ni * p[0]).sum::<f64>(), 0.0];
+            let dtp = dt.map_or(0.0, |v| n.iter().zip(tri.iter()).map(|(ni, &i)| ni * v[i as usize]).sum());
+            let e = mt.alpha * dtp * if m.analysis == Analysis::Strain { 1.0 + mt.nu } else { 1.0 };
+            pts.push(Pt { el: k, bb: b.clone(), b, w: w * det * area_w(pt), mat: J2 { e: mt.e, nu: mt.nu, fy: mt.fy, h: mt.hardening }, d: dmat(m.analysis, mt.e, mt.nu), e0: [e, e, 0.0, if axi { e } else { 0.0 }], dofs: dofs.clone() });
+        }
+        // B-bar for plane strain and turned solids (not plane stress, which cannot lock).
+        if !stress_plane {
+            let mine: Vec<usize> = (pts.len() - gauss(ord).len()..pts.len()).collect();
+            let nd = dofs.len();
+            let vol = |p: &Pt, i: usize| p.b[i][0] + p.b[i][1] + p.b[i][3];
+            let wsum: f64 = mine.iter().map(|&g| pts[g].w).sum();
+            let mean: Vec<f64> = (0..nd).map(|i| mine.iter().map(|&g| pts[g].w * vol(&pts[g], i)).sum::<f64>() / wsum).collect();
+            for &g in &mine {
+                for i in 0..nd {
+                    let dv = (mean[i] - vol(&pts[g], i)) / 3.0;
+                    let row = pts[g].b[i];
+                    pts[g].bb[i] = [row[0] + dv, row[1] + dv, row[2], row[3] + dv];
+                }
+            }
+        }
+    }
+    let n = sys.n;
+    let fac = sys.factor(held, &[])?;
+    let fnorm = sys.f.iter().zip(held).filter(|(_, h)| !**h).map(|(v, _)| v * v).sum::<f64>().sqrt();
+    if fnorm == 0.0 {
+        return Err("There are no loads on the part, so nothing yields. Add loads on the Loads tab.".into());
+    }
+    // The stresses, the internal-force correction (K u minus the true internal forces) and the
+    // tangent's change (Σ ∫ Bᵀ (D_ep − D) B) at movements u, from the committed histories. Each
+    // point's tangent D_ep is the return mapping's own slope, by small strain steps (so it is
+    // the consistent tangent, for plane stress too), only where the point yields.
+    let ret = |p: &Pt, em: [f64; 4], st: &State| -> ([f64; 4], State) {
+        if stress_plane {
+            let (s2, st3, _) = p.mat.plane_stress([em[0], em[1], em[2] / 2.0], st);
+            (s2, st3)
+        } else {
+            p.mat.stress([em[0], em[1], em[3], em[2] / 2.0], st)
+        }
+    };
+    let as_b = |s: [f64; 4]| [s[0], s[1], s[3], if stress_plane { 0.0 } else { s[2] }];
+    let eval = |u: &[f64], hist: &[State], tangent: bool| -> (Vec<f64>, Vec<State>, Vec<[f64; 4]>, Vec<(usize, usize, f64)>) {
+        let mut corr = vec![0.0; n];
+        let mut out = Vec::with_capacity(pts.len());
+        let mut sig = Vec::with_capacity(pts.len());
+        let mut dk = vec![];
+        for (p, st) in pts.iter().zip(hist) {
+            // The strain the elastic stiffness sees (B) and the one the material sees (B-bar).
+            let (mut e, mut eb) = ([0.0; 4], [0.0; 4]);
+            for (i, (c, cb)) in p.b.iter().zip(&p.bb).enumerate() {
+                let ui = u[p.dofs[i]];
+                for r in 0..4 {
+                    e[r] += c[r] * ui;
+                    eb[r] += cb[r] * ui;
+                }
+            }
+            // The free thermal strain: along z too in plane strain (the held length).
+            let e0z = if axi || stress_plane { p.e0[3] } else { p.e0[0] };
+            let es = [e[0] - p.e0[0], e[1] - p.e0[1], e[2] - p.e0[2], e[3] - p.e0[3]];
+            let em = [eb[0] - p.e0[0], eb[1] - p.e0[1], eb[2] - p.e0[2], eb[3] - e0z];
+            let (s, st2) = ret(p, em, st);
+            let de = dot4(&p.d, es);
+            let sv = as_b(s);
+            for (i, (c, cb)) in p.b.iter().zip(&p.bb).enumerate() {
+                corr[p.dofs[i]] += p.w * (0..4).map(|r| c[r] * de[r] - cb[r] * sv[r]).sum::<f64>();
+            }
+            // Plane strain and turned solids see B-bar, so every point's tangent changes; plane
+            // stress only where it yields.
+            if tangent && !stress_plane && st2.alpha <= st.alpha {
+                let d3 = dmat(Analysis::Axi, p.mat.e, p.mat.nu);
+                let dbb: Vec<[f64; 4]> = p.bb.iter().map(|c| dot4(&d3, *c)).collect();
+                let db: Vec<[f64; 4]> = p.b.iter().map(|c| dot4(&p.d, *c)).collect();
+                for i in 0..p.b.len() {
+                    for j in 0..p.b.len() {
+                        let v = p.w * (0..4).map(|r| p.bb[i][r] * dbb[j][r] - p.b[i][r] * db[j][r]).sum::<f64>();
+                        if v != 0.0 {
+                            dk.push((p.dofs[i], p.dofs[j], v));
+                        }
+                    }
+                }
+            }
+            if tangent && st2.alpha > st.alpha {
+                let mut dep = [[0.0; 4]; 4];
+                let size = em.iter().fold(0.0f64, |x, y| x.max(y.abs())).max(p.mat.fy / p.mat.e);
+                let used = if stress_plane { 3 } else { 4 };
+                for c in 0..used {
+                    let h = 1e-7 * size;
+                    let mut ep = em;
+                    ep[c] += h;
+                    let mut emn = em;
+                    emn[c] -= h;
+                    let (sp, _) = ret(p, ep, st);
+                    let (sn, _) = ret(p, emn, st);
+                    let (bp, bn) = (as_b(sp), as_b(sn));
+                    for r in 0..4 {
+                        dep[r][c] = (bp[r] - bn[r]) / (2.0 * h);
+                    }
+                }
+                // The tangent's change: B̄ᵀ D_ep B̄ − Bᵀ D B (D_ep made symmetric, as the exact one is).
+                let mut dsym = [[0.0; 4]; 4];
+                for r in 0..4 {
+                    for c in 0..4 {
+                        dsym[r][c] = 0.5 * (dep[r][c] + dep[c][r]);
+                    }
+                }
+                let dbb: Vec<[f64; 4]> = p.bb.iter().map(|c| dot4(&dsym, *c)).collect();
+                let db: Vec<[f64; 4]> = p.b.iter().map(|c| dot4(&p.d, *c)).collect();
+                for i in 0..p.b.len() {
+                    for j in 0..p.b.len() {
+                        let v = p.w * (0..4).map(|r| p.bb[i][r] * dbb[j][r] - p.b[i][r] * db[j][r]).sum::<f64>();
+                        if v != 0.0 {
+                            dk.push((p.dofs[i], p.dofs[j], v));
+                        }
+                    }
+                }
+            }
+            out.push(st2);
+            sig.push(s);
+        }
+        (corr, out, sig, dk)
+    };
+    let mut hist = vec![State::default(); pts.len()];
+    let mut u = vec![0.0; n];
+    let mut lam = 0.0;
+    let first = 1.0 / inc as f64;
+    let mut step = first;
+    let mut path = PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
+    let mut sig_last = vec![[0.0; 4]; pts.len()];
+    while lam < 1.0 - 1e-12 {
+        let target = (lam + step).min(1.0);
+        let mut ut = u.clone();
+        let mut done = None;
+        for it in 1..=25 {
+            let (corr, h2, sig, dk) = eval(&ut, &hist, true);
+            let ku = sys.mul(&ut);
+            let r: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { target * sys.f[i] - (ku[i] - corr[i]) }).collect();
+            let rn = r.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if !rn.is_finite() {
+                break;
+            }
+            if rn <= 1e-8 * fnorm {
+                done = Some((h2, sig, it));
+                break;
+            }
+            // Newton: the tangent K + ΔK (elastic where nothing yields: the factors kept).
+            let du = if dk.is_empty() {
+                fac.solve(&r)
+            } else {
+                let mut kt = System::new(n);
+                kt.k = sys.k.clone();
+                kt.k.extend(dk);
+                match kt.solve_many(held, &[&r]) {
+                    Ok((x, _)) => x.into_iter().next().unwrap_or_default(),
+                    Err(_) => break,
+                }
+            };
+            for i in 0..n {
+                ut[i] += du[i];
+            }
+        }
+        match done {
+            Some((h2, sig, it)) => {
+                u = ut;
+                hist = h2;
+                sig_last = sig;
+                lam = target;
+                path.iterations += it;
+                let peeq = hist.iter().map(|s| s.alpha).fold(0.0, f64::max);
+                if peeq > 0.0 && path.first_yield.is_none() {
+                    path.first_yield = Some(lam);
+                }
+                path.load.push(lam);
+                path.umax.push((0..n / 2).map(|i| u[2 * i].hypot(u[2 * i + 1])).fold(0.0, f64::max));
+                path.peeq.push(peeq);
+                if it < 6 {
+                    step = (step * 1.5).min(first);
+                }
+            }
+            None => {
+                step /= 2.0;
+                if step < first * 1e-3 {
+                    warnings.push(format!("The part cannot carry the whole load: it collapses (yields right through) at about {:.1} % of it. The results shown are at the last load it carried.", lam * 100.0));
+                    break;
+                }
+            }
+        }
+    }
+    path.reached = lam >= 1.0 - 1e-12;
+    let (corr, _, _, _) = eval(&u, &hist, false);
+    // Each element's mean stress and plastic strain.
+    let ne = ms.tris.len();
+    let mut elem = vec![([0.0; 4], 0.0); ne];
+    let mut cnt = vec![0.0; ne];
+    for ((p, s), st) in pts.iter().zip(&sig_last).zip(&hist) {
+        let e = &mut elem[p.el];
+        for r in 0..4 {
+            e.0[r] += s[r];
+        }
+        e.1 += st.alpha;
+        cnt[p.el] += 1.0;
+    }
+    for (e, c) in elem.iter_mut().zip(&cnt) {
+        for r in 0..4 {
+            e.0[r] /= c;
+        }
+        e.1 /= c;
+    }
+    Ok(PlasticOut { u, corr, elem, path })
 }
 
 /// Temperatures for thermal stress: the nodal temperatures when the model has fixed temperatures
@@ -841,5 +1173,43 @@ mod tests {
         let s1 = r.field("s1");
         assert!((s1.max - 10e6).abs() < 1e-4 * 10e6 && (s1.min - 10e6).abs() < 1e-4 * 10e6, "{} {}", s1.min, s1.max);
         assert!(r.imbalance() < 1e-6, "{}", r.imbalance());
+    }
+}
+
+#[cfg(test)]
+mod plastic_tests {
+    use crate::doc::{Doc, Item, Op};
+    use crate::model::{Analysis, Geom, Load, LoadKind, Model, Shape, Support, SupportKind, Target};
+
+    /// A quarter of a thick cylinder, a = 0.1, b = 0.2 m, in plane strain, under internal
+    /// pressure p, perfectly plastic at σy = 250 MPa.
+    pub(crate) fn cylinder(p: f64, size: f64) -> Doc {
+        let (a, b) = (0.1, 0.2);
+        let mut d = Doc::new(Model::new(Analysis::Strain));
+        d.m.materials[0].fy = 250e6;
+        d.m.materials[0].rho = 0.0;
+        d.m.mesh.size = size;
+        let q = 0.414_213_562_373_095;
+        let geom = Geom::Poly { pts: vec![[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], bulge: vec![0.0, q, 0.0, -q] };
+        let id = d.apply(Op::Add { item: Item::Shape(Shape { geom, material: d.m.materials[0].id, ..Shape::default() }) }).unwrap()[0];
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: 0 }, kind: SupportKind::Roller }) }).unwrap();
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: 2 }, kind: SupportKind::Roller }) }).unwrap();
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Edge { shape: id, edge: 3 }, kind: LoadKind::Pressure { p } }) }).unwrap();
+        d
+    }
+
+    #[test]
+    fn the_thick_cylinder_collapses_at_its_limit_pressure() {
+        let k = 250e6 / 3f64.sqrt();
+        let pc = 2.0 * k * 2f64.ln();
+        let d = cylinder(1.1 * pc, 0.02);
+        let r = super::solve_plastic(&d.m, 12).unwrap();
+        let path = r.path.unwrap();
+        let top = path.load.last().unwrap() * 1.1;
+        assert!(!path.reached);
+        assert!((top - 1.0).abs() < 0.01, "{top}");
+        // It says it collapsed, and its results balance at the last load it carried.
+        assert!(r.warnings.iter().any(|w| w.contains("collapses")));
+        assert!(r.imbalance < 1e-6, "{}", r.imbalance);
     }
 }
