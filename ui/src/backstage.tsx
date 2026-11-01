@@ -1,5 +1,5 @@
 // File (backstage): home with examples and recent models, export, print, options, roadmap, updates.
-import { For, Show, createSignal, createResource, onMount, JSX } from "solid-js";
+import { For, Show, createSignal, createResource, onMount, JSX, lazy, Suspense } from "solid-js";
 import { PAPERS, PrintPage } from "./print";
 import { RoadmapPage } from "./roadmap";
 import { Options, Out, Example, listen, invoke } from "./api";
@@ -7,7 +7,8 @@ import { backstage, setBackstage, call, out, setOut, model, opts, setOpts, toast
 import { C } from "./cmds";
 import * as D from "./dialogs";
 import { Icon, Text, Pick, Check } from "./ui";
-import { NewStudy } from "./newstudy";
+// File › New loads only when opened (0.5.3: it put the startup code over its budget).
+const NewStudy = lazy(() => import("./newstudy").then(m => ({ default: m.NewStudy })));
 
 type Info = { current: string; latest: string | null; beta: boolean; available: boolean; notes: string; published: string; url: string | null; sums: string | null; size: number; page: string };
 export const [update, setUpdate] = createSignal<Info | null>(null);
@@ -164,7 +165,7 @@ export const Backstage = () => (
     </aside>
     <section class="bsmain">
       <Show when={backstage() === "home"}><Home /></Show>
-      <Show when={backstage() === "new"}><NewStudy /></Show>
+      <Show when={backstage() === "new"}><Suspense><NewStudy /></Suspense></Show>
       <Show when={backstage() === "export"}><Export /></Show>
       <Show when={backstage() === "options"}><OptionsPage /></Show>
       <Show when={backstage() === "print"}><PrintPage /></Show>
