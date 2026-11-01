@@ -7,6 +7,7 @@ import { backstage, setBackstage, call, out, setOut, model, opts, setOpts, toast
 import { C } from "./cmds";
 import * as D from "./dialogs";
 import { Icon, Text, Pick, Check } from "./ui";
+import { NewStudy } from "./newstudy";
 
 type Info = { current: string; latest: string | null; beta: boolean; available: boolean; notes: string; published: string; url: string | null; sums: string | null; size: number; page: string };
 export const [update, setUpdate] = createSignal<Info | null>(null);
@@ -66,6 +67,8 @@ const Home = () => {
     <div class="home">
       <div>
         <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</h1>
+        <button class="startnew" onClick={() => setBackstage("new")}><Icon n="new" size={28} /><span><b>Start a new study</b><small>Choose what you are analysing: a truss, a frame, a part, a 3D solid or heat. The window then takes you through it stage by stage.</small></span></button>
+        <h2>Or open an example</h2>
         <div class="tiles">
           <For each={ex() ?? []}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For>
           <button class="tile" onClick={() => setBackstage("roadmap")}><div class="pic"><svg class="ic"><use href="#i-list" /></svg></div><b>Roadmap</b><span>Everything Datum Mesh will do, and when.</span></button>
@@ -153,7 +156,7 @@ export const Backstage = () => (
       <For each={[["home", "home", "Home"], ["new", "new", "New"], ["open", "open", "Open"], ["save", "save", "Save"], ["saveas", "save", "Save As"], ["export", "export", "Export"], ["print", "print", "Print"], ["roadmap", "list", "Roadmap"]]}>{([k, i, l]) =>
         <button classList={{ on: backstage() === k }} onClick={() => {
           if (k === "open") C.open(); else if (k === "save") C.save(); else if (k === "saveas") C.save(true);
-          else setBackstage(k === "new" ? "home" : k);
+          else setBackstage(k);
         }}><Icon n={i} size={22} />{l}</button>}</For>
       <span class="grow" />
       <button classList={{ on: backstage() === "options" }} onClick={() => setBackstage("options")}><Icon n="opts" size={22} />Options</button>
@@ -161,6 +164,7 @@ export const Backstage = () => (
     </aside>
     <section class="bsmain">
       <Show when={backstage() === "home"}><Home /></Show>
+      <Show when={backstage() === "new"}><NewStudy /></Show>
       <Show when={backstage() === "export"}><Export /></Show>
       <Show when={backstage() === "options"}><OptionsPage /></Show>
       <Show when={backstage() === "print"}><PrintPage /></Show>

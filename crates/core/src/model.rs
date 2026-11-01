@@ -706,6 +706,10 @@ pub struct Model {
     /// rigid plate in its own plane: x and z together, turning about y together.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub rigid_floors: bool,
+    /// What the model is, as chosen on the New study page (0.6.0): "truss" marks a 2D frame drawn
+    /// as a truss (bars by default); empty for the rest, which their analysis says.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub study: String,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -734,6 +738,7 @@ impl Default for Model {
             combos: vec![],
             steps: vec![],
             rigid_floors: false,
+            study: String::new(),
             next: 1,
         }
     }

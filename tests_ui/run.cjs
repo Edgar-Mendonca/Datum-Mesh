@@ -95,6 +95,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("ribbon tabs", JSON.stringify(await p.$$eval(".tabs > button:not(.file)", els => els.map(e => e.textContent))) === JSON.stringify(["Home", "Geometry", "Mesh", "Loads", "Solve", "Results", "View", "Help"]));
   check("frames are in metres on the ruler", (await p.textContent(".rtxt.unitlbl")) === "m");
   check("the tree lists members and nodes", (await p.$$(".tree .ti")).length >= pf.members.length + pf.nodes.length);
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "tree-portal.png") });
+  check("each branch of the tree has an icon and says whether it is done", (await p.$$(".tree .tgrp summary .tic")).length >= 6 && (await p.$$(".tree .tmark.ok")).length >= 3);
   const allMembersOnScreen = await p.evaluate(() => [...document.querySelectorAll(".mem line")].every(l => { const r = l.getBoundingClientRect(), c = document.querySelector(".canvas").getBoundingClientRect(); return r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom; }));
   check("the model fits the window when opened", allMembersOnScreen);
 

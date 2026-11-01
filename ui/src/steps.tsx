@@ -63,12 +63,33 @@ export const dynDialog = () => openDialog(() => {
   </Dialog>;
 });
 
+/** A new step of a kind, with the usual settings. */
+export const stepOf = (kind: StepKind): Step => ({ id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : [[0, 1], [10, 1]], ground: kind === "history", dt: 0.005, duration: 2 });
+
+/** The analyses each kind of model offers (the Analysis stage, 0.6.0): a step kind, its name, what it is for. */
+export const analysesFor = (a: string): [StepKind, string, string][] => {
+  const lin: [StepKind, string, string] = ["linear", "Static, linear", "Small movements, elastic materials: most design checks"];
+  if (a === "frame") return [lin, ["newton", "Large deflection", "Second-order (P-delta) effects and large rotations, in increments"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
+  if (a === "space") return [lin, ["newton", "Second order (P-delta)", "The axial forces' effect on bending, in increments"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
+  if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"]];
+  if (["stress", "strain", "axi"].includes(a)) return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"]];
+  return [];
+};
+/** The analysis the model is set to (the last step's kind; linear without steps). */
+export const curAnalysis = (): StepKind => { const st = model()?.steps ?? []; return st.length ? st[st.length - 1].kind : "linear"; };
+/** Set the analysis: one step of that kind (none for static, linear), keeping a step's load and factor. */
+export const setAnalysis = (kind: StepKind) => {
+  const m = model(); if (!m || curAnalysis() === kind && (m.steps ?? []).length <= 1) return;
+  const st = m.steps ?? [], keep = st[st.length - 1];
+  act({ Batch: [...(st.length ? [{ Delete: { ids: st.map(s => s.id) } }] : []), ...(kind === "linear" ? [] : [{ Add: { item: { Step: { ...stepOf(kind), load: keep?.load ?? null, factor: keep?.factor ?? 1 } } } }])] });
+};
+
 /** Solve › Steps: the analysis steps, run in order. */
 export const stepsDialog = () => openDialog(() => {
   const m = () => model()!;
   const sts = () => m().steps ?? [];
   const set = (s: Step, ch: Partial<Step>) => act({ Set: { item: { Step: { ...s, ...ch } } } });
-  const add = (kind: StepKind) => act({ Add: { item: { Step: { id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : [[0, 1], [10, 1]], ground: kind === "history", dt: 0.005, duration: 2 } } } });
+  const add = (kind: StepKind) => act({ Add: { item: { Step: stepOf(kind) } } });
   const plane = () => m().analysis === "frame";
   /** Parts (0.5.0) and 3D solids (0.5.1): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
   const part = () => ["stress", "strain", "axi", "solid"].includes(m().analysis);

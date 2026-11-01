@@ -41,6 +41,9 @@ pub struct Settings {
     /// 3D frames (0.4.4): rigid floors; left as it is when not given.
     #[serde(default)]
     pub rigid_floors: Option<bool>,
+    /// What the model is (0.6.0, `Model::study`); left as it is when not given.
+    #[serde(default)]
+    pub study: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -668,6 +671,9 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             }
             if let Some(r) = s.revolve {
                 m.revolve = r;
+            }
+            if let Some(st) = &s.study {
+                m.study = st.chars().filter(|c| c.is_ascii_alphanumeric()).take(16).collect();
             }
             if let Some(r) = s.rigid_floors {
                 m.rigid_floors = r;

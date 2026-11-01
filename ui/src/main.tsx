@@ -74,7 +74,7 @@ const App = () => {
     if ((ctrl && k === "k") || (e.altKey && k === "q")) { e.preventDefault(); palette(); }
     else if (ctrl && k === "s") { e.preventDefault(); C.save(e.shiftKey); }
     else if (ctrl && k === "o") { e.preventDefault(); C.open(); }
-    else if (ctrl && k === "n") { e.preventDefault(); setBackstage("home"); }
+    else if (ctrl && k === "n") { e.preventDefault(); setBackstage("new"); }
     else if (ctrl && k === "p") { e.preventDefault(); C.print(); }
     else if (ctrl && k === "z" && !typing) { e.preventDefault(); C.undo(); }
     else if (ctrl && k === "y" && !typing) { e.preventDefault(); C.redo(); }

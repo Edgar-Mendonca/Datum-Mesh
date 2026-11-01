@@ -2,7 +2,8 @@
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum, isFrame, isSolidA } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf } from "./store";
+import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu } from "./store";
+import { stepsDialog } from "./steps";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
 import { edgeCount, edgePts, outline, area } from "./geom";
@@ -63,40 +64,87 @@ export const itemName = (m: Model, id: number): string => {
 };
 
 // ---------- the tree ----------
-const Group = (p: { t: string; n: number; children: JSX.Element; help?: string; add?: () => void }) => (
-  <details class="tgrp" open><summary><span>{p.t}</span><span class="pill">{p.n}</span>{p.help && <Help k={p.help} />}{p.add && <button class="tadd" title={`Add: ${p.t}`} onClick={e => { e.preventDefault(); p.add!(); }}>+</button>}</summary><div class="tlist">{p.children}</div></details>
+// 0.6.0: one branch per part of the model, in the order a model is built; each with an icon, a
+// count, a mark that says whether it is done (✓) or needs something (!, with the reason), an
+// "add" row while it is empty, and a menu on the right button.
+type Mark = { ok: boolean; why?: string } | null;
+const Ic = (p: { n: string }) => <svg class="tic"><use href={`#i-${p.n}`} /></svg>;
+const Branch = (p: { t: string; icon: string; n?: number; note?: string; mark?: Mark; help?: string; add?: () => void; addText?: string; open?: boolean; children?: JSX.Element }) => (
+  <details class="tgrp" open={p.open ?? (p.n === undefined || p.n <= 12)}>
+    <summary title={p.mark && !p.mark.ok ? p.mark.why : undefined}><Ic n={p.icon} /><span class="tt">{p.t}</span><Show when={p.n !== undefined}><span class="pill">{p.n}</span></Show>
+      <Show when={p.note}><small class="tnote2">{p.note}</small></Show><span class="grow" />
+      <Show when={p.mark}>{mk => <i class={`tmark ${mk().ok ? "ok" : "need"}`} title={mk().ok ? "Done" : mk().why}>{mk().ok ? "✓" : "!"}</i>}</Show>
+      {p.help && <Help k={p.help} />}{p.add && <button class="tadd" title={`Add: ${p.t}`} onClick={e => { e.preventDefault(); p.add!(); }}>+</button>}</summary>
+    <div class="tlist">{p.children}<Show when={p.add && p.addText && !p.n}><button class="ti ghost" onClick={() => p.add!()}><Ic n="new" /><span>{p.addText}</span></button></Show></div>
+  </details>
 );
-const Leaf = (p: { id: number; label: string; sub?: string }) => (
-  <button class="ti" classList={{ on: sel().includes(p.id) }} onClick={e => setSel(e.ctrlKey || e.shiftKey ? [...new Set([...sel(), p.id])] : [p.id])}><span>{p.label}</span>{p.sub && <small>{p.sub}</small>}</button>
+const Leaf = (p: { id: number; label: string; sub?: string; icon: string; menu?: [string, () => void][] }) => (
+  <button class="ti" classList={{ on: sel().includes(p.id) }} onClick={e => setSel(e.ctrlKey || e.shiftKey ? [...new Set([...sel(), p.id])] : [p.id])}
+    onContextMenu={e => { setSel([p.id]); openMenu(e, [...(p.menu ?? []).map(([label, run]) => ({ label, run })), { label: "Delete", run: () => act({ Delete: { ids: [p.id] } }) }]); }}>
+    <Ic n={p.icon} /><span>{p.label}</span>{p.sub && <small>{p.sub}</small>}</button>
 );
+const Row2 = (p: { icon: string; label: string; sub?: string; run?: () => void; on?: boolean }) => (
+  <button class="ti" classList={{ on: !!p.on }} onClick={() => p.run?.()}><Ic n={p.icon} /><span>{p.label}</span>{p.sub && <small>{p.sub}</small>}</button>
+);
+const SUP_ICON: Record<string, string> = { fixed: "fixed", pinned: "pinned", rollerx: "roller", rollery: "roller", roller: "roller", symmetry: "symmetry", spring: "spring", temperature: "temp", hold: "roller" };
+const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle" };
+const STEP_NAME: Record<string, string> = { linear: "Linear (small deflections)", newton: "Large deflection", arc: "Past limit loads", spectrum: "Response spectrum", history: "Time history", large: "Large deformation" };
+const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 export const Tree = () => {
   const m = () => model();
   const frame = () => isFrame(m()?.analysis);
   const sp = () => m()?.analysis === "space";
+  const heat = () => m()?.analysis === "heat" || m()?.analysis === "solidheat";
+  const part = () => !frame() && !heat();
+  const plastic = () => part() && (m()?.steps ?? []).some(s => s.kind === "newton");
+  const parts = () => (m()?.shapes ?? []).filter(s => !s.plate);
+  const plates = () => (m()?.shapes ?? []).filter(s => s.plate);
+  const drawn = () => frame() ? (m()?.members.length ?? 0) > 0 : parts().some(s => !s.hole);
+  const sups = () => (m()?.supports ?? []).filter(s => heat() ? s.kind.kind === "temperature" : s.kind.kind !== "temperature");
+  const mesh = () => solidRes() ? `${solidRes()!.elements.toLocaleString()} wedges, ${solidRes()!.layers} ${solidRes()!.layers === 1 ? "layer" : "layers"}` : (meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} ${isSolidA(m()!.analysis) ? "triangles in the section" : "elements"}` : "Not meshed yet: made when you solve";
+  const noYield = () => plastic() ? (m()?.materials ?? []).filter(x => !(x.fy > 0) && (frame() ? m()!.members.some(b => b.material === x.id) : parts().some(s => s.material === x.id))) : [];
   return (
     <aside class="tree">
       <header>Model<Help k="tree" /></header>
       <div class="tbody">
         <Show when={m()}>{mm => <>
+          <div class="troot" title="Model › Name in the Inspector (nothing selected)" onClick={() => setSel([])}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
           <Show when={frame()} fallback={
-            <Group t="Shapes" n={mm().shapes.length} help="shapes" add={() => setTool("rect")}><For each={mm().shapes}>{s => <Leaf id={s.id} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Group>}>
-            <Group t="Members" n={mm().members.length} help="members" add={() => setTool("beam")}><For each={mm().members}>{(b, i) => <Leaf id={b.id} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Group>
-            <Show when={sp() && mm().shapes.length}><Group t="Plates" n={mm().shapes.length} help="plates"><For each={mm().shapes}>{s => <Leaf id={s.id} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Group></Show>
-            <Group t="Nodes" n={mm().nodes.length} help="nodes" add={() => setTool("node")}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Group>
+            <Branch t={heat() ? "Part" : isSolidA(mm().analysis) ? "Section" : "Shapes"} icon={isSolidA(mm().analysis) ? "solid" : mm().analysis === "axi" ? "axi" : "part"} n={parts().length} help="shapes" add={() => setTool("rect")} addText="Draw the outline (Geometry)" mark={{ ok: drawn(), why: "Draw the part's outline: Geometry › Rectangle, Circle or Polygon" }}>
+              <For each={parts()}>{s => <Leaf id={s.id} icon={s.hole ? (s.geom.kind === "circle" ? "hcircle" : "hrect") : s.geom.kind === "circle" ? "circle" : "poly"} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Branch>}>
+            <Branch t="Members" icon="frame" n={mm().members.length} open={mm().members.length <= 12} help="members" add={() => setTool("beam")} addText="Draw members (Geometry › Beam)" mark={{ ok: drawn(), why: "Draw members: Geometry › Beam or Truss Bar" }}>
+              <For each={mm().members}>{(b, i) => <Leaf id={b.id} icon={b.kind === "truss" ? "truss" : "beam"} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Branch>
+            <Show when={sp() && plates().length}><Branch t="Plates" icon="rect" n={plates().length} help="plates"><For each={plates()}>{s => <Leaf id={s.id} icon={s.hole ? "hrect" : "rect"} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Branch></Show>
+            <Branch t="Nodes" icon="node" n={mm().nodes.length} help="nodes" add={() => setTool("node")} open={mm().nodes.length <= 12}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} icon="node" label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Branch>
           </Show>
-          <Group t="Materials" n={mm().materials.length} help="materials" add={() => D.materials()}><For each={mm().materials}>{x => <button class="ti" onClick={() => D.materials(x.id)}><span>{x.name}</span></button>}</For></Group>
-          <Show when={frame()}><Group t="Sections" n={mm().sections.length} help="sections" add={() => D.sections()}><For each={mm().sections}>{x => <button class="ti" onClick={() => D.sections(x.id)}><span>{x.name}</span></button>}</For></Group></Show>
-          <Group t="Supports" n={mm().supports.length} help="supports"><For each={mm().supports}>{s => <Leaf id={s.id} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Group>
-          <Group t="Loads" n={mm().loads.length} help="loads"><For each={mm().loads}>{l => <Leaf id={l.id} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></Group>
-          <Show when={!frame()}><Group t="Mesh" n={mm().mesh.refine.length} help="mesh">
-            <button class="ti" onClick={() => C.mesh()}><span>{solidRes() ? `${solidRes()!.elements.toLocaleString()} wedges, ${solidRes()!.layers} ${solidRes()!.layers === 1 ? "layer" : "layers"}` : (meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} ${isSolidA(mm().analysis) ? "triangles in the section" : "elements"}` : "Not meshed yet"}</span><small>{mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} · {mm().mesh.order === 2 ? "6-node" : "3-node"}</small></button>
-            <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><span>Finer near {targetName(mm(), r.at)}</span>
+          <Branch t="Materials" icon="material" n={mm().materials.length} help="materials" add={() => D.materials()} mark={noYield().length ? { ok: false, why: `${noYield()[0].name} needs a yield strength for the elastic-plastic step` } : null}>
+            <For each={mm().materials}>{x => <Row2 icon="material" label={x.name} sub={noYield().includes(x) ? "no yield strength" : undefined} run={() => D.materials(x.id)} />}</For></Branch>
+          <Show when={frame()}><Branch t="Sections" icon="section" n={mm().sections.length} help="sections" add={() => D.sections()}><For each={mm().sections}>{x => <Row2 icon="section" label={x.name} run={() => D.sections(x.id)} />}</For></Branch></Show>
+          <Branch t={heat() ? "Temperatures" : "Supports"} icon={heat() ? "temp" : "fixed"} n={sups().length} help="supports" add={() => setTool(heat() ? "sup:temperature" : "sup:fixed")} addText={heat() ? "Fix a temperature (Loads tab)" : "Add a support (Loads › Fixed, Pinned…)"}
+            mark={drawn() ? { ok: sups().length > 0 || (heat() && mm().loads.some(l => l.kind.kind === "convection")), why: heat() ? "Fix a temperature on an edge, or add convection: heat needs somewhere to go" : "Add supports: nothing holds the model yet" } : null}>
+            <For each={sups()}>{s => <Leaf id={s.id} icon={SUP_ICON[s.kind.kind] ?? "fixed"} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Branch>
+          <Branch t={heat() ? "Heat loads" : "Loads"} icon={heat() ? "flux" : "force"} n={mm().loads.length} help="loads" add={() => setTool(heat() ? "load:flux" : "load:force")} addText={heat() ? "Add heat flux or convection (Loads tab)" : "Add a load (Loads › Force, Pressure…)"}
+            mark={drawn() && !heat() ? { ok: mm().loads.length > 0, why: "Add a load (natural frequencies need none)" } : null}>
+            <Show when={(mm().cases ?? []).length > 1} fallback={<For each={mm().loads}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For>}>
+              <For each={mm().cases!}>{c => <details class="tsub" open><summary><Ic n="list" /><span>{c.name}</span><span class="pill">{mm().loads.filter(l => caseOf(mm(), l) === c.id).length}</span></summary>
+                <For each={mm().loads.filter(l => caseOf(mm(), l) === c.id)}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></details>}</For></Show></Branch>
+          <Show when={(mm().combos ?? []).length}><Branch t="Combinations" icon="table" n={mm().combos!.length} help="cases" open={false}><For each={mm().combos!}>{c => <Row2 icon="table" label={c.name} sub={c.parts.map(x => `${num(x.f, 3)} ${mm().cases?.find(k => k.id === x.case)?.name ?? ""}`).join(" + ")} />}</For></Branch></Show>
+          <Show when={!frame()}><Branch t="Mesh" icon="mesh" n={mm().mesh.refine.length || undefined} help="mesh">
+            <Row2 icon={mm().mesh.order === 2 ? "tri6" : "tri3"} label={mesh()} sub={mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} run={() => C.mesh()} />
+            <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><Ic n="refine" /><span>Finer near {targetName(mm(), r.at)}</span>
               <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => v > 0 && C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }), () => num(toU("len", r.size), 4))} />
               <button class="x" title="Remove" onClick={() => C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) })}>×</button></div>}</For>
-          </Group></Show>
-          <Group t="Results" n={results() ? 1 : 0} help="results">
-            <Show when={results()} fallback={<p class="muted tnote">Not solved yet: press F5.</p>}><button class="ti" onClick={() => setView("results")}><span>{stale() ? "Out of date" : "Solved"}</span><small>{results()!.stats.equations.toLocaleString()} equations</small></button></Show></Group>
+          </Branch></Show>
+          <Show when={!heat()}><Branch t="Steps" icon="list" n={(mm().steps ?? []).length || undefined} help="steps">
+            <Show when={(mm().steps ?? []).length} fallback={<Row2 icon="solve" label="Static, linear" sub="one solve" run={stepsDialog} />}>
+              <For each={mm().steps!}>{(s, i) => <Row2 icon={s.kind === "spectrum" || s.kind === "history" ? "wave" : s.kind === "linear" ? "solve" : "curve"} label={s.name || `Step ${i() + 1}`} sub={`${STEP_NAME[s.kind] ?? s.kind}${s.kind === "newton" || s.kind === "arc" || s.kind === "large" ? ` · ${plural(s.increments, "increment")}` : ""}`} run={stepsDialog} />}</For></Show></Branch></Show>
+          <Branch t="Results" icon="contour" help="results" mark={results() ? { ok: !stale(), why: "The model changed since it was solved: solve again (F5)" } : null}>
+            <Show when={results()} fallback={<button class="ti ghost" onClick={() => C.solve()}><Ic n="solve" /><span>Not solved yet: Solve (F5)</span></button>}>
+              <Row2 icon="solve" label={stale() ? "Out of date" : "Solved"} sub={`${results()!.stats.equations.toLocaleString()} equations`} />
+              <Row2 icon="deform" label={frame() ? "Deflected shape and diagrams" : heat() ? "Temperatures" : "Contours on the drawing"} run={() => setView("model")} />
+              <Row2 icon="table" label="Tables and equilibrium" run={() => setView("results")} />
+              <Row2 icon="report" label="Report" run={() => setView("report")} /></Show></Branch>
         </>}</Show>
       </div>
     </aside>

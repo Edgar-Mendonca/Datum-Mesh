@@ -84,7 +84,7 @@ mod tests {
                 n.x = if r.below(4) == 0 { f64::NAN } else { r.f(-3.0, 3.0) };
                 Op::Set { item: Item::Node(n) }
             }
-            _ => Op::SetSettings { s: Settings { analysis: [Analysis::Frame, Analysis::Stress, Analysis::Heat][r.below(3)], units: if r.below(5) == 0 { "x".into() } else { "US".into() }, grid: r.f(-0.1, 1.0), thickness: 0.01, mesh: m.mesh.clone(), t_ref: if r.below(4) == 0 { Some(r.f(250.0, 400.0)) } else { None }, revolve: if r.below(4) == 0 { Some(r.f(-1.0, 7.0)) } else { None }, rigid_floors: None } },
+            _ => Op::SetSettings { s: Settings { analysis: [Analysis::Frame, Analysis::Stress, Analysis::Heat][r.below(3)], units: if r.below(5) == 0 { "x".into() } else { "US".into() }, grid: r.f(-0.1, 1.0), thickness: 0.01, mesh: m.mesh.clone(), t_ref: if r.below(4) == 0 { Some(r.f(250.0, 400.0)) } else { None }, revolve: if r.below(4) == 0 { Some(r.f(-1.0, 7.0)) } else { None }, rigid_floors: None, study: if r.below(6) == 0 { Some("tr\u{1F600}uss ".repeat(r.below(8))) } else { None } } },
         }
     }
 

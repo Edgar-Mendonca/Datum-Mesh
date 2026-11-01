@@ -51,7 +51,7 @@ export interface Envelope { over: string[]; members: { id: number; n_max: number
 export interface LibSection { name: string; family: string; shape: SectionShape; table_area: number }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; cases?: Case[]; combos?: Combo[]; steps?: Step[];
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; cases?: Case[]; combos?: Combo[]; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }
