@@ -1737,6 +1737,68 @@ fn plasticity() -> Vec<Check> {
     v
 }
 
+/// Benchmark 26 (0.5.1): plasticity in 3D solids. The same collapse loads as benchmark 25, now
+/// from wedge elements: a thick cylinder extruded and held between its end faces (plane strain),
+/// a thick sphere revolved a slice, and a bar pulled past yield with hardening.
+fn solid_plasticity() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    let mut v = vec![];
+    let fy = 250e6;
+    let q = 0.414_213_562_373_095;
+    let ring = |a: f64, b: f64| Geom::Poly { pts: vec![[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], bulge: vec![0.0, q, 0.0, -q] };
+    let face = |d: &mut Doc, front: bool| { add_id(d, Item::Support(Support { id: 0, at: Target::End { front }, kind: SupportKind::Symmetry })); };
+    let newton = |d: &mut Doc, n: u32| { add(d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, increments: n, ..Default::default() }) }); };
+    let src = "Hill 1950, The Mathematical Theory of Plasticity, ch. V (limit analysis: independent of E and ν); the largest load carried, so it is reached from below";
+    let collapse = |revolve: f64, over: f64| -> f64 {
+        let (mut d, ids) = part(Analysis::Solid, 200e9, 0.3, vec![(ring(0.1, 0.2), false)]);
+        d.m.materials[0].fy = fy;
+        d.m.materials[0].rho = 0.0;
+        d.m.mesh.size = if revolve > 0.0 { 0.0125 } else { 0.02 };
+        d.m.mesh.layers = 1;
+        d.m.thickness = 0.02;
+        d.m.revolve = revolve;
+        let id = ids[0];
+        edge_support(&mut d, id, 0, SupportKind::Symmetry);
+        if revolve == 0.0 {
+            edge_support(&mut d, id, 2, SupportKind::Symmetry);
+        }
+        face(&mut d, false);
+        face(&mut d, true);
+        edge_load(&mut d, id, 3, LoadKind::Pressure { p: over });
+        newton(&mut d, 12);
+        let Ok(crate::Results::Solid(r)) = crate::solve_for(&d.m, None) else { panic!("plastic solid") };
+        r.path.as_ref().map_or(0.0, |p| p.load.last().copied().unwrap_or(0.0)) * over
+    };
+    let pc = 2.0 * fy / 3f64.sqrt() * 2f64.ln();
+    v.push(check(26, "Thick cylinder, 3D solid held between its end faces, perfectly plastic (b/a = 2)", "Collapse pressure 2k ln(b/a), k = σy/√3", "stress", pc, collapse(0.0, 1.1 * pc), 0.01, src));
+    let ps = 2.0 * fy * 2f64.ln();
+    v.push(check(26, "Thick sphere, 3D solid revolved 10°, perfectly plastic (b/a = 2)", "Collapse pressure 2σy ln(b/a)", "stress", ps, collapse(10f64.to_radians(), 1.1 * ps), 0.01, src));
+    // A bar 1 × 0.1 × 0.1 m pulled to 1.5 σy, hardening H = 2 GPa: exact, a uniform state.
+    let (mut d, ids) = part(Analysis::Solid, 200e9, 0.3, vec![(Geom::rect(0.0, 0.0, 1.0, 0.1), false)]);
+    let h = 2e9;
+    d.m.materials[0].fy = fy;
+    d.m.materials[0].hardening = h;
+    d.m.materials[0].rho = 0.0;
+    d.m.mesh.size = 0.05;
+    d.m.mesh.layers = 2;
+    d.m.thickness = 0.1;
+    let id = ids[0];
+    edge_support(&mut d, id, 3, SupportKind::Symmetry);
+    edge_support(&mut d, id, 0, SupportKind::Symmetry);
+    face(&mut d, false);
+    let sig = 1.5 * fy;
+    edge_load(&mut d, id, 1, LoadKind::Traction { fx: sig * 0.1 * 0.1, fy: 0.0, total: true, fz: 0.0 });
+    newton(&mut d, 6);
+    let Ok(crate::Results::Solid(r)) = crate::solve_for(&d.m, None) else { panic!("bar") };
+    let e = 200e9;
+    let name = "Bar pulled past yield, 3D solid, hardening H = 2 GPa";
+    let exact = "Uniaxial stress with linear hardening (exact)";
+    v.push(check(26, name, "Stretch L(σ/E + (σ − σy)/H)", "len", sig / e + (sig - fy) / h, r.field("ux").max, 1e-6, exact));
+    v.push(check(26, name, "Equivalent plastic strain (σ − σy)/H", "ratio", (sig - fy) / h, r.field("peeq").max, 1e-6, exact));
+    v.push(check(26, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1811,6 +1873,7 @@ pub fn run() -> Vec<Check> {
     v.extend(dynamics());
     v.extend(details());
     v.extend(plasticity());
+    v.extend(solid_plasticity());
     v
 }
 

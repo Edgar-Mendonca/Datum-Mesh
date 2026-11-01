@@ -84,6 +84,40 @@ impl J2 {
     }
 }
 
+/// A 3D material point's history (0.5.1): plastic strain (xx, yy, zz, xy, yz, zx, tensor) and ᾱ.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct State6 {
+    pub ep: [f64; 6],
+    pub alpha: f64,
+}
+
+impl J2 {
+    /// The radial return in all six components: stress (xx, yy, zz, xy, yz, zx) from total
+    /// strain (tensor components), from the history at the start of the increment.
+    pub fn stress6(&self, eps: [f64; 6], st: &State6) -> ([f64; 6], State6) {
+        let (lam, g) = self.lame();
+        let ee: [f64; 6] = std::array::from_fn(|i| eps[i] - st.ep[i]);
+        let tr = ee[0] + ee[1] + ee[2];
+        let sig: [f64; 6] = std::array::from_fn(|i| if i < 3 { lam * tr + 2.0 * g * ee[i] } else { 2.0 * g * ee[i] });
+        let p = (sig[0] + sig[1] + sig[2]) / 3.0;
+        let s: [f64; 6] = std::array::from_fn(|i| if i < 3 { sig[i] - p } else { sig[i] });
+        let ss = s[0] * s[0] + s[1] * s[1] + s[2] * s[2] + 2.0 * (s[3] * s[3] + s[4] * s[4] + s[5] * s[5]);
+        let q = (1.5 * ss).sqrt();
+        let f = q - (self.fy + self.h * st.alpha);
+        if self.fy <= 0.0 || f <= 0.0 {
+            return (sig, *st);
+        }
+        let dg = f / (3.0 * g + self.h);
+        let k = 1.0 - 3.0 * g * dg / q;
+        let mut out = *st;
+        for i in 0..6 {
+            out.ep[i] += 1.5 * dg * s[i] / q;
+        }
+        out.alpha += dg;
+        (std::array::from_fn(|i| if i < 3 { s[i] * k + p } else { s[i] * k }), out)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,6 +151,17 @@ mod tests {
         }
         // The stress stays on the yield surface with its hardening.
         assert!((st.alpha - (0.02 - (m.fy + m.h * st.alpha) / m.e)).abs() < 1e-9, "{}", st.alpha);
+    }
+
+    #[test]
+    fn the_six_component_return_agrees_with_the_four() {
+        let m = J2 { e: 70e9, nu: 0.33, fy: 100e6, h: 1e9 };
+        let (s4, a4) = m.stress([0.004, -0.001, 0.0005, 0.002], &State::default());
+        let (s6, a6) = m.stress6([0.004, -0.001, 0.0005, 0.002, 0.0, 0.0], &State6::default());
+        assert!((0..4).all(|i| (s4[i] - s6[i]).abs() < 1e-6 * m.fy) && (a4.alpha - a6.alpha).abs() < 1e-15);
+        // Shear on another plane yields the same way.
+        let (s, _) = m.stress6([0.0, 0.0, 0.0, 0.0, 0.003, 0.0], &State6::default());
+        assert!((s[4] - (m.fy + m.h * 0.0) / 3f64.sqrt()).abs() < 0.05 * m.fy, "{}", s[4]);
     }
 
     #[test]

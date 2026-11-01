@@ -52,6 +52,7 @@ const ExampleArt = (p: { id: string }) => {
     "blank-space": "M30 48V22L50 12L70 22V48M30 22L50 32L70 22M50 32V58M30 48L50 58L70 48",
     platform: "M18 22L50 10L82 22L50 34zM18 22V46M50 34V58M82 22V46M50 10V26M18 46L50 34",
     "blank-solid": "M14 30H66L84 18H32zM14 30V50H66V30M66 50L84 38V18",
+    yield3d: "M14 18L22 12H86L78 18zM14 18H78V48H14zM78 48L86 42V12M38 33a8 8 0 1 0 16 0a8 8 0 1 0 -16 0",
     bracket3d: "M20 10L28 6V44Q28 48 34 48H82L74 52H26Q20 52 20 46zM28 44L36 40M82 48V56L74 60H26Q20 60 20 54V46",
   };
   return <svg viewBox="0 0 100 60" class="exart"><path d={pics[p.id] ?? pics["blank-frame"]} {...s} /></svg>;

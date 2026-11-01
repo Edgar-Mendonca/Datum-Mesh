@@ -34,6 +34,7 @@ pub fn list() -> Vec<Example> {
         e("fin3d", "Heat sink in 3D", "The heat sink as a 3D solid 30 mm deep, cooled by air on every face, its ends too: temperatures and heat flow in 3D.", Analysis::SolidHeat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
+        e("yield3d", "Holed plate yielding in 3D", "A steel plate 100 mm wide and 10 mm thick with a 20 mm hole, pulled at 250 MPa: as a 3D solid, the plastic zones grow from the hole's edges across the net section (Equivalent plastic strain; Results › Load–Deflection).", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("building", "Building in an earthquake", "A three-storey steel building in 3D, 2 × 1 bays, with rigid concrete floors carrying their mass, shaken along x by a design spectrum: the floors sway and twist as one (Results › Dynamics).", Analysis::Space),
@@ -394,6 +395,22 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             let s = d.apply(shape(poly(&[[0.0, 0.0], [120.0, 0.0], [120.0, 120.0], [0.0, 120.0]], &[(2, 1.0)]), false))?[0];
             let h = d.apply(shape(circle(60.0, 120.0, 20.0), true))?[0];
             d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Bearing { fx: 0.0, fy: 60e3 })]))?;
+        }
+        "yield3d" => {
+            d.m.notes = "A quarter of a plate 200 × 100 mm and 10 mm thick with a 20 mm hole in its middle, of S355 steel, perfectly plastic: symmetry on the two cut edges and on the mid-plane (so 5 mm of the thickness is drawn). 250 MPa pulls on the end, in an elastic-plastic step of 8 increments. The hole gathers the stress at its edges, which yield first, about halfway to the full load; the plastic zones then spread across the net section. It collapses when the whole net section is at yield, near 355 × 80/100 = 284 MPa: try 300 MPa.".into();
+            d.m.grid = 5.0 * mm;
+            d.m.thickness = 5.0 * mm;
+            let s = d.apply(shape(poly(&[[10.0, 0.0], [100.0, 0.0], [100.0, 50.0], [0.0, 50.0], [0.0, 10.0]], &[(4, -QUARTER)]), false))?[0];
+            d.apply(Op::Batch(vec![
+                sup(edge(s, 0), SupportKind::Symmetry),
+                sup(edge(s, 3), SupportKind::Symmetry),
+                sup(Target::End { front: false }, SupportKind::Symmetry),
+                load(edge(s, 1), LoadKind::Traction { fx: 250e6, fy: 0.0, total: false, fz: 0.0 }),
+                Op::Add { item: Item::Step(crate::model::Step { name: "Pull, elastic-plastic".into(), kind: crate::model::StepKind::Newton, increments: 8, ..Default::default() }) },
+            ]))?;
+            d.m.mesh.size = 8.0 * mm;
+            d.m.mesh.layers = 1;
+            d.m.mesh.refine.push(crate::model::Refine { at: edge(s, 4), size: 3.0 * mm });
         }
         "bracket3d" => {
             d.m.notes = "The L-bracket as a 3D solid: legs 100 mm long and 20 mm thick, 10 mm deep (the extrusion), a 10 mm fillet inside the corner. The top end is bolted to a wall (fixed face); 1.5 kN pulls down on the free end's face.".into();

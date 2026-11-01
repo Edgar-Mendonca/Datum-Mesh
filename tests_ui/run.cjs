@@ -43,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -553,6 +553,24 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button:has-text("Materials")').catch(() => {}); await p.waitForTimeout(200);
   check("the material editor has hardening past yield", (await p.textContent(".dlg").catch(() => "")).includes("Hardening (past yield)"));
+  await p.keyboard.press("Escape");
+  // 0.5.1: plasticity in a 3D solid, on the holed plate.
+  await open("yield3d"); await p.waitForTimeout(400);
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
+  const ysd = await p.$$eval(".dlg table.steps select >> nth=0", ss => [...ss[0].options].map(o => o.textContent)).catch(() => []);
+  check("a 3D solid's steps offer linear or elastic-plastic", ysd.length === 2 && ysd[1].startsWith("Elastic-plastic") && !(await p.textContent(".dlg")).includes("parts come later"), ysd.join("|"));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__solveKey = "yield3d_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(600);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(150);
+  const yfs = await p.$$eval(".legend select.fpick option", os => os.map(o => o.textContent)).catch(() => []);
+  check("a yielding 3D solid can be coloured by its equivalent plastic strain", yfs.includes("Equivalent plastic strain"), yfs.join("|"));
+  await p.selectOption(".legend select.fpick", { label: "Equivalent plastic strain" }).catch(() => {}); await p.waitForTimeout(300);
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "yield3d-peeq.png") });
+  await p.click('.ribbon button:has-text("Load–Deflection")'); await p.waitForTimeout(250);
+  const ypd = await p.textContent(".dlg").catch(() => "");
+  check("Results › Load–Deflection works for a 3D solid", ypd.includes("first yields") && ypd.includes("carries the whole load") && (await p.$$(".dlg svg.curve circle.unstable")).length > 0, ypd.slice(0, 200));
   await p.keyboard.press("Escape");
   // 0.4.4: rigid floors, on the building in an earthquake.
   await open("building"); await p.waitForTimeout(400);

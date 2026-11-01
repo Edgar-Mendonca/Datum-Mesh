@@ -46,8 +46,17 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
         let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
         return crate::plane::solve_plastic(&mm, st.increments as usize).map(Results::Plane);
     }
+    if m.analysis == Analysis::Solid {
+        // 3D solids (0.5.1): elastic-plastic, as for plane parts.
+        if m.steps.iter().any(|s| s.kind == StepKind::Arc) {
+            return Err("Following a part past its collapse load (arc length) comes later; use a nonlinear step (load in increments) for plasticity.".into());
+        }
+        let st = m.steps.last().expect("steps");
+        let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+        return crate::solid::solve_plastic(&mm, st.increments as usize).map(Results::Solid);
+    }
     if m.analysis != Analysis::Frame {
-        return Err("Nonlinear steps are for frames and plane parts in this release; 3D solids come later. Make the steps linear (Home › Steps).".into());
+        return Err("Nonlinear steps are for frames, plane parts and 3D solids.".into());
     }
     if m.steps.iter().any(|s| s.kind == StepKind::Linear) {
         return Err("A linear step cannot follow or lead a large-deflection one: make every step large-deflection, or every step linear (Home › Steps).".into());

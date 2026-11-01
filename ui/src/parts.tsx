@@ -5,7 +5,7 @@
 // results tables and the mesh statistics. The engine computes every value; this only draws them.
 import { For, Show, createMemo, createEffect } from "solid-js";
 import { Pt, Mesh, PartResults, PlaneResults, HeatResults, Field, Model, num, clean } from "./api";
-import { model, partRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel, modes, modeSel, modeOn, phase, modesStale, solvedFor } from "./store";
+import { model, partRes, solidRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel, modes, modeSel, modeOn, phase, modesStale, solvedFor } from "./store";
 import { modeAmp } from "./modes";
 import { toS, scale, pan } from "./canvas";
 import { Q, fmt, unit } from "./units";
@@ -50,7 +50,7 @@ export const fieldDef = (key: string): FieldDef => named(FIELDS.find(x => x.key 
 /** The results an analysis has; a part solved with thermal stress also has its temperatures. */
 export const fieldsFor = (a: string) => {
   if (a === "solidheat") return ["t", "qmag", "qx", "qy", "qz"].map(k => FIELDS.find(f => f.key === k)!);
-  if (a === "solid") return SOLID.map(k => FIELDS.find(f => f.key === k)!).map(f => f.key === "sz" ? { ...f, name: "Stress σz" } : f);
+  if (a === "solid") { const s = solidRes(); return [...SOLID, ...(s?.kind === "solid" && s.fields.some(f => f.key === "peeq") ? ["peeq"] : [])].map(k => FIELDS.find(f => f.key === k)!).map(f => f.key === "sz" ? { ...f, name: "Stress σz" } : f); }
   const r = partRes(), warm = a !== "heat" && r?.kind === "plane" && r.fields.some(f => f.key === "t");
   const plastic = r?.kind === "plane" && r.fields.some(f => f.key === "peeq");
   return FIELDS.filter(f => !["s3", "tyz", "tzx", "uz", "qz"].includes(f.key) && (f.key !== "peeq" || plastic) && (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));

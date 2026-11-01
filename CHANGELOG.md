@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1 — 2026-11-01
+
+3D solids that yield.
+
+**Plasticity in 3D solids**
+- Solve › Steps › **Add an elastic-plastic step** now works on 3D solids too, extruded or revolved: von Mises with each material's hardening, the load in increments, each solved by Newton's method with the consistent tangent; B-bar keeps the wedge elements from locking as they yield. If the solid cannot carry the whole load it collapses, and the solve says at what share of it.
+- Results: **Equivalent plastic strain** on the 3D view, and Results › **Load–Deflection** for 3D solids.
+- New example: a holed steel plate in 3D pulled past yield, the plastic zones spreading across the net section from the hole.
+
+**Trust**
+- Help › Verification: 197 checks, all passing. New: benchmark 26, plasticity in 3D solids: the collapse pressure of a thick cylinder held between its end faces (within 0.4 %) and of a thick sphere revolved a slice (within 0.6 %) against Hill's limit analysis, and a bar pulled past yield with hardening (stretch and plastic strain exact, balanced to 3e-13).
+
 ## 0.5.0 — 2026-11-01
 
 Parts that yield: the first nonlinear material.

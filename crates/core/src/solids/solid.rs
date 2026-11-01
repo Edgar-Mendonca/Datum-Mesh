@@ -73,6 +73,9 @@ pub struct SolidResults {
     pub size: f64,
     pub quality: Quality,
     pub volume: Volume,
+    /// Plasticity (0.5.1): the load factor against the largest movement, as for plane parts.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub path: Option<crate::plane::PartPath>,
 }
 
 impl SolidResults {
@@ -404,7 +407,17 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
         return Err("This model is not a 3D solid.".into());
     }
     let sw = swept_of(m)?;
-    solve_swept(m, sw)
+    solve_swept(m, sw, None)
+}
+
+/// An elastic-plastic solve of a 3D solid (0.5.1): von Mises with each material's hardening,
+/// small strains, the load in `increments`.
+pub fn solve_plastic(m: &Model, increments: usize) -> Result<SolidResults, String> {
+    if m.analysis != Analysis::Solid {
+        return Err("This model is not a 3D solid.".into());
+    }
+    let sw = swept_of(m)?;
+    solve_swept(m, sw, Some(increments.max(1)))
 }
 
 /// The solid's stiffness, loads and supports, ready to solve (shared by the static solve and the
@@ -624,18 +637,38 @@ fn build(m: &Model, sw: &Swept) -> Result<Built, String> {
     Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, ne })
 }
 
-pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> {
-    let Built { sys, held, sup_nodes, penalties, kpen, applied, mut warnings, ne } = build(m, &sw)?;
+pub(crate) fn solve_swept(m: &Model, sw: Swept, plastic: Option<usize>) -> Result<SolidResults, String> {
+    let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, ne } = build(m, &sw)?;
     let o = sw.order;
     let nn = sw.count();
     let layers = (sw.levels - 1) / o;
     let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
-    let (u, stats) = sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid also needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?;
+    let mut pl = None;
+    let (u, stats) = match plastic {
+        Some(inc) => {
+            let t0 = std::time::Instant::now();
+            let p = plastic3(m, &sw, &sys, &held, inc, &mut warnings)?;
+            // The loads it carried (all of them, unless it collapsed first).
+            for v in sys.f.iter_mut() {
+                *v *= p.lam;
+            }
+            applied.sum = applied.sum.map(|v| v * p.lam);
+            applied.scale *= p.lam;
+            let nz = sys.k.len();
+            let u = p.u.clone();
+            pl = Some(p);
+            (u, Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros: nz, residual: 0.0, ms: t0.elapsed().as_secs_f64() * 1e3 })
+        }
+        None => sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid also needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?,
+    };
     if stats.residual > 1e-8 {
         warnings.push(format!("The supports barely hold the part (the equations were solved only to {:.0e}): it can probably turn or slide. Add a fixed face, or rollers on faces at angles to each other.", stats.residual));
     }
-    // Reactions.
-    let ku = sys.mul(&u);
+    // Reactions (from the true internal forces when the part yields).
+    let ku = match &pl {
+        Some(p) => p.kint.clone(),
+        None => sys.mul(&u),
+    };
     let mut taken = vec![false; 3 * nn];
     let mut reactions = vec![];
     let mut reacted = Tally::default();
@@ -674,6 +707,18 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
     for k in 0..sw.ms.tris.len() {
         let mt = mats[&sw.ms.mat[k]];
         let (lam, mu) = (mt.e * mt.nu / ((1.0 + mt.nu) * (1.0 - 2.0 * mt.nu)), mt.e / (2.0 * (1.0 + mt.nu)));
+        if let Some(p) = &pl {
+            // Yielding: the stresses the return gave, averaged to the nodes; each node's yield
+            // stress for the safety factor.
+            for l in 0..layers {
+                for n in sw.element(k, l) {
+                    fy_node[n] = fy_node[n].min(mt.fy);
+                    acc[n] = p.stress[n];
+                    wsum[n] = 1.0;
+                }
+            }
+            continue;
+        }
         for l in 0..layers {
             let en = sw.element(k, l);
             let xyz: Vec<[f64; 3]> = en.iter().map(|&n| sw.at(n)).collect();
@@ -707,8 +752,8 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
             }
         }
     }
-    const KEYS: [&str; 14] = ["ux", "uy", "uz", "umag", "sx", "sy", "sz", "txy", "tyz", "tzx", "vm", "s1", "s3", "sf"];
-    let mut all: Vec<Vec<f64>> = vec![Vec::with_capacity(nn); KEYS.len()];
+    let mut keys = vec!["ux", "uy", "uz", "umag", "sx", "sy", "sz", "txy", "tyz", "tzx", "vm", "s1", "s3", "sf"];
+    let mut all: Vec<Vec<f64>> = vec![Vec::with_capacity(nn); keys.len()];
     for n in 0..nn {
         let w = wsum[n].max(1e-300);
         let st = stress_set(acc[n].map(|v| v / w), fy_node[n]);
@@ -718,9 +763,13 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
             all[c].push(*v);
         }
     }
+    if let Some(p) = &pl {
+        keys.push("peeq");
+        all.push(p.peeq.clone());
+    }
     let (surface, ids) = surface(&sw);
     let volume = Volume { nodes: sw.pos.clone(), disp: (0..nn).map(|n| [u[3 * n], u[3 * n + 1], u[3 * n + 2]]).collect(), tets: tets(&sw), v: all.clone() };
-    let fields = KEYS
+    let fields = keys
         .iter()
         .zip(all)
         .map(|(key, v)| {
@@ -742,7 +791,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
         if sw.revolve > 0.0 { b } else { b.max(m.thickness) }
     };
     let umax = (0..nn).map(|n| (u[3 * n].powi(2) + u[3 * n + 1].powi(2) + u[3 * n + 2].powi(2)).sqrt()).fold(0.0, f64::max);
-    if umax > 0.1 * size {
+    if umax > 0.1 * size && pl.is_none() {
         warnings.push(format!("The largest movement is {:.0} % of the part's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, loads and units.", umax / size * 100.0));
     }
     let reach = (0..nn).map(|n| { let p = sw.at(n); (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt() }).fold(0.0, f64::max) + size;
@@ -767,6 +816,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept) -> Result<SolidResults, String> 
         size: sw.ms.size,
         quality: sw.ms.quality.clone(),
         volume,
+        path: pl.map(|p| p.path),
     })
 }
 
@@ -1137,6 +1187,354 @@ pub fn heat(m: &Model) -> Result<SolidHeatResults, String> {
     let fields = ["t", "qx", "qy", "qz", "qmag"].iter().zip(&all).map(|(k, v)| field3(k, v, &ids, &sw)).collect();
     let volume = Volume { nodes: sw.pos.clone(), disp: vec![[0.0; 3]; nn], tets: tets(&sw), v: all };
     Ok(SolidHeatResults { surface, fields, supports, loads, imbalance, stats, warnings, elements: sw.ms.tris.len() * layers, nodes: nn, layers, order: o as u8, size: sw.ms.size, quality: sw.ms.quality.clone(), volume })
+}
+
+/// An elastic-plastic solve's answer for a 3D solid (0.5.1).
+struct Plastic3 {
+    u: Vec<f64>,
+    /// The true internal forces at u (K u less the plastic correction) and the load factor reached.
+    kint: Vec<f64>,
+    lam: f64,
+    /// Stresses (xx, yy, zz, xy, yz, zx) and equivalent plastic strain at each node, averaged from
+    /// the elements around it by volume.
+    stress: Vec<[f64; 6]>,
+    peeq: Vec<f64>,
+    path: crate::plane::PartPath,
+}
+
+/// One strain row set per unknown of a node: the six strains (xx, yy, zz, γxy, γyz, γzx) one unit
+/// of movement along `a` gives, from the node's gradient.
+fn bcol(g: [f64; 3], a: usize) -> [f64; 6] {
+    match a {
+        0 => [g[0], 0.0, 0.0, g[1], 0.0, g[2]],
+        1 => [0.0, g[1], 0.0, g[0], g[2], 0.0],
+        _ => [0.0, 0.0, g[2], 0.0, g[1], g[0]],
+    }
+}
+
+fn d6(lam: f64, mu: f64, v: [f64; 6]) -> [f64; 6] {
+    let tr = v[0] + v[1] + v[2];
+    [lam * tr + 2.0 * mu * v[0], lam * tr + 2.0 * mu * v[1], lam * tr + 2.0 * mu * v[2], mu * v[3], mu * v[4], mu * v[5]]
+}
+
+/// J2 plasticity in a swept solid (0.5.1), as for plane parts (0.5.0): the load in increments,
+/// Newton's method with each point's consistent tangent (from the return mapping by small strain
+/// steps), B-bar (the element's mean volume change, so flow that keeps volume does not lock), and
+/// an increment that will not converge halved until the part is found to collapse. The elastic
+/// B-bar stiffness is factorised once and serves every iteration in which nothing yields.
+fn plastic3(m: &Model, sw: &Swept, sys: &System, held: &[bool], inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
+    use crate::solids::j2::{State6, J2};
+    let o = sw.order;
+    let nn = sw.count();
+    let n = sys.n;
+    let layers = (sw.levels - 1) / o;
+    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
+    if !sw.ms.mat.iter().any(|id| mats.get(id).is_some_and(|mt| mt.fy > 0.0)) {
+        warnings.push("No material has a yield strength, so nothing yields: the answer is elastic.".into());
+    }
+    struct Pt {
+        el: usize,
+        g: Vec<[f64; 3]>,
+        w: f64,
+        mat: J2,
+        lm: (f64, f64),
+    }
+    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
+    let mut pts = vec![];
+    // Each element's nodes, mean gradients (for B-bar) and volume.
+    let mut els: Vec<(Vec<usize>, Vec<[f64; 3]>, f64)> = vec![];
+    for k in 0..sw.ms.tris.len() {
+        let mt = mats.get(&sw.ms.mat[k]).ok_or("A shape's material is missing.")?;
+        let lm = (mt.e * mt.nu / ((1.0 + mt.nu) * (1.0 - 2.0 * mt.nu)), mt.e / (2.0 * (1.0 + mt.nu)));
+        for l in 0..layers {
+            let en = sw.element(k, l);
+            let xyz: Vec<[f64; 3]> = en.iter().map(|&q| sw.at(q)).collect();
+            let el = els.len();
+            let mut mean = vec![[0.0; 3]; en.len()];
+            let mut vol = 0.0;
+            for &(xi, eta, wt) in &rule_t {
+                for &(zeta, wz) in &rule_z {
+                    let (g, _, det) = wedge(&xyz, o, xi, eta, zeta);
+                    let w = wt * wz * det;
+                    for (mi, gi) in mean.iter_mut().zip(&g) {
+                        for c in 0..3 {
+                            mi[c] += w * gi[c];
+                        }
+                    }
+                    vol += w;
+                    pts.push(Pt { el, g, w, mat: J2 { e: mt.e, nu: mt.nu, fy: mt.fy, h: mt.hardening }, lm });
+                }
+            }
+            for mi in &mut mean {
+                for c in mi.iter_mut() {
+                    *c /= vol;
+                }
+            }
+            els.push((en, mean, vol));
+        }
+    }
+    let fnorm = sys.f.iter().zip(held).filter(|(_, h)| !**h).map(|(v, _)| v * v).sum::<f64>().sqrt();
+    if fnorm == 0.0 {
+        return Err("There are no loads on the part, so nothing yields. Add loads on the Loads tab.".into());
+    }
+    // A point's strain columns, plain (B) and B-bar, one per unknown of the element.
+    let cols = |p: &Pt| -> (Vec<usize>, Vec<[f64; 6]>, Vec<[f64; 6]>) {
+        let (en, mean, _) = &els[p.el];
+        let mut dofs = Vec::with_capacity(3 * en.len());
+        let mut b = Vec::with_capacity(3 * en.len());
+        let mut bb = Vec::with_capacity(3 * en.len());
+        for (i, &q) in en.iter().enumerate() {
+            for a in 0..3 {
+                let c = bcol(p.g[i], a);
+                let dv = (mean[i][a] - p.g[i][a]) / 3.0;
+                dofs.push(3 * q + a);
+                b.push(c);
+                bb.push([c[0] + dv, c[1] + dv, c[2] + dv, c[3], c[4], c[5]]);
+            }
+        }
+        (dofs, b, bb)
+    };
+    // w (Xᵀ M Y) into an element's dense matrix (M given applied to the columns), and the
+    // element's matrix into the lower half of the global one.
+    let acc = |buf: &mut [f64], x: &[[f64; 6]], my: &[[f64; 6]], w: f64, sign: f64| {
+        let nd = x.len();
+        for i in 0..nd {
+            for j in 0..nd {
+                buf[i * nd + j] += sign * w * (0..6).map(|r| x[i][r] * my[j][r]).sum::<f64>();
+            }
+        }
+    };
+    let flush = |dk: &mut Vec<(usize, usize, f64)>, dofs: &[usize], buf: &[f64]| {
+        let nd = dofs.len();
+        for i in 0..nd {
+            for j in 0..nd {
+                if dofs[i] >= dofs[j] && buf[i * nd + j] != 0.0 {
+                    dk.push((dofs[i], dofs[j], buf[i * nd + j]));
+                }
+            }
+        }
+    };
+    // Each element's points (they are stored element by element).
+    let mut ranges = vec![(0usize, 0usize); els.len()];
+    for (g, p) in pts.iter().enumerate() {
+        if ranges[p.el].1 == 0 {
+            ranges[p.el].0 = g;
+        }
+        ranges[p.el].1 = g + 1;
+    }
+    // The elastic B-bar stiffness: K + Σ (B̄ᵀ D B̄ − Bᵀ D B), duplicates summed.
+    let mut kbar = System::lower(n);
+    kbar.k = sys.k.clone();
+    for &(g0, g1) in &ranges {
+        let mut buf = vec![];
+        let mut dofs = vec![];
+        for p in &pts[g0..g1] {
+            let (d, b, bb) = cols(p);
+            buf.resize(d.len() * d.len(), 0.0);
+            let dbb: Vec<[f64; 6]> = bb.iter().map(|c| d6(p.lm.0, p.lm.1, *c)).collect();
+            let db: Vec<[f64; 6]> = b.iter().map(|c| d6(p.lm.0, p.lm.1, *c)).collect();
+            acc(&mut buf, &bb, &dbb, p.w, 1.0);
+            acc(&mut buf, &b, &db, p.w, -1.0);
+            dofs = d;
+        }
+        flush(&mut kbar.k, &dofs, &buf);
+    }
+    compact(&mut kbar.k);
+    let fac = kbar.factor(held, &[]).map_err(|e| format!("{e} A 3D solid also needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?;
+    let tens = |e: [f64; 6]| [e[0], e[1], e[2], e[3] / 2.0, e[4] / 2.0, e[5] / 2.0];
+    // At movements u from the committed histories: the plastic correction (Σ Bᵀ D B u − B̄ᵀ σ),
+    // the new histories, the stresses and (when asked) the tangent's change at yielding points
+    // over the elastic B-bar one: Σ B̄ᵀ (D_ep − D) B̄.
+    let eval = |u: &[f64], hist: &[State6], tangent: bool| -> (Vec<f64>, Vec<State6>, Vec<[f64; 6]>, Vec<(usize, usize, f64)>) {
+        let mut corr = vec![0.0; n];
+        let mut out = Vec::with_capacity(pts.len());
+        let mut sig = Vec::with_capacity(pts.len());
+        let mut dk = vec![];
+        let mut buf: Vec<f64> = vec![];
+        let mut yielded = false;
+        for (g, (p, st)) in pts.iter().zip(hist).enumerate() {
+            let (dofs, b, bb) = cols(p);
+            if g == ranges[p.el].0 {
+                buf.clear();
+                buf.resize(dofs.len() * dofs.len(), 0.0);
+                yielded = false;
+            }
+            let (mut e, mut eb) = ([0.0; 6], [0.0; 6]);
+            for (k, &d) in dofs.iter().enumerate() {
+                for r in 0..6 {
+                    e[r] += b[k][r] * u[d];
+                    eb[r] += bb[k][r] * u[d];
+                }
+            }
+            let (s, st2) = p.mat.stress6(tens(eb), st);
+            let de = d6(p.lm.0, p.lm.1, e);
+            for (k, &d) in dofs.iter().enumerate() {
+                corr[d] += p.w * (0..6).map(|r| b[k][r] * de[r] - bb[k][r] * s[r]).sum::<f64>();
+            }
+            if tangent && st2.alpha > st.alpha {
+                // D_ep by central differences of the return (engineering shear strains).
+                let size = eb.iter().fold(0.0f64, |x, y| x.max(y.abs())).max(p.mat.fy / p.mat.e);
+                let h = 1e-7 * size;
+                let mut dep = [[0.0; 6]; 6];
+                for c in 0..6 {
+                    let (mut ep, mut en) = (eb, eb);
+                    ep[c] += h;
+                    en[c] -= h;
+                    let (sp, _) = p.mat.stress6(tens(ep), st);
+                    let (sn, _) = p.mat.stress6(tens(en), st);
+                    for r in 0..6 {
+                        dep[r][c] = (sp[r] - sn[r]) / (2.0 * h);
+                    }
+                }
+                let mut md = [[0.0; 6]; 6];
+                let dd: [[f64; 6]; 6] = std::array::from_fn(|c| { let mut v = [0.0; 6]; v[c] = 1.0; d6(p.lm.0, p.lm.1, v) });
+                for r in 0..6 {
+                    for c in 0..6 {
+                        md[r][c] = 0.5 * (dep[r][c] + dep[c][r]) - dd[c][r];
+                    }
+                }
+                let mbb: Vec<[f64; 6]> = bb.iter().map(|c| std::array::from_fn(|r| (0..6).map(|q| md[r][q] * c[q]).sum())).collect();
+                acc(&mut buf, &bb, &mbb, p.w, 1.0);
+                yielded = true;
+            }
+            if yielded && g + 1 == ranges[p.el].1 {
+                flush(&mut dk, &dofs, &buf);
+            }
+            out.push(st2);
+            sig.push(s);
+        }
+        (corr, out, sig, dk)
+    };
+    let mut hist = vec![State6::default(); pts.len()];
+    let mut u = vec![0.0; n];
+    let mut lam = 0.0;
+    let first = 1.0 / inc.max(1) as f64;
+    let mut step = first;
+    let mut path = crate::plane::PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
+    let mut sig_last = vec![[0.0; 6]; pts.len()];
+    while lam < 1.0 - 1e-12 {
+        let target = (lam + step).min(1.0);
+        let mut ut = u.clone();
+        let mut done = None;
+        let mut best = f64::INFINITY;
+        for it in 1..=25 {
+            let (corr, h2, sig, dk) = eval(&ut, &hist, true);
+            let ku = sys.mul(&ut);
+            let r: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { target * sys.f[i] - (ku[i] - corr[i]) }).collect();
+            let rn = r.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if !rn.is_finite() {
+                break;
+            }
+            // Converged; or as near as round-off lets it (stiff supports on sloping faces leave a
+            // floor): small and no longer falling.
+            if rn <= 1e-8 * fnorm || (rn <= 1e-6 * fnorm && rn > 0.5 * best) {
+                done = Some((h2, sig, it));
+                break;
+            }
+            // Running away: past the collapse load, so a smaller step.
+            if it > 3 && rn > 10.0 * best {
+                break;
+            }
+            best = best.min(rn);
+            let du = if dk.is_empty() {
+                fac.solve(&r)
+            } else {
+                // The tangent factorised as K̄ with the change added (Cholesky); else a general solve.
+                let mut dk = dk;
+                compact(&mut dk);
+                match kbar.factor(held, &dk) {
+                    Ok(f) => f.solve(&r),
+                    Err(_) => {
+                        let mut kt = System::lower(n);
+                        kt.k = kbar.k.clone();
+                        kt.k.extend(dk);
+                        match kt.solve_many(held, &[&r]) {
+                            Ok((x, _)) => x.into_iter().next().unwrap_or_default(),
+                            Err(_) => break,
+                        }
+                    }
+                }
+            };
+            for i in 0..n {
+                ut[i] += du[i];
+            }
+        }
+        match done {
+            Some((h2, sig, it)) => {
+                u = ut;
+                hist = h2;
+                sig_last = sig;
+                lam = target;
+                path.iterations += it;
+                let peeq = hist.iter().map(|s| s.alpha).fold(0.0, f64::max);
+                if peeq > 0.0 && path.first_yield.is_none() {
+                    path.first_yield = Some(lam);
+                }
+                path.load.push(lam);
+                path.umax.push((0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max));
+                path.peeq.push(peeq);
+                if it < 6 {
+                    step = (step * 1.5).min(first);
+                }
+            }
+            None => {
+                step /= 2.0;
+                if step < first * 1e-3 {
+                    warnings.push(format!("The part cannot carry the whole load: it collapses (yields right through) at about {:.1} % of it. The results shown are at the last load it carried.", lam * 100.0));
+                    break;
+                }
+            }
+        }
+    }
+    path.reached = lam >= 1.0 - 1e-12;
+    let (corr, _, _, _) = eval(&u, &hist, false);
+    let ku = sys.mul(&u);
+    let kint: Vec<f64> = (0..n).map(|i| ku[i] - corr[i]).collect();
+    // Element means, then the nodes by volume.
+    let mut em = vec![([0.0; 6], 0.0, 0.0); els.len()];
+    for ((p, s), st) in pts.iter().zip(&sig_last).zip(&hist) {
+        let e = &mut em[p.el];
+        for r in 0..6 {
+            e.0[r] += p.w * s[r];
+        }
+        e.1 += p.w * st.alpha;
+        e.2 += p.w;
+    }
+    let mut stress = vec![[0.0; 6]; nn];
+    let mut peeq = vec![0.0; nn];
+    let mut wsum = vec![0.0; nn];
+    for ((en, _, vol), (s, a, w)) in els.iter().zip(&em) {
+        for &q in en {
+            for r in 0..6 {
+                stress[q][r] += s[r] / w * vol;
+            }
+            peeq[q] += a / w * vol;
+            wsum[q] += vol;
+        }
+    }
+    for q in 0..nn {
+        let w = wsum[q].max(1e-300);
+        for r in 0..6 {
+            stress[q][r] /= w;
+        }
+        peeq[q] /= w;
+    }
+    Ok(Plastic3 { u, kint, lam, stress, peeq, path })
+}
+
+/// Sum the entries of a triplet list that share a place (sorted by row, then column).
+fn compact(k: &mut Vec<(usize, usize, f64)>) {
+    k.sort_unstable_by_key(|e| (e.0, e.1));
+    let mut w = 0;
+    for r in 0..k.len() {
+        if w > 0 && k[w - 1].0 == k[r].0 && k[w - 1].1 == k[r].1 {
+            k[w - 1].2 += k[r].2;
+        } else {
+            k[w] = k[r];
+            w += 1;
+        }
+    }
+    k.truncate(w);
 }
 
 #[cfg(test)]

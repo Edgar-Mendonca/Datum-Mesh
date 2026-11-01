@@ -3,7 +3,7 @@
 // follows the path (crates/core/src/steps.rs, engine/path.rs, frames/corot.rs).
 import { For, Show, createSignal } from "solid-js";
 import { Step, StepKind, Which, Curve, DynInfo, num, parseNum } from "./api";
-import { openDialog, act, model, frameRes, spaceRes, partRes } from "./store";
+import { openDialog, act, model, frameRes, spaceRes, results } from "./store";
 import { numIn } from "./panels";
 import { Dialog } from "./ui";
 import { fmt, unit, toU } from "./units";
@@ -70,8 +70,8 @@ export const stepsDialog = () => openDialog(() => {
   const set = (s: Step, ch: Partial<Step>) => act({ Set: { item: { Step: { ...s, ...ch } } } });
   const add = (kind: StepKind) => act({ Add: { item: { Step: { id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : [[0, 1], [10, 1]], ground: kind === "history", dt: 0.005, duration: 2 } } } });
   const plane = () => m().analysis === "frame";
-  /** Parts (0.5.0): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
-  const part = () => ["stress", "strain", "axi"].includes(m().analysis);
+  /** Parts (0.5.0) and 3D solids (0.5.1): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
+  const part = () => ["stress", "strain", "axi", "solid"].includes(m().analysis);
   const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"]] : KINDS;
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
@@ -118,7 +118,7 @@ export const stepsDialog = () => openDialog(() => {
     <Show when={!part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button> <button class="btn sm" onClick={() => add("spectrum")}>Add a response spectrum</button> <button class="btn sm" onClick={() => add("history")}>Add a time history</button></p></Show>
     <Show when={sts().some(s => isDyn(s.kind)) && sts().length > 1}><p class="warn small">A dynamic step stands on its own: make it the only step to solve it.</p></Show>
     <Show when={m().analysis === "space" && sts().some(s => s.kind === "newton")}><p class="muted small">In a 3D frame a large-deflection step is second order (P-delta): the axial forces' geometric stiffness, found again until it settles; large rotations and arc length are for plane frames.</p></Show>
-    <Show when={!plane() && m().analysis !== "space" && sts().some(s => s.kind === "newton" || s.kind === "arc")}><p class="warn small">Large-deflection steps are for frames; parts come later.</p></Show>
+    <Show when={!plane() && !part() && m().analysis !== "space" && sts().some(s => s.kind === "newton" || s.kind === "arc")}><p class="warn small">Large-deflection steps are for frames; parts come later.</p></Show>
     <p class="muted small">Each large-deflection step starts where the one before ended and takes the loads to its own: its case or combination times its factor. <b>Large deflection</b> applies the load in increments, each corrected until the frame is in balance in its deflected shape (second-order and P-delta effects, large rotations). <b>Past limit loads</b> follows the path by arc length, so it goes on past the largest load a frame can carry (snap-through) and shows the load falling. Loads keep their directions as the frame deflects.</p>
   </Dialog>;
 });
@@ -126,7 +126,7 @@ export const stepsDialog = () => openDialog(() => {
 /** Results › Load–Deflection for a part (0.5.0): the load factor against the largest movement,
  * and the largest plastic strain. */
 export const partPathDialog = () => openDialog(() => {
-  const p = () => partRes()?.kind === "plane" ? (partRes() as any).path as import("./api").PartPath | undefined : undefined;
+  const p = () => { const r = results(); return r?.kind === "plane" || r?.kind === "solid" ? r.path : undefined; };
   const W = 520, H = 280, P = 48;
   const plot = () => {
     const x = p(); if (!x) return null;

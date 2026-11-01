@@ -126,6 +126,8 @@ export interface SolidResults {
   elements: number; nodes: number; layers: number; order: number; size: number; quality: Quality;
   /** Every node, its movement and field values (in the order of `fields`), and tetrahedra: for the cutting plane. */
   volume?: { nodes: P3[]; disp: P3[]; tets: [number, number, number, number][]; v: number[][] };
+  /** An elastic-plastic solve's record (0.5.1). */
+  path?: PartPath;
 }
 export type Results = (FrameResults & { kind: "frame" }) | PlaneResults | HeatResults | SpaceResults | SolidResults | SolidHeatResults;
 export type PartResults = PlaneResults | HeatResults;
