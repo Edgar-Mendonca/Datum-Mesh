@@ -606,6 +606,11 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const ticks = await p.$$eval(".legend .cbar small", els => els.map(e => e.textContent));
   check("the colour bar's labels tell a narrow range apart", new Set(ticks).size === ticks.length && ticks.length > 3, ticks.join("|"));
   await open("elbow"); await p.waitForTimeout(400);
+  // 0.5.7: an imported mesh's steps offer yielding and large deformation.
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
+  const esd = await p.textContent(".dlg").catch(() => "");
+  check("an imported mesh can be solved elastic-plastic or through large deformation", esd.includes("Add an elastic-plastic step") && esd.includes("Add a large-deformation step"), esd.slice(0, 200));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   // 0.5.6: natural frequencies of an imported mesh.
   await p.evaluate(() => { window.__modesKey = "elbow_modes"; });
   await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Natural Frequencies")'); await p.waitForTimeout(500);

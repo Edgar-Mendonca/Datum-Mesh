@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.7 — 2026-11-01
+
+Imported meshes yield and stretch.
+
+**Nonlinear steps on imported meshes**
+- Solve › Steps on a mesh of tetrahedra: an **elastic-plastic** step (von Mises with hardening, up to collapse) or a **large-deformation** step (rubber, and parts that move far), as for swept 3D solids, with the plastic strain, the load–deflection curve and true-size drawing.
+- The same solvers serve swept and imported solids: they now take any mesh's integration points, so each improvement reaches both.
+
+**Trust**
+- Help › Verification: 233 checks, all passing. New: benchmark 30, the earlier nonlinear answers on 10-node tetrahedra: the thick cylinder's collapse pressure (within 0.3 % of Hill), a bar hardening past yield (exact), a rubber bar stretched to twice its length (exact), and a cantilever bent far (within 0.12 % of the elastica). Benchmarks 26 and 27 give the same numbers as before to the last digit.
+
 ## 0.5.6 — 2026-11-01
 
 Imported meshes vibrate and conduct heat.

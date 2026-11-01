@@ -419,6 +419,9 @@ pub fn solve_plastic(m: &Model, increments: usize) -> Result<SolidResults, Strin
     if m.analysis != Analysis::Solid {
         return Err("This model is not a 3D solid.".into());
     }
+    if m.volume.is_some() {
+        return super::tet::solve_with(m, Some((increments.max(1), false)));
+    }
     let sw = swept_of(m)?;
     solve_swept(m, sw, Some((increments.max(1), false)))
 }
@@ -428,6 +431,9 @@ pub fn solve_plastic(m: &Model, increments: usize) -> Result<SolidResults, Strin
 pub fn solve_large(m: &Model, increments: usize) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("This model is not a 3D solid.".into());
+    }
+    if m.volume.is_some() {
+        return super::tet::solve_with(m, Some((increments.max(1), true)));
     }
     let sw = swept_of(m)?;
     solve_swept(m, sw, Some((increments.max(1), true)))
@@ -662,7 +668,8 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, nl: Option<(usize, bool)>) -> Re
     let (u, stats) = match nl {
         Some((inc, large)) => {
             let t0 = std::time::Instant::now();
-            let p = if large { large3(m, &sw, &sys, &held, &penalties, kpen, inc, &mut warnings)? } else { plastic3(m, &sw, &sys, &held, inc, &mut warnings)? };
+            let cl = cloud_swept(m, &sw)?;
+            let p = if large { large3(m, &cl, &sys, &held, &penalties, kpen, inc, &mut warnings)? } else { plastic3(m, &cl, &sys, &held, inc, &mut warnings)? };
             // The loads it carried (all of them, unless it collapsed first).
             for v in sys.f.iter_mut() {
                 *v *= p.lam;
@@ -1218,17 +1225,58 @@ pub fn heat(m: &Model) -> Result<SolidHeatResults, String> {
     Ok(SolidHeatResults { surface, fields, supports, loads, imbalance, stats, warnings, elements: sw.ms.tris.len() * layers, nodes: nn, layers, order: o as u8, size: sw.ms.size, quality: sw.ms.quality.clone(), volume })
 }
 
+/// The integration points of a 3D mesh for the nonlinear solvers (0.5.7: shared by swept wedges
+/// and imported tetrahedra): each element's nodes; each point's element, global shape-function
+/// gradients, weight (with det J) and material (its index in the model). Points of one element
+/// are stored together.
+pub(super) struct Cloud {
+    pub nn: usize,
+    pub els: Vec<Vec<usize>>,
+    pub pts: Vec<(usize, Vec<[f64; 3]>, f64, usize)>,
+    /// The materials used (indices in the model).
+    pub mats: Vec<usize>,
+}
+
+fn cloud_swept(m: &Model, sw: &Swept) -> Result<Cloud, String> {
+    let o = sw.order;
+    let layers = (sw.levels - 1) / o;
+    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
+    let mut cl = Cloud { nn: sw.count(), els: vec![], pts: vec![], mats: vec![] };
+    for k in 0..sw.ms.tris.len() {
+        let mi = m.materials.iter().position(|x| x.id == sw.ms.mat[k]).ok_or("A shape's material is missing.")?;
+        if !cl.mats.contains(&mi) {
+            cl.mats.push(mi);
+        }
+        for l in 0..layers {
+            let en = sw.element(k, l);
+            let xyz: Vec<[f64; 3]> = en.iter().map(|&q| sw.at(q)).collect();
+            let el = cl.els.len();
+            for &(xi, eta, wt) in &rule_t {
+                for &(zeta, wz) in &rule_z {
+                    let (g, _, det) = wedge(&xyz, o, xi, eta, zeta);
+                    if det <= 0.0 {
+                        return Err("The mesh has a folded element; try a different element size.".into());
+                    }
+                    cl.pts.push((el, g, wt * wz * det, mi));
+                }
+            }
+            cl.els.push(en);
+        }
+    }
+    Ok(cl)
+}
+
 /// An elastic-plastic solve's answer for a 3D solid (0.5.1).
-struct Plastic3 {
-    u: Vec<f64>,
+pub(super) struct Plastic3 {
+    pub(super) u: Vec<f64>,
     /// The true internal forces at u (K u less the plastic correction) and the load factor reached.
-    kint: Vec<f64>,
-    lam: f64,
+    pub(super) kint: Vec<f64>,
+    pub(super) lam: f64,
     /// Stresses (xx, yy, zz, xy, yz, zx) and equivalent plastic strain at each node, averaged from
     /// the elements around it by volume.
-    stress: Vec<[f64; 6]>,
-    peeq: Vec<f64>,
-    path: crate::plane::PartPath,
+    pub(super) stress: Vec<[f64; 6]>,
+    pub(super) peeq: Vec<f64>,
+    pub(super) path: crate::plane::PartPath,
 }
 
 /// One strain row set per unknown of a node: the six strains (xx, yy, zz, γxy, γyz, γzx) one unit
@@ -1251,14 +1299,11 @@ fn d6(lam: f64, mu: f64, v: [f64; 6]) -> [f64; 6] {
 /// steps), B-bar (the element's mean volume change, so flow that keeps volume does not lock), and
 /// an increment that will not converge halved until the part is found to collapse. The elastic
 /// B-bar stiffness is factorised once and serves every iteration in which nothing yields.
-fn plastic3(m: &Model, sw: &Swept, sys: &System, held: &[bool], inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
+pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
     use crate::solids::j2::{State6, J2};
-    let o = sw.order;
-    let nn = sw.count();
+    let nn = cl.nn;
     let n = sys.n;
-    let layers = (sw.levels - 1) / o;
-    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
-    if !sw.ms.mat.iter().any(|id| mats.get(id).is_some_and(|mt| mt.fy > 0.0)) {
+    if !cl.mats.iter().any(|&k| m.materials[k].fy > 0.0) {
         warnings.push("No material has a yield strength, so nothing yields: the answer is elastic.".into());
     }
     struct Pt {
@@ -1268,38 +1313,26 @@ fn plastic3(m: &Model, sw: &Swept, sys: &System, held: &[bool], inc: usize, warn
         mat: J2,
         lm: (f64, f64),
     }
-    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
     let mut pts = vec![];
     // Each element's nodes, mean gradients (for B-bar) and volume.
-    let mut els: Vec<(Vec<usize>, Vec<[f64; 3]>, f64)> = vec![];
-    for k in 0..sw.ms.tris.len() {
-        let mt = mats.get(&sw.ms.mat[k]).ok_or("A shape's material is missing.")?;
+    let mut els: Vec<(Vec<usize>, Vec<[f64; 3]>, f64)> = cl.els.iter().map(|en| (en.clone(), vec![[0.0; 3]; en.len()], 0.0)).collect();
+    for (el, g, w, k) in &cl.pts {
+        let mt = &m.materials[*k];
         let lm = (mt.e * mt.nu / ((1.0 + mt.nu) * (1.0 - 2.0 * mt.nu)), mt.e / (2.0 * (1.0 + mt.nu)));
-        for l in 0..layers {
-            let en = sw.element(k, l);
-            let xyz: Vec<[f64; 3]> = en.iter().map(|&q| sw.at(q)).collect();
-            let el = els.len();
-            let mut mean = vec![[0.0; 3]; en.len()];
-            let mut vol = 0.0;
-            for &(xi, eta, wt) in &rule_t {
-                for &(zeta, wz) in &rule_z {
-                    let (g, _, det) = wedge(&xyz, o, xi, eta, zeta);
-                    let w = wt * wz * det;
-                    for (mi, gi) in mean.iter_mut().zip(&g) {
-                        for c in 0..3 {
-                            mi[c] += w * gi[c];
-                        }
-                    }
-                    vol += w;
-                    pts.push(Pt { el, g, w, mat: J2 { e: mt.e, nu: mt.nu, fy: mt.fy, h: mt.hardening }, lm });
-                }
+        let e = &mut els[*el];
+        for (mi, gi) in e.1.iter_mut().zip(g) {
+            for c in 0..3 {
+                mi[c] += w * gi[c];
             }
-            for mi in &mut mean {
-                for c in mi.iter_mut() {
-                    *c /= vol;
-                }
+        }
+        e.2 += w;
+        pts.push(Pt { el: *el, g: g.clone(), w: *w, mat: J2 { e: mt.e, nu: mt.nu, fy: mt.fy, h: mt.hardening }, lm });
+    }
+    for e in &mut els {
+        for mi in &mut e.1 {
+            for c in mi.iter_mut() {
+                *c /= e.2.max(1e-300);
             }
-            els.push((en, mean, vol));
         }
     }
     let fnorm = sys.f.iter().zip(held).filter(|(_, h)| !**h).map(|(v, _)| v * v).sum::<f64>().sqrt();
@@ -1571,44 +1604,26 @@ fn compact(k: &mut Vec<(usize, usize, f64)>) {
 /// fixed in size and direction as the solid moves (gravity, forces on faces, and pressures as set
 /// on the undeformed faces), Newton's method with the tangent ∂P/∂F, the load in increments,
 /// halved when an increment will not settle.
-fn large3(m: &Model, sw: &Swept, sys: &System, held: &[bool], penalties: &[(u32, usize, [f64; 3])], kpen: f64, inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
+pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalties: &[(u32, usize, [f64; 3])], kpen: f64, inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
     use crate::solids::hyper::{NeoHooke, M3};
-    let o = sw.order;
-    let nn = sw.count();
+    let nn = cl.nn;
     let n = sys.n;
-    let layers = (sw.levels - 1) / o;
-    let mats: std::collections::HashMap<u32, &crate::model::Material> = m.materials.iter().map(|x| (x.id, x)).collect();
     struct Pt {
         g: Vec<[f64; 3]>,
         w: f64,
         mat: NeoHooke,
     }
-    let (rule_t, rule_z) = (tri_rule(o), gauss1(o));
     let mut pts = vec![];
-    let mut els: Vec<(Vec<usize>, f64, (usize, usize))> = vec![];
-    for k in 0..sw.ms.tris.len() {
-        let mt = mats.get(&sw.ms.mat[k]).ok_or("A shape's material is missing.")?;
+    let mut els: Vec<(Vec<usize>, f64, (usize, usize))> = cl.els.iter().map(|en| (en.clone(), 0.0, (usize::MAX, 0))).collect();
+    for (el, g, w, k) in &cl.pts {
+        let mt = &m.materials[*k];
         if mt.nu >= 0.5 || mt.nu <= -1.0 {
             return Err("A material's Poisson's ratio must be below 0.5 (rubber: 0.49 to 0.499).".into());
         }
-        let nh = NeoHooke::new(mt.e, mt.nu);
-        for l in 0..layers {
-            let en = sw.element(k, l);
-            let xyz: Vec<[f64; 3]> = en.iter().map(|&q| sw.at(q)).collect();
-            let g0 = pts.len();
-            let mut vol = 0.0;
-            for &(xi, eta, wt) in &rule_t {
-                for &(zeta, wz) in &rule_z {
-                    let (g, _, det) = wedge(&xyz, o, xi, eta, zeta);
-                    if det <= 0.0 {
-                        return Err("The mesh has a folded element; try a different element size.".into());
-                    }
-                    vol += wt * wz * det;
-                    pts.push(Pt { g, w: wt * wz * det, mat: nh });
-                }
-            }
-            els.push((en, vol, (g0, pts.len())));
-        }
+        let e = &mut els[*el];
+        e.1 += w;
+        e.2 = (e.2 .0.min(pts.len()), pts.len() + 1);
+        pts.push(Pt { g: g.clone(), w: *w, mat: NeoHooke::new(mt.e, mt.nu) });
     }
     let fnorm = sys.f.iter().zip(held).filter(|(_, h)| !**h).map(|(v, _)| v * v).sum::<f64>().sqrt();
     if fnorm == 0.0 {

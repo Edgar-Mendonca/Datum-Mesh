@@ -2037,6 +2037,94 @@ fn tetra_more() -> Vec<Check> {
     v
 }
 
+/// Benchmark 30 (0.5.7): plasticity and large deformation on 10-node tetrahedra (the swept
+/// solids' solvers, fed the tetrahedra's points), against the answers of benchmarks 26 and 27.
+fn tetra_nonlinear() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    use crate::solids::hyper::NeoHooke;
+    use crate::solids::tet::{grid, TetMesh};
+    let mut v = vec![];
+    let doc = |ms: TetMesh, e: f64, nu: f64| { let mut d = Doc::new(Model::new(Analysis::Solid)); d.m.materials[0].e = e; d.m.materials[0].nu = nu; d.m.materials[0].rho = 0.0; d.m.volume = Some(Box::new(ms)); d };
+    let on = |d: &Doc, c: usize, val: f64| Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|q| (q[c] - val).abs() < 1e-9).expect("face") };
+    let sup = |d: &mut Doc, at: Target, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at, kind })); };
+    let load = |d: &mut Doc, at: Target, kind: LoadKind| { add_id(d, Item::Load(Load { case: 0, id: 0, at, kind })); };
+    let step = |d: &mut Doc, kind: StepKind, n: u32| { add(d, Op::Add { item: Item::Step(Step { kind, increments: n, ..Default::default() }) }); };
+    let solid = |d: &Doc| { let Ok(crate::Results::Solid(r)) = crate::solve_for(&d.m, None) else { panic!("{:?}", crate::solve_for(&d.m, None).err()) }; r };
+    let fy = 250e6;
+    // The thick cylinder in plane strain (a quarter, b/a = 2), perfectly plastic: collapse at 2k ln 2.
+    {
+        let (a, b, hh) = (0.1f64, 0.2f64, 0.02);
+        let ms = grid([6, 8, 1], 2, |q| { let (r, t) = (a + (b - a) * q[0], q[1] * std::f64::consts::FRAC_PI_2); [r * t.cos(), r * t.sin(), hh * q[2]] }).unwrap();
+        let mut d = doc(ms, 200e9, 0.3);
+        d.m.materials[0].fy = fy;
+        for (c, val) in [(1, 0.0), (0, 0.0), (2, 0.0), (2, hh)] {
+            let t = on(&d, c, val);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let bore = Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|p| ((p[0] * p[0] + p[1] * p[1]).sqrt() - a).abs() < 1e-9).expect("bore") };
+        let pc = 2.0 * fy / 3f64.sqrt() * 2f64.ln();
+        load(&mut d, bore, LoadKind::Pressure { p: 1.1 * pc });
+        step(&mut d, StepKind::Newton, 12);
+        let r = solid(&d);
+        let got = r.path.as_ref().map_or(0.0, |p| p.load.last().copied().unwrap_or(0.0)) * 1.1 * pc;
+        v.push(check(30, "Thick cylinder, 10-node tetrahedra, perfectly plastic (b/a = 2)", "Collapse pressure 2k ln(b/a), k = σy/√3", "stress", pc, got, 0.01, "Hill 1950 (limit analysis); the largest load carried, reached from below"));
+    }
+    // A bar pulled to 1.5 σy with hardening H = 2 GPa: exact.
+    {
+        let mut d = doc(grid([8, 2, 2], 2, |q| [q[0], 0.1 * q[1], 0.1 * q[2]]).unwrap(), 200e9, 0.3);
+        let h = 2e9;
+        d.m.materials[0].fy = fy;
+        d.m.materials[0].hardening = h;
+        for (c, val) in [(0, 0.0), (1, 0.0), (2, 0.0)] {
+            let t = on(&d, c, val);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let end = on(&d, 0, 1.0);
+        load(&mut d, end, LoadKind::Traction { fx: 1.5 * fy, fy: 0.0, fz: 0.0, total: false });
+        step(&mut d, StepKind::Newton, 6);
+        let r = solid(&d);
+        let name = "Bar pulled past yield, 10-node tetrahedra, hardening H = 2 GPa";
+        v.push(check(30, name, "Stretch L(σ/E + (σ − σy)/H)", "len", 1.5 * fy / 200e9 + 0.5 * fy / h, r.field("ux").max, 1e-6, "Uniaxial stress with linear hardening (exact)"));
+        v.push(check(30, name, "Equivalent plastic strain (σ − σy)/H", "ratio", 0.5 * fy / h, r.field("peeq").max, 1e-6, "Uniaxial stress with linear hardening (exact)"));
+    }
+    // A rubber bar stretched to twice its length: the neo-Hookean answer, exact.
+    {
+        let (e, nu) = (2.98e6, 0.49);
+        let (p, side) = NeoHooke::new(e, nu).uniaxial(2.0);
+        let mut d = doc(grid([10, 1, 1], 2, |q| [0.2 * q[0], 0.02 * q[1], 0.02 * q[2]]).unwrap(), e, nu);
+        for (c, val) in [(0, 0.0), (1, 0.0), (2, 0.0)] {
+            let t = on(&d, c, val);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let end = on(&d, 0, 0.2);
+        load(&mut d, end, LoadKind::Traction { fx: p * 0.02 * 0.02, fy: 0.0, fz: 0.0, total: true });
+        step(&mut d, StepKind::Large, 10);
+        let r = solid(&d);
+        let name = "Rubber bar stretched to twice its length, 10-node tetrahedra";
+        let src = "Neo-Hookean uniaxial tension, exact";
+        v.push(check(30, name, "End movement (λ − 1) L", "len", 0.2, r.field("ux").max, 1e-6, src));
+        v.push(check(30, name, "True stress along it", "stress", p / (side * side), r.field("sx").max, 1e-6, src));
+    }
+    // A steel cantilever bent far by a dead end load (PL²/EI = 2): the elastica.
+    {
+        let (e, l, h) = (200e9, 1.0, 0.05f64);
+        let ei = e * h * h.powi(3) / 12.0;
+        let mut d = doc(grid([40, 2, 2], 2, |q| [l * q[0], h * q[1], h * q[2]]).unwrap(), e, 0.3);
+        let root = on(&d, 0, 0.0);
+        sup(&mut d, root, SupportKind::Fixed);
+        let tip = on(&d, 0, l);
+        load(&mut d, tip, LoadKind::Traction { fx: 0.0, fy: -2.0 * ei / (l * l), fz: 0.0, total: true });
+        step(&mut d, StepKind::Large, 10);
+        let r = solid(&d);
+        let (dv, _, _) = elastica_tip(2.0);
+        let i = r.volume.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, [l, h / 2.0, h / 2.0]).total_cmp(&crate::model::dist3(*b.1, [l, h / 2.0, h / 2.0]))).unwrap().0;
+        let name = "Steel cantilever bent far by a dead end load, 10-node tetrahedra";
+        v.push(check(30, name, "Tip movement down", "len", -dv * l, r.volume.disp[i][1], 0.01, "The elastica (Mattiasson 1981: 0.49346 L)"));
+        v.push(check(30, name, "Equilibrium (moments about the bent shape)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics on the deformed solid"));
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -2115,6 +2203,7 @@ pub fn run() -> Vec<Check> {
     v.extend(rubber());
     v.extend(tetra());
     v.extend(tetra_more());
+    v.extend(tetra_nonlinear());
     v
 }
 

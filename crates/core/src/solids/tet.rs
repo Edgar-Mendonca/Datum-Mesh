@@ -850,18 +850,70 @@ fn build(m: &Model) -> Result<Built, String> {
 
 /// Solve a 3D solid given as an imported tetrahedral mesh.
 pub fn solve(m: &Model) -> Result<SolidResults, String> {
+    solve_with(m, None)
+}
+
+/// The integration points of the mesh for the nonlinear solvers (0.5.7).
+fn cloud(m: &Model, ms: &TetMesh) -> Result<super::solid::Cloud, String> {
+    let mi = m.materials.iter().position(|x| x.id == ms.material).unwrap_or(0);
+    let mut cl = super::solid::Cloud { nn: ms.nodes.len(), els: vec![], pts: vec![], mats: vec![mi] };
+    let r = rule(ms.order);
+    for (e, el) in ms.tets.iter().enumerate() {
+        let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
+        for &(x, w) in &r {
+            let (g, _, det) = grads(&xyz, ms.order, x);
+            if det <= 0.0 {
+                return Err("The mesh has an element turned inside out; remesh it.".into());
+            }
+            cl.pts.push((e, g, w * det, mi));
+        }
+        cl.els.push(el.iter().map(|&q| q as usize).collect());
+    }
+    Ok(cl)
+}
+
+/// Solve an imported mesh linearly (`nl` None), elastic-plastic (increments, false) or through
+/// large deformation (increments, true) (0.5.7: the swept solids' nonlinear solvers, on tetrahedra).
+pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("Imported meshes are solved as 3D solids.".into());
     }
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
     let nn = ms.nodes.len();
-    let Built { sys, held, sup_nodes, penalties, kpen, applied, mut warnings, lam, mu, fy, .. } = build(m)?;
-    let (u, stats) = sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?;
+    let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, lam, mu, fy, .. } = build(m)?;
+    let large = nl.is_some_and(|x| x.1);
+    let mut pl = None;
+    let (u, stats) = match nl {
+        Some((inc, big)) => {
+            let t0 = std::time::Instant::now();
+            let cl = cloud(m, ms)?;
+            let p = if big { super::solid::large3(m, &cl, &sys, &held, &penalties, kpen, inc, &mut warnings)? } else { super::solid::plastic3(m, &cl, &sys, &held, inc, &mut warnings)? };
+            for v in sys.f.iter_mut() {
+                *v *= p.lam;
+            }
+            applied = Tally::default();
+            for q in 0..nn {
+                let x = ms.nodes[q];
+                let at = if big { [x[0] + p.u[3 * q], x[1] + p.u[3 * q + 1], x[2] + p.u[3 * q + 2]] } else { x };
+                applied.add(at, [sys.f[3 * q], sys.f[3 * q + 1], sys.f[3 * q + 2]]);
+            }
+            let u = p.u.clone();
+            let nz = sys.k.len();
+            pl = Some(p);
+            (u, crate::engine::sparse::Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros: nz, residual: 0.0, ms: t0.elapsed().as_secs_f64() * 1e3 })
+        }
+        None => sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?,
+    };
     if stats.residual > 1e-8 {
         warnings.push(format!("The supports barely hold the solid (solved only to {:.0e}): it can probably turn or slide.", stats.residual));
     }
-    // Reactions and the balance.
-    let ku = sys.mul(&u);
+    // Reactions and the balance (from the true internal forces past yield; moments about the
+    // moved nodes after a large deformation).
+    let ku = match &pl {
+        Some(p) => p.kint.clone(),
+        None => sys.mul(&u),
+    };
+    let pos = |q: usize| { let x = ms.nodes[q]; if large { [x[0] + u[3 * q], x[1] + u[3 * q + 1], x[2] + u[3 * q + 2]] } else { x } };
     let mut taken = vec![false; 3 * nn];
     let mut reactions = vec![];
     let mut reacted = Tally::default();
@@ -875,7 +927,7 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
                     f[c] = ku[3 * q + c] - sys.f[3 * q + c];
                 }
             }
-            reacted.add(ms.nodes[*q], f);
+            reacted.add(pos(*q), f);
             for c in 0..3 {
                 r[c] += f[c];
             }
@@ -884,7 +936,7 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
             if s2 == *sid {
                 let un = (0..3).map(|c| u[3 * q + c] * nv[c]).sum::<f64>();
                 let f = nv.map(|c| -kpen * un * c);
-                reacted.add(ms.nodes[q], f);
+                reacted.add(pos(q), f);
                 for c in 0..3 {
                     r[c] += f[c];
                 }
@@ -896,7 +948,7 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
     let refs = node_ref(ms.order);
     let mut acc = vec![[0.0f64; 6]; nn];
     let mut wsum = vec![0.0f64; nn];
-    for el in &ms.tets {
+    for el in ms.tets.iter().filter(|_| pl.is_none()) {
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let vol = grads(&xyz, ms.order, [0.25; 3]).2.abs() / 6.0;
         for (q, &x) in refs.iter().enumerate() {
@@ -920,8 +972,15 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
             wsum[n] += vol;
         }
     }
-    const KEYS: [&str; 14] = ["ux", "uy", "uz", "umag", "sx", "sy", "sz", "txy", "tyz", "tzx", "vm", "s1", "s3", "sf"];
-    let mut all: Vec<Vec<f64>> = vec![Vec::with_capacity(nn); KEYS.len()];
+    if let Some(p) = &pl {
+        // Past yield or through large deformation: the solver's own stresses at the nodes.
+        for q in 0..nn {
+            acc[q] = p.stress[q];
+            wsum[q] = 1.0;
+        }
+    }
+    let mut keys = vec!["ux", "uy", "uz", "umag", "sx", "sy", "sz", "txy", "tyz", "tzx", "vm", "s1", "s3", "sf"];
+    let mut all: Vec<Vec<f64>> = vec![Vec::with_capacity(nn); keys.len()];
     for q in 0..nn {
         let st = stress_set(acc[q].map(|v| v / wsum[q].max(1e-300)), fy);
         let d = [u[3 * q], u[3 * q + 1], u[3 * q + 2]];
@@ -930,8 +989,12 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
         }
     }
     let _ = principal;
+    if let Some(p) = pl.as_ref().filter(|p| !p.peeq.is_empty()) {
+        keys.push("peeq");
+        all.push(p.peeq.clone());
+    }
     let (surface, ids) = surface(ms);
-    let fields = KEYS
+    let fields = keys
         .iter()
         .zip(&all)
         .map(|(key, v)| {
@@ -949,7 +1012,7 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
         .collect();
     let size = ms.size();
     let umax = (0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max);
-    if umax > 0.1 * size {
+    if umax > 0.1 * size && pl.is_none() {
         warnings.push(format!("The largest movement is {:.0} % of the solid's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, loads and units.", umax / size * 100.0));
     }
     let reach = ms.nodes.iter().map(|p| dot(*p, *p).sqrt()).fold(0.0, f64::max) + size;
@@ -975,8 +1038,8 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
         size: mean_edge(ms),
         quality,
         volume: Volume { nodes: ms.nodes.clone(), disp: (0..nn).map(|q| [u[3 * q], u[3 * q + 1], u[3 * q + 2]]).collect(), tets: corner_tets(ms), v: all },
-        path: None,
-        large: false,
+        path: pl.map(|p| p.path),
+        large,
     })
 }
 

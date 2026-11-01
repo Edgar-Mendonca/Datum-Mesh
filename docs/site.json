@@ -25,7 +25,7 @@
     }
   ],
   "highlights": [
-    "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration and heat",
+    "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration, heat, plasticity and large deformation",
     "A model tree that shows what is done and what is missing, with an icon for everything, and a New study page that asks what you are analysing",
     "Part of the Datum family: send curves to Datum Plot, values to Datum Calc, and take materials from Datum Atlas",
     "Plasticity: parts and 3D solids that yield (von Mises with hardening), solved in increments by Newton's method up to collapse, checked against Hill's limit analysis",
@@ -70,7 +70,7 @@
       "items": [
         "Large rotations in 3D frames",
         "Rubber and large deformation for plane parts",
-        "Plasticity and large deformation on imported meshes"
+        "Thermal stress on imported meshes"
       ]
     },
     {
