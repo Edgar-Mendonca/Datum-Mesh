@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.6 — 2026-11-01
+
+Imported meshes vibrate and conduct heat.
+
+**Natural frequencies of imported meshes**
+- Solve › Natural Frequencies on a mesh of tetrahedra: the lowest frequencies and their mode shapes, with consistent masses (each material's density), shown swinging in 3D.
+
+**Heat conduction in imported meshes**
+- Set Analysis to 3D heat conduction (Inspector, nothing selected): fixed temperatures, heat flux and convection on the mesh's faces, heat made inside; temperatures, heat flux and the heat balance.
+- New example: the pipe elbow carrying hot oil, cooled by air.
+
+**Trust**
+- Help › Verification: 226 checks, all passing. New: benchmark 29: a bar's stretching vibration (exact to 2e-8), a cantilever's bending vibration (within 0.3 % of beam theory, its two equal modes equal), a plate with heat made inside (exact), and radial conduction through a thick cylinder wall (temperature within 0.003 %, heat flow within 0.001 %).
+
+**Fixes**
+- The colour bar labelled a narrow range with the same number on every band (114.1 to 114.5 °C read 114): its labels now carry the digits that tell them apart.
+- The model's name could be crowded out of the top of the tree by its analysis.
+
 ## 0.5.5 — 2026-11-01
 
 Parts of any shape: tetrahedra and imported meshes.

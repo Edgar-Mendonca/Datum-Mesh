@@ -680,12 +680,24 @@ fn facet_points(m: &TetMesh, e: usize, k: usize) -> Vec<([f64; 3], [f64; 3], Vec
 
 // ---------- solving ----------
 
-/// Solve a 3D solid given as an imported tetrahedral mesh.
-pub fn solve(m: &Model) -> Result<SolidResults, String> {
+/// The mesh's stiffness, loads on faces and supports on faces, ready to solve (shared by the static
+/// solve and the natural frequencies).
+struct Built {
+    sys: System,
+    held: Vec<bool>,
+    sup_nodes: Vec<(u32, Vec<(usize, [bool; 3])>)>,
+    penalties: Vec<(u32, usize, [f64; 3])>,
+    kpen: f64,
+    applied: Tally,
+    warnings: Vec<String>,
+    lam: f64,
+    mu: f64,
+    fy: f64,
+    rho: f64,
+}
+
+fn build(m: &Model) -> Result<Built, String> {
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
-    if m.analysis != Analysis::Solid {
-        return Err("Imported meshes are solved as 3D solids.".into());
-    }
     let nn = ms.nodes.len();
     let mt = m.materials.iter().find(|x| x.id == ms.material).or(m.materials.first()).ok_or("The model has no material.")?;
     let (lam, mu) = (mt.e * mt.nu / ((1.0 + mt.nu) * (1.0 - 2.0 * mt.nu)), mt.e / (2.0 * (1.0 + mt.nu)));
@@ -693,7 +705,6 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
     let mut warnings = vec![];
     let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy, gz }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy, *gz]) } else { None }).fold([0.0; 3], |a, b| [a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
     let rule = rule(ms.order);
-    let mut volume = 0.0;
     for el in &ms.tets {
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let nd = el.len();
@@ -704,7 +715,6 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
                 return Err("The mesh has an element turned inside out (its mid-side nodes are too far off); remesh it.".into());
             }
             let w = w * det;
-            volume += w;
             for i in 0..nd {
                 for j in 0..=i {
                     let dij = dot(gd[i], gd[j]);
@@ -835,6 +845,17 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
             }
         }
     }
+    Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, lam, mu, fy: mt.fy, rho: mt.rho })
+}
+
+/// Solve a 3D solid given as an imported tetrahedral mesh.
+pub fn solve(m: &Model) -> Result<SolidResults, String> {
+    if m.analysis != Analysis::Solid {
+        return Err("Imported meshes are solved as 3D solids.".into());
+    }
+    let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
+    let nn = ms.nodes.len();
+    let Built { sys, held, sup_nodes, penalties, kpen, applied, mut warnings, lam, mu, fy, .. } = build(m)?;
     let (u, stats) = sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?;
     if stats.residual > 1e-8 {
         warnings.push(format!("The supports barely hold the solid (solved only to {:.0e}): it can probably turn or slide.", stats.residual));
@@ -902,7 +923,7 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
     const KEYS: [&str; 14] = ["ux", "uy", "uz", "umag", "sx", "sy", "sz", "txy", "tyz", "tzx", "vm", "s1", "s3", "sf"];
     let mut all: Vec<Vec<f64>> = vec![Vec::with_capacity(nn); KEYS.len()];
     for q in 0..nn {
-        let st = stress_set(acc[q].map(|v| v / wsum[q].max(1e-300)), mt.fy);
+        let st = stress_set(acc[q].map(|v| v / wsum[q].max(1e-300)), fy);
         let d = [u[3 * q], u[3 * q + 1], u[3 * q + 2]];
         for (c, v) in [d[0], d[1], d[2], dot(d, d).sqrt(), st[0], st[1], st[2], st[3], st[4], st[5], st[6], st[7], st[8], st[9]].iter().enumerate() {
             all[c].push(*v);
@@ -936,7 +957,6 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
     let fb = if scale[0] > 0.0 { (0..3).map(|k| (applied.sum[k] + reacted.sum[k]).abs()).fold(0.0, f64::max) / scale[0] } else { 0.0 };
     let mo = if scale[1] > 0.0 { (3..6).map(|k| (applied.sum[k] + reacted.sum[k]).abs()).fold(0.0, f64::max) / scale[1] } else { 0.0 };
     let quality = quality(ms);
-    let _ = volume;
     Ok(SolidResults {
         disp: ids.iter().map(|&n| [u[3 * n], u[3 * n + 1], u[3 * n + 2]]).collect(),
         surface,
@@ -958,6 +978,213 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
         path: None,
         large: false,
     })
+}
+
+/// A 14-point rule exact to degree 5 (positive weights; Walkington 2000), for the consistent mass
+/// of quadratic elements (N_i N_j is of degree 4). Points (ξ, η, ζ) and weights summing to 1/6.
+fn rule14() -> Vec<([f64; 3], f64)> {
+    let mut out = vec![];
+    for (a, w) in [(0.092_735_250_310_891_2, 0.073_493_043_116_361_96), (0.310_885_919_263_300_6, 0.112_687_925_718_015_85)] {
+        let b = 1.0 - 3.0 * a;
+        for p in [[a, a, a], [b, a, a], [a, b, a], [a, a, b]] {
+            out.push((p, w / 6.0));
+        }
+    }
+    let (b, c) = (0.045_503_704_125_649_7, 0.5 - 0.045_503_704_125_649_7);
+    for p in [[b, b, c], [b, c, b], [c, b, b], [c, c, b], [c, b, c], [b, c, c]] {
+        out.push((p, 0.042_546_020_777_081_47 / 6.0));
+    }
+    out
+}
+
+/// The lowest natural frequencies of an imported mesh (0.5.6), with consistent masses (density ×
+/// volume) and the supports as for a static solve.
+pub fn modes(m: &Model, count: usize) -> Result<super::solid::SolidModes, String> {
+    let t0 = std::time::Instant::now();
+    let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
+    let b = build(m)?;
+    if !(b.rho > 0.0) {
+        return Err("The mesh's material has no density, so it has no mass to vibrate (Home › Materials).".into());
+    }
+    let pts = rule14();
+    let mut mass = vec![];
+    for el in &ms.tets {
+        let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
+        let nd = el.len();
+        let mut me = vec![0.0; nd * nd];
+        for &(x, w) in &pts {
+            let (_, n, det) = grads(&xyz, ms.order, x);
+            for i in 0..nd {
+                for j in 0..nd {
+                    me[i * nd + j] += b.rho * n[i] * n[j] * w * det;
+                }
+            }
+        }
+        for i in 0..nd {
+            for j in 0..nd {
+                for c in 0..3 {
+                    mass.push((3 * el[i] as usize + c, 3 * el[j] as usize + c, me[i * nd + j]));
+                }
+            }
+        }
+    }
+    let (found, iterations) = crate::modal::lowest(&b.sys, &mass, &b.held, count)?;
+    let (surface, ids) = surface(ms);
+    let modes = found.into_iter().map(|md| super::solid::SolidMode { f: md.f, disp: ids.iter().map(|&n| [md.shape[3 * n], md.shape[3 * n + 1], md.shape[3 * n + 2]]).collect() }).collect();
+    Ok(super::solid::SolidModes { surface, modes, equations: b.held.iter().filter(|h| !**h).count(), iterations, ms: t0.elapsed().as_secs_f64() * 1e3, warnings: b.warnings })
+}
+
+/// Steady heat conduction in an imported mesh (0.5.6): fixed temperatures on faces, heat flux
+/// and convection on faces, heat made inside; temperatures, heat flux and the heat balance.
+pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
+    use crate::heat::Flow;
+    let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
+    let has_t = m.supports.iter().any(|s| matches!(s.kind, SupportKind::Temperature { .. }));
+    let has_conv = m.loads.iter().any(|l| matches!(l.kind, LoadKind::Convection { h, .. } if h > 0.0));
+    if !has_t && !has_conv {
+        return Err("Fix a temperature on a face, or add convection to a fluid: without one the temperatures have no level to settle at (Loads tab).".into());
+    }
+    let mt = m.materials.iter().find(|x| x.id == ms.material).or(m.materials.first()).ok_or("The model has no material.")?;
+    if mt.k <= 0.0 {
+        return Err(format!("{}: heat conduction needs a thermal conductivity above zero (Home › Materials).", mt.name));
+    }
+    let nn = ms.nodes.len();
+    let mut sys = System::lower(nn);
+    let mut warnings = vec![];
+    let gen: Vec<(u32, f64)> = m.loads.iter().filter_map(|l| if let (LoadKind::Heat { q }, Target::Body) = (&l.kind, &l.at) { Some((l.id, *q)) } else { None }).collect();
+    let mut fgen = vec![0.0; gen.len()];
+    let rule = if gen.is_empty() { rule(ms.order) } else { rule14() };
+    for el in &ms.tets {
+        let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
+        let nd = el.len();
+        for &(x, w) in &rule {
+            let (g, n, det) = grads(&xyz, ms.order, x);
+            if det <= 0.0 {
+                return Err("The mesh has an element turned inside out; remesh it.".into());
+            }
+            let w = w * det;
+            for i in 0..nd {
+                for j in 0..=i {
+                    let (r, c) = (el[i] as usize, el[j] as usize);
+                    let v = mt.k * dot(g[i], g[j]) * w;
+                    if r >= c {
+                        sys.add(r, c, v);
+                    } else {
+                        sys.add(c, r, v);
+                    }
+                }
+                for (gi, &(_, q)) in gen.iter().enumerate() {
+                    sys.f[el[i] as usize] += n[i] * q * w;
+                    fgen[gi] += n[i] * q * w;
+                }
+            }
+        }
+    }
+    let face = |at: &Target| if let Target::Face { face } = at { ms.faces.get(*face as usize) } else { None };
+    let points = |fs: &FaceSet| fs.facets.iter().flat_map(|&(e, k)| facet_points(ms, e as usize, k as usize)).collect::<Vec<_>>();
+    let mut fload: Vec<(u32, f64)> = gen.iter().zip(&fgen).map(|((id, _), q)| (*id, *q)).collect();
+    let mut conv: Vec<(u32, f64, f64, Vec<(f64, Vec<(usize, f64)>)>)> = vec![];
+    for l in &m.loads {
+        match (&l.kind, face(&l.at)) {
+            (LoadKind::Flux { q }, Some(fs)) => {
+                let mut total = 0.0;
+                for (_, nv, ns) in points(fs) {
+                    let da = dot(nv, nv).sqrt();
+                    for (n, w) in ns {
+                        sys.f[n] += w * q * da;
+                        total += w * q * da;
+                    }
+                }
+                fload.push((l.id, total));
+            }
+            (LoadKind::Convection { h, t_inf }, Some(fs)) => {
+                let mut pts = vec![];
+                for (_, nv, ns) in points(fs) {
+                    let da = dot(nv, nv).sqrt();
+                    for &(a, sa) in &ns {
+                        sys.f[a] += sa * h * t_inf * da;
+                        for &(b2, sb) in &ns {
+                            if a >= b2 {
+                                sys.add(a, b2, sa * sb * h * da);
+                            }
+                        }
+                    }
+                    pts.push((da, ns));
+                }
+                conv.push((l.id, *h, *t_inf, pts));
+            }
+            (LoadKind::Heat { .. }, _) if l.at == Target::Body => {}
+            _ => warnings.push("A load that does not act in heat conduction on an imported mesh (forces, pressures, gravity, or a heat load off its faces) was left out.".into()),
+        }
+    }
+    let mut held = vec![false; nn];
+    let mut fixed = vec![0.0; nn];
+    let mut sup_nodes: Vec<(u32, Vec<usize>)> = vec![];
+    for s in &m.supports {
+        let (SupportKind::Temperature { t: tv }, Some(fs)) = (&s.kind, face(&s.at)) else {
+            warnings.push("A support that is not a fixed temperature on a face does not act in heat conduction; it was left out.".into());
+            continue;
+        };
+        let mut nodes: Vec<usize> = fs.facets.iter().flat_map(|&(e, k)| ms.facet(e as usize, k as usize)).map(|q| q as usize).collect();
+        nodes.sort_unstable();
+        nodes.dedup();
+        let own: Vec<usize> = nodes.into_iter().filter(|&n| !held[n]).collect();
+        for &n in &own {
+            held[n] = true;
+            fixed[n] = *tv;
+        }
+        sup_nodes.push((s.id, own));
+    }
+    let (u, stats) = sys.solve(&held, &fixed)?;
+    let ku = sys.mul(&u);
+    let supports: Vec<Flow> = sup_nodes.iter().map(|(id, ns)| Flow { id: *id, q: ns.iter().map(|&n| ku[n] - sys.f[n]).sum::<f64>() }).collect();
+    let mut loads: Vec<Flow> = fload.into_iter().map(|(id, q)| Flow { id, q }).collect();
+    for (id, h, t_inf, pts) in &conv {
+        let q: f64 = pts.iter().map(|(da, ns)| h * (t_inf - ns.iter().map(|&(n, s)| s * u[n]).sum::<f64>()) * da).sum();
+        loads.push(Flow { id: *id, q });
+    }
+    let total: f64 = supports.iter().chain(loads.iter()).map(|f| f.q).sum();
+    let size: f64 = supports.iter().chain(loads.iter()).map(|f| f.q.abs()).sum();
+    let imbalance = if size > 0.0 { total.abs() / size } else { 0.0 };
+    // Heat flux −k ∇T at each element's nodes, averaged by volume.
+    let refs = node_ref(ms.order);
+    let mut acc = vec![[0.0f64; 3]; nn];
+    let mut wsum = vec![0.0f64; nn];
+    for el in &ms.tets {
+        let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
+        let vol = grads(&xyz, ms.order, [0.25; 3]).2.abs() / 6.0;
+        for (q, &x) in refs.iter().enumerate() {
+            let (g, _, _) = grads(&xyz, ms.order, x);
+            let mut grad = [0.0; 3];
+            for (i, gi) in g.iter().enumerate() {
+                for c in 0..3 {
+                    grad[c] += gi[c] * u[el[i] as usize];
+                }
+            }
+            let n = el[q] as usize;
+            for c in 0..3 {
+                acc[n][c] += -mt.k * grad[c] * vol;
+            }
+            wsum[n] += vol;
+        }
+    }
+    let qv: Vec<[f64; 3]> = (0..nn).map(|n| acc[n].map(|v| v / wsum[n].max(1e-300))).collect();
+    let all: Vec<Vec<f64>> = vec![u.clone(), qv.iter().map(|q| q[0]).collect(), qv.iter().map(|q| q[1]).collect(), qv.iter().map(|q| q[2]).collect(), qv.iter().map(|q| dot(*q, *q).sqrt()).collect()];
+    let (surface, ids) = surface(ms);
+    let fields = ["t", "qx", "qy", "qz", "qmag"].iter().zip(&all).map(|(key, v)| {
+        let (mut imin, mut imax) = (0, 0);
+        for i in 0..v.len() {
+            if v[i] < v[imin] {
+                imin = i;
+            }
+            if v[i] > v[imax] {
+                imax = i;
+            }
+        }
+        Field3 { key, min: v[imin], max: v[imax], at_min: ms.nodes[imin], at_max: ms.nodes[imax], v: ids.iter().map(|&n| v[n]).collect() }
+    }).collect();
+    let volume = Volume { nodes: ms.nodes.clone(), disp: vec![[0.0; 3]; nn], tets: corner_tets(ms), v: all };
+    Ok(super::solid::SolidHeatResults { surface, fields, supports, loads, imbalance, stats, warnings, elements: ms.tets.len(), nodes: nn, layers: 0, order: ms.order, size: mean_edge(ms), quality: quality(ms), volume })
 }
 
 /// The outer surface for drawing: the facets (quadratic ones split in four), and the lines where
@@ -1102,6 +1329,21 @@ fn quality(ms: &TetMesh) -> Quality {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_fourteen_point_rule_is_exact_to_degree_five() {
+        // ∫ ξ^a η^b ζ^c over the unit tetrahedron = a! b! c! / (a + b + c + 3)!.
+        let f = |n: u32| (1..=n).map(|k| k as f64).product::<f64>();
+        for a in 0..=5u32 {
+            for b in 0..=5 - a {
+                for c in 0..=5 - a - b {
+                    let got: f64 = rule14().iter().map(|(p, w)| w * p[0].powi(a as i32) * p[1].powi(b as i32) * p[2].powi(c as i32)).sum();
+                    let want = f(a) * f(b) * f(c) / f(a + b + c + 3);
+                    assert!((got - want).abs() < 1e-13, "{a} {b} {c}: {got} {want}");
+                }
+            }
+        }
+    }
 
     #[test]
     fn a_unit_cube_has_six_faces_and_its_volume() {

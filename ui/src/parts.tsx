@@ -328,7 +328,11 @@ export const PartProbe = () => (
 export const ColourBar = (p: { d: FieldDef; range: [number, number] | null; colours: string[] }) => (
   <Show when={p.range} fallback={<span class="muted">{p.d.key === "sf" ? "No yield strengths to compare with: set them in Home › Materials." : "No values."}</span>}>{rg => {
     const tick = (k: number) => rg()[0] + (rg()[1] - rg()[0]) * k / BANDS;
-    const label = (k: number) => num(clean(+fmt(p.d.q, tick(k), 3).split(" ")[0].replace("−", "-"), 1), 3);
+    // Enough digits to tell the bands apart (0.5.6: a range of 114.1 to 114.5 °C read 114 everywhere).
+    const shown = (v: number) => +fmt(p.d.q, v, 9).split(" ")[0].replace("−", "-");
+    const lo = shown(tick(0)), hi = shown(tick(BANDS)), step = Math.abs(hi - lo) / BANDS, mag = Math.max(Math.abs(lo), Math.abs(hi));
+    const sig = step > 0 && mag > 0 ? Math.min(7, Math.max(3, Math.ceil(Math.log10(mag / step)) + 1)) : 3;
+    const label = (k: number) => num(clean(shown(tick(k)), 1), sig);
     return <span class="cbar">
       <span class="cb">{p.colours.map((c, k) => <i style={{ background: c }}><Show when={k % 2 === 0}><small>{label(k)}</small></Show></i>)}<b><small>{label(BANDS)}{p.d.key === "sf" && rg()[1] >= 10 ? "+" : ""}</small></b></span>
       <em>{unit(p.d.q)}</em>

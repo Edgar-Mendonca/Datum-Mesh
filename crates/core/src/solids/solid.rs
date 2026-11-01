@@ -933,7 +933,7 @@ fn field3(key: &'static str, v: &[f64], ids: &[usize], sw: &Swept) -> Field3 {
 /// A solid's sweep, after checking it has a thickness (extruded) or an angle (revolved).
 fn swept_of(m: &Model) -> Result<Swept, String> {
     if m.volume.is_some() {
-        return Err("This solid is an imported mesh: it is solved linearly in this release (static stress). Natural frequencies, heat and nonlinear steps on imported meshes come later.".into());
+        return Err("This solid is an imported mesh: nonlinear steps (plasticity, large deformation) on imported meshes come in a later release; make the steps linear (Solve › Steps).".into());
     }
     if m.revolve == 0.0 && !(m.thickness > 0.0) {
         return Err("A 3D solid needs a thickness to extrude its outline by (Inspector, with nothing selected).".into());

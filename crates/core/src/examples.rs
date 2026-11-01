@@ -34,6 +34,7 @@ pub fn list() -> Vec<Example> {
         e("fin3d", "Heat sink in 3D", "The heat sink as a 3D solid 30 mm deep, cooled by air on every face, its ends too: temperatures and heat flow in 3D.", Analysis::SolidHeat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
+        e("elbowheat", "Hot pipe elbow (tetrahedra)", "The pipe elbow carrying oil at 120 °C, cooled by still air at 20 °C outside: temperatures and heat flow through the wall of an imported-style tetrahedral mesh.", Analysis::SolidHeat),
         e("elbow", "Pipe elbow (tetrahedra)", "A 90° steel pipe elbow, 120 mm across with a 10 mm wall, fixed at one end and pulled 4 kN at the other: a mesh of 10-node tetrahedra as a mesher makes one (File › Import Mesh reads yours), faces found by themselves, half of it by symmetry.", Analysis::Solid),
         e("yield3d", "Holed plate yielding in 3D", "A steel plate 100 mm wide and 10 mm thick with a 20 mm hole, pulled at 250 MPa: as a 3D solid, the plastic zones grow from the hole's edges across the net section (Equivalent plastic strain; Results › Load–Deflection).", Analysis::Solid),
         e("rubber", "Rubber finger bending far", "A soft rubber finger 100 mm long, 10 × 10 mm, held at its root and pushed down 0.75 N at its tip: a large-deformation step follows it as it curls down, drawn true to size (Results › Load–Deflection).", Analysis::Solid),
@@ -43,6 +44,19 @@ pub fn list() -> Vec<Example> {
         e("slab", "Floor slab", "A 6 × 4 m floor slab 200 mm thick on four columns with edge beams, carrying 5 kPa and its own weight: a plate joined to a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
+}
+
+/// The half pipe elbow of the tetrahedra examples: bend radius 300 mm, outside radius 60 mm, wall
+/// 10 mm, 10-node tetrahedra.
+fn elbow_mesh() -> Result<crate::solids::tet::TetMesh, String> {
+    let (rb, ro, ri) = (0.3, 0.06, 0.05);
+    let mut ms = crate::solids::tet::grid([2, 12, 16], 2, |q| {
+        let (r, th, ph) = (ri + (ro - ri) * q[0], q[1] * std::f64::consts::PI, q[2] * std::f64::consts::FRAC_PI_2);
+        let rr = rb + r * th.cos();
+        [rr * ph.cos(), rr * ph.sin(), r * th.sin()]
+    })?;
+    ms.source = "Structured mesh of 10-node tetrahedra".into();
+    Ok(ms)
 }
 
 fn sup(at: Target, kind: SupportKind) -> Op {
@@ -398,15 +412,20 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             let h = d.apply(shape(circle(60.0, 120.0, 20.0), true))?[0];
             d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Bearing { fx: 0.0, fy: 60e3 })]))?;
         }
+        "elbowheat" => {
+            d.m.notes = "The steel pipe elbow of the stress example (bend radius 300 mm, outside radius 60 mm, wall 10 mm, the half above the bend's plane, 10-node tetrahedra), now carrying oil at 120 °C: convection inside (h = 200 W/m²K) and to still air at 20 °C outside (h = 10 W/m²K); the cut faces and the pipe's ends are insulated by symmetry. The wall is thin and steel conducts well, so nearly all the temperature drop is in the air outside: the wall sits at about 114 °C, and 84 W flows out of this half (a hand check with the two film resistances gives 83.8 W and 114.3 °C).".into();
+            let ms = elbow_mesh()?;
+            let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+            let radius = |p: [f64; 3]| { let rr = (p[0] * p[0] + p[1] * p[1]).sqrt(); ((rr - 0.3).powi(2) + p[2] * p[2]).sqrt() };
+            let inner = ms.face_where(|p| near(radius(p), 0.05)).ok_or("elbow face")?;
+            let outer = ms.face_where(|p| near(radius(p), 0.06)).ok_or("elbow face")?;
+            d.m.volume = Some(Box::new(ms));
+            d.m.grid = 10.0 * mm;
+            d.apply(Op::Batch(vec![load(Target::Face { face: inner }, LoadKind::Convection { h: 200.0, t_inf: 393.15 }), load(Target::Face { face: outer }, LoadKind::Convection { h: 10.0, t_inf: 293.15 })]))?;
+        }
         "elbow" => {
             d.m.notes = "A 90° elbow of steel pipe: bend radius 300 mm, outside radius 60 mm, wall 10 mm. The half above the bend's plane is meshed in 10-node tetrahedra (this is how an imported mesh is solved; File › Import Mesh reads Gmsh .msh and CalculiX-format .inp files). Fixed at its lower end; 2 kN (4 kN on the whole elbow) pulls its other end along y, opening the bend; symmetry on the cut faces. The stress gathers on the bend's flanks, where the pipe's section ovalises.".into();
-            let (rb, ro, ri) = (0.3, 0.06, 0.05);
-            let mut ms = crate::solids::tet::grid([2, 12, 16], 2, |q| {
-                let (r, th, ph) = (ri + (ro - ri) * q[0], q[1] * std::f64::consts::PI, q[2] * std::f64::consts::FRAC_PI_2);
-                let rr = rb + r * th.cos();
-                [rr * ph.cos(), rr * ph.sin(), r * th.sin()]
-            })?;
-            ms.source = "Structured mesh of 10-node tetrahedra".into();
+            let ms = elbow_mesh()?;
             let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
             let fixed = ms.face_where(|p| near(p[1], 0.0)).ok_or("elbow face")?;
             let free = ms.face_where(|p| near(p[0], 0.0)).ok_or("elbow face")?;
@@ -572,7 +591,9 @@ mod tests {
             if !e.id.starts_with("blank") {
                 // Something to hold it and something to load it (temperatures load the heated plate).
                 let warmed = m.supports.iter().any(|s| matches!(s.kind, SupportKind::Temperature { .. }));
-                assert!(!m.supports.is_empty() && (!m.loads.is_empty() || warmed), "{} has supports and loads", e.id);
+                // A heat model may be held by convection to a fluid alone (0.5.6: the hot elbow).
+                let cooled = m.loads.iter().any(|l| matches!(l.kind, LoadKind::Convection { .. }));
+                assert!((!m.supports.is_empty() || cooled) && (!m.loads.is_empty() || warmed), "{} has supports and loads", e.id);
             }
         }
         assert!(get("nope").is_none());

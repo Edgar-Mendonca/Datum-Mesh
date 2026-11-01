@@ -60,6 +60,7 @@ pub fn modes(m: &model::Model, count: usize) -> Result<Modes, String> {
     match m.analysis {
         model::Analysis::Frame => frame::modes(m, count).map(Modes::Frame),
         model::Analysis::Space => space::modes(m, count).map(Modes::Space),
+        model::Analysis::Solid if m.volume.is_some() => solids::tet::modes(m, count).map(Modes::Solid),
         model::Analysis::Solid => solid::modes(m, count).map(Modes::Solid),
         model::Analysis::SolidHeat => Err("Natural frequencies are for 3D solids in stress, not heat conduction.".into()),
         model::Analysis::Heat => Err("Natural frequencies are for frames and for parts in stress (plane stress, plane strain or axisymmetric), not heat conduction.".into()),
@@ -99,6 +100,7 @@ pub fn solve(m: &model::Model) -> Result<Results, String> {
         model::Analysis::Space => space::solve(m).map(Results::Space),
         model::Analysis::Solid if m.volume.is_some() => solids::tet::solve(m).map(Results::Solid),
         model::Analysis::Solid => solid::solve(m).map(Results::Solid),
+        model::Analysis::SolidHeat if m.volume.is_some() => solids::tet::heat(m).map(Results::SolidHeat),
         model::Analysis::SolidHeat => solid::heat(m).map(Results::SolidHeat),
     }
 }
@@ -128,8 +130,9 @@ mod tests {
         for e in crate::examples::list().into_iter().filter(|e| !e.id.starts_with("blank") && !matches!(e.analysis, crate::model::Analysis::Heat | crate::model::Analysis::SolidHeat)) {
             let m = crate::examples::get(e.id).unwrap();
             if m.volume.is_some() {
-                // Imported meshes (0.5.5) are solved for static stress only so far: the window says so.
-                assert!(crate::modes(&m, 4).unwrap_err().contains("imported mesh"));
+                // Imported meshes (0.5.6): the tetrahedra's own frequencies, rising.
+                let Ok(crate::Modes::Solid(r)) = crate::modes(&m, 4) else { panic!("{}: modes", e.id) };
+                assert!(r.modes.windows(2).all(|w| w[1].f >= w[0].f * (1.0 - 1e-9)) && r.modes[0].f > 0.0, "{}", e.id);
                 continue;
             }
             let r = crate::modes(&m, 4).unwrap_or_else(|x| panic!("{}: {x}", e.id));

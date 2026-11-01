@@ -1958,6 +1958,85 @@ fn tetra() -> Vec<Check> {
     v
 }
 
+/// Benchmark 29 (0.5.6): natural frequencies and heat conduction on tetrahedra.
+fn tetra_more() -> Vec<Check> {
+    use crate::solids::tet::{grid, TetMesh};
+    let mut v = vec![];
+    let doc = |ms: TetMesh, a: Analysis| { let mut d = Doc::new(Model::new(a)); d.m.volume = Some(Box::new(ms)); d };
+    let on = |d: &Doc, c: usize, val: f64| Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|q| (q[c] - val).abs() < 1e-9).expect("face") };
+    let sup = |d: &mut Doc, at: Target, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at, kind })); };
+    let lowest = |m: &Model, n: usize| -> Vec<f64> { match crate::modes(m, n).expect("modes") { crate::Modes::Solid(x) => x.modes.iter().map(|q| q.f).collect(), _ => vec![] } };
+    let (e, rho) = (200e9, 7850.0);
+    // A bar 1 m long held on three faces by rollers, so it can only stretch: its first mode is the
+    // quarter wave, f = √(E/ρ) / 4L (lateral inertia is negligible for so slender a bar).
+    {
+        let mut d = doc(grid([20, 2, 2], 2, |q| [q[0], 0.05 * q[1], 0.05 * q[2]]).unwrap(), Analysis::Solid);
+        d.m.materials[0].e = e;
+        d.m.materials[0].rho = rho;
+        d.m.materials[0].nu = 0.0;
+        for (c, val) in [(0, 0.0), (1, 0.0), (2, 0.0)] {
+            let t = on(&d, c, val);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let f = lowest(&d.m, 1);
+        v.push(check(29, "Bar stretching and shortening, 10-node tetrahedra", "First natural frequency √(E/ρ)/4L", "hz", (e / rho).sqrt() / 4.0, f[0], 1e-3, "One-dimensional wave equation (ν = 0, so no lateral inertia)"));
+    }
+    // A cantilever 1 m long, 50 × 50 mm, fixed at its root: first bending frequency
+    // (1.8751)²/2π √(EI/ρAL⁴), Euler–Bernoulli (L/h = 20: shear and rotary inertia lower it a little).
+    {
+        let h = 0.05f64;
+        let mut d = doc(grid([24, 2, 2], 2, |q| [q[0], h * q[1], h * q[2]]).unwrap(), Analysis::Solid);
+        d.m.materials[0].e = e;
+        d.m.materials[0].rho = rho;
+        d.m.materials[0].nu = 0.3;
+        let root = on(&d, 0, 0.0);
+        sup(&mut d, root, SupportKind::Fixed);
+        let f = lowest(&d.m, 2);
+        let want = 1.875_104_068_7f64.powi(2) / (2.0 * std::f64::consts::PI) * (e * h.powi(4) / 12.0 / (rho * h * h)).sqrt();
+        v.push(check(29, "Cantilever vibrating, 10-node tetrahedra", "First bending frequency 1.8751²/2π √(EI/ρAL⁴)", "hz", want, f[0], 0.01, "Euler–Bernoulli beam (Timoshenko effects about 0.3 % at L/h = 20)"));
+        v.push(check(29, "Cantilever vibrating, 10-node tetrahedra", "Second mode: the same bending the other way (a square section)", "hz", f[0], f[1], 1e-3, "Symmetry of the square section"));
+    }
+    // A plate 1 m thick (along x), 50 °C on one face, 20 °C on the other, with heat made inside at
+    // 10 kW/m³: T(x) = T₀ + (T₁ − T₀) x/L + q x (L − x) / 2k, exact for 10-node elements.
+    {
+        let mut d = doc(grid([4, 2, 2], 2, |q| [q[0], 0.2 * q[1], 0.2 * q[2]]).unwrap(), Analysis::SolidHeat);
+        let k = 50.0;
+        d.m.materials[0].k = k;
+        let (t0, t1, q) = (323.15, 293.15, 1e4);
+        let (a, b) = (on(&d, 0, 0.0), on(&d, 0, 1.0));
+        sup(&mut d, a, SupportKind::Temperature { t: t0 });
+        sup(&mut d, b, SupportKind::Temperature { t: t1 });
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Heat { q } }));
+        let Ok(crate::Results::SolidHeat(r)) = crate::solve(&d.m) else { panic!("slab heat") };
+        let mid = r.volume.nodes.iter().position(|p| (p[0] - 0.5).abs() < 1e-9 && (p[1] - 0.1).abs() < 1e-9 && (p[2] - 0.1).abs() < 1e-9).expect("middle node");
+        let want = t0 + (t1 - t0) * 0.5 + q * 0.25 / (2.0 * k);
+        let name = "Plate with heat made inside, 10-node tetrahedra";
+        v.push(check(29, name, "Temperature halfway through", "temp", want, r.volume.v[0][mid], 1e-9, "Steady conduction with uniform generation (exact: a parabola)"));
+        v.push(check(29, name, "Heat balance (heat out over heat made and in)", "ratio", 1.0, 1.0 + r.imbalance, 1e-9, "Conservation of energy"));
+    }
+    // A thick cylinder wall (a = 0.1, b = 0.2 m), 100 °C inside, 20 °C outside, a quarter, ends
+    // insulated: T(r) = Tᵢ + (Tₒ − Tᵢ) ln(r/a)/ln(b/a); heat through it 2πkh(Tᵢ − Tₒ)/ln(b/a).
+    {
+        let (a, b, hh, k) = (0.1f64, 0.2f64, 0.05, 45.0);
+        let ms = grid([6, 8, 1], 2, |q| { let (r, t) = (a + (b - a) * q[0], q[1] * std::f64::consts::FRAC_PI_2); [r * t.cos(), r * t.sin(), hh * q[2]] }).unwrap();
+        let mut d = doc(ms, Analysis::SolidHeat);
+        d.m.materials[0].k = k;
+        let fin = |d: &Doc, r: f64| Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|p| ((p[0] * p[0] + p[1] * p[1]).sqrt() - r).abs() < 1e-9).expect("face") };
+        let (inner, outer) = (fin(&d, a), fin(&d, b));
+        sup(&mut d, inner, SupportKind::Temperature { t: 373.15 });
+        sup(&mut d, outer, SupportKind::Temperature { t: 293.15 });
+        let Ok(crate::Results::SolidHeat(r)) = crate::solve(&d.m) else { panic!("wall heat") };
+        let rm = 0.15;
+        let node = r.volume.nodes.iter().position(|p| ((p[0] * p[0] + p[1] * p[1]).sqrt() - rm).abs() < 1e-9 && p[1].abs() < 1e-9 && p[2].abs() < 1e-9).expect("node at r = 0.15");
+        let want = 373.15 + (293.15 - 373.15) * (rm / a).ln() / (b / a).ln();
+        let flow = std::f64::consts::FRAC_PI_2 * k * hh * 80.0 / (b / a).ln();
+        let name = "Thick cylinder wall conducting heat, 10-node tetrahedra (a quarter)";
+        v.push(check(29, name, "Temperature at r = 0.15 m", "temp", want, r.volume.v[0][node], 1e-3, "Radial conduction: T(r) logarithmic"));
+        v.push(check(29, name, "Heat through the wall πkh(Tᵢ − Tₒ)/2 ln(b/a)", "power", flow, r.supports[0].q.abs(), 5e-3, "Radial conduction (a quarter of 2πkhΔT/ln(b/a))"));
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -2035,6 +2114,7 @@ pub fn run() -> Vec<Check> {
     v.extend(solid_plasticity());
     v.extend(rubber());
     v.extend(tetra());
+    v.extend(tetra_more());
     v
 }
 

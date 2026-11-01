@@ -358,7 +358,7 @@ const ModelInsp = (p: { m: Model }) => {
     </Show>
     <Row label="Notes"><textarea rows="4" value={p.m.notes} onChange={e => act({ SetMeta: { name: p.m.name, notes: e.currentTarget.value } })} /></Row>
     <table class="vmini"><tbody>
-      <Show when={isFrame(p.m.analysis)} fallback={<tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>
+      <Show when={isFrame(p.m.analysis)} fallback={p.m.volume ? <tr><td>Imported mesh</td><td class="r">{p.m.volume.elements.toLocaleString()} tetrahedra, {p.m.volume.faces.length} faces</td></tr> : <tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>
         <tr><td>Nodes</td><td class="r">{p.m.nodes.length}</td></tr><tr><td>Members</td><td class="r">{p.m.members.length}</td></tr></Show>
       <tr><td>Supports</td><td class="r">{p.m.supports.length}</td></tr><tr><td>Loads</td><td class="r">{p.m.loads.length}</td></tr>
     </tbody></table>

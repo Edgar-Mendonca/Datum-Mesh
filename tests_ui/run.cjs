@@ -43,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -594,6 +594,24 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("F5"); await p.waitForTimeout(600);
   await p.evaluate(() => { window.__solveKey = null; });
   check("a solved mesh is coloured and balanced", (await p.textContent(".legend")).includes("reactions balance the loads") && (await p.textContent(".legend")).includes("Von Mises"), (await p.textContent(".legend")).slice(0, 200));
+  // 0.5.6: heat conduction in an imported mesh.
+  await open("elbowheat"); await p.waitForTimeout(400);
+  check("a heat model on an imported mesh lists its faces and its convection", (await p.textContent(".tree")).includes("Imported mesh") && (await p.textContent(".tree")).includes("Convection"));
+  await p.evaluate(() => { window.__solveKey = "elbowheat_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(600);
+  await p.evaluate(() => { window.__solveKey = null; });
+  const ehl = await p.textContent(".legend").catch(() => "");
+  check("an imported mesh's temperatures are shown with the heat balance", ehl.includes("Temperature") && /heat|balance/i.test(ehl), ehl.slice(0, 200));
+  // 0.5.6 bug: a narrow range (114.1 to 114.5 °C) labelled every band "114".
+  const ticks = await p.$$eval(".legend .cbar small", els => els.map(e => e.textContent));
+  check("the colour bar's labels tell a narrow range apart", new Set(ticks).size === ticks.length && ticks.length > 3, ticks.join("|"));
+  await open("elbow"); await p.waitForTimeout(400);
+  // 0.5.6: natural frequencies of an imported mesh.
+  await p.evaluate(() => { window.__modesKey = "elbow_modes"; });
+  await p.click('.tabs > button:text-is("Solve")'); await p.click('.ribbon button:has-text("Natural Frequencies")'); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__modesKey = null; });
+  const emb = await p.textContent(".legend").catch(() => "");
+  check("an imported mesh's natural frequencies are listed under the 3D view", emb.includes("Natural frequencies") && (await p.$$(".legend .modelist button")).length === fix.elbow_modes.modes.length, emb.slice(0, 160));
   await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button:has-text("Mesh")'); await p.waitForTimeout(150);
   await p.click('.menu button:has-text("millimetres")').catch(() => {}); await p.waitForTimeout(250);
   if (await p.$('.dlg button:has-text("Don\'t save")')) await p.click('.dlg button:has-text("Don\'t save")');
