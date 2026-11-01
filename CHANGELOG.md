@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.4 — 2026-11-01
+
+Datum Mesh talks to the rest of the family.
+
+**Datum Link**
+- Results › **Send to Datum Plot**: a load–deflection curve, a time history or the natural frequencies, as a table (SI units) that opens in Datum Plot for graphs.
+- Results › **Send to Datum Calc**: the largest stress, movement, moment or temperature, the smallest safety factor and the lowest frequency, as values with units for a hand check.
+- Materials › **From Datum Atlas…**: a material sent from Datum Atlas joins the model with its values and source, checked first.
+- When the other app is not installed, the data is saved and copied, ready to paste, and the message says where to get it. The packet format is shared by all eight Datum apps (`docs/LINKS.md`).
+
+**Window**
+- Clearer icons for tools that looked alike: plane stress and plane strain, heat in 2D and 3D, temperature change and edge temperature, rollers along x and y, the moment, shear and axial diagrams, utilisation, mesh quality and mesh lines, reports.
+- Fixes: on the Loads tab the loads group's name was pushed out of sight by its column of four buttons.
+
+**Trust**
+- Every packet read from another program is checked; a fuzz test throws 3 000 damaged ones at the reader.
+
 ## 0.5.3 — 2026-11-01
 
 A clearer model tree, and a guided start.

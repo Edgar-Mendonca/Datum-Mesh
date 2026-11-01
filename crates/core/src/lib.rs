@@ -10,6 +10,7 @@ pub mod dxf;
 pub mod engine;
 pub mod examples;
 pub mod frames;
+pub mod link;
 mod hardening;
 pub mod model;
 pub mod sketch;

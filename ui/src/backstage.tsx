@@ -3,7 +3,7 @@ import { For, Show, createSignal, createResource, onMount, JSX, lazy, Suspense }
 import { PAPERS, PrintPage } from "./print";
 import { RoadmapPage } from "./roadmap";
 import { Options, Out, Example, listen, invoke } from "./api";
-import { backstage, setBackstage, call, out, setOut, model, opts, setOpts, toast, setThemeRaw, applyTheme } from "./store";
+import { backstage, setBackstage, call, out, setOut, model, opts, setOpts, toast, setThemeRaw, applyTheme, results } from "./store";
 import { C } from "./cmds";
 import * as D from "./dialogs";
 import { Icon, Text, Pick, Check } from "./ui";
@@ -68,7 +68,7 @@ const Home = () => {
     <div class="home">
       <div>
         <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</h1>
-        <button class="startnew" onClick={() => setBackstage("new")}><Icon n="new" size={28} /><span><b>Start a new study</b><small>Choose what you are analysing: a truss, a frame, a part, a 3D solid or heat. The window then takes you through it stage by stage.</small></span></button>
+        <button class="startnew" onClick={() => setBackstage("new")}><Icon n="new" size={28} /><span><b>Start a new study</b><small>Choose what you are analysing (a truss, a frame, a part, a 3D solid or heat) and what you want to know: the model is set up for it.</small></span></button>
         <h2>Or open an example</h2>
         <div class="tiles">
           <For each={ex() ?? []}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For>
@@ -110,8 +110,8 @@ const Export = () => (
     <div class="tiles">
       <button class="tile" onClick={() => setBackstage("print")}><div class="pic"><svg class="ic"><use href="#i-print" /></svg></div><b>Print or save as PDF</b><span>The model drawn to scale, with its materials, sections, supports and loads.</span></button>
       <button class="tile" disabled={!model()?.shapes.length} onClick={() => import("./sketch").then(k => k.exportDxf())}><div class="pic"><svg class="ic"><use href="#i-export" /></svg></div><b>Section as DXF</b><span>The part's outline and holes as an ASCII DXF in millimetres, for CAD.</span></button>
-      <button class="tile" disabled><div class="pic"><svg class="ic"><use href="#i-csv" /></svg></div><b>Results as CSV</b><span>Probe lines and convergence data for Datum Plot. Planned for a later release.</span></button>
-      <button class="tile" disabled><div class="pic"><svg class="ic"><use href="#i-calc" /></svg></div><b>Send to Datum Calc</b><span>A result as a variable with units, for a hand check beside it. Planned for a later release.</span></button>
+      <button class="tile" disabled={!results()} onClick={() => import("./link").then(k => { const t = k.plotTables(); if (t.length && t[0] !== "-") t[0].run?.(); else toast("Solve with a nonlinear step, a time history or natural frequencies first: those give curves and lists to plot."); })}><div class="pic"><svg class="ic"><use href="#i-csv" /></svg></div><b>Send to Datum Plot</b><span>A load–deflection curve, a time history or the natural frequencies, as a table for graphs.</span></button>
+      <button class="tile" disabled={!results()} onClick={() => import("./link").then(k => k.sendCalc())}><div class="pic"><svg class="ic"><use href="#i-calc" /></svg></div><b>Send to Datum Calc</b><span>The largest stress, movement, safety factor or frequency, as values with units for a hand check.</span></button>
     </div>
   </div>
 );

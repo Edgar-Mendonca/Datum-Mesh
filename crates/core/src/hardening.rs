@@ -89,6 +89,23 @@ mod tests {
     }
 
     #[test]
+    fn datum_link_files_never_crash_the_reader() {
+        // 0.5.4: packets come from other programs; random and damaged ones are refused, never panic.
+        let good = r#"{"datum_link":1,"from":{"app":"atlas"},"to":"mesh","kind":"material","data":{"name":"Steel","e":2e11,"nu":0.3,"rho":7850,"fy":3.55e8}}"#;
+        let mut r = Rng(11);
+        for _ in 0..3000 {
+            let mut b: Vec<u8> = good.bytes().collect();
+            for _ in 0..r.below(6) + 1 {
+                let k = r.below(b.len());
+                b[k] = [b'0', b'-', b'"', b'{', b'}', b'e', b'9', b'.', b',', 0xFF][r.below(10)];
+            }
+            if let Ok((_, crate::link::Incoming::Material(m))) = crate::link::read(&String::from_utf8_lossy(&b)) {
+                assert!(m.e > 0.0 && m.nu > -1.0 && m.nu < 0.5 && m.rho >= 0.0 && m.fy >= 0.0);
+            }
+        }
+    }
+
+    #[test]
     fn failed_edits_change_nothing() {
         let mut d = Doc::new(examples::get("portal").unwrap());
         let before = d.m.clone();

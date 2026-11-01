@@ -40,7 +40,7 @@ export const NewStudy = () => {
   const groups = [...new Set(KINDS.map(k => k.group))];
   return <div class="newstudy">
     <h1>New study</h1>
-    <p class="muted">Answer two questions; the window then shows only what this kind of study needs, in order. Everything can be changed later.</p>
+    <p class="muted">Answer two questions and the model is set up for it: its analysis, and the right drawing tool ready. Everything can be changed later.</p>
     <h3><span class="qn">1</span>What are you analysing?</h3>
     <div class="kinds"><For each={groups}>{g => <div class="kgroup"><b>{g}</b><For each={KINDS.filter(k => k.group === g)}>{k =>
       <button class="kcard" classList={{ on: kind()?.id === k.id }} data-kind={k.id} onClick={() => pick(k)}><Art d={k.art} /><span><b>{k.name}</b><small>{k.what}</small></span></button>}</For></div>}</For></div>
@@ -49,7 +49,7 @@ export const NewStudy = () => {
         <div class="subs"><For each={k().sub!}>{(s, i) => <button class="kcard sub" classList={{ on: sub() === i() }} data-sub={s[0]} onClick={() => setSub(i())}><span><b>{s[1]}</b><small>{s[2]}</small></span></button>}</For></div></Show>
       <Show when={analysesFor(analysis()).length}><h3><span class="qn">2</span>What do you want to know?</h3>
         <div class="subs"><For each={analysesFor(analysis())}>{([w, l, t]) => <button class="kcard sub" classList={{ on: want() === w }} data-want={w} onClick={() => setWant(w)}><span><b>{l}</b><small>{t}</small></span></button>}</For></div>
-        <p class="muted small">Natural frequencies{k().id === "frame" || k().id === "truss" ? " and buckling" : ""} can be found from any of these, on the Solve stage.</p></Show>
+        <p class="muted small">Natural frequencies{k().id === "frame" || k().id === "truss" ? " and buckling" : ""} can be found from any of these, on the Solve tab.</p></Show>
       <h3><span class="qn">3</span>Units</h3>
       <div class="subs"><For each={[["SI", "SI: mm, kN, MPa, °C"], ["US", "US: in, kip, ksi, °F"]] as const}>{([u, l]) => <button class="kcard sub" classList={{ on: units() === u }} onClick={() => setUnits(u)}><span><b>{l}</b></span></button>}</For></div>
       <p class="ncreate"><button class="btn pri" onClick={create}>Create the {k().name.toLowerCase()} study</button><button class="btn" onClick={() => setBackstage("home")}>Start from an example instead</button></p>

@@ -435,7 +435,42 @@ fn recent(app: AppHandle) -> Vec<Recent> {
 #[tauri::command]
 fn startup_file(app: AppHandle, st: State<St>) -> Option<String> {
     let last = || if st.lock().opts.open_last { recent_paths(&app).into_iter().find(|p| Path::new(p).exists()) } else { None };
-    std::env::args().skip(1).find(|a| a.to_lowercase().ends_with(".dmesh")).or_else(last)
+    std::env::args().skip(1).find(|a| { let l = a.to_lowercase(); l.ends_with(".dmesh") || l.ends_with(".dlink") }).or_else(last)
+}
+
+/// Datum Link (0.5.4, docs/LINKS.md): write a packet for another Datum app to
+/// `%LOCALAPPDATA%\Datum\links` and start that app with it when it is installed. Returns what
+/// happened, for the window to say.
+#[tauri::command]
+fn send_link(app: AppHandle, st: State<St>, to: String, title: String, what: datum_core::link::Outgoing) -> R<String> {
+    let name = datum_core::link::APPS.iter().find(|a| a.0 == to).map(|a| a.1).ok_or("Unknown Datum app.")?;
+    let file = st.lock().doc.path.as_deref().and_then(|p| Path::new(p).file_name().map(|f| f.to_string_lossy().into_owned())).unwrap_or_default();
+    let now = chrono::Utc::now();
+    let text = datum_core::link::envelope(&to, &title, &file, &what, &now.to_rfc3339())?;
+    let base = app.path().local_data_dir().map_err(|e| e.to_string())?;
+    let dir = base.join("Datum").join("links");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Could not make the links folder: {e}"))?;
+    let path = dir.join(format!("{}-{}.dlink", now.format("%Y%m%d-%H%M%S"), to));
+    std::fs::write(&path, &text).map_err(|e| format!("Could not write the link file: {e}"))?;
+    // Each Datum app installs for the user in %LOCALAPPDATA%\<its name>.
+    let exe = std::fs::read_dir(base.join(name)).ok().and_then(|d| d.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("exe")) && !p.file_name().is_some_and(|f| f.to_string_lossy().to_lowercase().contains("unins"))));
+    match exe {
+        Some(x) => {
+            std::process::Command::new(x).arg(&path).spawn().map_err(|e| format!("Could not start {name}: {e}"))?;
+            Ok(format!("Sent to {name}."))
+        }
+        None => Ok(format!("{name} is not installed on this computer. The data is saved in {} and copied, ready to paste; {name} is at edgar-mendonca.github.io/Datum.", path.display())),
+    }
+}
+
+/// Datum Link: read a packet another Datum app made for Datum Mesh (a material from Datum
+/// Atlas), from the given file or one picked. Returns who sent it and the material.
+#[tauri::command]
+async fn read_link(app: AppHandle, path: Option<String>) -> R<Option<(String, datum_core::model::Material)>> {
+    let Some(path) = path.map(PathBuf::from).or_else(|| pick(&app, "Datum link", &["dlink"])) else { return Ok(None) };
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    let (who, datum_core::link::Incoming::Material(m)) = datum_core::link::read(&text)?;
+    Ok(Some((who, m)))
 }
 
 /// Opens one of the project's GitHub pages in the browser (only those).
@@ -495,7 +530,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
-            options, set_options, autosave, recovery, recover, recent, startup_file, open_url, version, quit, check_update, install_update
+            options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())
         .expect("Datum Mesh failed to start");

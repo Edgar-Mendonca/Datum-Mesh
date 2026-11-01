@@ -34,7 +34,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
     const opts = { autosave: 0, beta: false, theme: "light", openLast: false, units: "SI", snap: true, grid: true, rulers: true, contours: "rainbow", paper: "A4", landscape: true, company: "" };
     window.__cur = f.frame;
     const handlers = {};
-    const m = { verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15, iy: 6e-6, cy: 0.075, j: 2e-7 } };
+    const m = { send_link: "Sent to Datum Calc.", read_link: ["Datum Atlas", { id: 0, name: "Aluminium 6061-T6", e: 68.9e9, nu: 0.33, rho: 2700, fy: 276e6, k: 167, alpha: 23.6e-6, source: "ASM Handbook" }], verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15, iy: 6e-6, cy: 0.075, j: 2e-7 } };
     window.__calls = [];
     window.__emit = (e, x) => (handlers[e] ?? []).forEach(h => h({ payload: x }));
     window.__TAURI__ = {
@@ -96,6 +96,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("frames are in metres on the ruler", (await p.textContent(".rtxt.unitlbl")) === "m");
   check("the tree lists members and nodes", (await p.$$(".tree .ti")).length >= pf.members.length + pf.nodes.length);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "tree-portal.png") });
+  if (process.env.SHOTS) for (const t of ["Home", "Geometry", "Loads", "Results"]) { await p.click(`.tabs > button:text-is("${t}")`); await p.waitForTimeout(80); await p.screenshot({ path: path.join(process.env.SHOTS, `ribbon-${t}.png`), clip: { x: 0, y: 0, width: 1440, height: 170 } }); }
+  if (process.env.SHOTS) await p.click('.tabs > button:text-is("Home")');
   check("each branch of the tree has an icon and says whether it is done", (await p.$$(".tree .tgrp summary .tic")).length >= 6 && (await p.$$(".tree .tmark.ok")).length >= 3);
   const allMembersOnScreen = await p.evaluate(() => [...document.querySelectorAll(".mem line")].every(l => { const r = l.getBoundingClientRect(), c = document.querySelector(".canvas").getBoundingClientRect(); return r.left >= c.left && r.right <= c.right && r.top >= c.top && r.bottom <= c.bottom; }));
   check("the model fits the window when opened", allMembersOnScreen);
@@ -207,6 +209,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
       await p.waitForTimeout(60);
       const over = await p.$eval(".ribbon", el => el.scrollWidth - el.clientWidth);
       if (over > 1) check(`ribbon ${t} fits at ${w}px`, false, `overflow ${over}`);
+      // 0.5.4 bug: a group of four stacked buttons pushed its caption out of the ribbon.
+      const lost = await p.$$eval(".ribbon .grp", gs => { const rb = document.querySelector(".ribbon").getBoundingClientRect().bottom; return gs.filter(g => g.querySelector(".cap").getBoundingClientRect().bottom > rb + 1).map(g => g.querySelector(".cap").textContent); });
+      if (lost.length) check(`every group's name shows on ${t} at ${w}px`, false, lost.join(", "));
     }
   }
   await p.setViewportSize({ width: 1440, height: 900 });
@@ -574,12 +579,31 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const ypd = await p.textContent(".dlg").catch(() => "");
   check("Results › Load–Deflection works for a 3D solid", ypd.includes("first yields") && ypd.includes("carries the whole load") && (await p.$$(".dlg svg.curve circle.unstable")).length > 0, ypd.slice(0, 200));
   await p.keyboard.press("Escape");
+  // 0.5.4: Datum Link: values to Datum Calc, a curve to Datum Plot, a material from Datum Atlas.
+  await open("tube"); await p.waitForTimeout(300);
+  await p.evaluate(() => { window.__solveKey = "tube_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.tabs > button:text-is("Results")'); await p.click('.ribbon button[title^="The largest stress, movement"]'); await p.waitForTimeout(200);
+  const sc5 = await p.evaluate(() => window.__calls.filter(c => c[0] === "send_link").slice(-1)[0]?.[1]);
+  check("Send to Datum Calc sends the largest stress and movement as values with SI units", sc5?.to === "calc" && sc5?.what?.kind === "value" && sc5.what.data.some(q => q.name === "sigma_vm_max" && q.unit === "Pa" && q.value > 0), JSON.stringify(sc5).slice(0, 200));
+  await p.click('.ribbon button[title^="A curve or list from this solve"]'); await p.waitForTimeout(150);
+  await p.click('.menu button:has-text("Load–deflection curve")').catch(() => {}); await p.waitForTimeout(200);
+  const sp2 = await p.evaluate(() => window.__calls.filter(c => c[0] === "send_link").slice(-1)[0]?.[1]);
+  check("Send to Datum Plot sends the load–deflection curve as a table", sp2?.to === "plot" && sp2?.what?.kind === "table" && sp2.what.data.rows.length === fix.tube_results.path.load.length && sp2.what.data.columns[1].unit === "m", JSON.stringify(sp2).slice(0, 200));
+  await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button:has-text("Materials")'); await p.waitForTimeout(200);
+  await p.click('.dlg button:has-text("From Datum Atlas")'); await p.waitForTimeout(250);
+  const atl = (await ops()).filter(o => o.Add?.item?.Material).slice(-1)[0];
+  check("a material from Datum Atlas is added to the model with its source", atl?.Add.item.Material.name === "Aluminium 6061-T6" && atl.Add.item.Material.source === "ASM Handbook", JSON.stringify(atl));
+  while (await p.$(".dlg")) { await p.keyboard.press("Escape"); await p.waitForTimeout(120); }
   // 0.5.3: File › New asks what is being analysed, then makes the model.
   await p.keyboard.press("Control+n"); await p.waitForTimeout(250);
   check("Ctrl+N opens the New study page with the kinds of study", (await p.$$(".newstudy .kcard[data-kind]")).length === 7);
   await p.click('.newstudy .kcard[data-kind="truss"]'); await p.waitForTimeout(120);
   check("a 2D truss offers what you can find out about it", (await p.$$(".newstudy .kcard[data-want]")).length >= 3 && (await p.textContent(".newstudy")).includes("Large deflection"));
-  await p.click('.newstudy .ncreate .btn.pri'); await p.waitForTimeout(400);
+  await p.click('.newstudy .ncreate .btn.pri'); await p.waitForTimeout(250);
+  if (await p.$('.dlg button:has-text("Don\'t save")')) { await p.click('.dlg button:has-text("Don\'t save")'); }
+  await p.waitForTimeout(400);
   const nm = await p.evaluate(() => window.__calls.filter(c => c[0] === "new_model").slice(-1)[0]?.[1]);
   const ns = (await ops()).filter(o => o.SetSettings).slice(-1)[0];
   check("Create makes a frame model marked as a truss, with the truss bar tool ready", nm?.analysis === "frame" && nm?.example === null && ns?.SetSettings?.s?.study === "truss" && !(await p.$(".bs")), JSON.stringify([nm, ns]));

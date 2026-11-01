@@ -59,7 +59,8 @@ const App = () => {
       const o = await invoke<Options>("options"); setOpts(o); setThemeRaw(o.theme || "auto"); applyTheme();
       setOut(await invoke<Out>("state"));
       const start = await invoke<string | null>("startup_file");
-      if (start) { await loadOut("open", { path: start }); setTimeout(fit, 80); }
+      if (start?.toLowerCase().endsWith(".dlink")) import("./link").then(k => k.readLink(start));
+      else if (start) { await loadOut("open", { path: start }); setTimeout(fit, 80); }
       const rec = await invoke<{ name: string; saved: string } | null>("recovery");
       if (rec) D.recoverDialog(rec.name, rec.saved, () => { setBackstage(null); setTimeout(fit, 60); });
       checkUpdate(true);

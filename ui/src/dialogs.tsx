@@ -26,7 +26,7 @@ export const materials = (focus?: number) => openDialog(() => {
     <Dialog title="Materials" wide help="materials">
       <div class="mgr">
         <div class="mlist"><For each={list()}>{x => <button classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)}>{x.name}</button>}</For>
-          <p class="ibtns"><button class="btn sm pri" onClick={() => library(id => setCur(id))}>From the library…</button></p>
+          <p class="ibtns"><button class="btn sm pri" onClick={() => library(id => setCur(id))}>From the library…</button> <button class="btn sm" title="A material sent from Datum Atlas (a .dlink file)" onClick={() => import("./link").then(k => k.readLink())}>From Datum Atlas…</button></p>
           <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={list().length < 2}>Delete</button></p>
           <p class="muted small">The library: metals and plastics from Datum Atlas, each with its source.</p></div>
         <Show when={m()}>{mm => <div class="form">
