@@ -1,5 +1,5 @@
 //! Tetrahedra and imported meshes (0.5.5): a 3D solid of any shape, meshed by a mesher (Gmsh's
-//! `.msh` or an `.inp` in the Abaqus input format, which most meshers write) and solved with our
+//! `.msh` or an `.inp` in the CalculiX input format, which most meshers write) and solved with our
 //! own 4-node (linear) and 10-node (quadratic) tetrahedra, isoparametric, in volume coordinates
 //! (Zienkiewicz and Taylor, *The Finite Element Method*, vol. 1, §8.8; Bathe §5.3). The outer
 //! surface is split into faces where it turns sharply, and the file's named surfaces are kept, so
@@ -430,7 +430,7 @@ pub fn read_msh(text: &str, scale: f64) -> Result<TetMesh, String> {
     TetMesh { nodes, tets: out, order, faces: vec![], material: 1, source: String::new() }.finish(named)
 }
 
-/// Read an `.inp` mesh in the Abaqus input format (nodes, C3D4 or C3D10 elements, node sets and
+/// Read an `.inp` mesh in the CalculiX input format (nodes, C3D4 or C3D10 elements, node sets and
 /// element-face surfaces), coordinates times `scale` (to metres). Named surfaces and node sets on
 /// the outside become named faces.
 pub fn read_inp(text: &str, scale: f64) -> Result<TetMesh, String> {

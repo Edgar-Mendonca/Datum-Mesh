@@ -89,6 +89,27 @@ mod tests {
     }
 
     #[test]
+    fn public_words_name_no_commercial_product() {
+        // FAMILY §13: the README, the change log, the site and the window never name, compare with
+        // or say they copy a commercial product (0.5.5: an import said "Abaqus input format").
+        // Open solvers and benchmark sets (CalculiX, Gmsh, NAFEMS) may be named.
+        const NAMES: [&str; 26] = ["abaqus", "ansys", "solidworks", "fusion 360", "nastran", "comsol", "ls-dyna", "hypermesh", "staad", "sap2000", "etabs", "rfem", "tekla", "midas", "adina", "autodesk", "dassault", "simulia", "altair", "femap", "catia", "creo", "robot structural", "strand7", "lusas", "patran"];
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let mut files = vec![root.join("README.md"), root.join("CHANGELOG.md"), root.join("docs/site.json"), root.join("crates/core/src/examples.rs")];
+        for e in std::fs::read_dir(root.join("ui/src")).expect("ui/src").flatten() {
+            if e.path().extension().is_some_and(|x| x == "ts" || x == "tsx") {
+                files.push(e.path());
+            }
+        }
+        for f in files {
+            let text = std::fs::read_to_string(&f).unwrap_or_default().to_lowercase();
+            for n in NAMES {
+                assert!(!text.contains(n), "{} names “{n}” (FAMILY §13)", f.display());
+            }
+        }
+    }
+
+    #[test]
     fn damaged_mesh_files_never_crash_the_readers() {
         // 0.5.5: meshes come from other programs; damaged ones are refused with a reason.
         let msh = "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n$Elements\n1\n1 4 2 1 1 1 2 3 4\n$EndElements\n";

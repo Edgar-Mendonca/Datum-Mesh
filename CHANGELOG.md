@@ -5,7 +5,7 @@
 Parts of any shape: tetrahedra and imported meshes.
 
 **Import a mesh**
-- Geometry › Import › **Mesh** (or File › New › 3D solid › From a mesh file): a tetrahedral mesh made in a mesher, as Gmsh `.msh` (ASCII, format 2.2 or 4.1) or `.inp` in the Abaqus input format (C3D4 and C3D10), in the length unit you choose.
+- Geometry › Import › **Mesh** (or File › New › 3D solid › From a mesh file): a tetrahedral mesh made in a mesher, as Gmsh `.msh` (ASCII, format 2.2 or 4.1) or `.inp` in the CalculiX input format (C3D4 and C3D10), in the length unit you choose.
 - The outer surface is split into faces where it turns more than 35°, and the file's named surfaces (Gmsh physical surfaces, `*SURFACE` and `*NSET`) keep their names. The faces are listed in the tree and shown in 3D.
 - Supports (fixed, pinned, roller, symmetry, held directions) and loads (pressure, face forces, gravity) go on faces: pick the tool, click a face. The mesh's material is chosen in the Inspector.
 - Solved with our own 4-node and 10-node tetrahedra for static stress: contours, deformed shape, cutting plane, probe, reactions and the equilibrium check, as for every 3D solid.

@@ -161,7 +161,7 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
 }
 
 /// File › Import Mesh (0.5.5): a tetrahedral mesh from a mesher (Gmsh `.msh`, or `.inp` in the
-/// Abaqus input format) as a new 3D solid; its coordinates are in `unit` metres (0.001 for mm).
+/// CalculiX input format) as a new 3D solid; its coordinates are in `unit` metres (0.001 for mm).
 #[tauri::command]
 async fn import_mesh(app: AppHandle, st: State<'_, St>, path: Option<String>, unit: f64) -> R<Option<Out>> {
     let Some(path) = path.map(PathBuf::from).or_else(|| pick(&app, "Tetrahedral mesh", &["msh", "inp"])) else { return Ok(None) };

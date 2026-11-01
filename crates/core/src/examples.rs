@@ -399,7 +399,7 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Bearing { fx: 0.0, fy: 60e3 })]))?;
         }
         "elbow" => {
-            d.m.notes = "A 90° elbow of steel pipe: bend radius 300 mm, outside radius 60 mm, wall 10 mm. The half above the bend's plane is meshed in 10-node tetrahedra (this is how an imported mesh is solved; File › Import Mesh reads Gmsh .msh and Abaqus-format .inp files). Fixed at its lower end; 2 kN (4 kN on the whole elbow) pulls its other end along y, opening the bend; symmetry on the cut faces. The stress gathers on the bend's flanks, where the pipe's section ovalises.".into();
+            d.m.notes = "A 90° elbow of steel pipe: bend radius 300 mm, outside radius 60 mm, wall 10 mm. The half above the bend's plane is meshed in 10-node tetrahedra (this is how an imported mesh is solved; File › Import Mesh reads Gmsh .msh and CalculiX-format .inp files). Fixed at its lower end; 2 kN (4 kN on the whole elbow) pulls its other end along y, opening the bend; symmetry on the cut faces. The stress gathers on the bend's flanks, where the pipe's section ovalises.".into();
             let (rb, ro, ri) = (0.3, 0.06, 0.05);
             let mut ms = crate::solids::tet::grid([2, 12, 16], 2, |q| {
                 let (r, th, ph) = (ri + (ro - ri) * q[0], q[1] * std::f64::consts::PI, q[2] * std::f64::consts::FRAC_PI_2);
