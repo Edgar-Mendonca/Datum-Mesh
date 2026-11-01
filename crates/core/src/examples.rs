@@ -35,6 +35,7 @@ pub fn list() -> Vec<Example> {
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
+        e("building", "Building in an earthquake", "A three-storey steel building in 3D, 2 × 1 bays, with rigid concrete floors carrying their mass, shaken along x by a design spectrum: the floors sway and twist as one (Results › Dynamics).", Analysis::Space),
         e("slab", "Floor slab", "A 6 × 4 m floor slab 200 mm thick on four columns with edge beams, carrying 5 kPa and its own weight: a plate joined to a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
     ]
@@ -206,6 +207,47 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 load(at, LoadKind::Force { fx: 0.0, fy: -3e3, fz: 0.0 }),
                 Op::Add { item: Item::Step(crate::model::Step { name: "Past the limit".into(), kind: crate::model::StepKind::Arc, increments: 20, pieces: 10, monitor: Some(mon), ..Default::default() }) },
             ]))?;
+        }
+        "building" => {
+            d.m.notes = "Three storeys of 3.5 m, two bays of 6 m along x and one of 5 m along z. HEB 300 columns fixed at the base, IPE 400 beams with rigid joints. The floors are rigid in their plane (Model › Rigid floors) and each carries 60 t, 10 t at each of its six column heads. One response spectrum step along x: 5 % damping, 9 modes, CQC; the same spectrum shape as the frame in an earthquake.".into();
+            let sec = |d: &mut Doc, name: &str| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Section(crate::model::Section { id: 0, name: name.into(), shape: crate::steel::find(name).ok_or("table")?.shape }) })?[0]) };
+            let (col, beam) = (sec(d, "HEB 300")?, sec(d, "IPE 400")?);
+            d.apply(Op::Delete { ids: vec![d.m.sections[0].id] })?;
+            let (xs, zs) = ([0.0, 6.0, 12.0], [0.0, 5.0]);
+            let m3 = |d: &mut Doc, a: [f64; 3], b: [f64; 3], s: u32| d.apply(Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind: MemberKind::Beam, section: Some(s), material: None, z: [a[2], b[2]] }).map(|_| ());
+            for k in 0..3 {
+                let (y0, y1) = (3.5 * k as f64, 3.5 * (k + 1) as f64);
+                for x in xs {
+                    for z in zs {
+                        m3(d, [x, y0, z], [x, y1, z], col)?;
+                    }
+                }
+                for z in zs {
+                    m3(d, [0.0, y1, z], [6.0, y1, z], beam)?;
+                    m3(d, [6.0, y1, z], [12.0, y1, z], beam)?;
+                }
+                for x in xs {
+                    m3(d, [x, y1, 0.0], [x, y1, 5.0], beam)?;
+                }
+            }
+            d.m.rigid_floors = true;
+            let at = |d: &Doc, p: [f64; 3]| Target::Node { id: d.m.nodes.iter().find(|n| crate::model::dist3(n.at(), p) < 1e-9).map(|n| n.id).unwrap_or(0) };
+            let mut ops = vec![];
+            for x in xs {
+                for z in zs {
+                    ops.push(sup(at(d, [x, 0.0, z]), SupportKind::Fixed));
+                    for k in 1..=3 {
+                        ops.push(load(at(d, [x, 3.5 * k as f64, z]), LoadKind::Mass { m: 10_000.0 }));
+                    }
+                }
+            }
+            let sa = 7.36;
+            let mut spec = vec![[0.0, 0.4 * sa], [0.15, sa], [0.5, sa]];
+            for t in [0.75, 1.0, 1.5, 2.0, 3.0, 4.0] {
+                spec.push([t, sa * 0.5 / t]);
+            }
+            ops.push(Op::Add { item: Item::Step(crate::model::Step { name: "Earthquake along x".into(), kind: crate::model::StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: spec, damping: 0.05, modes: 9, cqc: true, pieces: 2, ..Default::default() }) });
+            d.apply(Op::Batch(ops))?;
         }
         "slab" => {
             d.m.notes = "A floor 3 m up: a 6 × 4 m slab 200 mm thick (plate on the Plan plane) on four fixed columns, with edge beams joined to the slab along its edges. Concrete-like material (E = 30 GPa, ν = 0.2, 2 500 kg/m³). 5 kPa imposed load on the slab and self-weight.".into();

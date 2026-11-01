@@ -660,6 +660,44 @@ fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         }
     }
     let _ = applied;
+    // Rigid floors (0.4.4): at each height above the lowest, the nodes move together in the
+    // floor's plane (x, z and the turn about y), tied to the first node there by stiff links (a
+    // penalty, 10⁷ times the stiffest unknown: the floor flexes about a ten-millionth as much).
+    if m.rigid_floors {
+        let big = sys.k.iter().filter(|e| e.0 == e.1).map(|e| e.2.abs()).fold(0.0, f64::max).max(1.0);
+        let kp = 1e7 * big;
+        let lowest = m.nodes.iter().map(|n| n.y).fold(f64::INFINITY, f64::min);
+        let mut levels: Vec<(f64, Vec<usize>)> = vec![];
+        for (i, n) in m.nodes.iter().enumerate() {
+            if !has_member[i] || (n.y - lowest).abs() < 1e-6 {
+                continue;
+            }
+            match levels.iter_mut().find(|l| (l.0 - n.y).abs() < 1e-6) {
+                Some(l) => l.1.push(i),
+                None => levels.push((n.y, vec![i])),
+            }
+        }
+        for (_, nodes) in levels.iter().filter(|l| l.1.len() > 1) {
+            let mi = nodes[0];
+            let pm = m.nodes[mi].at();
+            for &i in &nodes[1..] {
+                let p = m.nodes[i].at();
+                let (dx, dz) = (p[0] - pm[0], p[2] - pm[2]);
+                let ties: [Vec<(usize, f64)>; 3] = [
+                    vec![(6 * i, 1.0), (6 * mi, -1.0), (6 * mi + 4, -dz)],
+                    vec![(6 * i + 2, 1.0), (6 * mi + 2, -1.0), (6 * mi + 4, dx)],
+                    vec![(6 * i + 4, 1.0), (6 * mi + 4, -1.0)],
+                ];
+                for c in &ties {
+                    for &(a, ca) in c {
+                        for &(b, cb) in c {
+                            sys.add(a, b, kp * ca * cb);
+                        }
+                    }
+                }
+            }
+        }
+    }
     // Support settlements (0.4.3): the held directions of a node move by the amount given.
     let mut fixed = vec![0.0; 6 * nt];
     for l in &m.loads {

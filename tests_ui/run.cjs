@@ -43,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -533,6 +533,22 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("adding a table section adds it with its root radius", ts?.Add?.item?.Section?.name === "HEB 300" && Math.abs(ts.Add.item.Section.shape.r - 0.027) < 1e-12, JSON.stringify(ts));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   check("Escape closes the dialog left open under a closed one (0.3.3 bug: focus was lost)", (await p.$$(".ov")).length === 0);
+  // 0.4.4: rigid floors, on the building in an earthquake.
+  await open("building"); await p.waitForTimeout(400);
+  await p.click('.side button[title="Model"]'); await p.waitForTimeout(80);
+  await p.evaluate(() => window.__setSel?.([]));
+  const rigidBox = await p.$('.insp label.chk:has-text("Rigid floors") input');
+  check("a 3D frame's Model panel has Rigid floors, ticked for the building", !!rigidBox && await rigidBox.isChecked());
+  if (rigidBox) { await rigidBox.click(); await p.waitForTimeout(150); }
+  const rigidOp = await lastOp();
+  check("unticking Rigid floors sets it off", rigidOp?.SetSettings?.s?.rigid_floors === false, JSON.stringify(rigidOp?.SetSettings?.s?.rigid_floors));
+  await p.evaluate(() => { window.__solveKey = "building_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.tabs > button:text-is("Results")'); await p.click('.ribbon button:has-text("Dynamics")'); await p.waitForTimeout(250);
+  check("the building's modes are listed, reaching most of the mass", (await p.$$(".dlg table.tbl tbody tr")).length === fix.building_results.dynamic.modes.length && (await p.textContent(".dlg")).includes("99.8 %"));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "building.png") });
+  await p.keyboard.press("Escape");
   // 0.4.3: tension-only bracing and support settlement.
   await open("xbrace"); await p.waitForTimeout(250);
   const xm = fix.xbrace.m, rod = xm.members.find(b => b.only === "tension");

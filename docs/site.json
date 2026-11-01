@@ -25,6 +25,7 @@
     }
   ],
   "highlights": [
+    "Rigid floors for 3D buildings: floors sway and twist as one, in static, second-order and earthquake analysis",
     "Tension-only and compression-only members, support settlement, and second-order (P-delta) analysis of 3D frames",
     "Dynamics for structures: response spectrum (CQC or SRSS) and time history (Newmark) for frames and plates, with point masses",
     "Plates and shells: slabs, walls and panels drawn on the planes of a 3D frame, joined to its beams, solved for stress, deflection and vibration",
@@ -58,11 +59,11 @@
   ],
   "roadmap": [
     {
-      "v": "0.4.4",
+      "v": "0.4.5",
       "title": "Structures, finishing touches",
       "when": "Next",
       "items": [
-        "Rigid floors (diaphragms) and member end offsets",
+        "Member end offsets (rigid zones at joints)",
         "Large rotations in 3D frames"
       ]
     },

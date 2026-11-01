@@ -1604,6 +1604,42 @@ fn details() -> Vec<Check> {
         v.push(check(24, "3D flagpole, second order (P-delta), P = 0.5 P_cr about the weak axis", "Balance of loads and reactions in the deflected shape", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics on the deflected frame"));
         let _ = step;
     }
+    // Rigid floors (0.4.4): four cantilever columns at the corners of an a × a square, tied only
+    // by a rigid floor, pushed along x at one corner. The floor moves H/4k and turns by
+    // M/(2ka² + 4GJ/h) about its middle (k = 3EI/h³ each way, GJ/h each column's twist), so a
+    // corner moves H/4k ± Ha²/4Kθ (rigid-diaphragm statics).
+    {
+        let (a, hh, h) = (4.0f64, 3.0f64, 10e3);
+        let sq = SectionShape::Rect { b: 0.2, h: 0.2 };
+        let pr = crate::sections::props(&sq).expect("props");
+        let e = 200e9;
+        let g = e / (2.0 * 1.3);
+        let k = 3.0 * e * pr.i / hh.powi(3);
+        let kt = 2.0 * k * a * a + 4.0 * g * pr.j / hh;
+        let mut d = frame(e, sq);
+        d.m.analysis = Analysis::Space;
+        d.m.materials[0].rho = 0.0;
+        d.m.rigid_floors = true;
+        for (x, z) in [(0.0, 0.0), (a, 0.0), (0.0, a), (a, a)] {
+            add(&mut d, Op::AddMember { from: [x, 0.0], to: [x, hh], kind: MemberKind::Beam, section: None, material: None, z: [z, z] });
+        }
+        let at = |d: &Doc, p: [f64; 3]| d.m.nodes.iter().find(|n| crate::model::dist3(n.at(), p) < 1e-9).map(|n| n.id).expect("node");
+        for (x, z) in [(0.0, 0.0), (a, 0.0), (0.0, a), (a, a)] {
+            let id = at(&d, [x, 0.0, z]);
+            add(&mut d, Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind: SupportKind::Fixed }) });
+        }
+        let c0 = at(&d, [0.0, hh, 0.0]);
+        let c3 = at(&d, [a, hh, a]);
+        load(&mut d, Target::Node { id: c0 }, LoadKind::Force { fx: h, fy: 0.0, fz: 0.0 });
+        let Ok(crate::Results::Space(r)) = crate::solve(&d.m) else { panic!("rigid floor") };
+        let k0 = d.m.nodes.iter().position(|n| n.id == c0).expect("c0");
+        let k3 = d.m.nodes.iter().position(|n| n.id == c3).expect("c3");
+        let src = "Rigid-diaphragm statics: translation H/4k, twist M/Σ(k r² + GJ/h)";
+        let name = "Rigid floor on four cantilever columns, pushed at one corner";
+        v.push(check(24, name, "Movement of the corner pushed, H/4k + Ha²/4Kθ", "len", h / (4.0 * k) + h * a * a / (4.0 * kt), r.disp[k0][0], 1e-5, src));
+        v.push(check(24, name, "Movement of the opposite corner, H/4k − Ha²/4Kθ", "len", h / (4.0 * k) - h * a * a / (4.0 * kt), r.disp[k3][0], 1e-5, src));
+        v.push(check(24, name, "Balance of the loads and reactions (the floor's ties are internal)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics"));
+    }
     v
 }
 
@@ -1797,6 +1833,7 @@ pub fn timings() -> Vec<Timing> {
     time("3D building frame, 10 × 8 bays, 12 storeys: 6 natural frequencies", 10_000.0, &mut || crate::space::modes(&tall, 6).unwrap().equations);
     out
 }
+
 
 
 

@@ -40,7 +40,7 @@ export const dynDialog = () => openDialog(() => {
       <Show when={x().kind === "spectrum"}>
         <p class="small">{x().modes.length} modes, combined by <b>{x().combined}</b>. Together they move <b>{num(x().share * 100, 3)} %</b> of the mass along the shaking ({fmt("mass", x().total_mass)}); aim for 90 % or more.</p>
         <table class="tbl"><thead><tr><th>Mode</th><th class="r">Frequency (Hz)</th><th class="r">Period (s)</th><th class="r">Sa (m/s²)</th><th class="r">Participation Γ</th><th class="r">Effective mass ({unit("mass")})</th><th class="r">Share</th></tr></thead><tbody>
-          <For each={x().modes}>{(r, i) => { const g = Math.max(...x().modes.map(q => Math.abs(q.gamma)), 1e-300), tiny = Math.abs(r.gamma) < 1e-9 * g; return <tr><td>{i() + 1}</td><td class="r">{num(r.f, 4)}</td><td class="r">{num(r.period, 4)}</td><td class="r">{num(r.sa, 4)}</td><td class="r">{tiny ? "0" : num(r.gamma, 4)}</td><td class="r">{tiny ? "0" : num(toU("mass", r.mass), 4)}</td><td class="r">{tiny ? "0" : num(r.share * 100, 3)} %</td></tr>; }}</For>
+          <For each={x().modes}>{(r, i) => { const tiny = r.share < 1e-6; return <tr><td>{i() + 1}</td><td class="r">{num(r.f, 4)}</td><td class="r">{num(r.period, 4)}</td><td class="r">{num(r.sa, 4)}</td><td class="r">{tiny ? "0" : num(r.gamma, 4)}</td><td class="r">{tiny ? "0" : num(toU("mass", r.mass), 4)}</td><td class="r">{tiny ? "0" : num(r.share * 100, 3)} %</td></tr>; }}</For>
         </tbody></table>
       </Show>
       <Show when={x().kind === "history"}>

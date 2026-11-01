@@ -38,6 +38,9 @@ pub struct Settings {
     /// 3D solids: the angle to revolve through (0 = extrude); left as it is when not given.
     #[serde(default)]
     pub revolve: Option<f64>,
+    /// 3D frames (0.4.4): rigid floors; left as it is when not given.
+    #[serde(default)]
+    pub rigid_floors: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -665,6 +668,9 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             }
             if let Some(r) = s.revolve {
                 m.revolve = r;
+            }
+            if let Some(r) = s.rigid_floors {
+                m.rigid_floors = r;
             }
         }
         Op::SetMeta { name, notes } => {

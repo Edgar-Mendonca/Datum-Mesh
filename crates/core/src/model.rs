@@ -683,6 +683,10 @@ pub struct Model {
     /// Analysis steps (0.4.0), run in order. None: one linear static step.
     #[serde(default)]
     pub steps: Vec<Step>,
+    /// 3D frames (0.4.4): every floor (the nodes at one height above the lowest) moves as one
+    /// rigid plate in its own plane: x and z together, turning about y together.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub rigid_floors: bool,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -710,6 +714,7 @@ impl Default for Model {
             cases: vec![],
             combos: vec![],
             steps: vec![],
+            rigid_floors: false,
             next: 1,
         }
     }

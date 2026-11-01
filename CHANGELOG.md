@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.4.4 — 2026-11-01
+
+Rigid floors for buildings.
+
+**Rigid floors**
+- Model › **Rigid floors** (3D frames): every floor, the nodes at one height above the lowest, moves as one rigid plate in its own plane, sliding along x and z and turning about y together, as a concrete floor ties a building's columns. It acts in static solves, second order, natural frequencies and dynamics, so floors sway and twist as one in an earthquake.
+- New example: a three-storey steel building in 3D with rigid floors and their masses, shaken by a design spectrum: its modes sway along z, twist, and sway along x.
+
+**Polish**
+- Results › Dynamics shows modes that move no mass along the shaking as 0, not as round-off.
+- Pictures for the newer examples on the start page.
+
+**Trust**
+- Help › Verification: 184 checks, all passing. New in benchmark 24: four cantilever columns tied only by a rigid floor and pushed at one corner, against rigid-diaphragm statics (the floor's sway and twist, within 0.0001 %), and the floor's ties balance among themselves.
+
 ## 0.4.3 — 2026-11-01
 
 Structural details: bracing that only pulls, supports that settle, and second order in 3D.
