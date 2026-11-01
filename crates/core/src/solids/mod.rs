@@ -8,3 +8,4 @@ pub mod materials;
 pub mod mesh;
 pub mod plane;
 pub mod solid;
+pub mod tet;

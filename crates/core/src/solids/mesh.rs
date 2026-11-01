@@ -491,6 +491,9 @@ mod tests {
     fn every_example_part_meshes() {
         for e in crate::examples::list().into_iter().filter(|e| e.analysis.is_plane() && !e.id.starts_with("blank")) {
             let md = crate::examples::get(e.id).unwrap();
+            if md.volume.is_some() {
+                continue; // an imported mesh has no section to mesh
+            }
             let m = mesh(&md).unwrap_or_else(|x| panic!("{}: {x}", e.id));
             assert!(m.quality.min_angle > 15.0, "{}: {:?}", e.id, m.quality);
             // Every edge with a support or load has mesh edges on it.

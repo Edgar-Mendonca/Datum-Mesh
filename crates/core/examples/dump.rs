@@ -12,7 +12,7 @@ fn sent<T: serde::Serialize>(r: &T) -> serde_json::Value {
 fn main() {
     let out = |id: &str| {
         let m = examples::get(id).expect("example");
-        json!({ "m": m, "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] })
+        json!({ "m": datum_core::solids::tet::for_window(&m), "path": null, "dirty": false, "undo": false, "redo": false, "created": [], "warnings": [] })
     };
     // A fixed beam with no loads (0.1.1 drew a garbage deflected shape × 2e+299).
     let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
@@ -56,6 +56,8 @@ fn main() {
         "tube_results": sent(&datum_core::solve_for(&examples::get("tube").unwrap(), None).unwrap()),
         "yield3d": out("yield3d"),
         "rubber": out("rubber"),
+        "elbow": out("elbow"),
+        "elbow_results": sent(&datum_core::solve_for(&examples::get("elbow").unwrap(), None).unwrap()),
         "rubber_results": sent(&datum_core::solve_for(&examples::get("rubber").unwrap(), None).unwrap()),
         "yield3d_results": sent(&datum_core::solve_for(&examples::get("yield3d").unwrap(), None).unwrap()),
         "building_results": sent(&datum_core::solve_for(&examples::get("building").unwrap(), None).unwrap()),

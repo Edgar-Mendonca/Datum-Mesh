@@ -183,7 +183,7 @@ pub(crate) fn sweep(m: &Model) -> Result<Swept, String> {
 }
 
 /// Shape functions of a 3- or 6-node triangle at (ξ, η) and their derivatives.
-fn tri_n(order: usize, xi: f64, eta: f64) -> (Vec<f64>, Vec<[f64; 2]>) {
+pub(super) fn tri_n(order: usize, xi: f64, eta: f64) -> (Vec<f64>, Vec<[f64; 2]>) {
     let l = [1.0 - xi - eta, xi, eta];
     let dl = [[-1.0, -1.0], [1.0, 0.0], [0.0, 1.0]];
     if order == 1 {
@@ -210,7 +210,7 @@ fn line_n(order: usize, s: f64) -> (Vec<f64>, Vec<f64>) {
     }
 }
 /// Triangle quadrature (ξ, η, weight; weights sum to ½): 3 points, or 6 (degree 4).
-fn tri_rule(order: usize) -> Vec<(f64, f64, f64)> {
+pub(super) fn tri_rule(order: usize) -> Vec<(f64, f64, f64)> {
     if order == 1 {
         return vec![(1.0 / 6.0, 1.0 / 6.0, 1.0 / 6.0), (2.0 / 3.0, 1.0 / 6.0, 1.0 / 6.0), (1.0 / 6.0, 2.0 / 3.0, 1.0 / 6.0)];
     }
@@ -271,7 +271,7 @@ fn node_ref(order: usize) -> Vec<(f64, f64, f64)> {
 
 /// σx, σy, σz, τxy, τyz, τzx → those, von Mises, the largest and smallest principal stresses and
 /// the safety factor against yield (0 where unknown; at most 10⁶).
-fn stress_set(s: [f64; 6], fy: f64) -> [f64; 10] {
+pub(super) fn stress_set(s: [f64; 6], fy: f64) -> [f64; 10] {
     let [sx, sy, sz, txy, tyz, tzx] = s;
     let vm = (0.5 * ((sx - sy).powi(2) + (sy - sz).powi(2) + (sz - sx).powi(2)) + 3.0 * (txy * txy + tyz * tyz + tzx * tzx)).sqrt();
     let (s1, s3) = principal(s);
@@ -297,12 +297,12 @@ pub(crate) fn principal(s: [f64; 6]) -> (f64, f64) {
 
 /// Sums of forces and their moments about the origin, and their size without signs.
 #[derive(Default)]
-struct Tally {
-    sum: [f64; 6],
-    scale: f64,
+pub(super) struct Tally {
+    pub(super) sum: [f64; 6],
+    pub(super) scale: f64,
 }
 impl Tally {
-    fn add(&mut self, p: [f64; 3], f: [f64; 3]) {
+    pub(super) fn add(&mut self, p: [f64; 3], f: [f64; 3]) {
         let m = [p[1] * f[2] - p[2] * f[1], p[2] * f[0] - p[0] * f[2], p[0] * f[1] - p[1] * f[0]];
         for k in 0..3 {
             self.sum[k] += f[k];
@@ -932,6 +932,9 @@ fn field3(key: &'static str, v: &[f64], ids: &[usize], sw: &Swept) -> Field3 {
 
 /// A solid's sweep, after checking it has a thickness (extruded) or an angle (revolved).
 fn swept_of(m: &Model) -> Result<Swept, String> {
+    if m.volume.is_some() {
+        return Err("This solid is an imported mesh: it is solved linearly in this release (static stress). Natural frequencies, heat and nonlinear steps on imported meshes come later.".into());
+    }
     if m.revolve == 0.0 && !(m.thickness > 0.0) {
         return Err("A 3D solid needs a thickness to extrude its outline by (Inspector, with nothing selected).".into());
     }

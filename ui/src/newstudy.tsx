@@ -14,7 +14,7 @@ const KINDS: Kind[] = [
   { id: "part", group: "Parts: meshed", name: "2D part", what: "A part you draw as an outline: plates, sections, turned parts.", art: "M10 12H90V48H10zM43 30a7 7 0 1 0 14 0a7 7 0 1 0 -14 0",
     sub: [["stress", "Plane stress", "A plate thin across its face, loaded in its plane: brackets, lugs, gussets.", "stress"], ["strain", "Plane strain", "A long part with the same section all along: dams, pipes, retaining walls.", "strain"], ["axi", "Turned (axisymmetric)", "A part turned about an axis: shafts, vessels, discs. Draw half the section.", "axi"]] },
   { id: "solid", group: "Parts: meshed", name: "3D solid", what: "An outline extruded to a thickness, or turned about an axis.", art: "M10 22L22 12H90L78 22zM10 22H78V50H10zM78 50L90 40V12",
-    sub: [["extrude", "Extruded", "The outline pushed out along z by a thickness.", "solid"], ["revolve", "Revolved", "The outline turned about the y axis, a full turn or a sector.", "solid"]] },
+    sub: [["extrude", "Extruded", "The outline pushed out along z by a thickness.", "solid"], ["revolve", "Revolved", "The outline turned about the y axis, a full turn or a sector.", "solid"], ["mesh", "From a mesh file", "Any shape: a tetrahedral mesh made in a mesher (Gmsh .msh, Abaqus-format .inp).", "solid"]] },
   { id: "heat", group: "Heat", name: "Heat in a 2D part", what: "Temperatures and heat flow: fins, walls, plates.", art: "M8 52H92V44H84V12H78V44H64V12H58V44H44V12H38V44H24V12H18V44H8z", analysis: "heat" },
   { id: "heat3", group: "Heat", name: "Heat in a 3D solid", what: "Temperatures and heat flow through a 3D part.", art: "M10 22L22 12H90L78 22zM10 22H78V50H10zM78 50L90 40V12M28 22V50M46 22V50M64 22V50", analysis: "solidheat" },
 ];
@@ -52,7 +52,10 @@ export const NewStudy = () => {
         <p class="muted small">Natural frequencies{k().id === "frame" || k().id === "truss" ? " and buckling" : ""} can be found from any of these, on the Solve tab.</p></Show>
       <h3><span class="qn">3</span>Units</h3>
       <div class="subs"><For each={[["SI", "SI: mm, kN, MPa, °C"], ["US", "US: in, kip, ksi, °F"]] as const}>{([u, l]) => <button class="kcard sub" classList={{ on: units() === u }} onClick={() => setUnits(u)}><span><b>{l}</b></span></button>}</For></div>
-      <p class="ncreate"><button class="btn pri" onClick={create}>Create the {k().name.toLowerCase()} study</button><button class="btn" onClick={() => setBackstage("home")}>Start from an example instead</button></p>
+      <Show when={k().sub?.[sub()]?.[0] === "mesh"} fallback={<p class="ncreate"><button class="btn pri" onClick={create}>Create the {k().name.toLowerCase()} study</button><button class="btn" onClick={() => setBackstage("home")}>Start from an example instead</button></p>}>
+        <p class="ncreate"><For each={[["millimetres", 1e-3], ["metres", 1], ["inches", 0.0254]] as const}>{([l, u], i) => <button class={i() ? "btn" : "btn pri"} onClick={() => import("./cmds").then(c => c.C.importMesh(u))}>Import a mesh in {l}…</button>}</For></p>
+        <p class="muted small">The file's coordinates are read in the unit you choose. Supports and loads then go on the mesh's faces, found by themselves.</p>
+      </Show>
     </>}</Show>
   </div>;
 };

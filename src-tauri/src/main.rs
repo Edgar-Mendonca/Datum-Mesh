@@ -59,7 +59,8 @@ type R<T> = Result<T, String>;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct Out {
-    m: Model,
+    /// The model, an imported mesh sent as its preview (0.5.5).
+    m: serde_json::Value,
     path: Option<String>,
     dirty: bool,
     undo: bool,
@@ -70,7 +71,7 @@ struct Out {
 }
 
 fn out(a: &App) -> Out {
-    Out { m: a.doc.m.clone(), path: a.doc.path.clone(), dirty: a.doc.dirty, undo: a.doc.can_undo(), redo: a.doc.can_redo(), created: vec![], warnings: vec![] }
+    Out { m: datum_core::solids::tet::for_window(&a.doc.m), path: a.doc.path.clone(), dirty: a.doc.dirty, undo: a.doc.can_undo(), redo: a.doc.can_redo(), created: vec![], warnings: vec![] }
 }
 
 fn dir(app: &AppHandle, data: bool) -> Option<PathBuf> {
@@ -157,6 +158,29 @@ fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>)
     let m = fresh(&a, m);
     a.doc = Doc::new(m);
     Ok(out(&a))
+}
+
+/// File › Import Mesh (0.5.5): a tetrahedral mesh from a mesher (Gmsh `.msh`, or `.inp` in the
+/// Abaqus input format) as a new 3D solid; its coordinates are in `unit` metres (0.001 for mm).
+#[tauri::command]
+async fn import_mesh(app: AppHandle, st: State<'_, St>, path: Option<String>, unit: f64) -> R<Option<Out>> {
+    let Some(path) = path.map(PathBuf::from).or_else(|| pick(&app, "Tetrahedral mesh", &["msh", "inp"])) else { return Ok(None) };
+    if !(unit.is_finite() && unit > 0.0) {
+        return Err("The mesh's units must be a positive length.".into());
+    }
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
+    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let mut ms = if ext == "inp" { datum_core::solids::tet::read_inp(&text, unit)? } else { datum_core::solids::tet::read_msh(&text, unit)? };
+    let name = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| "Imported mesh".into());
+    ms.source = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let mut a = st.lock();
+    let mut m = fresh(&a, Model::new(Analysis::Solid));
+    m.name = name;
+    ms.material = m.materials[0].id;
+    m.volume = Some(Box::new(ms));
+    m.check()?;
+    a.doc = Doc::new(m);
+    Ok(Some(out(&a)))
 }
 
 /// Solve the open model: frames and trusses, plane stress or strain, or heat conduction. Parts are
@@ -530,7 +554,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
-            options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, version, quit, check_update, install_update
+            options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())
         .expect("Datum Mesh failed to start");

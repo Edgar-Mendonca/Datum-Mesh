@@ -1890,6 +1890,74 @@ fn rubber() -> Vec<Check> {
     v
 }
 
+/// Benchmark 28 (0.5.5): tetrahedra (4- and 10-node) on meshes made the way an imported one is:
+/// a bar pulled (exact), a cantilever (beam theory with shear), and a thick cylinder (Lamé).
+fn tetra() -> Vec<Check> {
+    use crate::solids::tet::{grid, TetMesh};
+    let mut v = vec![];
+    let solid = |ms: TetMesh, e: f64, nu: f64| { let mut d = Doc::new(Model::new(Analysis::Solid)); d.m.materials[0].e = e; d.m.materials[0].nu = nu; d.m.materials[0].rho = 0.0; d.m.volume = Some(Box::new(ms)); d };
+    let on = |d: &Doc, f: &dyn Fn([f64; 3]) -> bool| Target::Face { face: d.m.volume.as_ref().unwrap().face_where(f).expect("face") };
+    let sup = |d: &mut Doc, at: Target, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at, kind })); };
+    let load = |d: &mut Doc, at: Target, kind: LoadKind| { add_id(d, Item::Load(Load { case: 0, id: 0, at, kind })); };
+    let at3 = |r: &crate::solid::SolidResults, k: &str, p: [f64; 3]| { let i = r.volume.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, p).total_cmp(&crate::model::dist3(*b.1, p))).unwrap().0; r.volume.v[r.fields.iter().position(|f| f.key == k).unwrap()][i] };
+    // A bar 1 × 0.1 × 0.1 m pulled by 100 MPa, symmetry on three faces: a uniform state, exact for both elements.
+    let (e, nu, p) = (200e9, 0.3, 100e6);
+    for (order, name) in [(1u8, "Bar pulled, 4-node tetrahedra"), (2, "Bar pulled, 10-node tetrahedra")] {
+        let mut d = solid(grid([10, 2, 2], order, |q| [q[0], 0.1 * q[1], 0.1 * q[2]]).unwrap(), e, nu);
+        for (c, val) in [(0, 0.0), (1, 0.0), (2, 0.0)] {
+            let t = on(&d, &move |q: [f64; 3]| (q[c] - val).abs() < 1e-9);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let end = on(&d, &|q| (q[0] - 1.0).abs() < 1e-9);
+        load(&mut d, end, LoadKind::Traction { fx: p, fy: 0.0, fz: 0.0, total: false });
+        let r = crate::solids::tet::solve(&d.m).expect("bar");
+        let src = "Uniaxial stress (exact)";
+        v.push(check(28, name, "Stress along the bar", "stress", p, r.field("sx").max, 1e-9, src));
+        v.push(check(28, name, "Stretch pL/E", "len", p / e, r.field("ux").max, 1e-9, src));
+        v.push(check(28, name, "Thinning −νpb/E", "len", -nu * p * 0.1 / e, r.field("uy").min, 1e-9, src));
+    }
+    // A cantilever 1 m long, 0.1 × 0.1 m, fixed at its root, 10 kN down on its tip face: the tip
+    // moves PL³/3EI + PL/κGA (shear, κ = 5/6), 10-node tetrahedra.
+    {
+        let (l, h, pf) = (1.0, 0.1, 10e3);
+        let mut d = solid(grid([40, 5, 5], 2, |q| [l * q[0], h * q[1], h * q[2]]).unwrap(), e, nu);
+        let root = on(&d, &|q| q[0].abs() < 1e-9);
+        sup(&mut d, root, SupportKind::Fixed);
+        let tip = on(&d, &|q| (q[0] - l).abs() < 1e-9);
+        load(&mut d, tip, LoadKind::Traction { fx: 0.0, fy: -pf, fz: 0.0, total: true });
+        let r = crate::solids::tet::solve(&d.m).expect("cantilever");
+        let i = h.powi(4) / 12.0;
+        let g = e / (2.0 * (1.0 + nu));
+        let want = pf * l.powi(3) / (3.0 * e * i) + pf * l / (5.0 / 6.0 * g * h * h);
+        let name = "Cantilever, end load, 10-node tetrahedra";
+        v.push(check(28, name, "Tip deflection PL³/3EI + PL/κGA", "len", -want, at3(&r, "uy", [l, h / 2.0, h / 2.0]), 0.01, "Timoshenko beam theory (a fixed root is a little stiffer)"));
+        v.push(check(28, name, "Root bending stress 6PL/bh², at the top", "stress", 6.0 * pf * l / h.powi(3), at3(&r, "sx", [0.25 * l, h, h / 2.0]) / 0.75, 0.02, "Beam theory, a quarter of the way along (away from the root)"));
+        v.push(check(28, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+    }
+    // A thick cylinder, a = 0.1, b = 0.2 m, a quarter of it held between its end faces (plane
+    // strain), 100 MPa inside: Lamé's hoop stress and bore growth, 10-node tetrahedra.
+    {
+        let (a, b, hh, pi) = (0.1, 0.2, 0.05, 100e6);
+        let ms = grid([6, 8, 1], 2, |q| { let (r, t) = (a + (b - a) * q[0], q[1] * std::f64::consts::FRAC_PI_2); [r * t.cos(), r * t.sin(), hh * q[2]] }).unwrap();
+        let mut d = solid(ms, e, nu);
+        for (c, val) in [(1, 0.0), (0, 0.0), (2, 0.0), (2, hh)] {
+            let t = on(&d, &move |q: [f64; 3]| (q[c] - val).abs() < 1e-9);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let bore = on(&d, &|q| ((q[0] * q[0] + q[1] * q[1]).sqrt() - a).abs() < 1e-9);
+        load(&mut d, bore, LoadKind::Pressure { p: pi });
+        let r = crate::solids::tet::solve(&d.m).expect("cylinder");
+        let k = a * a / (b * b - a * a);
+        let hoop = pi * k * (1.0 + b * b / (a * a));
+        let grow = (1.0 + nu) * pi * k * a / e * ((1.0 - 2.0 * nu) + b * b / (a * a));
+        let name = "Thick cylinder in plane strain, 10-node tetrahedra (a quarter)";
+        let src = "Lamé thick-cylinder equations, plane strain";
+        v.push(check(28, name, "Hoop stress at the bore p(b²+a²)/(b²−a²)", "stress", hoop, at3(&r, "sy", [a, 0.0, hh / 2.0]), 0.01, src));
+        v.push(check(28, name, "Bore growth", "len", grow, at3(&r, "ux", [a, 0.0, hh / 2.0]), 0.005, src));
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -1966,6 +2034,7 @@ pub fn run() -> Vec<Check> {
     v.extend(plasticity());
     v.extend(solid_plasticity());
     v.extend(rubber());
+    v.extend(tetra());
     v
 }
 

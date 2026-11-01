@@ -409,6 +409,8 @@ pub enum Target {
     Line { shape: u32, edge: u32, at: f64 },
     /// 3D frames (0.4.1): the whole face of a plate (pressure on it).
     Plate { shape: u32 },
+    /// Imported meshes (0.5.5): face `face` of the mesh's outer surface.
+    Face { face: u32 },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -710,6 +712,10 @@ pub struct Model {
     /// as a truss (bars by default); empty for the rest, which their analysis says.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub study: String,
+    /// 3D solids (0.5.5): a tetrahedral mesh read from a mesher; when present it is the solid (the
+    /// shapes and their sweep are not used).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub volume: Option<Box<crate::solids::tet::TetMesh>>,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -739,6 +745,7 @@ impl Default for Model {
             steps: vec![],
             rigid_floors: false,
             study: String::new(),
+            volume: None,
             next: 1,
         }
     }
@@ -834,6 +841,9 @@ impl Model {
         }
         if self.next <= self.max_id() {
             return Err("The id counter is behind.".into());
+        }
+        if let Some(v) = &self.volume {
+            crate::solids::tet::valid(v)?;
         }
         pos(self.grid, "The grid step")?;
         pos(self.thickness, "The thickness")?;
@@ -985,7 +995,7 @@ impl Model {
                     }
                 }
                 (SupportKind::Temperature { t }, _) => fin(*t, "A temperature")?,
-                (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. } | Target::End { .. }) => {}
+                (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. } | Target::End { .. } | Target::Face { .. }) => {}
                 (SupportKind::Hold { x, y, z }, _) => {
                     if self.analysis != Analysis::Solid {
                         return Err("Holding chosen directions is for 3D solids.".into());
@@ -1022,8 +1032,8 @@ impl Model {
                 (LoadKind::Force { fx, fy, fz }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Moment { m, mx, my }, Target::Node { .. }) => m.is_finite() && mx.is_finite() && my.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
-                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. } | Target::Plate { .. }) => p.is_finite(),
-                (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
+                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. } | Target::Plate { .. } | Target::Face { .. }) => p.is_finite(),
+                (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. } | Target::Face { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
                 (LoadKind::Gravity { gx, gy, gz }, Target::Body) => gx.is_finite() && gy.is_finite() && gz.is_finite(),
                 (LoadKind::Flux { q }, Target::Edge { .. } | Target::End { .. }) => q.is_finite(),
@@ -1062,6 +1072,11 @@ impl Model {
             Target::Plate { shape } => match self.shape(*shape) {
                 Some(s) if s.plate.is_some() => Ok(()),
                 _ => Err("That plate does not exist.".into()),
+            },
+            Target::Face { face } => match &self.volume {
+                Some(v) if (*face as usize) < v.faces.len() => Ok(()),
+                Some(_) => Err("That face of the mesh does not exist.".into()),
+                None => Err("Faces of an imported mesh need an imported mesh.".into()),
             },
         }
     }
@@ -1298,6 +1313,15 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
         let probe = Model { shapes: vec![s.clone()], materials: m.materials.clone(), next: m.next, analysis: m.analysis, ..Model::default() };
         probe.check().is_ok()
     });
+    // An imported mesh (0.5.5) that does not hold together is left out; its material must exist.
+    if let Some(v) = m.volume.as_mut() {
+        if crate::solids::tet::valid(v).is_err() {
+            warn.push("The imported mesh was damaged and was left out.".into());
+            m.volume = None;
+        } else if !mats.contains(&v.material) {
+            v.material = mat0;
+        }
+    }
     // Supports and loads must point at something that still exists and make sense there.
     let base = Model { supports: vec![], loads: vec![], ..m.clone() };
     m.supports.retain(|s| Model { supports: vec![s.clone()], ..base.clone() }.check().is_ok());

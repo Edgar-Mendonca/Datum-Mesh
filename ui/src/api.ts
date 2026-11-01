@@ -25,7 +25,7 @@ export type Geom = { kind: "poly"; pts: Pt[]; bulge: number[] } | { kind: "circl
 /** A plate of a 3D frame (0.4.1): the shape on a working plane at a depth, and its thickness. */
 export interface Plate { plane: "xy" | "zy" | "xz"; depth: number; t: number }
 export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom; plate?: Plate }
-export type Target = { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number } | { on: "plate"; shape: number };
+export type Target = { on: "face"; face: number } | { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number } | { on: "plate"; shape: number };
 export type SupportKind =
   | { kind: "fixed" } | { kind: "pinned" } | { kind: "rollerx" } | { kind: "rollery" } | { kind: "roller" } | { kind: "symmetry" }
   | { kind: "spring"; kx: number; ky: number; kr: number; kz?: number; krx?: number; kry?: number } | { kind: "temperature"; t: number } | { kind: "hold"; x: boolean; y: boolean; z: boolean };
@@ -50,8 +50,11 @@ export interface Curve { node: number; step: number[]; load: number[]; ux: numbe
 export interface Envelope { over: string[]; members: { id: number; n_max: number; n_min: number; v: number; m: number; t: number; deflection: number; util: number; governs: string }[]; reactions: { node: number; max: number[]; min: number[] }[]; warnings: string[] }
 export interface LibSection { name: string; family: string; shape: SectionShape; table_area: number }
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
+/** An imported tetrahedral mesh as the window gets it (0.5.5): its outer surface, the face of each
+ * drawn triangle, and its faces' names and sizes (the mesh itself stays in the engine). */
+export interface VolPreview { order: number; elements: number; nodes: number; material: number; source: string; faces: { name: string; facets: number; area: number }[]; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; tface: number[] }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; cases?: Case[]; combos?: Combo[]; steps?: Step[];
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; cases?: Case[]; combos?: Combo[]; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }

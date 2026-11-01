@@ -25,6 +25,7 @@
     }
   ],
   "highlights": [
+    "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, Abaqus-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra",
     "A model tree that shows what is done and what is missing, with an icon for everything, and a New study page that asks what you are analysing",
     "Part of the Datum family: send curves to Datum Plot, values to Datum Calc, and take materials from Datum Atlas",
     "Plasticity: parts and 3D solids that yield (von Mises with hardening), solved in increments by Newton's method up to collapse, checked against Hill's limit analysis",
@@ -67,9 +68,9 @@
       "title": "Nonlinear solids",
       "when": "Next",
       "items": [
-        "Tetrahedra and mesh import",
         "Large rotations in 3D frames",
-        "Rubber and large deformation for plane parts"
+        "Rubber and large deformation for plane parts",
+        "Natural frequencies, heat and nonlinear steps on imported meshes"
       ]
     },
     {

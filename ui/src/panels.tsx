@@ -49,6 +49,7 @@ const targetName = (m: Model, t: Target) => {
   if (t.on === "edge") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}`;
   if (t.on === "point") return `Point ${fmt("coord", t.x)}, ${fmt("coord", t.y)}`;
   if (t.on === "end") return t.front ? "Front face" : "Back face";
+  if (t.on === "face") return m.volume?.faces[t.face]?.name ?? `Face ${t.face + 1}`;
   if (t.on === "plate") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Plate"}, whole face`;
   if (t.on === "line") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}, line at ${num(t.at * 100, 3)} %`;
   return "Whole model";
@@ -110,6 +111,8 @@ export const Tree = () => {
       <div class="tbody">
         <Show when={m()}>{mm => <>
           <div class="troot" title="Model › Name in the Inspector (nothing selected)" onClick={() => setSel([])}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
+          <Show when={!mm().volume} fallback={<Branch t="Imported mesh" icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }}>
+            <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>
           <Show when={frame()} fallback={
             <Branch t={heat() ? "Part" : isSolidA(mm().analysis) ? "Section" : "Shapes"} icon={isSolidA(mm().analysis) ? "solid" : mm().analysis === "axi" ? "axi" : "part"} n={parts().length} help="shapes" add={() => setTool("rect")} addText="Draw the outline (Geometry)" mark={{ ok: drawn(), why: "Draw the part's outline: Geometry › Rectangle, Circle or Polygon" }}>
               <For each={parts()}>{s => <Leaf id={s.id} icon={s.hole ? (s.geom.kind === "circle" ? "hcircle" : "hrect") : s.geom.kind === "circle" ? "circle" : "poly"} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Branch>}>
@@ -117,6 +120,7 @@ export const Tree = () => {
               <For each={mm().members}>{(b, i) => <Leaf id={b.id} icon={b.kind === "truss" ? "truss" : "beam"} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Branch>
             <Show when={sp() && plates().length}><Branch t="Plates" icon="rect" n={plates().length} help="plates"><For each={plates()}>{s => <Leaf id={s.id} icon={s.hole ? "hrect" : "rect"} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Branch></Show>
             <Branch t="Nodes" icon="node" n={mm().nodes.length} help="nodes" add={() => setTool("node")} open={mm().nodes.length <= 12}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} icon="node" label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Branch>
+          </Show>
           </Show>
           <Branch t="Materials" icon="material" n={mm().materials.length} help="materials" add={() => D.materials()} mark={noYield().length ? { ok: false, why: `${noYield()[0].name} needs a yield strength for the elastic-plastic step` } : null}>
             <For each={mm().materials}>{x => <Row2 icon="material" label={x.name} sub={noYield().includes(x) ? "no yield strength" : undefined} run={() => D.materials(x.id)} />}</For></Branch>
@@ -131,10 +135,11 @@ export const Tree = () => {
                 <For each={mm().loads.filter(l => caseOf(mm(), l) === c.id)}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></details>}</For></Show></Branch>
           <Show when={(mm().combos ?? []).length}><Branch t="Combinations" icon="table" n={mm().combos!.length} help="cases" open={false}><For each={mm().combos!}>{c => <Row2 icon="table" label={c.name} sub={c.parts.map(x => `${num(x.f, 3)} ${mm().cases?.find(k => k.id === x.case)?.name ?? ""}`).join(" + ")} />}</For></Branch></Show>
           <Show when={!frame()}><Branch t="Mesh" icon="mesh" n={mm().mesh.refine.length || undefined} help="mesh">
-            <Row2 icon={mm().mesh.order === 2 ? "tri6" : "tri3"} label={mesh()} sub={mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} run={() => C.mesh()} />
+            <Show when={mm().volume}>{v => <Row2 icon="solid" label={`${v().elements.toLocaleString()} ${v().order === 2 ? "10-node" : "4-node"} tetrahedra`} sub={`${v().nodes.toLocaleString()} nodes, imported`} />}</Show>
+            <Show when={!mm().volume}><Row2 icon={mm().mesh.order === 2 ? "tri6" : "tri3"} label={mesh()} sub={mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} run={() => C.mesh()} />
             <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><Ic n="refine" /><span>Finer near {targetName(mm(), r.at)}</span>
               <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => v > 0 && C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }), () => num(toU("len", r.size), 4))} />
-              <button class="x" title="Remove" onClick={() => C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) })}>×</button></div>}</For>
+              <button class="x" title="Remove" onClick={() => C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) })}>×</button></div>}</For></Show>
           </Branch></Show>
           <Show when={!heat()}><Branch t="Steps" icon="list" n={(mm().steps ?? []).length || undefined} help="steps">
             <Show when={(mm().steps ?? []).length} fallback={<Row2 icon="solve" label="Static, linear" sub="one solve" run={stepsDialog} />}>
@@ -339,11 +344,12 @@ const ModelInsp = (p: { m: Model }) => {
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
     <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
     <Show when={p.m.analysis === "space"}><label class="chk" title="At each height above the lowest, the nodes move together in the floor's plane: x and z together, turning about y together (a concrete floor that does not stretch in its plane)"><input type="checkbox" checked={!!p.m.rigid_floors} onChange={e => settings({ rigid_floors: e.currentTarget.checked })} />Rigid floors</label></Show>
-    <Show when={isSolidA(p.m.analysis)}><Row label="Solid"><Choice v={p.m.revolve ? "revolve" : "extrude"} set={v => settings({ revolve: v === "revolve" ? Math.PI * 2 : 0 })} opts={[["extrude", "Extruded along z"], ["revolve", "Revolved about the y axis"]]} /></Row>
+    <Show when={p.m.volume}>{v => <Row label="Material of the mesh"><Choice v={String(v().material)} set={x => settings({ material: +x })} opts={p.m.materials.map(x => [String(x.id), x.name])} /></Row>}</Show>
+    <Show when={isSolidA(p.m.analysis) && !p.m.volume}><Row label="Solid"><Choice v={p.m.revolve ? "revolve" : "extrude"} set={v => settings({ revolve: v === "revolve" ? Math.PI * 2 : 0 })} opts={[["extrude", "Extruded along z"], ["revolve", "Revolved about the y axis"]]} /></Row>
       <Show when={p.m.revolve}><div class="iprow"><label>Turned through<span class="unit">°</span></label><input class="mono" value={num((p.m.revolve ?? 0) * 180 / Math.PI, 6)} onChange={numIn(v => v > 0 && v <= 360 && settings({ revolve: v * Math.PI / 180 }), () => num((p.m.revolve ?? 0) * 180 / Math.PI, 6))} /><span class="hint">360° for the whole part; less for a sector, with symmetry on its two cut faces (the back and front faces). The section is drawn right of the y axis (x is the radius).</span></div></Show></Show>
-    <Show when={p.m.analysis === "stress" || p.m.analysis === "heat" || (isSolidA(p.m.analysis) && !p.m.revolve)}><NumField label={isSolidA(p.m.analysis) ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
+    <Show when={!p.m.volume && (p.m.analysis === "stress" || p.m.analysis === "heat" || (isSolidA(p.m.analysis) && !p.m.revolve))}><NumField label={isSolidA(p.m.analysis) ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
     <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
-    <Show when={!isFrame(p.m.analysis)}>
+    <Show when={!isFrame(p.m.analysis) && !p.m.volume}>
       <h4>Mesh<Help k="mesh" /></h4>
       <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part, finer for thin parts)." />
       <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>

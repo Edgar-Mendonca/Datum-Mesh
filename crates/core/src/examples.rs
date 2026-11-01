@@ -34,6 +34,7 @@ pub fn list() -> Vec<Example> {
         e("fin3d", "Heat sink in 3D", "The heat sink as a 3D solid 30 mm deep, cooled by air on every face, its ends too: temperatures and heat flow in 3D.", Analysis::SolidHeat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
+        e("elbow", "Pipe elbow (tetrahedra)", "A 90° steel pipe elbow, 120 mm across with a 10 mm wall, fixed at one end and pulled 4 kN at the other: a mesh of 10-node tetrahedra as a mesher makes one (File › Import Mesh reads yours), faces found by themselves, half of it by symmetry.", Analysis::Solid),
         e("yield3d", "Holed plate yielding in 3D", "A steel plate 100 mm wide and 10 mm thick with a 20 mm hole, pulled at 250 MPa: as a 3D solid, the plastic zones grow from the hole's edges across the net section (Equivalent plastic strain; Results › Load–Deflection).", Analysis::Solid),
         e("rubber", "Rubber finger bending far", "A soft rubber finger 100 mm long, 10 × 10 mm, held at its root and pushed down 0.75 N at its tip: a large-deformation step follows it as it curls down, drawn true to size (Results › Load–Deflection).", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
@@ -396,6 +397,25 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             let s = d.apply(shape(poly(&[[0.0, 0.0], [120.0, 0.0], [120.0, 120.0], [0.0, 120.0]], &[(2, 1.0)]), false))?[0];
             let h = d.apply(shape(circle(60.0, 120.0, 20.0), true))?[0];
             d.apply(Op::Batch(vec![sup(edge(s, 0), SupportKind::Fixed), load(edge(h, 0), LoadKind::Bearing { fx: 0.0, fy: 60e3 })]))?;
+        }
+        "elbow" => {
+            d.m.notes = "A 90° elbow of steel pipe: bend radius 300 mm, outside radius 60 mm, wall 10 mm. The half above the bend's plane is meshed in 10-node tetrahedra (this is how an imported mesh is solved; File › Import Mesh reads Gmsh .msh and Abaqus-format .inp files). Fixed at its lower end; 2 kN (4 kN on the whole elbow) pulls its other end along y, opening the bend; symmetry on the cut faces. The stress gathers on the bend's flanks, where the pipe's section ovalises.".into();
+            let (rb, ro, ri) = (0.3, 0.06, 0.05);
+            let mut ms = crate::solids::tet::grid([2, 12, 16], 2, |q| {
+                let (r, th, ph) = (ri + (ro - ri) * q[0], q[1] * std::f64::consts::PI, q[2] * std::f64::consts::FRAC_PI_2);
+                let rr = rb + r * th.cos();
+                [rr * ph.cos(), rr * ph.sin(), r * th.sin()]
+            })?;
+            ms.source = "Structured mesh of 10-node tetrahedra".into();
+            let near = |a: f64, b: f64| (a - b).abs() < 1e-9;
+            let fixed = ms.face_where(|p| near(p[1], 0.0)).ok_or("elbow face")?;
+            let free = ms.face_where(|p| near(p[0], 0.0)).ok_or("elbow face")?;
+            let cut: Vec<u32> = (0..ms.faces.len() as u32).filter(|&f| ms.faces[f as usize].facets.iter().all(|&(e, k)| ms.facet(e as usize, k as usize)[..3].iter().all(|&i| near(ms.nodes[i as usize][2], 0.0)))).collect();
+            d.m.volume = Some(Box::new(ms));
+            d.m.grid = 10.0 * mm;
+            let mut ops = vec![sup(Target::Face { face: fixed }, SupportKind::Fixed), load(Target::Face { face: free }, LoadKind::Traction { fx: 0.0, fy: 2e3, fz: 0.0, total: true })];
+            ops.extend(cut.into_iter().map(|f| sup(Target::Face { face: f }, SupportKind::Symmetry)));
+            d.apply(Op::Batch(ops))?;
         }
         "yield3d" => {
             d.m.notes = "A quarter of a plate 200 × 100 mm and 10 mm thick with a 20 mm hole in its middle, of S355 steel, perfectly plastic: symmetry on the two cut edges and on the mid-plane (so 5 mm of the thickness is drawn). 250 MPa pulls on the end, in an elastic-plastic step of 8 increments. The hole gathers the stress at its edges, which yield first, about halfway to the full load; the plastic zones then spread across the net section. It collapses when the whole net section is at yield, near 355 × 80/100 = 284 MPa: try 300 MPa.".into();

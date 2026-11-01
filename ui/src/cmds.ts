@@ -14,6 +14,9 @@ export const C = {
   save: async (asNew = false) => { const o = await call<Out | null>("save", { asNew }); if (o) { setOut(o); toast("Saved.", true); } },
   // Each of these replaces the open model, so unsaved changes are offered for saving first (0.1.1 bug: they were lost).
   open: () => D.keepChanges(() => loadOut("open", { path: null }).then(o => { if (o) setTimeout(fit, 60); })),
+  /** File › Import Mesh (0.5.5): a tetrahedral mesh (.msh, .inp) as a new 3D solid; `unit` is the
+   * file's length unit in metres. */
+  importMesh: (unit: number, path: string | null = null) => D.keepChanges(() => loadOut("import_mesh", { path, unit }).then(o => { if (o) { import("./plane3").then(p => p.setPlane("3d")); toast(`Imported ${o.m.volume?.elements.toLocaleString()} tetrahedra; ${o.m.volume?.faces.length} faces found. Put supports and loads on them (Loads tab, then click a face).`, true); setTimeout(fit, 60); } })),
   openPath: (path: string) => D.keepChanges(() => loadOut("open", { path }).then(o => { if (o) setTimeout(fit, 60); })),
   newModel: (example: string | null, analysis: Analysis = "frame") => D.keepChanges(() => loadOut("new_model", { example, analysis }).then(o => { if (o) setTimeout(fit, 60); })),
   print: () => setBackstage("print"),

@@ -34,7 +34,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
     const opts = { autosave: 0, beta: false, theme: "light", openLast: false, units: "SI", snap: true, grid: true, rulers: true, contours: "rainbow", paper: "A4", landscape: true, company: "" };
     window.__cur = f.frame;
     const handlers = {};
-    const m = { send_link: "Sent to Datum Calc.", read_link: ["Datum Atlas", { id: 0, name: "Aluminium 6061-T6", e: 68.9e9, nu: 0.33, rho: 2700, fy: 276e6, k: 167, alpha: 23.6e-6, source: "ASM Handbook" }], verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15, iy: 6e-6, cy: 0.075, j: 2e-7 } };
+    const m = { import_mesh: f.elbow, send_link: "Sent to Datum Calc.", read_link: ["Datum Atlas", { id: 0, name: "Aluminium 6061-T6", e: 68.9e9, nu: 0.33, rho: 2700, fy: 276e6, k: 167, alpha: 23.6e-6, source: "ASM Handbook" }], verification: f.verification, examples_list: f.examples_list, options: opts, startup_file: null, recovery: null, check_update: null, recent: [], version: "test", section_props: { a: 0.005, i: 8e-5, c: 0.15, iy: 6e-6, cy: 0.075, j: 2e-7 } };
     window.__calls = [];
     window.__emit = (e, x) => (handlers[e] ?? []).forEach(h => h({ payload: x }));
     window.__TAURI__ = {
@@ -43,7 +43,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -579,6 +579,27 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const ypd = await p.textContent(".dlg").catch(() => "");
   check("Results › Load–Deflection works for a 3D solid", ypd.includes("first yields") && ypd.includes("carries the whole load") && (await p.$$(".dlg svg.curve circle.unstable")).length > 0, ypd.slice(0, 200));
   await p.keyboard.press("Escape");
+  // 0.5.5: imported tetrahedral meshes: the faces in the tree and the 3D view, picking a face, solving.
+  await open("elbow"); await p.waitForTimeout(400);
+  const ef = fix.elbow.m.volume;
+  check("an imported mesh is listed in the tree with its faces", (await p.textContent(".tree")).includes("Imported mesh") && (await p.$$(".tree .tgrp:first-of-type .ti")).length === ef.faces.length && (await p.textContent(".tree")).includes("10-node tetrahedra"), await p.textContent(".tree"));
+  check("the bar above the view says what the mesh is, with no Section view", (await p.textContent(".planebar")).includes("tetrahedra") && !(await p.textContent(".planebar")).includes("Section"));
+  check("a mesh's material is chosen in the Inspector", (await p.textContent(".insp")).includes("Material of the mesh"));
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(100);
+  let exy = await at3([0.2121, 0.2121, 0.06]); await p.mouse.click(exy[0], exy[1]); await p.waitForTimeout(200);
+  const ep = await lastOp();
+  check("clicking the mesh in 3D puts the pressure on the face clicked", ep?.Add?.item?.Load?.at?.on === "face" && ef.faces[ep.Add.item.Load.at.face] !== undefined, JSON.stringify(ep));
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => { window.__solveKey = "elbow_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(600);
+  await p.evaluate(() => { window.__solveKey = null; });
+  check("a solved mesh is coloured and balanced", (await p.textContent(".legend")).includes("reactions balance the loads") && (await p.textContent(".legend")).includes("Von Mises"), (await p.textContent(".legend")).slice(0, 200));
+  await p.click('.tabs > button:text-is("Geometry")'); await p.click('.ribbon button:has-text("Mesh")'); await p.waitForTimeout(150);
+  await p.click('.menu button:has-text("millimetres")').catch(() => {}); await p.waitForTimeout(250);
+  if (await p.$('.dlg button:has-text("Don\'t save")')) await p.click('.dlg button:has-text("Don\'t save")');
+  await p.waitForTimeout(300);
+  const im = await p.evaluate(() => window.__calls.filter(c => c[0] === "import_mesh").slice(-1)[0]?.[1]);
+  check("Geometry › Import › Mesh asks the file's unit and imports it", im?.unit === 0.001, JSON.stringify(im));
   // 0.5.4: Datum Link: values to Datum Calc, a curve to Datum Plot, a material from Datum Atlas.
   await open("tube"); await p.waitForTimeout(300);
   await p.evaluate(() => { window.__solveKey = "tube_results"; document.activeElement?.blur?.(); });
@@ -599,6 +620,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   // 0.5.3: File › New asks what is being analysed, then makes the model.
   await p.keyboard.press("Control+n"); await p.waitForTimeout(250);
   check("Ctrl+N opens the New study page with the kinds of study", (await p.$$(".newstudy .kcard[data-kind]")).length === 7);
+  await p.click('.newstudy .kcard[data-kind="solid"]'); await p.waitForTimeout(100); await p.click('.newstudy .kcard[data-sub="mesh"]'); await p.waitForTimeout(100);
+  check("a 3D solid can start from a mesh file, in a unit you choose", (await p.$$('.newstudy .ncreate button:has-text("Import a mesh in")')).length === 3);
   await p.click('.newstudy .kcard[data-kind="truss"]'); await p.waitForTimeout(120);
   check("a 2D truss offers what you can find out about it", (await p.$$(".newstudy .kcard[data-want]")).length >= 3 && (await p.textContent(".newstudy")).includes("Large deflection"));
   await p.click('.newstudy .ncreate .btn.pri'); await p.waitForTimeout(250);

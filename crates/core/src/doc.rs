@@ -44,6 +44,9 @@ pub struct Settings {
     /// What the model is (0.6.0, `Model::study`); left as it is when not given.
     #[serde(default)]
     pub study: Option<String>,
+    /// An imported mesh's material (0.5.5); left as it is when not given.
+    #[serde(default)]
+    pub material: Option<u32>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -672,6 +675,11 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             if let Some(r) = s.revolve {
                 m.revolve = r;
             }
+            if let (Some(id), Some(v)) = (s.material, m.volume.as_mut()) {
+                if m.materials.iter().any(|x| x.id == id) {
+                    v.material = id;
+                }
+            }
             if let Some(st) = &s.study {
                 m.study = st.chars().filter(|c| c.is_ascii_alphanumeric()).take(16).collect();
             }
@@ -984,6 +992,7 @@ fn prune(m: &mut Model) {
         Target::Edge { shape, edge } | Target::Line { shape, edge, .. } => edges.get(shape).is_some_and(|n| (*edge as usize) < *n),
         Target::Plate { shape } => edges.contains_key(shape),
         Target::Point { .. } | Target::Body | Target::End { .. } => true,
+        Target::Face { face } => m.volume.as_ref().is_some_and(|v| (*face as usize) < v.faces.len()),
     };
     m.supports.retain(|s| alive(&s.at));
     m.loads.retain(|s| alive(&s.at));

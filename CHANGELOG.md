@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.5 — 2026-11-01
+
+Parts of any shape: tetrahedra and imported meshes.
+
+**Import a mesh**
+- Geometry › Import › **Mesh** (or File › New › 3D solid › From a mesh file): a tetrahedral mesh made in a mesher, as Gmsh `.msh` (ASCII, format 2.2 or 4.1) or `.inp` in the Abaqus input format (C3D4 and C3D10), in the length unit you choose.
+- The outer surface is split into faces where it turns more than 35°, and the file's named surfaces (Gmsh physical surfaces, `*SURFACE` and `*NSET`) keep their names. The faces are listed in the tree and shown in 3D.
+- Supports (fixed, pinned, roller, symmetry, held directions) and loads (pressure, face forces, gravity) go on faces: pick the tool, click a face. The mesh's material is chosen in the Inspector.
+- Solved with our own 4-node and 10-node tetrahedra for static stress: contours, deformed shape, cutting plane, probe, reactions and the equilibrium check, as for every 3D solid.
+- New example: a steel pipe elbow meshed in 10-node tetrahedra.
+
+**Trust**
+- Help › Verification: 219 checks, all passing. New: benchmark 28, tetrahedra: a bar pulled (exact for both elements), a cantilever against beam theory with shear (within 0.8 %, its clamped root a little stiffer), and a thick cylinder against Lamé (hoop stress within 0.1 %, bore growth within 0.02 %).
+- Mesh files are read with checks; a fuzz test throws 6 000 damaged `.msh` and `.inp` files at the readers.
+
+**Window**
+- Printing and the report load when first opened, so the window starts lighter.
+
 ## 0.5.4 — 2026-11-01
 
 Datum Mesh talks to the rest of the family.

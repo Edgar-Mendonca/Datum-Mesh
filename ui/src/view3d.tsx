@@ -77,7 +77,7 @@ export const View3D = () => {
     const ink = css("--text"), green = css("--green"), load = css("--blue2"), accent = css("--blue");
     scene.background = new THREE.Color(css("--bg2"));
     const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4), rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
-    const bounds = m.shapes.flatMap(s => outline(s.geom, tol));
+    const vp = m.volume, bounds: number[][] = vp ? vp.surface.nodes : m.shapes.flatMap(s => outline(s.geom, tol));
     const size = Math.max(rev ? 0 : t, ...(bounds.length ? [Math.max(...bounds.map(p => p[0])) - Math.min(...bounds.map(p => p[0])), Math.max(...bounds.map(p => p[1])) - Math.min(...bounds.map(p => p[1]))] : [1e-3]));
     world.add(new THREE.AxesHelper(size * 0.2));
     renderer.localClippingEnabled = false;
@@ -137,6 +137,19 @@ export const View3D = () => {
       const pts: number[] = [];
       for (const [a, b] of r.surface.lines) pts.push(pos[3 * a], pos[3 * a + 1], pos[3 * a + 2], pos[3 * b], pos[3 * b + 1], pos[3 * b + 2]);
       if (pts.length) { const l = fat(pts, null, ink, 1.5), lm = l.material as LineMaterial; lm.clippingPlanes = clip; lm.clipping = clip.length > 0; }
+    } else if (vp) {
+      // An imported mesh (0.5.5): its outer surface, the lines where its faces meet, pickable by face.
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vp.surface.nodes.flat()), 3));
+      g.setIndex(vp.surface.tris.flat());
+      g.computeVertexNormals();
+      const o = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(css("--sky")), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      o.userData.pick = true;
+      world.add(o);
+      if (show().mesh) world.add(new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: new THREE.Color(ink), transparent: true, opacity: 0.18 })));
+      const pts: number[] = [];
+      for (const [a, b] of vp.surface.lines) pts.push(...vp.surface.nodes[a], ...vp.surface.nodes[b]);
+      if (pts.length) fat(pts, null, ink, 1.2);
     } else if (m.shapes.some(s => !s.hole) && (t > 0 || rev > 0)) {
       // The part as it will be: each solid shape with the holes inside it, extruded or revolved.
       const holes = m.shapes.filter(s => s.hole).map(s => outline(s.geom, tol));
@@ -177,6 +190,16 @@ export const View3D = () => {
         }
       } else if (at.on === "end") {
         for (const s of m.shapes) { const o = outline(s.geom, tol) as [number, number][]; loop(pts, [...o, o[0]], at.front ? 1 : 0); }
+      } else if (at.on === "face" && vp) {
+        // A face of an imported mesh: its triangles tinted.
+        const idx: number[] = [];
+        vp.tface.forEach((f, i) => { if (f === at.face) idx.push(...vp.surface.tris[i]); });
+        if (idx.length) {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vp.surface.nodes.flat()), 3));
+          g.setIndex(idx);
+          world.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(colour), transparent: true, opacity: solidRes() && !stale() ? 0.25 : 0.55, side: THREE.DoubleSide, depthWrite: false })));
+        }
       }
       if (pts.length) fat(pts, null, colour, at.on === "line" ? 5 : 3.5);
     };
@@ -328,6 +351,8 @@ export const View3D = () => {
       if (m.revolve) for (let i = 0; i <= 16; i++) { const a = m.revolve * i / 16; box.expandByPoint(new THREE.Vector3(p[0] * Math.cos(a), p[1], p[0] * Math.sin(a))); }
       else for (const z of [0, m.thickness]) box.expandByPoint(new THREE.Vector3(p[0], p[1], z));
     }
+    // An imported mesh (0.5.5): its outer surface.
+    for (const p of m.volume?.surface.nodes ?? []) box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2]));
     if (box.isEmpty()) return;
     const c = box.getCenter(new THREE.Vector3()), rad = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
     const dir = from ? new THREE.Vector3(...from).normalize() : keepDir && controls ? camera.position.clone().sub(controls.target).normalize() : new THREE.Vector3(1, 0.75, 1.3).normalize();
@@ -384,7 +409,7 @@ export const View3D = () => {
       if (t === "select") { setSel([]); return; }
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
       const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction"].includes(t);
-      if (!at || !ok) { toast(ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
+      if (!at || !ok) { toast(model()?.volume ? (ok ? "Click on a face of the mesh." : "On an imported mesh, supports (fixed, pinned, roller, symmetry, held directions) and pressures or face forces go on its faces.") : ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
       const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(at.on === "end" && t === "sup:pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) setSel(o.created);
@@ -416,6 +441,8 @@ export const View3D = () => {
     const [w, h] = size(), ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
     const hit = ray.intersectObjects(world.children.filter(o => o.userData.pick), false)[0]; if (!hit) return null;
+    // An imported mesh: the face of the triangle hit (results draw the same triangles in the same order).
+    if (m.volume) { const f = hit.faceIndex != null ? m.volume.tface[hit.faceIndex] : undefined; return f === undefined ? null : { on: "face", face: f }; }
     const p = hit.point, rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
     const u = rev ? Math.hypot(p.x, p.z) : p.x, v = p.y;
     const tol = Math.max(1e-6, (m.grid || 0.005) / 4);
@@ -535,7 +562,7 @@ export const View3D = () => {
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
       onKeyDown={e => { if (e.key === "Escape") { if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
-      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
+      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length}><div class="empty"><b>Draw a 3D frame</b><span>Members are drawn on a plane: pick Front, Side or Plan above and the depth, then Beam or Truss in Geometry. Repeat copies a frame along the depth and joins it (Geometry › Repeat).</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("beam"); }}>Draw on the front plane</button></div></Show>
       <Show when={probe3() && solidRes()}>{_ => { const r = solidRes()!, i = probe3()!.i, p = r.surface.nodes[i], fd = curField(), v = r.fields.find(f => f.key === fd.key)?.v[i] ?? 0, d = solidDisp(r)[i]; return (
         <div class="probe"><b>At {p.map(c => fmt("coord", c).split(" ")[0]).join(", ")} {unit("coord")}</b><span>{fd.short} {fmt(fd.q, v)}</span><Show when={r.kind === "solid"}><span>|u| {fmt("len", Math.hypot(d[0], d[1], d[2]))}</span></Show></div>); }}</Show>

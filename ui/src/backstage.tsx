@@ -1,6 +1,8 @@
 // File (backstage): home with examples and recent models, export, print, options, roadmap, updates.
 import { For, Show, createSignal, createResource, onMount, JSX, lazy, Suspense } from "solid-js";
-import { PAPERS, PrintPage } from "./print";
+// Printing loads on demand (0.5.5: the startup budget).
+const PrintPage = lazy(() => import("./print").then(m => ({ default: m.PrintPage })));
+const PAPER_NAMES = ["A4", "A3", "A2", "Letter", "Legal", "Tabloid"];
 import { RoadmapPage } from "./roadmap";
 import { Options, Out, Example, listen, invoke } from "./api";
 import { backstage, setBackstage, call, out, setOut, model, opts, setOpts, toast, setThemeRaw, applyTheme, results } from "./store";
@@ -56,6 +58,7 @@ const ExampleArt = (p: { id: string }) => {
     "blank-solid": "M14 30H66L84 18H32zM14 30V50H66V30M66 50L84 38V18",
     yield3d: "M14 18L22 12H86L78 18zM14 18H78V48H14zM78 48L86 42V12M38 33a8 8 0 1 0 16 0a8 8 0 1 0 -16 0",
     rubber: "M10 14V52M10 22H40Q70 22 78 46L70 50Q62 30 40 30H10M74 48v8M71 53l3 3l3-3",
+    elbow: "M14 50V30A22 22 0 0 1 36 8H58M28 50V30A8 8 0 0 1 36 22H58M14 50h14M58 8v14M8 54h26",
     bracket3d: "M20 10L28 6V44Q28 48 34 48H82L74 52H26Q20 52 20 46zM28 44L36 40M82 48V56L74 60H26Q20 60 20 54V46",
   };
   return <svg viewBox="0 0 100 60" class="exart"><path d={pics[p.id] ?? pics["blank-frame"]} {...s} /></svg>;
@@ -139,7 +142,7 @@ const OptionsPage = () => {
         <Opt l="Units" hint="How values are shown and typed. Files always keep SI units."><Pick value={o().units} set={v => put("units", v as any)} options={[["SI", "SI: mm, kN, MPa, °C"], ["US", "US: in, kip, ksi, °F"]]} /></Opt>
       </Sec>
       <Sec t="Printing" about="Defaults for File › Print.">
-        <Opt l="Paper" hint="Default paper for printouts."><span class="inline"><Pick value={o().paper || "A4"} set={v => put("paper", v)} options={PAPERS.map(p => p[0])} /><Pick value={o().landscape === false ? "0" : "1"} set={v => put("landscape", v === "1")} options={[["1", "Landscape"], ["0", "Portrait"]]} /></span></Opt>
+        <Opt l="Paper" hint="Default paper for printouts."><span class="inline"><Pick value={o().paper || "A4"} set={v => put("paper", v)} options={PAPER_NAMES} /><Pick value={o().landscape === false ? "0" : "1"} set={v => put("landscape", v === "1")} options={[["1", "Landscape"], ["0", "Portrait"]]} /></span></Opt>
         <Opt l="Company" hint="Shown in the header of printouts."><Text value={o().company} set={v => put("company", v)} /></Opt>
       </Sec>
       <Sec t="Updates" about="Datum Mesh checks GitHub for new versions when it starts. Updates install from File › Updates.">
@@ -168,7 +171,7 @@ export const Backstage = () => (
       <Show when={backstage() === "new"}><Suspense><NewStudy /></Suspense></Show>
       <Show when={backstage() === "export"}><Export /></Show>
       <Show when={backstage() === "options"}><OptionsPage /></Show>
-      <Show when={backstage() === "print"}><PrintPage /></Show>
+      <Show when={backstage() === "print"}><Suspense><PrintPage /></Suspense></Show>
       <Show when={backstage() === "roadmap"}><RoadmapPage /></Show>
       <Show when={backstage() === "about"}><div class="about"><h1>Updates</h1><UpdateCard /><p><button class="btn" onClick={() => D.shortcuts()}>Keyboard shortcuts</button></p></div></Show>
     </section>

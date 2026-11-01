@@ -13,7 +13,8 @@ import { Tree, Inspector, ANALYSES } from "./panels";
 import { ResultsPage, ResultsLegend } from "./results";
 import { PartLegend, MeshBar } from "./parts";
 import { ModesBar, ModeAnimator } from "./modes";
-import { ReportPage } from "./print";
+// The report and printing load on demand (0.5.5).
+const ReportPage = lazy(() => import("./print").then(m => ({ default: m.ReportPage })));
 import { PlaneBar, SpaceLegend, SolidLegend } from "./space3";
 // The 3D view brings three.js: loaded only when a 3D frame is shown.
 const View3D = lazy(() => import("./view3d").then(m => ({ default: m.View3D })));
@@ -40,7 +41,7 @@ const Status = () => {
     <footer class="status">
       <span>{toolHint()}</span>
       <Show when={cursor()}>{c => <span class="mono muted">{onPlane() ? (() => { const p = unproj(c()[0], c()[1]); return `x ${fmt("coord", p[0])} · y ${fmt("coord", p[1])} · z ${fmt("coord", p[2])}`; })() : `x ${fmt("coord", c()[0])} · y ${fmt("coord", c()[1])}`}</span>}</Show>
-      <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${isFrame(model()!.analysis) ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
+      <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${isFrame(model()!.analysis) ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : model()!.volume ? `${model()!.volume!.elements.toLocaleString()} tetrahedra` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
       <span class="grow" />
       <span class="vsc"><For each={SIDE.filter(x => x !== "-") as [View, string, string][]}>{x => <button title={x[2]} onClick={() => setView(x[0])}><Icon n={x[1]} /></button>}</For></span>
       <button onClick={C.zoomOut}>−</button><span class="muted zoomv" title="Drawing scale on a 96 dpi screen">{ratio()}</span><button onClick={C.zoomIn}>+</button>
@@ -94,7 +95,7 @@ const App = () => {
           <Show when={out()}>
             <Switch fallback={<div class="modelview"><Tree /><div class="center"><PlaneBar /><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
               <Match when={view() === "results"}><ResultsPage /></Match>
-              <Match when={view() === "report"}><ReportPage /></Match>
+              <Match when={view() === "report"}><Suspense><ReportPage /></Suspense></Match>
             </Switch>
           </Show>
         </div>

@@ -84,7 +84,33 @@ mod tests {
                 n.x = if r.below(4) == 0 { f64::NAN } else { r.f(-3.0, 3.0) };
                 Op::Set { item: Item::Node(n) }
             }
-            _ => Op::SetSettings { s: Settings { analysis: [Analysis::Frame, Analysis::Stress, Analysis::Heat][r.below(3)], units: if r.below(5) == 0 { "x".into() } else { "US".into() }, grid: r.f(-0.1, 1.0), thickness: 0.01, mesh: m.mesh.clone(), t_ref: if r.below(4) == 0 { Some(r.f(250.0, 400.0)) } else { None }, revolve: if r.below(4) == 0 { Some(r.f(-1.0, 7.0)) } else { None }, rigid_floors: None, study: if r.below(6) == 0 { Some("tr\u{1F600}uss ".repeat(r.below(8))) } else { None } } },
+            _ => Op::SetSettings { s: Settings { analysis: [Analysis::Frame, Analysis::Stress, Analysis::Heat][r.below(3)], units: if r.below(5) == 0 { "x".into() } else { "US".into() }, grid: r.f(-0.1, 1.0), thickness: 0.01, mesh: m.mesh.clone(), t_ref: if r.below(4) == 0 { Some(r.f(250.0, 400.0)) } else { None }, revolve: if r.below(4) == 0 { Some(r.f(-1.0, 7.0)) } else { None }, rigid_floors: None, study: if r.below(6) == 0 { Some("tr\u{1F600}uss ".repeat(r.below(8))) } else { None }, material: if r.below(5) == 0 { Some(r.below(20) as u32) } else { None } } },
+        }
+    }
+
+    #[test]
+    fn damaged_mesh_files_never_crash_the_readers() {
+        // 0.5.5: meshes come from other programs; damaged ones are refused with a reason.
+        let msh = "$MeshFormat\n2.2 0 8\n$EndMeshFormat\n$Nodes\n4\n1 0 0 0\n2 1 0 0\n3 0 1 0\n4 0 0 1\n$EndNodes\n$Elements\n1\n1 4 2 1 1 1 2 3 4\n$EndElements\n";
+        let inp = "*NODE\n1, 0, 0, 0\n2, 1, 0, 0\n3, 0, 1, 0\n4, 0, 0, 1\n*ELEMENT, TYPE=C3D4, ELSET=A\n1, 1, 2, 3, 4\n*SURFACE, NAME=S\nA, S1\n*NSET, NSET=N, GENERATE\n1, 4, 1\n";
+        assert!(crate::solids::tet::read_msh(msh, 1.0).is_ok() && crate::solids::tet::read_inp(inp, 1.0).is_ok());
+        let mut r = Rng(5);
+        for text in [msh, inp] {
+            for _ in 0..3000 {
+                let mut b: Vec<u8> = text.bytes().collect();
+                for _ in 0..r.below(5) + 1 {
+                    let k = r.below(b.len());
+                    match r.below(3) {
+                        0 => b[k] = b"09- \n,$*.e"[r.below(10)],
+                        1 => { b.remove(k); }
+                        _ => b.insert(k, b"17\n "[r.below(4)]),
+                    }
+                }
+                let t = String::from_utf8_lossy(&b);
+                for m in [crate::solids::tet::read_msh(&t, 1.0), crate::solids::tet::read_inp(&t, 1.0)].into_iter().flatten() {
+                    assert!(m.tets.iter().all(|e| e.iter().all(|&i| (i as usize) < m.nodes.len())));
+                }
+            }
         }
     }
 
