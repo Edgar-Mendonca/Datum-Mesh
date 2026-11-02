@@ -20,3 +20,5 @@ under those licences, planned for later releases, will only ever run as separate
 The family workflow, ribbon, File page, updater and printing are taken from Datum Plan, by way of
 Datum Sim (both MIT, same author). The structural steel values come from EN 1993-1-1 §3.2 and
 EN 10025-2; each material keeps its source in the model.
+
+Product and file-format names are trademarks of their owners and are used only to describe file compatibility.

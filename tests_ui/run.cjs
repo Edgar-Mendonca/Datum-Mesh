@@ -3,6 +3,10 @@
 // that records every call. Run: npm run test:ui (or npm run build:ui && node tests_ui/run.cjs).
 const { chromium } = require("playwright");
 const fs = require("fs"), http = require("http"), path = require("path");
+// FAMILY §13: the window never names a commercial product (the list is shared with the engine's
+// hardening test); whole words, any case.
+const NAMES = fs.readFileSync(path.join(__dirname, "../tools/commercial-names.txt"), "utf8").split("\n").map(l => l.trim().toLowerCase()).filter(l => l && !l.startsWith("#"));
+const named = text => { const t = text.toLowerCase(); return NAMES.filter(n => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "u").test(t)); };
 const root = path.join(__dirname, "../ui/dist"), fix = JSON.parse(fs.readFileSync(path.join(__dirname, "fixture.json")));
 // Results in the fixture are packed as the shell sends them; unpacked here for the checks' counts.
 const unpack = v => {
@@ -237,6 +241,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.mouse.click(col[0], col[1]); await p.keyboard.press("ArrowUp"); await p.waitForTimeout(150);
   check("an edit marks the results out of date", (await p.$$(".legend .stalebar")).length === 1);
   await p.click('.tabs > button:text-is("Help")'); await p.click('.ribbon button[title="Verification"]'); await p.waitForTimeout(250);
+  check("the window's text names no commercial product (Verification open)", named(await p.evaluate(() => document.body.innerText)).length === 0, named(await p.evaluate(() => document.body.innerText)).join());
   check("Help › Verification lists every benchmark, all passing", (await p.textContent(".dlg")).includes(`${fix.verification.length} of ${fix.verification.length} checks pass`));
   check("Help › Verification shows the mesh convergence tables", (await p.$$(".dlg .conv table")).length === fix.verification.filter(x => x.steps.length).length && (await p.textContent(".dlg")).includes("NAFEMS LE1"));
   await p.keyboard.press("Escape");
@@ -1007,6 +1012,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("theme switches to dark", (await p.evaluate(() => document.documentElement.dataset.theme)) === "dark");
   if (process.env.SHOTS) { await p.screenshot({ path: path.join(process.env.SHOTS, "dark.png") }); }
   check("every view opens without errors", errors.length === 0, errors.join(" | "));
+  // Every word the window can show is in its bundle (help, dialogs, menus, messages).
+  const bundle = fs.readdirSync(path.join(root, "assets")).filter(f => /\.(js|html|css)$/.test(f)).map(f => fs.readFileSync(path.join(root, "assets", f), "utf8")).join("\n") + fs.readFileSync(path.join(root, "index.html"), "utf8");
+  check("the window's code and help name no commercial product", NAMES.length > 30 && named(bundle).length === 0 && named("Opened in Abaqus.").length === 1 && named("excellent").length === 0, named(bundle).join());
 
   await b.close(); srv.close();
   console.log(failed ? `\n${failed} check(s) failed` : "\nall UI checks passed");

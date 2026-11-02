@@ -15,7 +15,7 @@ User preferences:
 - Modules plug into the core through its small interface (element: stiffness, internal force, mass; material: stress and tangent) and carry their own benchmarks; keep them independent.
 - The UI is SolidJS + Vite in `ui/src/*.tsx` (built to `ui/dist`). State lives in `ui/src/store.ts`.
 - The engine and the `.dmesh` file use SI base units (m, N, Pa, K, W); the window converts for display only (`ui/src/units.ts`).
-- Public words (README, CHANGELOG, site.json, help): never name, compare with, or say the app copies or replaces a commercial product (FAMILY §13). Open solvers and benchmark sets (NAFEMS) may be named.
+- Public words (the repo is public: README, CHANGELOG, NOTICE, site.json, help, the window, docs, this file, code comments): never name, compare with, or say the app copies, combines or targets a commercial product (FAMILY §13); no "…-style" or "as … does" comparisons. File-format names only where they name a file the app reads or writes. Open solvers and benchmark sets (CalculiX, Gmsh, NAFEMS) may be named. The names are listed in `tools/commercial-names.txt`; `hardening::public_words_name_no_commercial_product` and two window checks enforce it.
 - Licences: MIT/BSD/Apache/MPL only in the app. GPL solvers and meshers (later releases) only ever run as separate programs. Record every dependency in `NOTICE`.
 
 Quality bar (brief §5):

@@ -73,7 +73,7 @@ kbd { font: 10.5px "Segoe UI", sans-serif; color: var(--muted); border: 1px soli
 .pcts { display: flex; gap: 1px; align-self: flex-start; }
 .pcts .rb { padding: 2px 3px; font-size: 10px; flex-direction: column; gap: 0; height: auto; }
 
-/* Work area and Cairn-style sidebar */
+/* Work area and the family side bar */
 .work { flex: 1; display: flex; min-height: 0; position: relative; }
 .side { width: 66px; flex: none; background: var(--side); border-right: 1px solid var(--line); display: flex; flex-direction: column; padding-top: 4px; overflow-y: auto; }
 .side button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; font-size: 10.5px; color: var(--text2); border-left: 3px solid transparent; }
@@ -364,7 +364,7 @@ tr.link:hover td { background: var(--pale); }
   .panel, .kpi { break-inside: avoid; }
 }
 
-/* ---------- 0.3.1: Excel-style grid ---------- */
+/* ---------- 0.3.1: spreadsheet grid ---------- */
 .grid { display: flex; flex-direction: column; min-width: 120px; flex: none; min-height: 0; }
 .gscroll { flex: 1; overflow: auto; position: relative; outline: none; background: var(--bg2); }
 .gsheet { position: relative; }

@@ -1,0 +1,49 @@
+# Commercial analysis, CAD and office products that public words never name (FAMILY §13).
+# Read by the hardening test (crates/core/src/hardening.rs) and the window checks
+# (tests_ui/run.cjs); matched case-insensitively as whole words. Open solvers, meshers and
+# benchmark sets (CalculiX, Gmsh, NAFEMS) are not listed: they may be named.
+abaqus
+ansys
+solidworks
+fusion 360
+nastran
+msc marc
+comsol
+ls-dyna
+hypermesh
+staad
+staad.pro
+sap2000
+etabs
+rfem
+rstab
+dlubal
+tekla
+midas
+adina
+autodesk
+autocad
+revit
+inventor nastran
+robot structural
+dassault
+simulia
+catia
+altair
+femap
+creo
+strand7
+lusas
+patran
+diana fea
+sofistik
+scia
+risa-3d
+skyciv
+plaxis
+matlab
+mathcad
+excel
+microsoft word
+simscale
+onshape

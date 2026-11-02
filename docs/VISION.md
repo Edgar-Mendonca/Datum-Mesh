@@ -6,11 +6,11 @@ Agreed with the user on 2026-10-31, after 0.3.5. This replaces the direction in 
 
 **One open-source platform for structural and finite-element analysis, written by us, that proves its own answers.** Frames, plates and shells, solids, heat and vibration in one model; linear and nonlinear, static and dynamic, in one engine. Small, quick and simple to use, however much it grows.
 
-It is in the spirit of three kinds of commercial program (named here only, never in public words, FAMILY §13):
+What it covers, in three layers:
 
-- the structural frame programs (the analysis side of STAAD.Pro): frames, plates, load cases and combinations, P-delta, dynamics; no design codes;
-- the nonlinear finite-element programs (ADINA, now Bentley's): large deflection, plasticity, rubber, dynamics, contact;
-- in time, the general and explicit programs (Abaqus, LS-DYNA): steps, explicit dynamics, impact.
+- structural analysis: frames, plates, load cases and combinations, P-delta, dynamics; no design codes;
+- nonlinear finite elements: large deflection, plasticity, rubber, dynamics, contact;
+- in time, general and explicit analysis: steps, explicit dynamics, impact.
 
 It is **not** a CAD program and not a pre-processor for other solvers. Geometry is drawn simply (sections, extrude, revolve, DXF) or comes in from other tools (meshes, and later CAD files through a separate mesher).
 
@@ -36,7 +36,7 @@ bench      the verification, a section for each module
 
 ## Our own solver
 
-- We write the mechanics ourselves, from the published methods: K.J. Bathe, *Finite Element Procedures* (the methods behind ADINA), and the classic papers (Simo and Hughes for plasticity, Newmark and Hilber–Hughes–Taylor for dynamics, Crisfield for arc-length, Battini and Pacoste or Crisfield for corotational beams). **We do not port other programs' code**, permissive or not.
+- We write the mechanics ourselves, from the published methods: K.J. Bathe, *Finite Element Procedures*, and the classic papers (Simo and Hughes for plasticity, Newmark and Hilber–Hughes–Taylor for dynamics, Crisfield for arc-length, Battini and Pacoste or Crisfield for corotational beams). **We do not port other programs' code**, permissive or not.
 - Outside code is only infrastructure, like a maths library: faer (sparse matrices and eigenvalues, MIT) and, when large 3D models need it, METIS (ordering, Apache-2.0). GPL and AGPL programs (Gmsh, CalculiX, TetGen) are only ever run as separate programs, as optional add-ons, never in the installer.
 - Other open projects (FieldCraft, FEBio) are read for what they verify and how they organise, not copied.
 
@@ -52,7 +52,7 @@ Every element, material and solution method gets checks against known answers be
 | 0.4.1 | **Plates and shells** for slabs and walls, joined to frames | Scordelis–Lo roof, pinched cylinder, Roark's plate formulas |
 | 0.4.2 | **Dynamics for structures**: response spectrum and time history (Newmark) on frames and plates | single mass-spring closed forms, a beam's step response, NAFEMS forced vibration |
 | 0.4.3 | **Structural details**: tension-only and compression-only members, support settlement, member offsets, rigid floors | hand checks |
-| 0.5 | **Nonlinear materials for solids**: plasticity, rubber; tetrahedra; mesh import (Abaqus `.inp`, Gmsh `.msh`, STL) | Hill's thick cylinder (first yield and collapse), NAFEMS NL1–NL4, Rivlin's homogeneous tests |
+| 0.5 | **Nonlinear materials for solids**: plasticity, rubber; tetrahedra; mesh import (CalculiX-format `.inp`, Gmsh `.msh`, STL) | Hill's thick cylinder (first yield and collapse), NAFEMS NL1–NL4, Rivlin's homogeneous tests |
 | 0.6 | **Dynamics for solids**: implicit transient, transient heat; **explicit dynamics** (central difference, optional GPU) | wave in a bar, NAFEMS T3, Taylor bar (against experiment, labelled so) |
 | 0.7 | **Contact** | Hertz, NAFEMS contact patch test |
 | 1.0 | A validation report across everything; a signed installer | |

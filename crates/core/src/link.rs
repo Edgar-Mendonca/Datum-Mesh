@@ -120,7 +120,7 @@ mod tests {
         // Bad tables and unknown apps are refused.
         assert!(envelope("plot", "", "", &Outgoing::Table(Table { columns: vec![], rows: vec![] }), "").is_err());
         assert!(envelope("plot", "", "", &Outgoing::Table(Table { columns: vec![Column { name: "x".into(), unit: "".into() }], rows: vec![vec![f64::NAN]] }), "").is_err());
-        assert!(envelope("excel", "", "", &t, "").is_err());
+        assert!(envelope("nosuchapp", "", "", &t, "").is_err());
     }
 
     #[test]

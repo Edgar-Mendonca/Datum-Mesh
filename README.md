@@ -70,3 +70,5 @@ npm run test:ui                  # the window's tests
 ```
 
 Datum Mesh is part of the [Datum family](https://edgar-mendonca.github.io/Datum/) of free desktop tools for engineers, scientists, researchers and analysts. MIT licence.
+
+Product and file-format names are trademarks of their owners and are used only to describe file compatibility.
