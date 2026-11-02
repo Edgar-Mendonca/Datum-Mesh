@@ -851,6 +851,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   // 0.5.9: drawing a 3D frame straight in the 3D view (it used to send you to a plane).
   await open("blank-space"); await p.waitForTimeout(300);
   const at3d = async q => { const v = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); const s = await p.evaluate(q => window.__screen3(q), q); return [v[0] + s[0], v[1] + s[1]]; };
+  { const vr = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }), e0 = await at3d([6, 0, 0]), e1 = await at3d([0, 0, 4]);
+    const inV = q => q[0] > vr[0] && q[0] < vr[2] && q[1] > vr[1] && q[1] < vr[3];
+    check("an empty 3D frame is seen from the corner over a few metres of space (0.5.9: the camera sat at the origin, edge-on)", inV(e0) && inV(e1) && Math.hypot(e1[0] - e0[0], e1[1] - e0[1]) > 200, JSON.stringify([vr, e0, e1])); }
   check("an empty 3D frame offers to draw a beam in the 3D view", (await p.$$('.view3d .empty button:has-text("Draw a beam")')).length === 1);
   await p.click('.view3d .empty button:has-text("Draw a beam")'); await p.waitForTimeout(200);
   check("drawing in 3D shows the work plane bar", (await p.$$(".view3d .draw3")).length === 1 && (await p.textContent(".view3d .draw3 .seg button.on")) === "Front");

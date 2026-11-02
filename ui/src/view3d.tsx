@@ -214,7 +214,9 @@ export const View3D = () => {
     const m = model(); if (!m) return;
     clear();
     if (isSolidA(m.analysis)) return buildSolid(m);
-    const P = at3(m), span = span3(m), selSet = new Set(sel());
+    // An empty frame (0.6.0): the floor covers the 6 × 4 × 4 m space the view first looks at.
+    const empty = !m.nodes.length && !m.shapes.length;
+    const P = at3(m), span = empty ? 6 : span3(m), selSet = new Set(sel());
     const ink = css("--text"), accent = css("--blue"), faint = css("--line3"), load = css("--blue2");
     scene.background = new THREE.Color(css("--bg2"));
     // The ground grid at the lowest node, and the axes at the origin.
@@ -222,7 +224,7 @@ export const View3D = () => {
     if (opts().grid) {
       const step = m.grid > 0 ? m.grid : 1, n = Math.min(400, Math.max(4, Math.ceil(span * 1.6 / step)));
       const gh = new THREE.GridHelper(n * step, n, new THREE.Color(css("--line3")), new THREE.Color(css("--line2")));
-      const cx = m.nodes.length ? (Math.min(...m.nodes.map(n => n.x)) + Math.max(...m.nodes.map(n => n.x))) / 2 : 0, cz = m.nodes.length ? (Math.min(...m.nodes.map(n => n.z ?? 0)) + Math.max(...m.nodes.map(n => n.z ?? 0))) / 2 : 0;
+      const cx = m.nodes.length ? (Math.min(...m.nodes.map(n => n.x)) + Math.max(...m.nodes.map(n => n.x))) / 2 : empty ? 3 : 0, cz = m.nodes.length ? (Math.min(...m.nodes.map(n => n.z ?? 0)) + Math.max(...m.nodes.map(n => n.z ?? 0))) / 2 : empty ? 2 : 0;
       gh.position.set(Math.round(cx / step) * step, y0, Math.round(cz / step) * step);
       world.add(gh);
     }
@@ -421,14 +423,21 @@ export const View3D = () => {
     // The work plane's grid, around the frame and the last point.
     const g = m.grid > 0 ? m.grid : 0.5, ps: P3[] = [...m.nodes.map(n => [n.x, n.y, n.z ?? 0] as P3), ...(s ? [s] : []), [0, 0, 0], ...(m.nodes.length ? [] : [[6, 4, 4] as P3])];
     const [a, b] = [0, 1, 2].filter(i => i !== k);
-    const lo = [a, b].map(i => Math.floor((Math.min(...ps.map(p => p[i])) - 3 * g) / g) * g), hi = [a, b].map(i => Math.ceil((Math.max(...ps.map(p => p[i])) + 3 * g) / g) * g);
-    const step = Math.max(g, g * Math.ceil(Math.max(hi[0] - lo[0], hi[1] - lo[1]) / g / 60));
+    const ext = [a, b].map(i => Math.max(...ps.map(p => p[i])) - Math.min(...ps.map(p => p[i]))), pad = Math.max(g, Math.ceil(0.15 * Math.max(...ext, g) / g) * g);
+    // An upright plane (Front, Side) stands on the lowest point instead of going through the floor.
+    const lo = [a, b].map(i => Math.floor((Math.min(...ps.map(p => p[i])) - (i === 1 ? 0 : pad)) / g) * g), hi = [a, b].map(i => Math.ceil((Math.max(...ps.map(p => p[i])) + pad) / g) * g);
+    const step = Math.max(g, g * Math.ceil(Math.max(hi[0] - lo[0], hi[1] - lo[1]) / g / 40));
     const pt = (u: number, v: number): number[] => { const r = [0, 0, 0]; r[a] = u; r[b] = v; r[k] = at; return r; };
     const gl: number[] = [];
     for (let u = lo[0]; u <= hi[0] + 1e-9; u += step) gl.push(...pt(u, lo[1]), ...pt(u, hi[1]));
     for (let v = lo[1]; v <= hi[1] + 1e-9; v += step) gl.push(...pt(lo[0], v), ...pt(hi[0], v));
     const lg = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(gl), 3));
-    drawGroup.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.25 })));
+    drawGroup.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.2 })));
+    // A faint fill, so the grid reads as a plane, with a firmer outline.
+    const c4 = [pt(lo[0], lo[1]), pt(hi[0], lo[1]), pt(hi[0], hi[1]), pt(lo[0], hi[1])];
+    const fg = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([...c4[0], ...c4[1], ...c4[2], ...c4[0], ...c4[2], ...c4[3]]), 3));
+    drawGroup.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.05, side: THREE.DoubleSide, depthWrite: false })));
+    drawGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(c4.flat()), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.55 })));
     const r = Math.max(span3(m), g * 4) * 0.008;
     if (hv) { const mk = new THREE.Mesh(new THREE.SphereGeometry(r * (hv.node ? 1.6 : 1), 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(hv.node ? "#2E9D57" : "#2F6FD0") })); mk.position.set(...hv.p); drawGroup.add(mk); }
     if (s) {
