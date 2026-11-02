@@ -8,18 +8,19 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Model, SpaceMember, Target, clean, isSolidA, solidDisp } from "./api";
+import { Model, SpaceMember, Target, clean, isSolidA, solidDisp, parseNum } from "./api";
 import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
 import { palette, BANDS, curField, rangeOf } from "./parts";
 import { outline, edgePts, inside } from "./geom";
 import { defaultLoad, defaultSupport } from "./panels";
-import { fmt, unit } from "./units";
+import { fmt, unit, toU, fromU } from "./units";
 import { setPlane, fit3d } from "./plane3";
 import { C } from "./cmds";
 import { P3, at3, span3, dlen, deform3, vals, q3, range3, cut, pq, plateRange } from "./space3";
 import { plate3 } from "./plane3";
 import { modeAmp } from "./modes";
 
+const num3 = (v: number) => String(+v.toPrecision(6));
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 
 
@@ -353,7 +354,8 @@ export const View3D = () => {
     }
     // An imported mesh (0.5.5): its outer surface.
     for (const p of m.volume?.surface.nodes ?? []) box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2]));
-    if (box.isEmpty()) return;
+    // Nothing drawn yet (0.5.9): look at a 6 × 4 × 4 m space from the corner, to draw in.
+    if (box.isEmpty()) { box.expandByPoint(new THREE.Vector3(0, 0, 0)); box.expandByPoint(new THREE.Vector3(6, 4, 4)); }
     const c = box.getCenter(new THREE.Vector3()), rad = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
     const dir = from ? new THREE.Vector3(...from).normalize() : keepDir && controls ? camera.position.clone().sub(controls.target).normalize() : new THREE.Vector3(1, 0.75, 1.3).normalize();
     camera.position.copy(c).addScaledVector(dir, rad / Math.sin(camera.fov * Math.PI / 360) * 1.15);
@@ -361,6 +363,80 @@ export const View3D = () => {
     controls?.target.copy(c); controls?.update();
     draw();
   };
+
+  // Drawing a 3D frame in the 3D view (0.5.9): Beam, Truss and Node work here. The pointer snaps
+  // to a node, else to the grid on the work plane (Front, Side or Plan) through the last point;
+  // each click goes on from the last point; Tab turns the plane; a point can be typed (x, y, z, or
+  // @dx, dy, dz from the last point); Esc stops.
+  type WP = "xy" | "zy" | "xz";
+  const WPN: Record<WP, [number, string, string]> = { xy: [2, "Front", "x–y"], zy: [0, "Side", "z–y"], xz: [1, "Plan", "x–z"] };
+  const [wp, setWp] = createSignal<WP>("xy");
+  const [wpAt, setWpAt] = createSignal(0);
+  const [start3, setStart3] = createSignal<P3 | null>(null);
+  const [hover3, setHover3] = createSignal<{ p: P3; node: boolean; sx: number; sy: number } | null>(null);
+  const drawing = () => model()?.analysis === "space" && ["beam", "truss", "node"].includes(tool());
+  createEffect(() => { if (!drawing()) { setStart3(null); setHover3(null); } });
+  const drawGroup = new THREE.Group();
+  scene.add(drawGroup);
+  /** The node under the pointer, else the grid point on the work plane under it. */
+  const hit3 = (x: number, y: number): { p: P3; node: boolean } | null => {
+    const m = model(); if (!m) return null;
+    let best: { p: P3; d: number } | null = null;
+    for (const n of m.nodes) { const p: P3 = [n.x, n.y, n.z ?? 0], s = screen(p), d = Math.hypot(s[0] - x, s[1] - y); if (d < 10 && (!best || d < best.d)) best = { p, d }; }
+    if (best) return { p: best.p, node: true };
+    const [w, h] = size(), ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
+    const k = WPN[wp()][0], nv = new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0);
+    const q = ray.ray.intersectPlane(new THREE.Plane(nv, -wpAt()), new THREE.Vector3()); if (!q) return null;
+    const g = m.grid > 0 ? m.grid : 0.5, p: P3 = [q.x, q.y, q.z];
+    for (let i = 0; i < 3; i++) p[i] = i === k ? wpAt() : Math.round(p[i] / g) * g + 0;
+    return { p, node: false };
+  };
+  /** A point placed: a node, or the end of a member from the last point. */
+  const place3 = async (p: P3) => {
+    const t = tool(), k = WPN[wp()][0];
+    if (t === "node") { const o = await act({ Add: { item: { Node: { id: 0, x: p[0], y: p[1], z: p[2] } } } }); if (o?.created.length) setSel(o.created); return; }
+    const s = start3();
+    if (s && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) > 1e-9) {
+      const o = await act({ AddMember: { from: [s[0], s[1]], to: [p[0], p[1]], kind: t, section: null, material: null, z: [s[2], p[2]] } });
+      if (!o) return;
+    }
+    setStart3(p); setWpAt(p[k]);
+  };
+  const turnPlane = () => { const order: WP[] = ["xy", "zy", "xz"], n = order[(order.indexOf(wp()) + 1) % 3], s = start3(); setWp(n); if (s) setWpAt(s[WPN[n][0]]); else setWpAt(0); };
+  /** A typed point: "x, y, z" in the shown units, or "@dx, dy, dz" from the last point. */
+  const typed = async (text: string) => {
+    const rel = text.trim().startsWith("@"), v = text.replace("@", "").split(/[\s,;]+/).filter(Boolean).map(parseNum);
+    if (v.length !== 3 || v.some(x => x === null)) { toast("Type a point as x, y, z (or @dx, dy, dz from the last point), in " + unit("coord") + "."); return false; }
+    const d = v.map(x => fromU("coord", x!)) as P3, s = start3() ?? [0, 0, 0];
+    await place3(rel ? [s[0] + d[0], s[1] + d[1], s[2] + d[2]] : d);
+    return true;
+  };
+  createEffect(() => {
+    const m = model(), on = drawing(), s = start3(), hv = hover3(), k = WPN[wp()][0], at = wpAt();
+    themeTick();
+    drawGroup.traverse(o => { const x = o as any; x.geometry?.dispose?.(); x.material?.dispose?.(); });
+    drawGroup.clear();
+    if (!on || !m) { draw(); return; }
+    // The work plane's grid, around the frame and the last point.
+    const g = m.grid > 0 ? m.grid : 0.5, ps: P3[] = [...m.nodes.map(n => [n.x, n.y, n.z ?? 0] as P3), ...(s ? [s] : []), [0, 0, 0], ...(m.nodes.length ? [] : [[6, 4, 4] as P3])];
+    const [a, b] = [0, 1, 2].filter(i => i !== k);
+    const lo = [a, b].map(i => Math.floor((Math.min(...ps.map(p => p[i])) - 3 * g) / g) * g), hi = [a, b].map(i => Math.ceil((Math.max(...ps.map(p => p[i])) + 3 * g) / g) * g);
+    const step = Math.max(g, g * Math.ceil(Math.max(hi[0] - lo[0], hi[1] - lo[1]) / g / 60));
+    const pt = (u: number, v: number): number[] => { const r = [0, 0, 0]; r[a] = u; r[b] = v; r[k] = at; return r; };
+    const gl: number[] = [];
+    for (let u = lo[0]; u <= hi[0] + 1e-9; u += step) gl.push(...pt(u, lo[1]), ...pt(u, hi[1]));
+    for (let v = lo[1]; v <= hi[1] + 1e-9; v += step) gl.push(...pt(lo[0], v), ...pt(hi[0], v));
+    const lg = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(gl), 3));
+    drawGroup.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.25 })));
+    const r = Math.max(span3(m), g * 4) * 0.008;
+    if (hv) { const mk = new THREE.Mesh(new THREE.SphereGeometry(r * (hv.node ? 1.6 : 1), 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(hv.node ? "#2E9D57" : "#2F6FD0") })); mk.position.set(...hv.p); drawGroup.add(mk); }
+    if (s) {
+      const mk = new THREE.Mesh(new THREE.SphereGeometry(r * 1.3, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(css("--blue")) })); mk.position.set(...s); drawGroup.add(mk);
+      if (hv && tool() !== "node") drawGroup.add(new THREE.Line(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([...s, ...hv.p]), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color(css("--blue")) })));
+    }
+    draw();
+  });
 
   /** Screen position of a 3D point. */
   const screen = (p: P3): [number, number] => {
@@ -430,9 +506,9 @@ export const View3D = () => {
       if (o?.created.length) setSel(o.created);
       return;
     }
-    // Drawing tools draw on a plane.
+    // Drawing tools draw here, on the work plane or from node to node (0.5.9).
+    if (drawing()) { const h = hit3(e.clientX - rc.left, e.clientY - rc.top); if (h) await place3(h.p); return; }
     setPlane("xy");
-    toast("Members are drawn on a plane: Front (x-y) is open now; pick Side or Plan above, and the depth.", true);
   };
   /** The face of a solid under the pointer (0.3.2): the back or front face, or the side face of the
    * section edge nearest the point hit. */
@@ -471,6 +547,7 @@ export const View3D = () => {
   const onMove = (e: PointerEvent) => {
     if (e.buttons) { setProbe(null); setProbe3(null); return; }
     const rc = host.getBoundingClientRect();
+    if (drawing()) { const h = hit3(e.clientX - rc.left, e.clientY - rc.top); setHover3(h ? { ...h, sx: e.clientX - rc.left, sy: e.clientY - rc.top } : null); return; }
     if (isSolidA(model()?.analysis)) setProbe3(probeSolid(e.clientX - rc.left, e.clientY - rc.top));
     else setProbe(probeAt(e.clientX - rc.left, e.clientY - rc.top));
   };
@@ -557,13 +634,20 @@ export const View3D = () => {
   });
   // A new model (another file or example) is framed afresh.
   let lastName = "";
-  createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}|${m.shapes.length === 0}` : ""; if (key !== lastName) { lastName = key; queueMicrotask(() => fit()); } });
+  createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}|${m.shapes.length === 0}` : ""; if (key !== lastName) { const was = lastName; lastName = key; if (!(drawing() && was.split("|")[0] === key.split("|")[0])) queueMicrotask(() => fit()); } });
 
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
-      onKeyDown={e => { if (e.key === "Escape") { if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
+      onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Tab" && drawing()) { e.preventDefault(); turnPlane(); } else if (e.key === "Escape") { if (start3()) setStart3(null); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
       <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
-      <Show when={model()?.analysis === "space" && !model()?.nodes.length}><div class="empty"><b>Draw a 3D frame</b><span>Members are drawn on a plane: pick Front, Side or Plan above and the depth, then Beam or Truss in Geometry. Repeat copies a frame along the depth and joins it (Geometry › Repeat).</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("beam"); }}>Draw on the front plane</button></div></Show>
+      <Show when={model()?.analysis === "space" && !model()?.nodes.length}><Show when={!drawing()}><div class="empty"><b>Draw a 3D frame</b><span>Pick Beam and click here: points snap to the grid on the work plane and to nodes, and each click goes on from the last. Tab turns the plane (Front, Side, Plan) through the last point, so a member can go off in any direction; or type a point. Front, Side and Plan above draw flat on one plane; Repeat copies a frame along the depth (Geometry › Repeat).</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
+      <Show when={drawing()}><div class="draw3" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
+        <span class="seg">{(["xy", "zy", "xz"] as WP[]).map(k => <button classList={{ on: wp() === k }} title={`Draw on the ${WPN[k][1]} plane (${WPN[k][2]}) through the last point (Tab turns it)`} onClick={() => { setWp(k); const s = start3(); setWpAt(s ? s[WPN[k][0]] : 0); host.focus(); }}>{WPN[k][1]}</button>)}</span>
+        <span class="muted">{["x", "y", "z"][WPN[wp()][0]]} = {fmt("coord", wpAt())}</span>
+        <input class="pt3" placeholder="x, y, z  or  @dx, dy, dz" title={`Type a point in ${unit("coord")} and press Enter: x, y, z, or @dx, dy, dz from the last point`} onKeyDown={async e => { e.stopPropagation(); const el = e.currentTarget; if (e.key === "Enter" && await typed(el.value)) el.value = ""; else if (e.key === "Escape") { if (start3()) setStart3(null); else { el.blur(); host.focus(); } } }} />
+        <span class="muted small">{start3() ? "Click the next point · Esc: stop here" : tool() === "node" ? "Click to place a node" : "Click the first point"} · Tab: turn the plane</span>
+      </div></Show>
+      <Show when={drawing() && hover3()}>{h => <div class="hover3" style={{ left: `${h().sx + 14}px`, top: `${h().sy + 10}px` }}>{h().node ? "Node " : ""}{h().p.map(c => num3(toU("coord", c))).join(", ")} {unit("coord")}{start3() && tool() !== "node" ? ` · ${fmt("len", Math.hypot(h().p[0] - start3()![0], h().p[1] - start3()![1], h().p[2] - start3()![2]))}` : ""}</div>}</Show>
       <Show when={probe3() && solidRes()}>{_ => { const r = solidRes()!, i = probe3()!.i, p = r.surface.nodes[i], fd = curField(), v = r.fields.find(f => f.key === fd.key)?.v[i] ?? 0, d = solidDisp(r)[i]; return (
         <div class="probe"><b>At {p.map(c => fmt("coord", c).split(" ")[0]).join(", ")} {unit("coord")}</b><span>{fd.short} {fmt(fd.q, v)}</span><Show when={r.kind === "solid"}><span>|u| {fmt("len", Math.hypot(d[0], d[1], d[2]))}</span></Show></div>); }}</Show>
       <Show when={probe()}>{p => { const mr = p().mr, i = p().i, d = mr.d[i]; return (

@@ -848,6 +848,32 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the 3D curve can show the movement in z and the turn", (await p.textContent(".dlg svg.curve")).includes("Movement in z") && (await p.$$('.dlg button:text-is("Turn")')).length === 1);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "bend45-curve.png") });
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  // 0.5.9: drawing a 3D frame straight in the 3D view (it used to send you to a plane).
+  await open("blank-space"); await p.waitForTimeout(300);
+  const at3d = async q => { const v = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); const s = await p.evaluate(q => window.__screen3(q), q); return [v[0] + s[0], v[1] + s[1]]; };
+  check("an empty 3D frame offers to draw a beam in the 3D view", (await p.$$('.view3d .empty button:has-text("Draw a beam")')).length === 1);
+  await p.click('.view3d .empty button:has-text("Draw a beam")'); await p.waitForTimeout(200);
+  check("drawing in 3D shows the work plane bar", (await p.$$(".view3d .draw3")).length === 1 && (await p.textContent(".view3d .draw3 .seg button.on")) === "Front");
+  let q3 = await at3d([0, 0, 0]); await p.mouse.move(q3[0], q3[1]); await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(150);
+  q3 = await at3d([1, 0, 0]); await p.mouse.move(q3[0], q3[1]); await p.waitForTimeout(100);
+  check("the point under the pointer is shown with its coordinates and the length", (await p.textContent(".view3d .hover3").catch(() => "")).includes("·"), await p.textContent(".view3d .hover3").catch(() => "none"));
+  await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(200);
+  const d3a = (await lastOp())?.AddMember;
+  check("two clicks in the 3D view draw a member on the front plane", d3a && d3a.kind === "beam" && Math.abs(d3a.from[0]) < 1e-9 && Math.abs(d3a.to[0] - 1) < 1e-6 && Math.abs(d3a.to[1]) < 1e-6 && d3a.z[0] === 0 && d3a.z[1] === 0, JSON.stringify(d3a));
+  await p.keyboard.press("Tab"); await p.waitForTimeout(150);
+  check("Tab turns the work plane through the last point", (await p.textContent(".view3d .draw3 .seg button.on")) === "Side");
+  q3 = await at3d([1, 0, 1]); await p.mouse.move(q3[0], q3[1]); await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(200);
+  const d3b = (await lastOp())?.AddMember;
+  check("the next click goes on from the last point, off along z", d3b && Math.abs(d3b.from[0] - 1) < 1e-6 && Math.abs(d3b.to[0] - 1) < 1e-6 && Math.abs(d3b.z[0]) < 1e-9 && Math.abs(d3b.z[1] - 1) < 1e-6, JSON.stringify(d3b));
+  const cu = await p.$eval(".view3d .pt3", el => el.title);
+  const cun = (cu.match(/ in (\S+) and /) ?? [])[1], five = cun === "mm" ? "1000" : cun === "in" ? String(1 / 0.0254) : "1";
+  await p.fill(".view3d .pt3", `@0, ${five}, 0`); await p.press(".view3d .pt3", "Enter"); await p.waitForTimeout(200);
+  const d3c = (await lastOp())?.AddMember;
+  check("a typed @dx, dy, dz goes on from the last point", d3c && Math.abs(d3c.to[1] - 1) < 1e-6 && Math.abs(d3c.from[1]) < 1e-9 && Math.abs(d3c.to[0] - 1) < 1e-6 && Math.abs(d3c.z[0] - 1) < 1e-6 && Math.abs(d3c.z[1] - 1) < 1e-6 && (await p.inputValue(".view3d .pt3")) === "", JSON.stringify(d3c) + " " + cu);
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "draw3d.png") });
+  await p.click(".view3d canvas"); await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  check("Esc stops at the last point and keeps the tool", (await p.textContent(".view3d .draw3")).includes("Click the first point"));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   // Axisymmetric (0.2.1): the pressure vessel, drawn as a half-section right of the axis.
   await open("vessel");
   check("an axisymmetric model shows its axis of turning", (await p.$$(".dsvg path.axi")).length === 1 && (await p.textContent(".canvas")).includes("axis of turning"));

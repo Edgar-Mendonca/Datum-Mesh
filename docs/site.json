@@ -26,6 +26,8 @@
   ],
   "highlights": [
     "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration, heat, plasticity and large deformation",
+    "3D frames drawn straight in the 3D view: points snap to nodes and to a work plane that turns through the last point, or are typed",
+    "Icons coloured by meaning: supports green, loads red, heat orange, geometry blue, mesh teal, materials amber",
     "A model tree that shows what is done and what is missing, with an icon for everything, and a New study page that asks what you are analysing",
     "Part of the Datum family: send curves to Datum Plot, values to Datum Calc, and take materials from Datum Atlas",
     "Plasticity: parts and 3D solids that yield (von Mises with hardening), solved in increments by Newton's method up to collapse, checked against Hill's limit analysis",
@@ -74,12 +76,14 @@
       ]
     },
     {
-      "v": "0.6–0.7",
-      "title": "Dynamic solids and contact",
+      "v": "0.6",
+      "title": "Parts, assembly, crushing and impact",
       "when": "Later",
       "items": [
-        "Implicit and explicit dynamics, transient heat",
-        "Contact"
+        "Parts sketched and extruded or revolved into solids, shells or rigid surfaces, placed in an assembly and meshed one by one",
+        "Explicit dynamics",
+        "Contact, first for a thin tube crushed between rigid plates",
+        "Implicit dynamics and transient heat for solids"
       ]
     },
     {

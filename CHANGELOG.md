@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.9 — 2026-11-02
+
+Easier to find your way, and 3D frames drawn in 3D.
+
+**Draw 3D frames in the 3D view**
+- Pick Beam, Truss or Node and click in the 3D view. Points snap to nodes, else to the grid on a work plane; each click goes on from the last point, and the plane moves through it.
+- Tab turns the work plane (Front, Side, Plan) through the last point, so the next member can go off in any direction, along z too.
+- Type a point and press Enter: x, y, z, or @dx, dy, dz from the last point. The point under the pointer shows its coordinates and the member's length. Esc stops at the last point.
+- An empty 3D frame opens on a view of a few metres of space, ready to draw in. Front, Side and Plan still show one plane flat, for drawing many members on it.
+
+**Icons coloured by meaning**
+- Supports are green, loads red, heat orange, geometry and parts blue, the mesh teal, materials amber, solving green and results in their own colours, in the ribbon and the model tree alike.
+
+**Public text**
+- Product and file-format names are trademarks of their owners and are used only to describe file compatibility (README, NOTICE). The checks that keep commercial product names out of the app's text now cover its documents and the whole window.
+
 ## 0.5.8 — 2026-11-01
 
 3D frames turn far.

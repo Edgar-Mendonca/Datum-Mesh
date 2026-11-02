@@ -984,3 +984,8 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .kcard small { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
 .subs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
 .ncreate { display: flex; gap: 10px; margin-top: 10px; }
+
+/* 0.5.9: drawing a 3D frame in the 3D view */
+.view3d .draw3 { position: absolute; left: 12px; top: 10px; display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); padding: 5px 8px; font-size: 12px; z-index: 2; }
+.view3d .draw3 .pt3 { width: 210px; font: 12px var(--mono); padding: 3px 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.view3d .hover3 { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); padding: 2px 6px; font: 11px var(--mono); white-space: nowrap; }
