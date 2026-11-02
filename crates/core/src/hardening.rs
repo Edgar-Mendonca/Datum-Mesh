@@ -58,7 +58,7 @@ mod tests {
             14 => match r.below(3) {
                 0 => Op::Offset { shape: shape(r, m), d: r.f(-1.0, 1.0) },
                 1 => Op::Pattern { ids: vec![shape(r, m)], times: r.below(4) as u32, step: [r.f(-2.0, 2.0), 0.0], turn: r.f(-1.0, 1.0), about: p(r) },
-                _ => Op::Make { make: [Make::Slot { a: p(r), b: p(r), w: r.f(-0.2, 1.0) }, Make::Rounded { a: p(r), b: p(r), r: r.f(-0.2, 1.0) }, Make::Polygon { c: p(r), r: r.f(-0.2, 2.0), n: r.below(9) as u32, turn: 0.3 }][r.below(3)].clone(), hole: r.below(2) == 0, material: None },
+                _ => Op::Make { make: [Make::Slot { a: p(r), b: p(r), w: r.f(-0.2, 1.0) }, Make::Rounded { a: p(r), b: p(r), r: r.f(-0.2, 1.0) }, Make::Polygon { c: p(r), r: r.f(-0.2, 2.0), n: r.below(9) as u32, turn: 0.3 }][r.below(3)].clone(), hole: r.below(2) == 0, material: None, part: 0 },
             },
             0..=2 => Op::AddMember { from: p(r), to: p(r), kind: if r.below(2) == 0 { MemberKind::Beam } else { MemberKind::Truss }, section: None, material: None, z: [0.0; 2] },
             3 => Op::Add { item: Item::Node(Node { id: 0, x: p(r)[0], y: p(r)[1], z: 0.0 }) },

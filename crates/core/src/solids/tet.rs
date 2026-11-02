@@ -32,6 +32,36 @@ pub struct TetMesh {
     pub material: u32,
     /// Where it came from (the file's name), for the report.
     pub source: String,
+    /// Assemblies (0.6.0): each element's material (empty: all of them `material`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mats: Vec<u32>,
+    /// Assemblies (0.6.0): where parts touch, a node of one tied to a facet of the other: the
+    /// node, the facet's three corners and the node's weights on them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ties: Vec<(u32, [u32; 3], [f64; 3])>,
+}
+
+/// Element `e`'s material (its id in the model).
+pub(crate) fn mat_of(ms: &TetMesh, e: usize) -> u32 {
+    ms.mats.get(e).copied().unwrap_or(ms.material)
+}
+
+/// Add the ties' penalty to a lower-stored matrix with `per` unknowns a node (3 for movements,
+/// 1 for temperatures): each tied node follows the facet it lies on.
+fn tie(sys: &mut System, ms: &TetMesh, per: usize, k: f64) {
+    for &(n, c, w) in &ms.ties {
+        let terms = [(n as usize, 1.0), (c[0] as usize, -w[0]), (c[1] as usize, -w[1]), (c[2] as usize, -w[2])];
+        for a in 0..per {
+            for &(p, wp) in &terms {
+                for &(q, wq) in &terms {
+                    let (r, s) = (per * p + a, per * q + a);
+                    if r >= s {
+                        sys.add(r, s, k * wp * wq);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// The six edges, by corner, in mid-node order.
@@ -288,7 +318,7 @@ pub fn grid(n: [usize; 3], order: u8, map: impl Fn([f64; 3]) -> [f64; 3]) -> Res
             }
         }
     }
-    TetMesh { nodes, tets, order, faces: vec![], material: 1, source: "Structured mesh".into() }.finish(vec![])
+    TetMesh { nodes, tets, order, faces: vec![], material: 1, source: "Structured mesh".into(), ..Default::default() }.finish(vec![])
 }
 
 // ---------- reading meshes ----------
@@ -427,7 +457,7 @@ pub fn read_msh(text: &str, scale: f64) -> Result<TetMesh, String> {
             None => named.push((name, vec![c])),
         }
     }
-    TetMesh { nodes, tets: out, order, faces: vec![], material: 1, source: String::new() }.finish(named)
+    TetMesh { nodes, tets: out, order, faces: vec![], material: 1, source: String::new(), ..Default::default() }.finish(named)
 }
 
 /// Read an `.inp` mesh in the CalculiX input format (nodes, C3D4 or C3D10 elements, node sets and
@@ -574,7 +604,7 @@ pub fn read_inp(text: &str, scale: f64) -> Result<TetMesh, String> {
         named.push((name, tris));
     }
     // Node sets: the outer facets whose corners are all in the set (found after finishing).
-    let mesh = TetMesh { nodes, tets: out, order, faces: vec![], material: 1, source: String::new() };
+    let mesh = TetMesh { nodes, tets: out, order, faces: vec![], material: 1, source: String::new(), ..Default::default() };
     let corner_sets: Vec<(String, std::collections::HashSet<u32>)> = nsets.into_iter().filter(|s| !s.0.is_empty()).map(|(n, ids)| (n, ids.into_iter().filter_map(|i| index.get(&i).copied()).collect())).collect();
     let probe = mesh.clone().finish(vec![])?;
     for (name, set) in corner_sets {
@@ -690,22 +720,34 @@ struct Built {
     kpen: f64,
     applied: Tally,
     warnings: Vec<String>,
-    lam: f64,
-    mu: f64,
-    fy: f64,
-    rho: f64,
+    /// Each element's (λ, μ, fy, ρ).
+    el_props: Vec<[f64; 4]>,
 }
 
 fn build(m: &Model) -> Result<Built, String> {
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
     let nn = ms.nodes.len();
-    let mt = m.materials.iter().find(|x| x.id == ms.material).or(m.materials.first()).ok_or("The model has no material.")?;
-    let (lam, mu) = (mt.e * mt.nu / ((1.0 + mt.nu) * (1.0 - 2.0 * mt.nu)), mt.e / (2.0 * (1.0 + mt.nu)));
+    // Each element's elastic constants, yield stress and density (λ, μ, fy, ρ).
+    let mut cache: HashMap<u32, [f64; 4]> = HashMap::new();
+    let mut el_props = Vec::with_capacity(ms.tets.len());
+    for e in 0..ms.tets.len() {
+        let id = mat_of(ms, e);
+        let p = match cache.get(&id) {
+            Some(p) => *p,
+            None => {
+                let mt = m.materials.iter().find(|x| x.id == id).or(m.materials.first()).ok_or("The model has no material.")?;
+                let p = [mt.e * mt.nu / ((1.0 + mt.nu) * (1.0 - 2.0 * mt.nu)), mt.e / (2.0 * (1.0 + mt.nu)), mt.fy, mt.rho];
+                cache.insert(id, p);
+                p
+            }
+        };
+        el_props.push(p);
+    }
     let mut sys = System::lower(3 * nn);
     let mut warnings = vec![];
     let g = m.loads.iter().filter_map(|l| if let (LoadKind::Gravity { gx, gy, gz }, Target::Body) = (&l.kind, &l.at) { Some([*gx, *gy, *gz]) } else { None }).fold([0.0; 3], |a, b| [a[0] + b[0], a[1] + b[1], a[2] + b[2]]);
     let rule = rule(ms.order);
-    for el in &ms.tets {
+    for (el, &[lam, mu, _, rho]) in ms.tets.iter().zip(&el_props) {
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let nd = el.len();
         let mut ke = vec![0.0; 9 * nd * nd];
@@ -724,9 +766,9 @@ fn build(m: &Model) -> Result<Built, String> {
                         }
                     }
                 }
-                if mt.rho > 0.0 && g != [0.0; 3] {
+                if rho > 0.0 && g != [0.0; 3] {
                     for c in 0..3 {
-                        sys.f[3 * el[i] as usize + c] += n[i] * mt.rho * g[c] * w;
+                        sys.f[3 * el[i] as usize + c] += n[i] * rho * g[c] * w;
                     }
                 }
             }
@@ -794,6 +836,8 @@ fn build(m: &Model) -> Result<Built, String> {
         dg.iter().sum::<f64>() / dg.len().max(1) as f64
     };
     let kpen = 1e7 * diag_mean;
+    // Parts tied where they touch (0.6.0), by a penalty far stiffer than the elements.
+    tie(&mut sys, ms, 3, 1e4 * diag_mean);
     let mut held = vec![false; 3 * nn];
     let mut sup_nodes: Vec<(u32, Vec<(usize, [bool; 3])>)> = vec![];
     let mut penalties: Vec<(u32, usize, [f64; 3])> = vec![];
@@ -845,7 +889,7 @@ fn build(m: &Model) -> Result<Built, String> {
             }
         }
     }
-    Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, lam, mu, fy: mt.fy, rho: mt.rho })
+    Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, el_props })
 }
 
 /// Solve a 3D solid given as an imported tetrahedral mesh.
@@ -855,10 +899,13 @@ pub fn solve(m: &Model) -> Result<SolidResults, String> {
 
 /// The integration points of the mesh for the nonlinear solvers (0.5.7).
 fn cloud(m: &Model, ms: &TetMesh) -> Result<super::solid::Cloud, String> {
-    let mi = m.materials.iter().position(|x| x.id == ms.material).unwrap_or(0);
-    let mut cl = super::solid::Cloud { nn: ms.nodes.len(), els: vec![], pts: vec![], mats: vec![mi] };
+    let mut cl = super::solid::Cloud { nn: ms.nodes.len(), els: vec![], pts: vec![], mats: vec![] };
     let r = rule(ms.order);
     for (e, el) in ms.tets.iter().enumerate() {
+        let mi = m.materials.iter().position(|x| x.id == mat_of(ms, e)).unwrap_or(0);
+        if !cl.mats.contains(&mi) {
+            cl.mats.push(mi);
+        }
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         for &(x, w) in &r {
             let (g, _, det) = grads(&xyz, ms.order, x);
@@ -880,7 +927,7 @@ pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, 
     }
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
     let nn = ms.nodes.len();
-    let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, lam, mu, fy, .. } = build(m)?;
+    let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, el_props } = build(m)?;
     let large = nl.is_some_and(|x| x.1);
     let mut pl = None;
     let (u, stats) = match nl {
@@ -948,7 +995,16 @@ pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, 
     let refs = node_ref(ms.order);
     let mut acc = vec![[0.0f64; 6]; nn];
     let mut wsum = vec![0.0f64; nn];
-    for el in ms.tets.iter().filter(|_| pl.is_none()) {
+    // Each node's yield stress, for the safety factor: the lowest of its elements' (0.6.0).
+    let mut fy_node = vec![f64::INFINITY; nn];
+    for (el, p) in ms.tets.iter().zip(&el_props) {
+        for &q in el {
+            if p[2] > 0.0 {
+                fy_node[q as usize] = fy_node[q as usize].min(p[2]);
+            }
+        }
+    }
+    for (el, &[lam, mu, _, _]) in ms.tets.iter().zip(&el_props).filter(|_| pl.is_none()) {
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let vol = grads(&xyz, ms.order, [0.25; 3]).2.abs() / 6.0;
         for (q, &x) in refs.iter().enumerate() {
@@ -982,7 +1038,7 @@ pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, 
     let mut keys = vec!["ux", "uy", "uz", "umag", "sx", "sy", "sz", "txy", "tyz", "tzx", "vm", "s1", "s3", "sf"];
     let mut all: Vec<Vec<f64>> = vec![Vec::with_capacity(nn); keys.len()];
     for q in 0..nn {
-        let st = stress_set(acc[q].map(|v| v / wsum[q].max(1e-300)), fy);
+        let st = stress_set(acc[q].map(|v| v / wsum[q].max(1e-300)), if fy_node[q].is_finite() { fy_node[q] } else { 0.0 });
         let d = [u[3 * q], u[3 * q + 1], u[3 * q + 2]];
         for (c, v) in [d[0], d[1], d[2], dot(d, d).sqrt(), st[0], st[1], st[2], st[3], st[4], st[5], st[6], st[7], st[8], st[9]].iter().enumerate() {
             all[c].push(*v);
@@ -1066,12 +1122,13 @@ pub fn modes(m: &Model, count: usize) -> Result<super::solid::SolidModes, String
     let t0 = std::time::Instant::now();
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
     let b = build(m)?;
-    if !(b.rho > 0.0) {
-        return Err("The mesh's material has no density, so it has no mass to vibrate (Home › Materials).".into());
+    if b.el_props.iter().any(|p| !(p[3] > 0.0)) {
+        return Err("A material of the solid has no density, so it has no mass to vibrate (Home › Materials).".into());
     }
     let pts = rule14();
     let mut mass = vec![];
-    for el in &ms.tets {
+    for (el, p) in ms.tets.iter().zip(&b.el_props) {
+        let rho = p[3];
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let nd = el.len();
         let mut me = vec![0.0; nd * nd];
@@ -1079,7 +1136,7 @@ pub fn modes(m: &Model, count: usize) -> Result<super::solid::SolidModes, String
             let (_, n, det) = grads(&xyz, ms.order, x);
             for i in 0..nd {
                 for j in 0..nd {
-                    me[i * nd + j] += b.rho * n[i] * n[j] * w * det;
+                    me[i * nd + j] += rho * n[i] * n[j] * w * det;
                 }
             }
         }
@@ -1107,9 +1164,20 @@ pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
     if !has_t && !has_conv {
         return Err("Fix a temperature on a face, or add convection to a fluid: without one the temperatures have no level to settle at (Loads tab).".into());
     }
-    let mt = m.materials.iter().find(|x| x.id == ms.material).or(m.materials.first()).ok_or("The model has no material.")?;
-    if mt.k <= 0.0 {
-        return Err(format!("{}: heat conduction needs a thermal conductivity above zero (Home › Materials).", mt.name));
+    let mut kc: HashMap<u32, f64> = HashMap::new();
+    let mut el_k = Vec::with_capacity(ms.tets.len());
+    for e in 0..ms.tets.len() {
+        let id = mat_of(ms, e);
+        if let Some(k) = kc.get(&id) {
+            el_k.push(*k);
+            continue;
+        }
+        let mt = m.materials.iter().find(|x| x.id == id).or(m.materials.first()).ok_or("The model has no material.")?;
+        if mt.k <= 0.0 {
+            return Err(format!("{}: heat conduction needs a thermal conductivity above zero (Home › Materials).", mt.name));
+        }
+        kc.insert(id, mt.k);
+        el_k.push(mt.k);
     }
     let nn = ms.nodes.len();
     let mut sys = System::lower(nn);
@@ -1117,7 +1185,7 @@ pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
     let gen: Vec<(u32, f64)> = m.loads.iter().filter_map(|l| if let (LoadKind::Heat { q }, Target::Body) = (&l.kind, &l.at) { Some((l.id, *q)) } else { None }).collect();
     let mut fgen = vec![0.0; gen.len()];
     let rule = if gen.is_empty() { rule(ms.order) } else { rule14() };
-    for el in &ms.tets {
+    for (el, &kk) in ms.tets.iter().zip(&el_k) {
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let nd = el.len();
         for &(x, w) in &rule {
@@ -1129,7 +1197,7 @@ pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
             for i in 0..nd {
                 for j in 0..=i {
                     let (r, c) = (el[i] as usize, el[j] as usize);
-                    let v = mt.k * dot(g[i], g[j]) * w;
+                    let v = kk * dot(g[i], g[j]) * w;
                     if r >= c {
                         sys.add(r, c, v);
                     } else {
@@ -1142,6 +1210,16 @@ pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
                 }
             }
         }
+    }
+    if !ms.ties.is_empty() {
+        let mut dg = vec![0.0; nn];
+        for &(i, j, v) in &sys.k {
+            if i == j {
+                dg[i] += v;
+            }
+        }
+        let mean = dg.iter().sum::<f64>() / nn.max(1) as f64;
+        tie(&mut sys, ms, 1, 1e4 * mean);
     }
     let face = |at: &Target| if let Target::Face { face } = at { ms.faces.get(*face as usize) } else { None };
     let points = |fs: &FaceSet| fs.facets.iter().flat_map(|&(e, k)| facet_points(ms, e as usize, k as usize)).collect::<Vec<_>>();
@@ -1213,7 +1291,7 @@ pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
     let refs = node_ref(ms.order);
     let mut acc = vec![[0.0f64; 3]; nn];
     let mut wsum = vec![0.0f64; nn];
-    for el in &ms.tets {
+    for (el, &kk) in ms.tets.iter().zip(&el_k) {
         let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
         let vol = grads(&xyz, ms.order, [0.25; 3]).2.abs() / 6.0;
         for (q, &x) in refs.iter().enumerate() {
@@ -1226,7 +1304,7 @@ pub fn heat(m: &Model) -> Result<super::solid::SolidHeatResults, String> {
             }
             let n = el[q] as usize;
             for c in 0..3 {
-                acc[n][c] += -mt.k * grad[c] * vol;
+                acc[n][c] += -kk * grad[c] * vol;
             }
             wsum[n] += vol;
         }

@@ -22,6 +22,8 @@ pub enum Item {
     Combo(Combo),
     /// Analysis steps (0.4.0).
     Step(Step),
+    /// Parts of an assembly (0.6.0).
+    Part(crate::model::Part),
 }
 
 /// The model-wide settings, edited together.
@@ -104,7 +106,14 @@ pub enum Op {
     /// k·`turn` (radians, counter-clockwise) about `about`, then moved by k·`step`.
     Pattern { ids: Vec<u32>, times: u32, step: [f64; 2], turn: f64, about: [f64; 2] },
     /// A ready-made shape: a slot, a rounded rectangle or a regular polygon.
-    Make { make: Make, hole: bool, material: Option<u32> },
+    Make {
+        make: Make,
+        hole: bool,
+        material: Option<u32>,
+        /// The part the shape goes in (assemblies, 0.6.0; 0: the model's own solid).
+        #[serde(default)]
+        part: u32,
+    },
     SetSettings { s: Settings },
     SetMeta { name: String, notes: String },
     Batch(Vec<Op>),
@@ -291,6 +300,16 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     }
                     m.steps.push(x);
                 }
+                Item::Part(mut x) => {
+                    x.id = id;
+                    if x.name.trim().is_empty() {
+                        x.name = format!("Part {}", m.parts.len() + 1);
+                    }
+                    if !m.materials.iter().any(|y| y.id == x.material) {
+                        x.material = m.materials.first().map(|y| y.id).ok_or("Add a material first.")?;
+                    }
+                    m.parts.push(x);
+                }
             }
         }
         Op::Set { item } => {
@@ -315,6 +334,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Case(x) => put(&mut m.cases, |y| y.id, x)?,
                 Item::Combo(x) => put(&mut m.combos, |y| y.id, x)?,
                 Item::Step(x) => put(&mut m.steps, |y| y.id, x)?,
+                Item::Part(x) => put(&mut m.parts, |y| y.id, x)?,
             }
         }
         Op::AddMember { from, to, kind, section, material, z } => {
@@ -504,6 +524,10 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             }
             m.combos.retain(|x| !set.contains(&x.id));
             m.steps.retain(|x| !set.contains(&x.id));
+            // A deleted part takes its sketch with it.
+            let parts_gone: Vec<u32> = m.parts.iter().filter(|p| set.contains(&p.id)).map(|p| p.id).collect();
+            m.shapes.retain(|x| !parts_gone.contains(&x.part));
+            m.parts.retain(|x| !set.contains(&x.id));
             // A step whose case or combination went loses it (it takes the window's choice).
             for st in m.steps.iter_mut() {
                 if let Some(crate::cases::Which::Case { id } | crate::cases::Which::Combo { id }) = st.load {
@@ -584,7 +608,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     s.geom = p.geom;
                 } else {
                     let name = shape_name(m, hole);
-                    m.shapes.push(Shape { id, name, hole, material: sa.material, geom: p.geom, plate: sa.plate });
+                    m.shapes.push(Shape { id, name, hole, material: sa.material, geom: p.geom, plate: sa.plate, part: sa.part });
                     created.push(id);
                 }
             }
@@ -655,12 +679,12 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 }
             }
         }
-        Op::Make { make, hole, material } => {
+        Op::Make { make, hole, material, part } => {
             let geom = crate::sketch::make(&make)?;
             let material = material.or(m.materials.first().map(|s| s.id)).ok_or("Add a material first.")?;
             let id = fresh(m);
             let name = shape_name(m, hole);
-            m.shapes.push(Shape { id, name, hole, material, geom, plate: None });
+            m.shapes.push(Shape { id, name, hole, material, geom, plate: None, part });
             created.push(id);
         }
         Op::SetSettings { s } => {
@@ -993,6 +1017,7 @@ fn prune(m: &mut Model) {
         Target::Plate { shape } => edges.contains_key(shape),
         Target::Point { .. } | Target::Body | Target::End { .. } => true,
         Target::Face { face } => m.volume.as_ref().is_some_and(|v| (*face as usize) < v.faces.len()),
+        Target::PartEnd { part, .. } => m.parts.iter().any(|p| p.id == *part),
     };
     m.supports.retain(|s| alive(&s.at));
     m.loads.retain(|s| alive(&s.at));
@@ -1244,7 +1269,7 @@ mod tests {
         assert_eq!((d.m.loads[0].at.clone(), d.m.supports[0].at.clone()), (Target::Edge { shape: s, edge: 3 }, Target::Edge { shape: s, edge: 6 }));
         // A slot cut into the right edge: the pressure stays on what is left of it (both pieces),
         // the support on the left edge; the slot shape is gone.
-        let slot = d.apply(Op::Make { make: Make::Slot { a: [0.08, 0.025], b: [0.2, 0.025], w: 0.01 }, hole: false, material: None }).unwrap()[0];
+        let slot = d.apply(Op::Make { make: Make::Slot { a: [0.08, 0.025], b: [0.2, 0.025], w: 0.01 }, hole: false, material: None, part: 0 }).unwrap()[0];
         d.apply(Op::Combine { a: s, b: slot, how: How::Subtract }).unwrap();
         assert_eq!(d.m.shapes.len(), 1);
         let Geom::Poly { pts, .. } = &d.m.shapes[0].geom else { panic!() };

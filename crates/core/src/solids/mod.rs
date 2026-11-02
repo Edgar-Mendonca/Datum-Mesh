@@ -9,3 +9,4 @@ pub mod mesh;
 pub mod plane;
 pub mod solid;
 pub mod tet;
+pub mod assembly;

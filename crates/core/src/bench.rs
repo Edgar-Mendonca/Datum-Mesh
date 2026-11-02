@@ -2219,6 +2219,125 @@ fn space_large() -> Vec<Check> {
     v
 }
 
+/// Benchmark 32 (0.6.0): assemblies of parts. Parts sketched, extruded or revolved, turned and
+/// placed, meshed on their own and tied where they touch: a cantilever as one part and cut into
+/// two, a bar of two materials, a revolved thick cylinder, and heat through two parts.
+fn assembly() -> Vec<Check> {
+    use crate::model::Part;
+    use std::f64::consts::FRAC_PI_2;
+    let mut v = vec![];
+    // A model of parts, each a rectangle sketch [x0, y0, x1, y1] with its depth or angle, place,
+    // turn and material (index into the model's materials); returns the shape of each part.
+    let build = |an: Analysis, size: f64, list: &[([f64; 4], f64, f64, [f64; 3], [f64; 3], usize)], mats: &[(f64, f64, f64)]| -> (Doc, Vec<(u32, u32)>) {
+        let mut d = Doc::new(Model::new(an));
+        d.m.mesh.size = size;
+        let mut ids = vec![];
+        for (k, &(e, nu, kc)) in mats.iter().enumerate() {
+            if k == 0 {
+                d.m.materials[0].e = e;
+                d.m.materials[0].nu = nu;
+                d.m.materials[0].k = kc;
+                d.m.materials[0].rho = 7850.0;
+            } else {
+                let mut mt = d.m.materials[0].clone();
+                mt.e = e;
+                mt.nu = nu;
+                mt.k = kc;
+                mt.name = format!("Material {}", k + 1);
+                add_id(&mut d, Item::Material(mt));
+            }
+        }
+        let mids: Vec<u32> = d.m.materials.iter().map(|m| m.id).collect();
+        for (k, &(r, depth, angle, at, turn, mi)) in list.iter().enumerate() {
+            let p = d.apply(Op::Add { item: Item::Part(Part { name: format!("Part {}", k + 1), depth, angle, at, turn, material: mids[mi], ..Default::default() }) }).unwrap()[0];
+            let sh = d.apply(Op::Add { item: Item::Shape(Shape { geom: Geom::rect(r[0], r[1], r[2], r[3]), material: mids[mi], part: p, ..Default::default() }) }).unwrap()[0];
+            ids.push((p, sh));
+        }
+        (d, ids)
+    };
+    let sup = |d: &mut Doc, at: Target, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at, kind })); };
+    let load = |d: &mut Doc, at: Target, kind: LoadKind| { add_id(d, Item::Load(Load { case: 0, id: 0, at, kind })); };
+    let at3 = |r: &crate::solid::SolidResults, k: &str, p: [f64; 3]| { let i = r.volume.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, p).total_cmp(&crate::model::dist3(*b.1, p))).unwrap().0; r.volume.v[r.fields.iter().position(|f| f.key == k).unwrap()][i] };
+    let (e, nu) = (200e9, 0.3);
+    // A cantilever 1 m long, 0.1 × 0.1 m: its section sketched and extruded 1 m, turned a quarter
+    // turn about y so it lies along x; fixed at its root, 10 kN down on its tip. Then the same
+    // cantilever as two parts of 0.5 m, placed end to end and tied where they meet.
+    let turn = [0.0, FRAC_PI_2, 0.0];
+    let (l, h, pf): (f64, f64, f64) = (1.0, 0.1, 10e3);
+    let i = h.powi(4) / 12.0;
+    let want = pf * l.powi(3) / (3.0 * e * i) + pf * l / (5.0 / 6.0 * e / (2.0 * (1.0 + nu)) * h * h);
+    let tip_of = |r: &crate::solid::SolidResults| at3(r, "uy", [l, h / 2.0, -h / 2.0]);
+    let one = {
+        let (mut d, ids) = build(Analysis::Solid, 0.025, &[([0.0, 0.0, h, h], l, 0.0, [0.0; 3], turn, 0)], &[(e, nu, 50.0)]);
+        sup(&mut d, Target::PartEnd { part: ids[0].0, front: false }, SupportKind::Fixed);
+        load(&mut d, Target::PartEnd { part: ids[0].0, front: true }, LoadKind::Traction { fx: 0.0, fy: -pf, fz: 0.0, total: true });
+        let r = crate::solve_for(&d.m, None).map(|x| match x { crate::Results::Solid(r) => r, _ => unreachable!() }).expect("one part");
+        let name = "Cantilever sketched, extruded and turned into place, one part";
+        v.push(check(32, name, "Tip deflection PL³/3EI + PL/κGA", "len", -want, tip_of(&r), 0.01, "Timoshenko beam theory (a fixed root is a little stiffer)"));
+        v.push(check(32, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+        tip_of(&r)
+    };
+    {
+        let (mut d, ids) = build(Analysis::Solid, 0.025, &[([0.0, 0.0, h, h], l / 2.0, 0.0, [0.0; 3], turn, 0), ([0.0, 0.0, h, h], l / 2.0, 0.0, [l / 2.0, 0.0, 0.0], turn, 0)], &[(e, nu, 50.0)]);
+        sup(&mut d, Target::PartEnd { part: ids[0].0, front: false }, SupportKind::Fixed);
+        load(&mut d, Target::PartEnd { part: ids[1].0, front: true }, LoadKind::Traction { fx: 0.0, fy: -pf, fz: 0.0, total: true });
+        let r = crate::solve_for(&d.m, None).map(|x| match x { crate::Results::Solid(r) => r, _ => unreachable!() }).expect("two parts");
+        let name = "The cantilever as two parts tied end to end";
+        v.push(check(32, name, "Tip deflection, as one part", "len", one, tip_of(&r), 2e-3, "The one-part model above (the tie joins them fully)"));
+        v.push(check(32, name, "Tip deflection PL³/3EI + PL/κGA", "len", -want, tip_of(&r), 0.012, "Timoshenko beam theory"));
+        v.push(check(32, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+    }
+    // A bar 1 m along x, 0.1 × 0.1 m, of steel for its first half and aluminium for the second
+    // (ν = 0), pulled by 100 MPa, symmetry on three faces: the stretch adds up exactly.
+    {
+        let (e2, p) = (70e9, 100e6);
+        let (mut d, ids) = build(Analysis::Solid, 0.05, &[([0.0, 0.0, h, h], 0.5, 0.0, [0.0; 3], turn, 0), ([0.0, 0.0, h, h], 0.5, 0.0, [0.5, 0.0, 0.0], turn, 1)], &[(e, 0.0, 50.0), (e2, 0.0, 200.0)]);
+        sup(&mut d, Target::PartEnd { part: ids[0].0, front: false }, SupportKind::Symmetry);
+        for &(_, sh) in &ids {
+            // Sketch edge 0 (y = 0) stays the face y = 0; edge 3 (sketch x = 0) turns into z = 0.
+            sup(&mut d, Target::Edge { shape: sh, edge: 0 }, SupportKind::Symmetry);
+            sup(&mut d, Target::Edge { shape: sh, edge: 3 }, SupportKind::Symmetry);
+        }
+        load(&mut d, Target::PartEnd { part: ids[1].0, front: true }, LoadKind::Traction { fx: p, fy: 0.0, fz: 0.0, total: false });
+        let r = crate::solve_for(&d.m, None).map(|x| match x { crate::Results::Solid(r) => r, _ => unreachable!() }).expect("two materials");
+        let name = "Bar of two parts, steel and aluminium, pulled";
+        v.push(check(32, name, "Stretch p·L₁/E₁ + p·L₂/E₂", "len", p * 0.5 / e + p * 0.5 / e2, r.field("ux").max, 1e-3, "Uniaxial stress, springs in series (exact)"));
+        v.push(check(32, name, "Stress along the bar", "stress", p, at3(&r, "sx", [0.75, h / 2.0, -h / 2.0]), 1e-3, "Uniaxial stress (exact)"));
+    }
+    // A thick cylinder a = 0.1, b = 0.2 m: its wall sketched and revolved a quarter turn, held
+    // between its end planes and on its cut faces (plane strain), 100 MPa inside: Lamé.
+    {
+        let (a, b, hh, pi) = (0.1, 0.2, 0.05, 100e6);
+        let (mut d, ids) = build(Analysis::Solid, 0.0125, &[([a, 0.0, b, hh], 0.0, FRAC_PI_2, [0.0; 3], [0.0; 3], 0)], &[(e, nu, 50.0)]);
+        let (p, sh) = ids[0];
+        for t in [Target::PartEnd { part: p, front: false }, Target::PartEnd { part: p, front: true }, Target::Edge { shape: sh, edge: 0 }, Target::Edge { shape: sh, edge: 2 }] {
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        load(&mut d, Target::Edge { shape: sh, edge: 3 }, LoadKind::Pressure { p: pi });
+        let r = crate::solve_for(&d.m, None).map(|x| match x { crate::Results::Solid(r) => r, _ => unreachable!() }).expect("cylinder");
+        let name = "Thick cylinder, its wall revolved a quarter turn as a part";
+        let ua = (1.0 + nu) * a * pi / (e * (b * b - a * a)) * ((1.0 - 2.0 * nu) * a * a + b * b);
+        v.push(check(32, name, "Bore grows (Lamé, plane strain)", "len", ua, at3(&r, "ux", [a, hh / 2.0, 0.0]), 0.01, "Lamé's thick cylinder (exact)"));
+        v.push(check(32, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+    }
+    // Heat along a bar of two parts, k = 50 and 200 W/m·K, 0.5 m each, 100 °C at one end and 0 at
+    // the other: the joint settles where the heat through both is the same.
+    {
+        let (k1, k2) = (50.0, 200.0);
+        let (mut d, ids) = build(Analysis::SolidHeat, 0.05, &[([0.0, 0.0, h, h], 0.5, 0.0, [0.0; 3], turn, 0), ([0.0, 0.0, h, h], 0.5, 0.0, [0.5, 0.0, 0.0], turn, 1)], &[(e, nu, k1), (e, nu, k2)]);
+        sup(&mut d, Target::PartEnd { part: ids[0].0, front: false }, SupportKind::Temperature { t: 100.0 });
+        sup(&mut d, Target::PartEnd { part: ids[1].0, front: true }, SupportKind::Temperature { t: 0.0 });
+        let r = crate::solve_for(&d.m, None).map(|x| match x { crate::Results::SolidHeat(r) => r, _ => unreachable!() }).expect("heat");
+        let joint = 100.0 * k1 / (k1 + k2);
+        let ti = r.fields.iter().position(|f| f.key == "t").unwrap();
+        let j = r.volume.nodes.iter().enumerate().min_by(|x, y| crate::model::dist3(*x.1, [0.5, h / 2.0, -h / 2.0]).total_cmp(&crate::model::dist3(*y.1, [0.5, h / 2.0, -h / 2.0]))).unwrap().0;
+        let name = "Heat through two parts in series, k = 50 and 200 W/m·K";
+        v.push(check(32, name, "Temperature at the joint", "temp", joint, r.volume.v[ti][j], 1e-3, "Conduction in series (exact)"));
+        v.push(check(32, name, "Heat balance (in over out)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Conservation of energy"));
+    }
+    v
+}
+
 /// Every check, in the order of the brief's table.
 /// Benchmark 16 (0.3.1): the sketch tools. Areas of shapes made by rounding, combining,
 /// offsetting and the ready-made shapes, against hand formulas; then Kirsch's plate again, its
@@ -2299,6 +2418,7 @@ pub fn run() -> Vec<Check> {
     v.extend(tetra_more());
     v.extend(tetra_nonlinear());
     v.extend(space_large());
+    v.extend(assembly());
     v
 }
 

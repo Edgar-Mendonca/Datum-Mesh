@@ -117,7 +117,7 @@ async fn import_dxf(app: AppHandle, st: State<'_, St>, scale: Option<f64>) -> R<
     }
     let material = a.doc.m.materials.first().map(|x| x.id).ok_or("Add a material first.")?;
     let (n, holes) = (imp.shapes.iter().filter(|s| !s.1).count(), imp.shapes.iter().filter(|s| s.1).count());
-    let ops = imp.shapes.into_iter().map(|(geom, hole)| Op::Add { item: datum_core::doc::Item::Shape(datum_core::model::Shape { id: 0, name: String::new(), hole, material, geom, plate: None }) }).collect();
+    let ops = imp.shapes.into_iter().map(|(geom, hole)| Op::Add { item: datum_core::doc::Item::Shape(datum_core::model::Shape { id: 0, name: String::new(), hole, material, geom, plate: None, part: 0 }) }).collect();
     let created = a.doc.apply(Op::Batch(ops))?;
     let mut o = out(&a);
     o.created = created;

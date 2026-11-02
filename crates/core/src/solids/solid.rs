@@ -419,6 +419,9 @@ pub fn solve_plastic(m: &Model, increments: usize) -> Result<SolidResults, Strin
     if m.analysis != Analysis::Solid {
         return Err("This model is not a 3D solid.".into());
     }
+    if !m.parts.is_empty() {
+        return super::assembly::solve_with(m, Some((increments.max(1), false)));
+    }
     if m.volume.is_some() {
         return super::tet::solve_with(m, Some((increments.max(1), false)));
     }
@@ -431,6 +434,9 @@ pub fn solve_plastic(m: &Model, increments: usize) -> Result<SolidResults, Strin
 pub fn solve_large(m: &Model, increments: usize) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("This model is not a 3D solid.".into());
+    }
+    if !m.parts.is_empty() {
+        return super::assembly::solve_with(m, Some((increments.max(1), true)));
     }
     if m.volume.is_some() {
         return super::tet::solve_with(m, Some((increments.max(1), true)));

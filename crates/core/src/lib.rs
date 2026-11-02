@@ -60,6 +60,7 @@ pub fn modes(m: &model::Model, count: usize) -> Result<Modes, String> {
     match m.analysis {
         model::Analysis::Frame => frame::modes(m, count).map(Modes::Frame),
         model::Analysis::Space => space::modes(m, count).map(Modes::Space),
+        model::Analysis::Solid if !m.parts.is_empty() => solids::assembly::modes(m, count).map(Modes::Solid),
         model::Analysis::Solid if m.volume.is_some() => solids::tet::modes(m, count).map(Modes::Solid),
         model::Analysis::Solid => solid::modes(m, count).map(Modes::Solid),
         model::Analysis::SolidHeat => Err("Natural frequencies are for 3D solids in stress, not heat conduction.".into()),
@@ -98,8 +99,10 @@ pub fn solve(m: &model::Model) -> Result<Results, String> {
         model::Analysis::Stress | model::Analysis::Strain | model::Analysis::Axi => plane::solve(m).map(Results::Plane),
         model::Analysis::Heat => heat::solve(m).map(Results::Heat),
         model::Analysis::Space => space::solve(m).map(Results::Space),
+        model::Analysis::Solid if !m.parts.is_empty() => solids::assembly::solve_with(m, None).map(Results::Solid),
         model::Analysis::Solid if m.volume.is_some() => solids::tet::solve(m).map(Results::Solid),
         model::Analysis::Solid => solid::solve(m).map(Results::Solid),
+        model::Analysis::SolidHeat if !m.parts.is_empty() => solids::assembly::heat(m).map(Results::SolidHeat),
         model::Analysis::SolidHeat if m.volume.is_some() => solids::tet::heat(m).map(Results::SolidHeat),
         model::Analysis::SolidHeat => solid::heat(m).map(Results::SolidHeat),
     }

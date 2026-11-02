@@ -38,6 +38,7 @@ pub fn list() -> Vec<Example> {
         e("elbow", "Pipe elbow (tetrahedra)", "A 90° steel pipe elbow, 120 mm across with a 10 mm wall, fixed at one end and pulled 4 kN at the other: a mesh of 10-node tetrahedra as a mesher makes one (File › Import Mesh reads yours), faces found by themselves, half of it by symmetry.", Analysis::Solid),
         e("yield3d", "Holed plate yielding in 3D", "A steel plate 100 mm wide and 10 mm thick with a 20 mm hole, pulled at 250 MPa: as a 3D solid, the plastic zones grow from the hole's edges across the net section (Equivalent plastic strain; Results › Load–Deflection).", Analysis::Solid),
         e("rubber", "Rubber finger bending far", "A soft rubber finger 100 mm long, 10 × 10 mm, held at its root and pushed down 0.75 N at its tip: a large-deformation step follows it as it curls down, drawn true to size (Results › Load–Deflection).", Analysis::Solid),
+        e("tubeplates", "Tube between two plates (parts)", "An aluminium tube 50 mm across with a 2 mm wall, 100 mm tall, standing between two steel plates 80 × 80 × 10 mm: three parts, the tube's wall revolved a full turn and each plate extruded, placed and tied where they touch. The bottom plate is held underneath and 1 MPa presses on the top one.", Analysis::Solid),
         e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("building", "Building in an earthquake", "A three-storey steel building in 3D, 2 × 1 bays, with rigid concrete floors carrying their mass, shaken along x by a design spectrum: the floors sway and twist as one (Results › Dynamics).", Analysis::Space),
@@ -307,6 +308,35 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
                 sup(Target::Node { id: root }, SupportKind::Fixed),
                 load(Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -2669.0, fz: 0.0 }),
                 Op::Add { item: Item::Step(crate::model::Step { name: "Large deflection".into(), kind: crate::model::StepKind::Newton, increments: 10, pieces: 4, monitor: Some(tip), ..Default::default() }) },
+            ]))?;
+        }
+        "tubeplates" => {
+            d.m.notes = "Three parts (Model tree › Parts): the tube is its wall's section, 23 to 25 mm from the axis and 100 mm tall, revolved a full turn about the vertical axis; each plate is an 80 mm square extruded 10 mm and turned to lie flat, one under the tube and one on top. Where they touch they are tied. Aluminium tube, steel plates. The bottom plate's underside is held; 1 MPa (6.4 kN) presses on the top plate. A first step towards crushing the tube, which needs contact and explicit dynamics (0.6.1 and 0.6.2).".into();
+            let mm = 0.001;
+            let mut al = d.m.materials[0].clone();
+            al.id = 0;
+            al.name = "Aluminium 6061-T6".into();
+            al.e = 68.9e9;
+            al.nu = 0.33;
+            al.rho = 2700.0;
+            al.fy = 276e6;
+            al.k = 167.0;
+            al.alpha = 23.6e-6;
+            let al = d.apply(Op::Add { item: Item::Material(al) })?[0];
+            let steel = d.m.materials[0].id;
+            let part = |d: &mut Doc, name: &str, depth: f64, angle: f64, at: [f64; 3], turn: [f64; 3], material: u32, size: f64, geom: Geom| -> Result<(u32, u32), String> {
+                let p = d.apply(Op::Add { item: Item::Part(crate::model::Part { name: name.into(), depth, angle, at, turn, material, size, ..Default::default() }) })?[0];
+                let s = d.apply(Op::Add { item: Item::Shape(Shape { geom, material, part: p, ..Default::default() }) })?[0];
+                Ok((p, s))
+            };
+            let flat = [-std::f64::consts::FRAC_PI_2, 0.0, 0.0];
+            let (tube, _) = part(d, "Tube", 0.0, std::f64::consts::TAU, [0.0; 3], [0.0; 3], al, 2.5 * mm, Geom::rect(23.0 * mm, 0.0, 25.0 * mm, 100.0 * mm))?;
+            let (base, _) = part(d, "Base plate", 10.0 * mm, 0.0, [0.0, -10.0 * mm, 0.0], flat, steel, 8.0 * mm, Geom::rect(-40.0 * mm, -40.0 * mm, 40.0 * mm, 40.0 * mm))?;
+            let (top, _) = part(d, "Top plate", 10.0 * mm, 0.0, [0.0, 100.0 * mm, 0.0], flat, steel, 8.0 * mm, Geom::rect(-40.0 * mm, -40.0 * mm, 40.0 * mm, 40.0 * mm))?;
+            let _ = tube;
+            d.apply(Op::Batch(vec![
+                sup(Target::PartEnd { part: base, front: false }, SupportKind::Fixed),
+                load(Target::PartEnd { part: top, front: true }, LoadKind::Pressure { p: 1e6 }),
             ]))?;
         }
         "slab" => {

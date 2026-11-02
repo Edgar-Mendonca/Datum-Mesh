@@ -327,11 +327,54 @@ pub struct Shape {
     /// 3D frames (0.4.1): a plate, the shape drawn on a working plane at a depth; None for parts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plate: Option<Plate>,
+    /// Assemblies (0.6.0): the part whose sketch this shape is in (0: the model's own solid).
+    #[serde(default, skip_serializing_if = "no_part")]
+    pub part: u32,
+}
+
+fn no_part(v: &u32) -> bool {
+    *v == 0
+}
+
+/// A part of an assembly (0.6.0): a sketch (the shapes whose `part` is this id) extruded along the
+/// sketch's z by `depth`, or revolved about its y axis by `angle` (radians) when that is above
+/// zero; one material; placed by turning it about x, then y, then z by `turn` (radians) and moving
+/// it by `at` (m). Parts that touch are tied together where they touch.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Part {
+    pub id: u32,
+    pub name: String,
+    pub depth: f64,
+    pub angle: f64,
+    pub material: u32,
+    pub at: [f64; 3],
+    pub turn: [f64; 3],
+    /// The part's element size (m); 0: the model's.
+    pub size: f64,
+}
+
+impl Default for Part {
+    fn default() -> Self {
+        Part { id: 0, name: String::new(), depth: 0.1, angle: 0.0, material: 0, at: [0.0; 3], turn: [0.0; 3], size: 0.0 }
+    }
+}
+
+impl Part {
+    /// A point of the part's sketch space (x, y in the sketch, z along the extrusion) placed in
+    /// the assembly.
+    pub fn place(&self, p: [f64; 3]) -> [f64; 3] {
+        let (sx, cx, sy, cy, sz, cz) = (self.turn[0].sin(), self.turn[0].cos(), self.turn[1].sin(), self.turn[1].cos(), self.turn[2].sin(), self.turn[2].cos());
+        let a = [p[0], p[1] * cx - p[2] * sx, p[1] * sx + p[2] * cx];
+        let b = [a[0] * cy + a[2] * sy, a[1], -a[0] * sy + a[2] * cy];
+        let c = [b[0] * cz - b[1] * sz, b[0] * sz + b[1] * cz, b[2]];
+        [c[0] + self.at[0], c[1] + self.at[1], c[2] + self.at[2]]
+    }
 }
 
 impl Default for Shape {
     fn default() -> Self {
-        Shape { id: 0, name: String::new(), hole: false, material: 0, geom: Geom::rect(0.0, 0.0, 1.0, 1.0), plate: None }
+        Shape { id: 0, name: String::new(), hole: false, material: 0, geom: Geom::rect(0.0, 0.0, 1.0, 1.0), plate: None, part: 0 }
     }
 }
 
@@ -411,6 +454,9 @@ pub enum Target {
     Plate { shape: u32 },
     /// Imported meshes (0.5.5): face `face` of the mesh's outer surface.
     Face { face: u32 },
+    /// Assemblies (0.6.0): the back (start) or front (end) face of a part's extrusion or turn; its
+    /// side faces are its sketch's edges (`Edge`).
+    PartEnd { part: u32, front: bool },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -716,6 +762,9 @@ pub struct Model {
     /// shapes and their sweep are not used).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub volume: Option<Box<crate::solids::tet::TetMesh>>,
+    /// Assemblies (0.6.0): the parts of a 3D solid model; empty for a single swept solid.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<Part>,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -746,6 +795,7 @@ impl Default for Model {
             rigid_floors: false,
             study: String::new(),
             volume: None,
+            parts: vec![],
             next: 1,
         }
     }
@@ -786,6 +836,7 @@ impl Model {
             .chain(self.cases.iter().map(|x| x.id))
             .chain(self.combos.iter().map(|x| x.id))
             .chain(self.steps.iter().map(|x| x.id))
+            .chain(self.parts.iter().map(|x| x.id))
             .chain(self.loads.iter().map(|x| x.id))
             .max()
             .unwrap_or(0)
@@ -834,7 +885,7 @@ impl Model {
         let fin = |v: f64, what: &str| if v.is_finite() { Ok(()) } else { Err(format!("{what} must be a number.")) };
         let pos = |v: f64, what: &str| if v.is_finite() && v > 0.0 { Ok(()) } else { Err(format!("{what} must be greater than zero.")) };
         let mut ids = std::collections::HashSet::new();
-        for id in self.nodes.iter().map(|x| x.id).chain(self.members.iter().map(|x| x.id)).chain(self.shapes.iter().map(|x| x.id)).chain(self.sections.iter().map(|x| x.id)).chain(self.materials.iter().map(|x| x.id)).chain(self.supports.iter().map(|x| x.id)).chain(self.loads.iter().map(|x| x.id)).chain(self.cases.iter().map(|x| x.id)).chain(self.combos.iter().map(|x| x.id)).chain(self.steps.iter().map(|x| x.id)) {
+        for id in self.nodes.iter().map(|x| x.id).chain(self.members.iter().map(|x| x.id)).chain(self.shapes.iter().map(|x| x.id)).chain(self.sections.iter().map(|x| x.id)).chain(self.materials.iter().map(|x| x.id)).chain(self.supports.iter().map(|x| x.id)).chain(self.loads.iter().map(|x| x.id)).chain(self.cases.iter().map(|x| x.id)).chain(self.combos.iter().map(|x| x.id)).chain(self.steps.iter().map(|x| x.id)).chain(self.parts.iter().map(|x| x.id)) {
             if id == 0 || !ids.insert(id) {
                 return Err("Two items share an id.".into());
             }
@@ -859,6 +910,25 @@ impl Model {
         }
         if !(5.0..=33.0).contains(&self.mesh.min_angle) {
             return Err("The minimum angle must be between 5° and 33°.".into());
+        }
+        for p in &self.parts {
+            if !(p.depth.is_finite() && p.angle.is_finite() && p.size.is_finite() && p.size >= 0.0 && p.at.iter().chain(&p.turn).all(|v| v.is_finite())) {
+                return Err("A part's size, turn and place need numbers.".into());
+            }
+            if p.angle <= 0.0 && p.depth <= 0.0 {
+                return Err(format!("{} needs a depth to extrude its sketch by, or an angle to turn it through.", p.name));
+            }
+            if p.angle > std::f64::consts::TAU + 1e-9 {
+                return Err("A part turns through a full turn at most.".into());
+            }
+            if !self.materials.iter().any(|x| x.id == p.material) {
+                return Err(format!("{}'s material does not exist.", p.name));
+            }
+        }
+        for s in &self.shapes {
+            if s.part != 0 && !self.parts.iter().any(|p| p.id == s.part) {
+                return Err("A shape is in a part that does not exist.".into());
+            }
         }
         for st in &self.steps {
             fin(st.factor, "A step's load factor")?;
@@ -995,7 +1065,7 @@ impl Model {
                     }
                 }
                 (SupportKind::Temperature { t }, _) => fin(*t, "A temperature")?,
-                (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. } | Target::End { .. } | Target::Face { .. }) => {}
+                (SupportKind::Roller | SupportKind::Symmetry, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => {}
                 (SupportKind::Hold { x, y, z }, _) => {
                     if self.analysis != Analysis::Solid {
                         return Err("Holding chosen directions is for 3D solids.".into());
@@ -1032,12 +1102,12 @@ impl Model {
                 (LoadKind::Force { fx, fy, fz }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Moment { m, mx, my }, Target::Node { .. }) => m.is_finite() && mx.is_finite() && my.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
-                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. } | Target::Plate { .. } | Target::Face { .. }) => p.is_finite(),
-                (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. } | Target::Face { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
+                (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Plate { .. } | Target::Face { .. }) => p.is_finite(),
+                (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
                 (LoadKind::Gravity { gx, gy, gz }, Target::Body) => gx.is_finite() && gy.is_finite() && gz.is_finite(),
-                (LoadKind::Flux { q }, Target::Edge { .. } | Target::End { .. } | Target::Face { .. }) => q.is_finite(),
-                (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. } | Target::Face { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
+                (LoadKind::Flux { q }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => q.is_finite(),
+                (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
                 (LoadKind::Mass { m }, Target::Node { .. }) => m.is_finite() && *m >= 0.0,
                 (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
@@ -1063,6 +1133,7 @@ impl Model {
             Target::Body => Ok(()),
             Target::End { .. } if self.analysis.is_solid() => Ok(()),
             Target::End { .. } => Err("The back and front faces belong to 3D solids.".into()),
+            Target::PartEnd { part, .. } => self.parts.iter().any(|p| p.id == *part).then_some(()).ok_or_else(|| "That part does not exist.".into()),
             Target::Line { shape, edge, at } if self.analysis.is_solid() => match self.shape(*shape) {
                 Some(s) if (*edge as usize) < s.geom.edges() && (0.0..=1.0).contains(at) => Ok(()),
                 Some(_) if !(0.0..=1.0).contains(at) => Err("A line on a face lies 0 to 100 % of the way through.".into()),
@@ -1089,7 +1160,7 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
     let mut v = migrate(v)?;
     let mut warn = vec![];
     // Read lists item by item so one bad item does not lose the rest.
-    let lists = ["nodes", "members", "shapes", "sections", "materials", "supports", "loads", "cases", "combos", "steps"];
+    let lists = ["nodes", "members", "shapes", "sections", "materials", "supports", "loads", "cases", "combos", "steps", "parts"];
     let mut keep: Vec<(String, Vec<Value>)> = vec![];
     if let Some(o) = v.as_object_mut() {
         for k in lists {
@@ -1135,6 +1206,7 @@ pub fn from_json(text: &str) -> Result<(Model, Vec<String>), String> {
             "cases" => m.cases = read(a, "load cases", &mut warn),
             "combos" => m.combos = read(a, "combinations", &mut warn),
             "steps" => m.steps = read(a, "steps", &mut warn),
+            "parts" => m.parts = read(a, "parts", &mut warn),
             _ => {}
         }
     }
@@ -1186,7 +1258,34 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     m.cases.iter_mut().for_each(|x| fix(&mut x.id));
     m.combos.iter_mut().for_each(|x| fix(&mut x.id));
     m.steps.iter_mut().for_each(|x| fix(&mut x.id));
+    m.parts.iter_mut().for_each(|x| fix(&mut x.id));
     m.next = next;
+    // Parts (0.6.0): a usable size and a material; shapes in a part that is gone join the model's
+    // own solid.
+    let first_mat = m.materials.first().map_or(0, |x| x.id);
+    for p in m.parts.iter_mut() {
+        if !(p.depth.is_finite() && p.angle.is_finite()) || (p.depth <= 0.0 && p.angle <= 0.0) {
+            p.depth = 0.1;
+            p.angle = 0.0;
+        }
+        p.angle = p.angle.min(std::f64::consts::TAU);
+        if !(p.size.is_finite() && p.size >= 0.0) {
+            p.size = 0.0;
+        }
+        for v in p.at.iter_mut().chain(p.turn.iter_mut()) {
+            if !v.is_finite() {
+                *v = 0.0;
+            }
+        }
+        if !m.materials.iter().any(|x| x.id == p.material) {
+            p.material = first_mat;
+        }
+        if p.name.trim().is_empty() {
+            p.name = "Part".into();
+        }
+    }
+    let parts: Vec<u32> = m.parts.iter().map(|p| p.id).collect();
+    m.shapes.iter_mut().filter(|s| s.part != 0 && !parts.contains(&s.part)).for_each(|s| s.part = 0);
     // Combinations keep only cases that exist (renumbered cases are not guessed at), and names.
     let renamed: Vec<u32> = old.iter().zip(&m.cases).filter(|(a, c)| **a != c.id).map(|(a, _)| *a).collect();
     let cases: Vec<u32> = m.cases.iter().map(|c| c.id).collect();
