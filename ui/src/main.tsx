@@ -41,7 +41,7 @@ const Status = () => {
     <footer class="status">
       <span>{toolHint()}</span>
       <Show when={cursor()}>{c => <span class="mono muted">{onPlane() ? (() => { const p = unproj(c()[0], c()[1]); return `x ${fmt("coord", p[0])} · y ${fmt("coord", p[1])} · z ${fmt("coord", p[2])}`; })() : `x ${fmt("coord", c()[0])} · y ${fmt("coord", c()[1])}`}</span>}</Show>
-      <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${isFrame(model()!.analysis) ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : model()!.volume ? `${model()!.volume!.elements.toLocaleString()} tetrahedra` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
+      <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${isFrame(model()!.analysis) ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : model()!.volume ? `${model()!.volume!.elements.toLocaleString()} tetrahedra` : model()!.parts?.length ? `${model()!.parts!.length} parts` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
       <span class="grow" />
       <span class="vsc"><For each={SIDE.filter(x => x !== "-") as [View, string, string][]}>{x => <button title={x[2]} onClick={() => setView(x[0])}><Icon n={x[1]} /></button>}</For></span>
       <button onClick={C.zoomOut}>−</button><span class="muted zoomv" title="Drawing scale on a 96 dpi screen">{ratio()}</span><button onClick={C.zoomIn}>+</button>

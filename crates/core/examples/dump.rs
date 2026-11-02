@@ -57,6 +57,8 @@ fn main() {
         "yield3d": out("yield3d"),
         "rubber": out("rubber"),
         "elbow": out("elbow"),
+        "tubeplates": out("tubeplates"),
+        "tubeplates_results": sent(&datum_core::solve_for(&examples::get("tubeplates").unwrap(), None).unwrap()),
         "elbow_results": sent(&datum_core::solve_for(&examples::get("elbow").unwrap(), None).unwrap()),
         "elbowheat": out("elbowheat"),
         "elbowheat_results": sent(&datum_core::solve_for(&examples::get("elbowheat").unwrap(), None).unwrap()),

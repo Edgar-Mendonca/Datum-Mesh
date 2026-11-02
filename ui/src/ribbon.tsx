@@ -152,6 +152,7 @@ export const Ribbon = () => {
       </Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
+          <Show when={isSolidA(m()?.analysis)}><G l="Assembly" h="parts"><B big i="solid" l="New Part" run={() => import("./panels").then(k => k.newPart())} title="Add a part: draw its sketch, then extrude or revolve it, and place it (Inspector)" /></G></Show>
           <G l="Part" h="shapes"><T big i="rect" l="Rectangle" t="rect" /><S><T i="circle" l="Circle" t="circle" /><T i="poly" l="Polygon" t="poly" /></S></G>
           <G l="Holes" h="holes"><S><T i="hrect" l="Rectangular Hole" t="hrect" /><T i="hcircle" l="Round Hole" t="hcircle" /></S></G>
           <G l="Ready-made" h="sketch"><S><B i="slot" l="Slot…" run={() => K.makeShape("slot")} /><B i="rrect" l="Rounded Rectangle…" run={() => K.makeShape("rounded")} /><B i="ngon" l="Regular Polygon…" run={() => K.makeShape("polygon")} /></S></G>

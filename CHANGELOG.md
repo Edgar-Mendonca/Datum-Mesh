@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.6.0 — 2026-11-02
+
+Parts and assembly: 3D models made of several parts.
+
+**Parts**
+- Geometry › New Part adds a part and opens its sketch. Draw its outline and holes with the usual tools, then extrude it by a depth or revolve it about its axis (a full turn for a ring, a tube or a shaft).
+- Each part has its own material and element size, and is moved and turned into place in the Inspector. The tree lists the parts; 3D shows each in its own colour; Sketch shows the sketch of the part picked beside it.
+- Parts that touch are tied together where they touch, so they act as one. Supports and loads go on a part's faces: click the face in 3D.
+- Static stress, natural frequencies, heat and plasticity solve the whole assembly. Each part is meshed into tetrahedra on its own and the parts are joined.
+- A new example: an aluminium tube standing between two steel plates, the first step towards crushing a tube.
+
+**Fixed**
+- Opening a saved 3D frame dropped every member running along z (depth), and the loads on them: a member's ends were compared by x and y only. Every example now opens exactly as it was saved, checked by a test.
+- An empty 3D frame showed a large tilted grid off to one side: the floor and the work plane now cover the same space, and the plane stands on the floor.
+
+**Trust**
+- Help › Verification: 257 checks, all passing. New: benchmark 32, assemblies: a cantilever sketched, extruded and turned into place (within 0.8 % of beam theory), the same cantilever as two parts tied end to end (within 0.02 % of one part), a bar of steel and aluminium in series (exact to 2 × 10⁻⁶), a thick cylinder's wall revolved as a part (Lamé, 2 × 10⁻⁶), and heat through two parts of different conductivity (3 × 10⁻⁶).
+
 ## 0.5.9 — 2026-11-02
 
 Easier to find your way, and 3D frames drawn in 3D.

@@ -47,7 +47,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
-          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat, bend45: f.bend45 }[a.example] ?? f.frame; return window.__cur; }
+          if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat, bend45: f.bend45, tubeplates: f.tubeplates }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
@@ -848,6 +848,42 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the 3D curve can show the movement in z and the turn", (await p.textContent(".dlg svg.curve")).includes("Movement in z") && (await p.$$('.dlg button:text-is("Turn")')).length === 1);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "bend45-curve.png") });
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  // 0.6.0: parts and assembly, on the tube between two plates.
+  await open("tubeplates"); await p.waitForTimeout(400);
+  const tpM = fix.tubeplates.m;
+  check("an assembly lists its parts in the tree", (await p.textContent(".tree")).includes("Parts") && tpM.parts.every(pt => 0) === false && (await p.$$eval(".tree .ti", els => els.map(e => e.textContent))).filter(t => /Tube|Base plate|Top plate/.test(t)).length >= 3);
+  check("the bar above the 3D view counts the parts, the tetrahedra and the ties", /3 parts, [\d,]+ (10|4)-node tetrahedra, tied at/.test(await p.textContent(".planebar")), await p.textContent(".planebar"));
+  await p.click(".tree .ti:has-text('Top plate')"); await p.waitForTimeout(200);
+  const pins = await p.textContent(".insp");
+  check("a part's Inspector offers its sweep, material, size, place and Edit Sketch", pins.includes("Made by") && pins.includes("Depth") && pins.includes("Moved by y") && pins.includes("Turned about x") && (await p.$$('.insp button:has-text("Edit Sketch")')).length === 1, pins.slice(0, 300));
+  await p.fill('.insp .iprow:has(> label:text-is("Depthmm")) input, .insp .iprow:has(> label:has-text("Depth")) input', "20"); await p.press('.insp .iprow:has(> label:has-text("Depth")) input', "Enter"); await p.waitForTimeout(150);
+  const pd = (await lastOp())?.Set?.item?.Part;
+  check("changing a part's depth sets the part", pd && pd.name === "Top plate" && Math.abs(pd.depth - 0.02) < 1e-9, JSON.stringify(pd));
+  await p.click(".tree .ti:has-text('Top plate')"); await p.waitForTimeout(150);
+  await p.click('.insp button:has-text("Edit Sketch")'); await p.waitForTimeout(250);
+  check("Edit Sketch shows that part's sketch alone", (await p.$$(".dsvg path.shape")).length === tpM.shapes.filter(s => s.part === tpM.parts.find(x => x.name === "Top plate").id).length && (await p.$eval(".planebar .partpick", s => s.selectedOptions[0].textContent)) === "Top plate", String(await p.$$eval(".dsvg path.shape", e => e.length)));
+  await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
+  await p.click('.ribbon button:has-text("Rectangle")'); await p.waitForTimeout(100);
+  const cvb = await p.$eval(".canvas svg.dsvg", el => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; });
+  await p.mouse.click(cvb[0] + cvb[2] * 0.3, cvb[1] + cvb[3] * 0.3); await p.mouse.click(cvb[0] + cvb[2] * 0.35, cvb[1] + cvb[3] * 0.35); await p.waitForTimeout(200);
+  const ps = (await lastOp())?.Add?.item?.Shape;
+  check("a shape drawn in a part's sketch goes in that part", ps && ps.part === tpM.parts.find(x => x.name === "Top plate").id, JSON.stringify(await lastOp()));
+  await p.keyboard.press("Escape");
+  await p.click('.ribbon button:has-text("New Part")'); await p.waitForTimeout(200);
+  const np = await ops();
+  check("Geometry › New Part adds a part", np.some(o => o?.Add?.item?.Part), JSON.stringify(np.slice(-1)));
+  await p.click('.planebar .seg button:text-is("3D")'); await p.waitForTimeout(400);
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(150);
+  const atp = async q => { const v = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); const s = await p.evaluate(q => window.__screen3(q), q); return [v[0] + s[0], v[1] + s[1]]; };
+  const tq = await atp([0.01, 0.11, -0.01]); await p.mouse.click(tq[0], tq[1]); await p.waitForTimeout(250);
+  const pl = (await lastOp())?.Add?.item?.Load;
+  check("clicking a part's face in 3D puts the load on that part face", pl && pl.at.on === "partend" && pl.at.part === tpM.parts.find(x => x.name === "Top plate").id && pl.at.front === true, JSON.stringify(await lastOp()));
+  await p.keyboard.press("Escape");
+  await p.evaluate(() => { window.__solveKey = "tubeplates_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(600);
+  await p.evaluate(() => { window.__solveKey = null; });
+  check("a solved assembly says its mesh is tetrahedra in parts", (await p.textContent(".legend")).includes("3 parts"), await p.textContent(".legend"));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "tubeplates.png") });
   // 0.5.9: drawing a 3D frame straight in the 3D view (it used to send you to a plane).
   await open("blank-space"); await p.waitForTimeout(300);
   const at3d = async q => { const v = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); const s = await p.evaluate(q => window.__screen3(q), q); return [v[0] + s[0], v[1] + s[1]]; };

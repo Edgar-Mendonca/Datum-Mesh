@@ -113,6 +113,19 @@ export const whichName = (m: Model, w: Which | null) => {
 };
 /** The case or combination the shown results are for. */
 export const [solvedFor, setSolvedFor] = createSignal<string>("");
+/** Assemblies (0.6.0): the part whose sketch the Section view shows and edits. */
+export const [activePart, setActivePart] = createSignal(0);
+/** The active part, if the model has parts (else 0, the model's own solid). */
+export const curPart = () => { const ps = model()?.parts ?? []; return ps.length ? (ps.find(p => p.id === activePart()) ?? ps[0]).id : 0; };
+/** New shapes go in the part being sketched. */
+const withPart = (op: any): any => {
+  if (op?.Batch) return { Batch: op.Batch.map(withPart) };
+  const p = curPart(); if (!p) return op;
+  const s = op?.Add?.item?.Shape;
+  if (s && !s.plate && !s.part) return { Add: { item: { Shape: { ...s, part: p } } } };
+  if (op?.Make && !op.Make.part) return { Make: { ...op.Make, part: p } };
+  return op;
+};
 const withCase = (op: any): any => {
   if (op?.Batch) return { Batch: op.Batch.map(withCase) };
   const l = op?.Add?.item?.Load;
@@ -121,7 +134,7 @@ const withCase = (op: any): any => {
 
 // ---------- editing ----------
 export const act = async (op: object, quiet = false): Promise<Out | null> => {
-  op = withCase(op);
+  op = withPart(withCase(op));
   try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
   catch (e) { if (!quiet) toast(String(e)); return null; }
 };

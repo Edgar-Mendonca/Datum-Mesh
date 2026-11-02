@@ -1392,7 +1392,9 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     let nodes: std::collections::HashSet<u32> = m.nodes.iter().map(|n| n.id).collect();
     let (mats, secs): (std::collections::HashSet<u32>, std::collections::HashSet<u32>) = (m.materials.iter().map(|x| x.id).collect(), m.sections.iter().map(|x| x.id).collect());
     let mut pairs = std::collections::HashSet::new();
-    let pos: std::collections::HashMap<u32, (f64, f64)> = m.nodes.iter().map(|n| (n.id, (n.x, n.y))).collect();
+    // Where each node is, in 3D (0.6.0: comparing x and y only dropped every 3D member along z,
+    // and the loads on it, each time a file was opened).
+    let pos: std::collections::HashMap<u32, [f64; 3]> = m.nodes.iter().map(|n| (n.id, n.at())).collect();
     m.members.retain_mut(|mb| {
         if !mats.contains(&mb.material) {
             mb.material = mat0;
@@ -1409,7 +1411,7 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
         if let Geom::Poly { pts, bulge } = &mut s.geom {
             bulge.resize(pts.len(), 0.0);
         }
-        let probe = Model { shapes: vec![s.clone()], materials: m.materials.clone(), next: m.next, analysis: m.analysis, ..Model::default() };
+        let probe = Model { shapes: vec![s.clone()], materials: m.materials.clone(), parts: m.parts.clone(), next: m.next, analysis: m.analysis, ..Model::default() };
         probe.check().is_ok()
     });
     // An imported mesh (0.5.5) that does not hold together is left out; its material must exist.

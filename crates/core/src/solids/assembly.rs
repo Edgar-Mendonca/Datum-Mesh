@@ -94,6 +94,14 @@ fn part_mesh(m: &Model, p: &Part, order: u8) -> Result<PartMesh, String> {
     sub.mesh.order = 1;
     if p.size > 0.0 {
         sub.mesh.size = p.size;
+    } else if m.mesh.size <= 0.0 {
+        // Automatic: the sketch's own size, but no finer than about 15 000 tetrahedra over the
+        // part's sweep (3 per prism, area / 0.43 h² triangles, length / h layers).
+        let area: f64 = sub.shapes.iter().map(|s| if s.hole { -s.geom.area().abs() } else { s.geom.area().abs() }).sum::<f64>().max(0.0);
+        let rmax = sub.bounds().map_or(0.0, |b| b[2].abs().max(b[0].abs()));
+        let length = if p.angle > 0.0 { p.angle * rmax } else { p.depth };
+        let by_volume = (3.0 * area * length / (0.43 * 15_000.0)).cbrt();
+        sub.mesh.size = super::mesh::auto_size(&sub).max(by_volume);
     }
     if sub.shapes.iter().all(|s| s.hole) {
         return Err(format!("{} has nothing in its sketch yet: draw its outline (select it, then Edit Sketch).", p.name));
@@ -395,6 +403,28 @@ mod tests {
             d.apply(Op::Add { item: Item::Shape(Shape { geom: g.clone(), material: d.m.materials[0].id, part: id, ..Default::default() }) }).unwrap();
         }
         d
+    }
+
+    #[test]
+    fn every_example_survives_saving_and_opening() {
+        // 0.6.0: opening a saved assembly dropped every shape in a part (the repair checked each
+        // shape in a model without the parts).
+        for e in crate::examples::list() {
+            let m = crate::examples::get(e.id).unwrap();
+            let (b, warn) = crate::model::from_json(&crate::model::to_json(&m)).unwrap();
+            assert!(warn.is_empty(), "{}: {warn:?}", e.id);
+            assert_eq!(b, m, "{}", e.id);
+        }
+    }
+
+    #[test]
+    fn an_automatic_part_meshes_to_a_desktop_size() {
+        // 0.6.0, found in the app: a new part (30 × 20 mm sketch, 100 mm deep) at the automatic
+        // size was meshed by its sketch alone, into over 66 000 nodes.
+        let mut d = parts(&[(Geom::rect(0.055, 0.05, 0.085, 0.07), 0.1, 0.0, [0.0; 3], [0.0; 3])]);
+        d.m.mesh.size = 0.0;
+        let a = mesh(&d.m).unwrap();
+        assert!(a.mesh.nodes.len() < 40_000 && a.mesh.tets.len() > 2_000, "{} {}", a.mesh.nodes.len(), a.mesh.tets.len());
     }
 
     #[test]

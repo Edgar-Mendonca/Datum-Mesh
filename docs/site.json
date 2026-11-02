@@ -26,6 +26,7 @@
   ],
   "highlights": [
     "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration, heat, plasticity and large deformation",
+    "Parts and assembly: parts sketched, extruded or revolved, each with its own material, placed in 3D and tied where they touch, then solved for stress, vibration, heat and yielding",
     "3D frames drawn straight in the 3D view: points snap to nodes and to a work plane that turns through the last point, or are typed",
     "Icons coloured by meaning: supports green, loads red, heat orange, geometry blue, mesh teal, materials amber",
     "A model tree that shows what is done and what is missing, with an icon for everything, and a New study page that asks what you are analysing",
@@ -77,10 +78,9 @@
     },
     {
       "v": "0.6",
-      "title": "Parts, assembly, crushing and impact",
-      "when": "Later",
+      "title": "Crushing and impact",
+      "when": "Next",
       "items": [
-        "Parts sketched and extruded or revolved into solids, shells or rigid surfaces, placed in an assembly and meshed one by one",
         "Explicit dynamics",
         "Contact, first for a thin tube crushed between rigid plates",
         "Implicit dynamics and transient heat for solids"

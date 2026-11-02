@@ -1412,6 +1412,15 @@ pub fn for_window(m: &Model) -> serde_json::Value {
     if let (Some(ms), Some(o)) = (&m.volume, v.as_object_mut()) {
         o.insert("volume".into(), serde_json::to_value(preview(ms)).unwrap_or_default());
     }
+    // Assemblies (0.6.0): the parts meshed and joined, for the 3D view and face picking.
+    if !m.parts.is_empty() {
+        if let Some(o) = v.as_object_mut() {
+            match super::assembly::preview(m) {
+                Ok(p) => o.insert("assembly".into(), p),
+                Err(e) => o.insert("assembly_error".into(), e.into()),
+            };
+        }
+    }
     v
 }
 

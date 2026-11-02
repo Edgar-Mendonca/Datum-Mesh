@@ -3,7 +3,7 @@
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
 import { Show, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, parseNum, isSolidA, solidDisp } from "./api";
-import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel, solvedFor } from "./store";
+import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel, solvedFor, curPart, setActivePart } from "./store";
 import { defaultLoad, defaultSupport } from "./panels";
 import { palette, BANDS, curField, fieldsFor, rangeOf, ColourBar } from "./parts";
 import { fmt, unit, fromU, Q } from "./units";
@@ -96,7 +96,15 @@ export const PlaneBar = () => {
       <span class="muted">Imported mesh{v().source ? ` (${v().source})` : ""}: {v().elements.toLocaleString()} {v().order === 2 ? "10-node" : "4-node"} tetrahedra, {v().faces.length} faces</span>
       <Show when={placing()}><span class="grow" /><span class="muted">Click a face of the mesh to put it on</span></Show>
     </div>; })()}</Show>
-    <Show when={solid() && !model()?.volume}>
+    <Show when={solid() && !model()?.volume && model()?.parts?.length}>
+      <div class="planebar">
+        <span class="seg"><button classList={{ on: plane() === "3d" }} title="The assembly in 3D: turn it with the left button, pan with the right, zoom with the wheel; click a part's face to put a support or load on it" onClick={() => setPlane("3d")}>3D</button><button classList={{ on: plane() !== "3d" }} title="The sketch of the part picked here, drawn and edited as a plane part; the part is its sketch extruded or revolved" onClick={() => setPlane("xy")}>Sketch</button></span>
+        <select class="partpick" title="The part whose sketch Sketch shows" value={String(curPart())} onChange={e => setActivePart(+e.currentTarget.value)}>{(model()?.parts ?? []).map(p => <option value={String(p.id)} selected={p.id === curPart()}>{p.name}</option>)}</select>
+        <Show when={model()?.assembly} fallback={<span class="warn small">{model()?.assembly_error ?? "Not meshed"}</span>}>{a => <span class="muted">{model()!.parts!.length} part{model()!.parts!.length === 1 ? "" : "s"}, {a().elements.toLocaleString()} {a().order === 2 ? "10-node" : "4-node"} tetrahedra{a().ties ? `, tied at ${a().ties.toLocaleString()} nodes where they touch` : ""}</span>}</Show>
+        <Show when={placing()}><span class="grow" /><span class="muted">Click a face of a part in 3D to put it on</span></Show>
+      </div>
+    </Show>
+    <Show when={solid() && !model()?.volume && !model()?.parts?.length}>
       <div class="planebar">
         <span class="seg"><button classList={{ on: plane() === "3d" }} title="The solid in 3D: turn it with the left button, pan with the right, zoom with the wheel" onClick={() => { setPlane("3d"); }}>3D</button><button classList={{ on: plane() !== "3d" }} title="The part's section (x-y), drawn and edited as a plane part; it is extruded along z by the thickness" onClick={() => setPlane("xy")}>Section</button></span>
         <span class="muted">{model()?.revolve ? `revolved ${num(model()!.revolve! * 180 / Math.PI, 4)}° about the y axis` : `extruded ${fmt("len", model()?.thickness ?? 0)} along z`}</span>
@@ -142,7 +150,7 @@ export const SolidLegend = () => {
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={r()!.volume}><div><b>Cut</b><span class="seg">{(["off", "x", "y", "z"] as CutAxis[]).map(a => <button classList={{ on: cut().axis === a }} title={a === "off" ? "The whole part" : `Cut across ${a}: the part beyond the plane is hidden and the inside shown`} onClick={() => setCut({ ...cut(), axis: a })}>{a === "off" ? "Off" : a}</button>)}</span>
           <Show when={cut().axis !== "off"}><input type="range" min="0" max="1" step="0.01" value={cut().at} onInput={e => setCut({ ...cut(), at: +e.currentTarget.value })} title="Where the plane cuts, across the part" /></Show></div></Show>
-        <div><b>Mesh</b><span>{model()?.volume ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, imported` : `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "18-node" : "6-node"} wedges, ${r()!.layers} ${r()!.layers === 1 ? "layer" : "layers"}`}</span></div>
+        <div><b>Mesh</b><span>{model()?.parts?.length ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, ${model()!.parts!.length} parts` : model()?.volume ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, imported` : `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "18-node" : "6-node"} wedges, ${r()!.layers} ${r()!.layers === 1 ? "layer" : "layers"}`}</span></div>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{hot() ? (imbalanceOf(r()!) > 1e-6 ? "Heat in and out do not balance" : "Heat balance: heat in equals heat out") : imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
       </div>
     </Show>

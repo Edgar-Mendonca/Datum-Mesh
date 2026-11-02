@@ -78,7 +78,8 @@ export const View3D = () => {
     const ink = css("--text"), green = css("--green"), load = css("--blue2"), accent = css("--blue");
     scene.background = new THREE.Color(css("--bg2"));
     const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4), rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
-    const vp = m.volume, bounds: number[][] = vp ? vp.surface.nodes : m.shapes.flatMap(s => outline(s.geom, tol));
+    // An imported mesh, or an assembly of parts (0.6.0) meshed and joined: drawn from their surface.
+    const asm = m.assembly, vp = m.volume ?? asm, bounds: number[][] = vp ? vp.surface.nodes : m.shapes.flatMap(s => outline(s.geom, tol));
     const size = Math.max(rev ? 0 : t, ...(bounds.length ? [Math.max(...bounds.map(p => p[0])) - Math.min(...bounds.map(p => p[0])), Math.max(...bounds.map(p => p[1])) - Math.min(...bounds.map(p => p[1]))] : [1e-3]));
     world.add(new THREE.AxesHelper(size * 0.2));
     renderer.localClippingEnabled = false;
@@ -144,7 +145,14 @@ export const View3D = () => {
       g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vp.surface.nodes.flat()), 3));
       g.setIndex(vp.surface.tris.flat());
       g.computeVertexNormals();
-      const o = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: new THREE.Color(css("--sky")), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      // Assemblies: each part in its own colour.
+      if (asm) {
+        const hues = ["#9CC2F7", "#F7D48A", "#A8DDB5", "#F2B3C0", "#C9B8F0", "#9ED9D3"], ids = (m.parts ?? []).map(p => p.id);
+        const col = new Float32Array(vp.surface.nodes.length * 3);
+        vp.tface.forEach((f, i) => { const c = new THREE.Color(hues[Math.max(0, ids.indexOf(asm.face_part[f])) % hues.length]); for (const n of vp.surface.tris[i]) { col[3 * n] = c.r; col[3 * n + 1] = c.g; col[3 * n + 2] = c.b; } });
+        g.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      }
+      const o = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: asm ? 0xffffff : new THREE.Color(css("--sky")), vertexColors: !!asm, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
       o.userData.pick = true;
       world.add(o);
       if (show().mesh) world.add(new THREE.LineSegments(new THREE.WireframeGeometry(g), new THREE.LineBasicMaterial({ color: new THREE.Color(ink), transparent: true, opacity: 0.18 })));
@@ -179,7 +187,7 @@ export const View3D = () => {
     const selSet = new Set(sel());
     const faceLines = (at: Target, colour: string) => {
       const pts: number[] = [];
-      if (at.on === "edge" || at.on === "line") {
+      if ((!asm && at.on === "edge") || at.on === "line") {
         const s = m.shapes.find(x => x.id === at.shape); if (!s) return;
         const ps = edgePts(s.geom, at.edge, tol) as [number, number][];
         if (at.on === "line") loop(pts, ps, at.at);
@@ -188,6 +196,16 @@ export const View3D = () => {
           // The face's ends swept along (straight for an extrusion, round for a turn).
           const n = rev ? Math.max(2, Math.ceil(rev / (Math.PI / 48))) : 1;
           for (const p of [ps[0], ps[ps.length - 1]]) for (let i = 0; i < n; i++) pts.push(...sweep(p, i / n), ...sweep(p, (i + 1) / n));
+        }
+      } else if (asm && (at.on === "edge" || at.on === "partend")) {
+        // A face of a part (0.6.0): its triangles tinted.
+        const f = asm.targets.findIndex(x => x && JSON.stringify(x) === JSON.stringify(at)), idx: number[] = [];
+        vp!.tface.forEach((k, i) => { if (k === f) idx.push(...vp!.surface.tris[i]); });
+        if (idx.length) {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(vp!.surface.nodes.flat()), 3));
+          g.setIndex(idx);
+          world.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color(colour), transparent: true, opacity: solidRes() && !stale() ? 0.25 : 0.55, side: THREE.DoubleSide, depthWrite: false })));
         }
       } else if (at.on === "end") {
         for (const s of m.shapes) { const o = outline(s.geom, tol) as [number, number][]; loop(pts, [...o, o[0]], at.front ? 1 : 0); }
@@ -355,7 +373,7 @@ export const View3D = () => {
       else for (const z of [0, m.thickness]) box.expandByPoint(new THREE.Vector3(p[0], p[1], z));
     }
     // An imported mesh (0.5.5): its outer surface.
-    for (const p of m.volume?.surface.nodes ?? []) box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2]));
+    for (const p of (m.volume ?? m.assembly)?.surface.nodes ?? []) box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2]));
     // Nothing drawn yet (0.5.9): look at a 6 × 4 × 4 m space from the corner, to draw in.
     if (box.isEmpty()) { box.expandByPoint(new THREE.Vector3(0, 0, 0)); box.expandByPoint(new THREE.Vector3(6, 4, 4)); }
     const c = box.getCenter(new THREE.Vector3()), rad = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
@@ -528,6 +546,8 @@ export const View3D = () => {
     const hit = ray.intersectObjects(world.children.filter(o => o.userData.pick), false)[0]; if (!hit) return null;
     // An imported mesh: the face of the triangle hit (results draw the same triangles in the same order).
     if (m.volume) { const f = hit.faceIndex != null ? m.volume.tface[hit.faceIndex] : undefined; return f === undefined ? null : { on: "face", face: f }; }
+    // An assembly (0.6.0): the part face the triangle hit is on.
+    if (m.assembly) { const f = hit.faceIndex != null ? m.assembly.tface[hit.faceIndex] : undefined, t = f === undefined ? null : m.assembly.targets[f]; return t ? { ...t } : null; }
     const p = hit.point, rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
     const u = rev ? Math.hypot(p.x, p.z) : p.x, v = p.y;
     const tol = Math.max(1e-6, (m.grid || 0.005) / 4);
@@ -648,7 +668,7 @@ export const View3D = () => {
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
       onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Tab" && drawing()) { e.preventDefault(); turnPlane(); } else if (e.key === "Escape") { if (start3()) setStart3(null); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
-      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
+      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length}><div class="empty"><b>Draw the part's section</b><span>A 3D solid is the outline of a part extruded along z by its thickness. Open Section above and draw the outline and its holes, as for a plane part; set the thickness in the Inspector.</span><button class="btn pri" onClick={() => { setPlane("xy"); setTool("rect"); }}>Draw a rectangle</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length}><Show when={!drawing()}><div class="empty"><b>Draw a 3D frame</b><span>Pick Beam and click here: points snap to the grid on the work plane and to nodes, and each click goes on from the last. Tab turns the plane (Front, Side, Plan) through the last point, so a member can go off in any direction; or type a point. Front, Side and Plan above draw flat on one plane; Repeat copies a frame along the depth (Geometry › Repeat).</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
       <Show when={drawing()}><div class="draw3" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
         <span class="seg">{(["xy", "zy", "xz"] as WP[]).map(k => <button classList={{ on: wp() === k }} title={`Draw on the ${WPN[k][1]} plane (${WPN[k][2]}) through the last point (Tab turns it)`} onClick={() => { setWp(k); const s = start3(); setWpAt(s ? s[WPN[k][0]] : 0); host.focus(); }}>{WPN[k][1]}</button>)}</span>

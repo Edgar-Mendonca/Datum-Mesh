@@ -1,8 +1,8 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, num, parseNum, isFrame, isSolidA } from "./api";
-import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu } from "./store";
+import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
+import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
 import { stepsDialog } from "./steps";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
@@ -46,9 +46,11 @@ export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Mom
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
   if (t.on === "member") return `Member ${m.members.findIndex(n => n.id === t.id) + 1}`;
+  if (t.on === "edge" && m.assembly) { const f = m.assembly.targets.findIndex(x => x?.on === "edge" && x.shape === t.shape && x.edge === t.edge); if (f >= 0) return m.assembly.faces[f].name; }
   if (t.on === "edge") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}`;
   if (t.on === "point") return `Point ${fmt("coord", t.x)}, ${fmt("coord", t.y)}`;
   if (t.on === "end") return t.front ? "Front face" : "Back face";
+  if (t.on === "partend") { const a = m.assembly, f = a ? a.targets.findIndex(x => x?.on === "partend" && x.part === t.part && x.front === t.front) : -1; return f >= 0 ? a!.faces[f].name : `${m.parts?.find(p => p.id === t.part)?.name ?? "Part"}, ${t.front ? "end" : "start"} face`; }
   if (t.on === "face") return m.volume?.faces[t.face]?.name ?? `Face ${t.face + 1}`;
   if (t.on === "plate") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Plate"}, whole face`;
   if (t.on === "line") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}, line at ${num(t.at * 100, 3)} %`;
@@ -103,7 +105,7 @@ export const Tree = () => {
   const plates = () => (m()?.shapes ?? []).filter(s => s.plate);
   const drawn = () => frame() ? (m()?.members.length ?? 0) > 0 : parts().some(s => !s.hole);
   const sups = () => (m()?.supports ?? []).filter(s => heat() ? s.kind.kind === "temperature" : s.kind.kind !== "temperature");
-  const mesh = () => solidRes() ? `${solidRes()!.elements.toLocaleString()} wedges, ${solidRes()!.layers} ${solidRes()!.layers === 1 ? "layer" : "layers"}` : (meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} ${isSolidA(m()!.analysis) ? "triangles in the section" : "elements"}` : "Not meshed yet: made when you solve";
+  const mesh = () => solidRes() && !solidRes()!.layers ? `${solidRes()!.elements.toLocaleString()} tetrahedra` : m()?.assembly ? `${m()!.assembly!.elements.toLocaleString()} tetrahedra in ${m()!.parts!.length} parts` : solidRes() ? `${solidRes()!.elements.toLocaleString()} wedges, ${solidRes()!.layers} ${solidRes()!.layers === 1 ? "layer" : "layers"}` : (meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} ${isSolidA(m()!.analysis) ? "triangles in the section" : "elements"}` : "Not meshed yet: made when you solve";
   const noYield = () => plastic() ? (m()?.materials ?? []).filter(x => !(x.fy > 0) && (frame() ? m()!.members.some(b => b.material === x.id) : parts().some(s => s.material === x.id))) : [];
   return (
     <aside class="tree">
@@ -113,6 +115,9 @@ export const Tree = () => {
           <div class="troot" title="Model › Name in the Inspector (nothing selected)" onClick={() => setSel([])}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
           <Show when={!mm().volume} fallback={<Branch t="Imported mesh" icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }}>
             <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>
+          <Show when={frame() || !(isSolidA(mm().analysis) && (mm().parts?.length || !parts().length))} fallback={
+            <Branch t="Parts" icon="solid" n={mm().parts?.length ?? 0} help="parts" add={newPart} addText="Add a part: sketch it, then extrude or revolve it" mark={{ ok: (mm().parts?.length ?? 0) > 0 && !mm().assembly_error, why: mm().assembly_error ?? "Add a part: Geometry › New Part" }}>
+              <For each={mm().parts ?? []}>{pt => <Leaf id={pt.id} icon={pt.angle > 0 ? "axi" : "solid"} label={pt.name} sub={`${pt.angle > 0 ? `revolved ${num(pt.angle * 180 / Math.PI, 4)}°` : `extruded ${fmt("len", pt.depth)}`} · ${mm().materials.find(x => x.id === pt.material)?.name ?? ""}`} />}</For></Branch>}>
           <Show when={frame()} fallback={
             <Branch t={heat() ? "Part" : isSolidA(mm().analysis) ? "Section" : "Shapes"} icon={isSolidA(mm().analysis) ? "solid" : mm().analysis === "axi" ? "axi" : "part"} n={parts().length} help="shapes" add={() => setTool("rect")} addText="Draw the outline (Geometry)" mark={{ ok: drawn(), why: "Draw the part's outline: Geometry › Rectangle, Circle or Polygon" }}>
               <For each={parts()}>{s => <Leaf id={s.id} icon={s.hole ? (s.geom.kind === "circle" ? "hcircle" : "hrect") : s.geom.kind === "circle" ? "circle" : "poly"} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Branch>}>
@@ -120,6 +125,7 @@ export const Tree = () => {
               <For each={mm().members}>{(b, i) => <Leaf id={b.id} icon={b.kind === "truss" ? "truss" : "beam"} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Branch>
             <Show when={sp() && plates().length}><Branch t="Plates" icon="rect" n={plates().length} help="plates"><For each={plates()}>{s => <Leaf id={s.id} icon={s.hole ? "hrect" : "rect"} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Branch></Show>
             <Branch t="Nodes" icon="node" n={mm().nodes.length} help="nodes" add={() => setTool("node")} open={mm().nodes.length <= 12}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} icon="node" label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Branch>
+          </Show>
           </Show>
           </Show>
           <Branch t="Materials" icon="material" n={mm().materials.length} help="materials" add={() => D.materials()} mark={noYield().length ? { ok: false, why: `${noYield()[0].name} needs a yield strength for the elastic-plastic step` } : null}>
@@ -214,6 +220,47 @@ const MemberInsp = (p: { b: Member; m: Model }) => {
       <Attached m={p.m} at={{ on: "member", id: p.b.id }} />
     </>
   );
+};
+
+/** A new part (0.6.0): added, made the one being sketched, and its sketch opened to draw in. */
+export const newPart = async () => {
+  const o = await act({ Add: { item: { Part: { id: 0, name: "", depth: 0.1, angle: 0, material: model()?.materials[0]?.id ?? 0, at: [0, 0, 0], turn: [0, 0, 0], size: 0 } } } });
+  const id = o?.created[0]; if (!id) return;
+  setActivePart(id); setSel([id]);
+  import("./plane3").then(k => k.setPlane("xy")); setTool("rect");
+};
+
+/** An angle shown and typed in degrees, kept in radians. */
+const DegField = (p: { label: string; v: number; set: (v: number) => void; hint?: string }) => (
+  <div class="iprow"><label>{p.label}<span class="unit">°</span></label>
+    <input class="mono" value={num(p.v * 180 / Math.PI, 6).replace("−", "-")} onChange={e => { const v = parseNum(e.currentTarget.value); if (v === null) { e.currentTarget.value = num(p.v * 180 / Math.PI, 6); return; } p.set(v * Math.PI / 180); }} />{p.hint && <span class="hint">{p.hint}</span>}</div>
+);
+
+/** A part of an assembly (0.6.0): how its sketch is swept, its material and size, where it is. */
+const PartInsp = (p: { p: Part; m: Model }) => {
+  setActivePart(p.p.id);
+  const put = (ch: Partial<Part>) => set("Part", { ...p.p, ...ch });
+  const rev = () => p.p.angle > 0;
+  const shapes = () => p.m.shapes.filter(s => s.part === p.p.id);
+  return <>
+    <Row label="Name"><input value={p.p.name} onChange={e => put({ name: e.currentTarget.value })} /></Row>
+    <p class="muted small">{shapes().length ? `Its sketch: ${shapes().filter(s => !s.hole).length} outline${shapes().filter(s => !s.hole).length === 1 ? "" : "s"}${shapes().some(s => s.hole) ? `, ${shapes().filter(s => s.hole).length} hole${shapes().filter(s => s.hole).length === 1 ? "" : "s"}` : ""}.` : "Its sketch is empty: draw its outline."}</p>
+    <p class="ibtns"><button class="btn sm pri" title="Draw or change this part's outline and holes, on its own sketch plane (x across, y up)" onClick={() => { setActivePart(p.p.id); import("./plane3").then(k => k.setPlane("xy")); setTool("select"); }}>Edit Sketch</button></p>
+    <Row label="Made by"><Choice v={rev() ? "revolve" : "extrude"} set={v => put(v === "revolve" ? { angle: Math.PI * 2, depth: p.p.depth } : { angle: 0, depth: p.p.depth > 0 ? p.p.depth : 0.1 })} opts={[["extrude", "Extruding the sketch along its z"], ["revolve", "Revolving the sketch about its y axis"]]} /></Row>
+    <Show when={rev()} fallback={<NumField label="Depth" q="len" v={p.p.depth} min={0} set={depth => depth > 0 && put({ depth })} hint="How far the sketch is extruded, along the sketch's z" />}>
+      <DegField label="Turned through" v={p.p.angle} set={angle => angle > 0 && angle <= 360.0001 * Math.PI / 180 && put({ angle: Math.min(angle, Math.PI * 2) })} hint="360° for a whole ring or shaft; draw the sketch right of its y axis" />
+    </Show>
+    <Row label="Material"><Choice v={String(p.p.material)} set={v => put({ material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row>
+    <NumField label="Element size" q="len" v={p.p.size} min={0} set={size => put({ size })} hint="0: the model's size (Mesh); thin walls want two or three elements across" />
+    <p class="isub">Where it is</p>
+    <NumField label="Moved by x" q="coord" v={p.p.at[0]} set={x => put({ at: [x, p.p.at[1], p.p.at[2]] })} />
+    <NumField label="Moved by y" q="coord" v={p.p.at[1]} set={y => put({ at: [p.p.at[0], y, p.p.at[2]] })} />
+    <NumField label="Moved by z" q="coord" v={p.p.at[2]} set={z => put({ at: [p.p.at[0], p.p.at[1], z] })} />
+    <DegField label="Turned about x" v={p.p.turn[0]} set={a => put({ turn: [a, p.p.turn[1], p.p.turn[2]] })} hint="The part is turned about x, then y, then z, then moved" />
+    <DegField label="Turned about y" v={p.p.turn[1]} set={a => put({ turn: [p.p.turn[0], a, p.p.turn[2]] })} />
+    <DegField label="Turned about z" v={p.p.turn[2]} set={a => put({ turn: [p.p.turn[0], p.p.turn[1], a] })} />
+    <p class="muted small">Parts that touch are tied together where they touch. Put supports and loads on a part's faces: pick one on the Loads tab, then click the face in 3D.</p>
+  </>;
 };
 
 const ShapeInsp = (p: { s: Shape; m: Model }) => {
@@ -371,7 +418,7 @@ export const Inspector = () => {
     const mm = m(), s = sel(); if (!mm || s.length !== 1) return null;
     const id = s[0];
     const f = <T extends { id: number }>(xs: T[]) => xs.find(x => x.id === id);
-    return { node: f(mm.nodes), member: f(mm.members), shape: f(mm.shapes), support: f(mm.supports), load: f(mm.loads) };
+    return { node: f(mm.nodes), member: f(mm.members), shape: f(mm.shapes), support: f(mm.supports), load: f(mm.loads), part: f(mm.parts ?? []) };
   });
   const title = () => {
     const mm = m(); if (!mm) return "";
@@ -391,6 +438,7 @@ export const Inspector = () => {
           <Show when={one()?.shape}>{s => <ShapeInsp s={s()} m={mm()} />}</Show>
           <Show when={one()?.support}>{s => <SupportInsp s={s()} m={mm()} />}</Show>
           <Show when={one()?.load}>{l => <LoadInsp l={l()} m={mm()} />}</Show>
+          <Show when={one()?.part}>{p => <PartInsp p={p()} m={mm()} />}</Show>
           <Show when={!sel().length && edgeSel()}>{e => <EdgeInsp m={mm()} e={e()} />}</Show>
           <Show when={!sel().length && !edgeSel()}><ModelInsp m={mm()} /></Show>
           <Show when={sel().length === 1}><p class="ibtns"><button class="btn sm" onClick={C.del}>Delete</button></p></Show>

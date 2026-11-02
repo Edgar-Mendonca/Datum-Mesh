@@ -24,8 +24,10 @@ export interface Material { id: number; name: string; e: number; nu: number; rho
 export type Geom = { kind: "poly"; pts: Pt[]; bulge: number[] } | { kind: "circle"; c: Pt; r: number };
 /** A plate of a 3D frame (0.4.1): the shape on a working plane at a depth, and its thickness. */
 export interface Plate { plane: "xy" | "zy" | "xz"; depth: number; t: number }
-export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom; plate?: Plate }
-export type Target = { on: "face"; face: number } | { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number } | { on: "plate"; shape: number };
+export interface Shape { id: number; name: string; hole: boolean; material: number; geom: Geom; plate?: Plate; part?: number }
+/** A part of an assembly (0.6.0): its sketch (shapes with this part) extruded by depth, or revolved by angle (rad) when above zero; turned about x, y, z (rad), then moved by at (m). */
+export interface Part { id: number; name: string; depth: number; angle: number; material: number; at: P3; turn: P3; size: number }
+export type Target = { on: "face"; face: number } | { on: "node"; id: number } | { on: "member"; id: number } | { on: "edge"; shape: number; edge: number } | { on: "point"; x: number; y: number } | { on: "body" } | { on: "end"; front: boolean } | { on: "line"; shape: number; edge: number; at: number } | { on: "plate"; shape: number } | { on: "partend"; part: number; front: boolean };
 export type SupportKind =
   | { kind: "fixed" } | { kind: "pinned" } | { kind: "rollerx" } | { kind: "rollery" } | { kind: "roller" } | { kind: "symmetry" }
   | { kind: "spring"; kx: number; ky: number; kr: number; kz?: number; krx?: number; kry?: number } | { kind: "temperature"; t: number } | { kind: "hold"; x: boolean; y: boolean; z: boolean };
@@ -54,7 +56,7 @@ export interface MeshSettings { size: number; order: number; min_angle: number; 
  * drawn triangle, and its faces' names and sizes (the mesh itself stays in the engine). */
 export interface VolPreview { order: number; elements: number; nodes: number; material: number; source: string; faces: { name: string; facets: number; area: number }[]; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; tface: number[] }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; cases?: Case[]; combos?: Combo[]; steps?: Step[];
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; parts?: Part[]; assembly?: VolPreview & { targets: (Target | null)[]; face_part: number[]; ties: number }; assembly_error?: string; cases?: Case[]; combos?: Combo[]; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }
