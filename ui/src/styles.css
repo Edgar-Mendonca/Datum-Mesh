@@ -989,3 +989,18 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .view3d .draw3 { position: absolute; left: 12px; top: 10px; display: flex; align-items: center; gap: 10px; background: var(--panel); border: 1px solid var(--line); padding: 5px 8px; font-size: 12px; z-index: 2; }
 .view3d .draw3 .pt3 { width: 210px; font: 12px var(--mono); padding: 3px 6px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
 .view3d .hover3 { position: absolute; pointer-events: none; background: var(--panel); border: 1px solid var(--line); padding: 2px 6px; font: 11px var(--mono); white-space: nowrap; }
+
+/* 0.6.1: the orientation cube and the axes key of the 3D view */
+.view3d .vcube { position: absolute; right: 14px; top: 12px; width: 96px; display: flex; flex-direction: column; align-items: center; gap: 4px; z-index: 2; user-select: none; }
+.view3d .vcube .vhome { align-self: flex-start; background: var(--panel); border: 1px solid var(--line); padding: 2px 4px; cursor: pointer; line-height: 0; color: var(--text); }
+.view3d .vcube .vhome .ic { width: 15px; height: 15px; }
+.view3d .cube { width: 84px; height: 84px; overflow: visible; }
+.view3d .cube .cf { cursor: pointer; }
+.view3d .cube polygon { fill: color-mix(in srgb, var(--panel) 92%, #2F6FD0); stroke: var(--line3); stroke-width: 1; }
+.view3d .cube .cf-top polygon, .view3d .cube .cf-bottom polygon { fill: color-mix(in srgb, var(--panel) 80%, #2F6FD0); }
+.view3d .cube .cf:hover polygon { fill: color-mix(in srgb, #2F6FD0 30%, var(--panel)); stroke: #2F6FD0; }
+.view3d .cube text { font: 700 7px var(--mono); letter-spacing: .03em; text-transform: uppercase; fill: var(--text); pointer-events: none; }
+.view3d .axkey3 { position: absolute; left: 10px; bottom: 34px; pointer-events: none; }
+.view3d .axkey3 text { font: 700 9px var(--mono); text-anchor: middle; }
+.view3d .probe { top: 128px; }
+.view3d .empty.corner { top: auto; bottom: 74px; left: 16px; transform: none; max-width: 360px; font-size: 12px; padding: 12px 14px; align-items: flex-start; text-align: left; }

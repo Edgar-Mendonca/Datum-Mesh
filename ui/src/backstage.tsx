@@ -73,10 +73,10 @@ const Home = () => {
       <div>
         <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</h1>
         <button class="startnew" onClick={() => setBackstage("new")}><Icon n="new" size={28} /><span><b>Start a new study</b><small>Choose what you are analysing (a truss, a frame, a part, a 3D solid or heat) and what you want to know: the model is set up for it.</small></span></button>
-        <h2>Or open an example</h2>
+        <h2>Or start from a blank model</h2>
         <div class="tiles">
-          <For each={ex() ?? []}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For>
-          <button class="tile" onClick={() => setBackstage("roadmap")}><div class="pic"><svg class="ic"><use href="#i-list" /></svg></div><b>Roadmap</b><span>Everything Datum Mesh will do, and when.</span></button>
+          <For each={(ex() ?? []).filter(t => (t.group ?? "Blank") === "Blank")}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For>
+          <button class="tile" onClick={() => setBackstage("examples")}><div class="pic"><svg class="ic"><use href="#i-folder" /></svg></div><b>Examples</b><span>{(ex() ?? []).filter(t => t.group && t.group !== "Blank").length} worked examples, by kind: frames, 3D frames, parts, 3D solids and assemblies, nonlinear, dynamics.</span></button>
         </div>
         <h2>Recent</h2>
         <table class="recent"><tbody>
@@ -84,6 +84,24 @@ const Home = () => {
         </tbody></table>
       </div>
       <UpdateCard />
+    </div>
+  );
+};
+
+/** File › Examples (0.6.1): the worked examples under headings, each group from simple to harder. */
+const ExamplesPage = () => {
+  const [ex] = createResource(() => call<Example[]>("examples_list"));
+  const groups = () => { const out: [string, Example[]][] = []; for (const t of ex() ?? []) { const g = t.group ?? "Blank"; if (g === "Blank") continue; let e = out.find(x => x[0] === g); if (!e) { e = [g, []]; out.push(e); } e[1].push(t); } return out; };
+  return (
+    <div class="home exhome">
+      <div>
+        <h1>Examples</h1>
+        <p class="muted">Each opens as a new model, ready to solve (F5). Its notes (Inspector, nothing selected) say what it shows.</p>
+        <For each={groups()}>{([g, list]) => <>
+          <h2>{g}</h2>
+          <div class="tiles"><For each={list}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For></div>
+        </>}</For>
+      </div>
     </div>
   );
 };
@@ -158,7 +176,7 @@ export const Backstage = () => (
   <div class="bs">
     <aside>
       <button class="back" onClick={() => out() && setBackstage(null)} title="Back">←</button>
-      <For each={[["home", "home", "Home"], ["new", "new", "New"], ["open", "open", "Open"], ["save", "save", "Save"], ["saveas", "save", "Save As"], ["export", "export", "Export"], ["print", "print", "Print"], ["roadmap", "list", "Roadmap"]]}>{([k, i, l]) =>
+      <For each={[["home", "home", "Home"], ["new", "new", "New"], ["examples", "folder", "Examples"], ["open", "open", "Open"], ["save", "save", "Save"], ["saveas", "save", "Save As"], ["export", "export", "Export"], ["print", "print", "Print"], ["roadmap", "list", "Roadmap"]]}>{([k, i, l]) =>
         <button classList={{ on: backstage() === k }} onClick={() => {
           if (k === "open") C.open(); else if (k === "save") C.save(); else if (k === "saveas") C.save(true);
           else setBackstage(k);
@@ -170,6 +188,7 @@ export const Backstage = () => (
     <section class="bsmain">
       <Show when={backstage() === "home"}><Home /></Show>
       <Show when={backstage() === "new"}><Suspense><NewStudy /></Suspense></Show>
+      <Show when={backstage() === "examples"}><ExamplesPage /></Show>
       <Show when={backstage() === "export"}><Export /></Show>
       <Show when={backstage() === "options"}><OptionsPage /></Show>
       <Show when={backstage() === "print"}><Suspense><PrintPage /></Suspense></Show>

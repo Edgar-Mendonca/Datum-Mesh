@@ -119,7 +119,16 @@ const fitRibbon = (el: HTMLElement) => {
 const exampleMenu = async (e: MouseEvent) => {
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const list = await invoke<Example[]>("examples_list").catch(() => [] as Example[]);
-  openMenu({ x: r.left, y: r.bottom + 2 }, list.map(x => ({ label: x.name, run: () => C.newModel(x.id) })));
+  // 0.6.1: the blank models, then each heading of File › Examples as a submenu.
+  const groups: string[] = [];
+  for (const x of list) if (x.group && x.group !== "Blank" && !groups.includes(x.group)) groups.push(x.group);
+  openMenu({ x: r.left, y: r.bottom + 2 }, [
+    ...list.filter(x => (x.group ?? "Blank") === "Blank").map(x => ({ label: x.name, run: () => C.newModel(x.id) })),
+    "-",
+    ...groups.map(g => ({ label: g, sub: list.filter(x => x.group === g).map(x => ({ label: x.name, run: () => C.newModel(x.id) })) })),
+    "-",
+    { label: "All examples, with what each shows…", run: () => setBackstage("examples") },
+  ]);
 };
 
 /** Join the selected members where they cross (crossing members are otherwise left apart). */

@@ -11,11 +11,30 @@ pub struct Example {
     pub name: &'static str,
     pub what: &'static str,
     pub analysis: Analysis,
+    /// The heading it is listed under on File › Examples (0.6.1); "Blank" for the templates.
+    pub group: &'static str,
+}
+
+/// The headings of File › Examples, in order, each from simple to harder.
+pub const GROUPS: [&str; 7] = ["Frames and trusses", "3D frames", "Plane parts and heat", "3D solids and assemblies", "Nonlinear: large deflection, yielding, rubber", "Dynamics", "Blank"];
+
+fn group_of(id: &str) -> &'static str {
+    match id {
+        "portal" | "truss" | "braced" | "xbrace" => "Frames and trusses",
+        "platform" | "slab" | "bend45" => "3D frames",
+        "lug" | "bracket" | "flange" | "fin" | "vessel" | "hotplate" => "Plane parts and heat",
+        "bracket3d" | "fin3d" | "vessel3d" | "elbow" | "elbowheat" | "tubeplates" => "3D solids and assemblies",
+        "lee" | "tube" | "yield3d" | "rubber" => "Nonlinear: large deflection, yielding, rubber",
+        "quake" | "building" => "Dynamics",
+        _ => "Blank",
+    }
 }
 
 pub fn list() -> Vec<Example> {
-    let e = |id, name, what, analysis| Example { id, name, what, analysis };
-    vec![
+    let e = |id, name, what, analysis| Example { id, name, what, analysis, group: group_of(id) };
+    // Blank models first, then each heading of File › Examples in order (a stable sort keeps the
+    // order within each heading, simple to harder).
+    let mut v = vec![
         e("blank-frame", "Blank frame", "Nodes and members: beams and trusses in 2D.", Analysis::Frame),
         e("blank-stress", "Blank part", "Plane stress: a thin plate loaded in its plane.", Analysis::Stress),
         e("blank-space", "Blank 3D frame", "Nodes and members in 3D: beams that bend both ways and twist, and truss bars.", Analysis::Space),
@@ -31,6 +50,7 @@ pub fn list() -> Vec<Example> {
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
         e("flange", "Flange plate", "A round plate with a pressurised bore and six bolt holes.", Analysis::Stress),
         e("fin", "Heat sink", "A heat sink with four fins cooled by air.", Analysis::Heat),
+        e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("fin3d", "Heat sink in 3D", "The heat sink as a 3D solid 30 mm deep, cooled by air on every face, its ends too: temperatures and heat flow in 3D.", Analysis::SolidHeat),
         e("vessel", "Pressure vessel", "A cylinder with a round head under 2 MPa inside, as a half-section turned about its axis.", Analysis::Axi),
         e("vessel3d", "Vessel in 3D", "The pressure vessel revolved a quarter turn about its axis: a 3D solid with symmetry on its cut faces.", Analysis::Solid),
@@ -39,13 +59,14 @@ pub fn list() -> Vec<Example> {
         e("yield3d", "Holed plate yielding in 3D", "A steel plate 100 mm wide and 10 mm thick with a 20 mm hole, pulled at 250 MPa: as a 3D solid, the plastic zones grow from the hole's edges across the net section (Equivalent plastic strain; Results › Load–Deflection).", Analysis::Solid),
         e("rubber", "Rubber finger bending far", "A soft rubber finger 100 mm long, 10 × 10 mm, held at its root and pushed down 0.75 N at its tip: a large-deformation step follows it as it curls down, drawn true to size (Results › Load–Deflection).", Analysis::Solid),
         e("tubeplates", "Tube between two plates (parts)", "An aluminium tube 50 mm across with a 2 mm wall, 100 mm tall, standing between two steel plates 80 × 80 × 10 mm: three parts, the tube's wall revolved a full turn and each plate extruded, placed and tied where they touch. The bottom plate is held underneath and 1 MPa presses on the top one.", Analysis::Solid),
-        e("bracket3d", "L-bracket in 3D", "The L-bracket as a solid 10 mm thick: the stress through the thickness, in 3D.", Analysis::Solid),
         e("platform", "Steel platform", "A 6 × 4 m platform on four columns, 3 m up, braced on two sides, carrying a floor load and a push from the side: a 3D frame.", Analysis::Space),
         e("building", "Building in an earthquake", "A three-storey steel building in 3D, 2 × 1 bays, with rigid concrete floors carrying their mass, shaken along x by a design spectrum: the floors sway and twist as one (Results › Dynamics).", Analysis::Space),
         e("bend45", "Curved cantilever bent out of its plane", "A 45° curved bar of radius 2.54 m, 25.4 mm square, fixed at one end and pushed 2.67 kN down at the other, out of the bend's plane: a large-deflection step follows it as it bends and twists far in 3D, drawn true to size (Results › Load–Deflection).", Analysis::Space),
         e("slab", "Floor slab", "A 6 × 4 m floor slab 200 mm thick on four columns with edge beams, carrying 5 kPa and its own weight: a plate joined to a 3D frame.", Analysis::Space),
         e("hotplate", "Heated plate", "A steel plate with a hole, fixed at its cool edge and heated at the other: thermal stress.", Analysis::Stress),
-    ]
+    ];
+    v.sort_by_key(|x| if x.group == "Blank" { 0 } else { 1 + GROUPS.iter().position(|g| *g == x.group).unwrap_or(GROUPS.len()) });
+    v
 }
 
 /// The half pipe elbow of the tetrahedra examples: bend radius 300 mm, outside radius 60 mm, wall
@@ -637,6 +658,14 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_worked_example_has_a_heading_and_the_blanks_come_first() {
+        let l = list();
+        assert!(l.iter().all(|e| (e.group == "Blank") == e.id.starts_with("blank")), "{:?}", l.iter().map(|e| (e.id, e.group)).collect::<Vec<_>>());
+        let first_worked = l.iter().position(|e| e.group != "Blank").unwrap();
+        assert!(l[..first_worked].iter().all(|e| e.group == "Blank") && l[first_worked..].iter().all(|e| e.group != "Blank"));
+    }
 
     #[test]
     fn every_example_builds_and_is_valid() {

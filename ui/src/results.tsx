@@ -9,6 +9,7 @@ import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
 import { C, imbalanceOf } from "./cmds";
 import { Help } from "./help";
+import { engineAxis, toD } from "./axes";
 import { Icon } from "./ui";
 import { PartResultsPage } from "./parts";
 import { ModesTable } from "./modes";
@@ -22,6 +23,9 @@ const span = (m: Model) => {
   return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1e-9);
 };
 /** How many times the deflections are drawn larger than they are. */
+/** Component k (0–2 forces, 3–5 moments) of an engine 6-vector, as shown (Z up in 3D, 0.6.1). */
+const comp = (v: number[], k: number) => { const [e, sg] = engineAxis(k % 3); return sg * v[e + (k < 3 ? 0 : 3)]; };
+
 export const deformFactor = (m: Model, r: FrameResults) => {
   // Large deflection (0.4.0): the shape as it truly is, not exaggerated.
   if (r.path) return show().scale;
@@ -224,10 +228,10 @@ export const SpaceResultsPage = (p: { r: SpaceResults }) => {
     <h2>Equilibrium check <Help k="equilibrium" /></h2>
     <p classList={{ okline: imbalanceOf(r()) <= 1e-6, badline: imbalanceOf(r()) > 1e-6 }}><Icon n={imbalanceOf(r()) > 1e-6 ? "info" : "check"} /> {imbalanceOf(r()) > 1e-6 ? `The reactions miss the loads by ${num(imbalanceOf(r()) * 100, 2)} %.` : `The reactions balance the loads (difference ${num(imbalanceOf(r()) * 100, 2)} % of the load).`}</p>
     <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
-      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(r().applied[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().reacted[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().applied[k] + r().reacted[k], sc(k)))}</td></tr>}</For></tbody></table>
+      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(comp(r().applied, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().reacted, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().applied, k) + comp(r().reacted, k), sc(k)))}</td></tr>}</For></tbody></table>
     <h2>Reactions</h2>
     <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th><th class="r">Mx ({unit("moment")})</th><th class="r">My</th><th class="r">Mz</th></tr></thead><tbody>
-      <For each={r().reactions}>{x => <tr><td>{x.node ? nodeName(x.node) : supName(x.support ?? 0)}</td><For each={[0, 1, 2, 3, 4, 5]}>{k => <td class="r">{cell(k < 3 ? "force" : "moment", x.f[k], sc(k))}</td>}</For></tr>}</For></tbody></table>
+      <For each={r().reactions}>{x => <tr><td>{x.node ? nodeName(x.node) : supName(x.support ?? 0)}</td><For each={[0, 1, 2, 3, 4, 5]}>{k => <td class="r">{cell(k < 3 ? "force" : "moment", comp(x.f, k), sc(k))}</td>}</For></tr>}</For></tbody></table>
     <Show when={r().plates}>{pl => <>
       <h2>Plates <Help k="plates" /></h2>
       <p class="muted small">{pl().tris.length.toLocaleString()} triangles, {pl().nodes.length.toLocaleString()} nodes. Moments and membrane forces are per length, in each plate's own axes (u across its plane, v up it).</p>
@@ -258,7 +262,7 @@ export const SpaceResultsPage = (p: { r: SpaceResults }) => {
  * where they are, and the heat balance by fixed temperature and load. */
 export const SolidHeatResultsPage = (p: { r: SolidHeatResults }) => {
   const m = () => model()!, r = () => p.r;
-  const at = (q: number[]) => q.map(c => fmt("coord", c).split(" ")[0]).join(", ");
+  const at = (q: number[]) => toD(q as [number, number, number]).map(c => fmt("coord", c).split(" ")[0]).join(", ");
   const where = (t: any) => !t ? "" : t.on === "end" ? (t.front ? "front face" : "back face") : t.on === "body" ? "the whole part" : t.on === "edge" || t.on === "line" ? `${m().shapes.find(x => x.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}` : "";
   const supName = (id: number) => { const s = m().supports.find(x => x.id === id); return s ? `Fixed temperature, ${where(s.at)}` : "A fixed temperature"; };
   const loadName = (id: number) => { const l = m().loads.find(x => x.id === id); return l ? `${({ flux: "Heat flux", convection: "Convection", heat: "Heat generation" } as Record<string, string>)[l.kind.kind] ?? "A load"}, ${where(l.at)}` : "A load"; };
@@ -291,7 +295,7 @@ export const SolidHeatResultsPage = (p: { r: SolidHeatResults }) => {
 export const SolidResultsPage = (p: { r: SolidResults }) => {
   const m = () => model()!, r = () => p.r;
   const sc = (k: number) => r().scale[k < 3 ? 0 : 1];
-  const at = (q: number[]) => q.map(c => fmt("coord", c).split(" ")[0]).join(", ");
+  const at = (q: number[]) => toD(q as [number, number, number]).map(c => fmt("coord", c).split(" ")[0]).join(", ");
   const rows: [string, number, "force" | "moment"][] = [["Σ Fx", 0, "force"], ["Σ Fy", 1, "force"], ["Σ Fz", 2, "force"], ["Σ Mx about the origin", 3, "moment"], ["Σ My about the origin", 4, "moment"], ["Σ Mz about the origin", 5, "moment"]];
   const supName = (id: number) => { const s = m().supports.find(x => x.id === id); if (!s) return "A support"; return s.at.on === "end" ? (s.at.front ? "Front face" : "Back face") : s.at.on === "edge" || s.at.on === "line" ? `${m().shapes.find(x => x.id === (s.at as any).shape)?.name ?? "Shape"}, edge ${(s.at as any).edge + 1}${s.at.on === "line" ? `, line at ${num(s.at.at * 100, 3)} %` : ""}` : "A support"; };
   return <>
@@ -308,10 +312,10 @@ export const SolidResultsPage = (p: { r: SolidResults }) => {
     <h2>Equilibrium check <Help k="equilibrium" /></h2>
     <p classList={{ okline: imbalanceOf(r()) <= 1e-6, badline: imbalanceOf(r()) > 1e-6 }}><Icon n={imbalanceOf(r()) > 1e-6 ? "info" : "check"} /> {imbalanceOf(r()) > 1e-6 ? `The reactions miss the loads by ${num(imbalanceOf(r()) * 100, 2)} %.` : `The reactions balance the loads (difference ${num(imbalanceOf(r()) * 100, 2)} % of the load).`}</p>
     <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
-      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(r().applied[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().reacted[k], sc(k)))}</td><td class="r">{fmt(q, clean(r().applied[k] + r().reacted[k], sc(k)))}</td></tr>}</For></tbody></table>
+      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(comp(r().applied, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().reacted, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().applied, k) + comp(r().reacted, k), sc(k)))}</td></tr>}</For></tbody></table>
     <h2>Reactions</h2>
     <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th></tr></thead><tbody>
-      <For each={r().reactions}>{x => <tr><td>{supName(x.support)}</td><For each={[0, 1, 2]}>{k => <td class="r">{fmt("force", clean(x.f[k], sc(0))).split(" ")[0]}</td>}</For></tr>}</For></tbody></table>
+      <For each={r().reactions}>{x => <tr><td>{supName(x.support)}</td><For each={[0, 1, 2]}>{k => <td class="r">{fmt("force", clean(comp(x.f, k), sc(0))).split(" ")[0]}</td>}</For></tr>}</For></tbody></table>
     <p class="muted small">Stresses are averaged at the nodes from the elements round them. Where a fixed face meets a free one, or at a sharp inside corner, the stress keeps rising as the mesh gets finer (a singularity): read the stress a little away from it.</p>
     <h2>Solver</h2>
     <table class="tbl"><tbody>

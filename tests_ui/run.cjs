@@ -78,7 +78,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const center = sel => p.$eval(sel, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
   const open = async id => {
     await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
-    const n = fix.examples_list.find(e => e.id === id).name; await p.click(`.home .tile:has(b:text-is("${n}"))`); await p.waitForTimeout(250);
+    // Blank models are on Home; the worked examples on File › Examples (0.6.1).
+    const ex = fix.examples_list.find(e => e.id === id);
+    if ((ex.group ?? "Blank") !== "Blank") { await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(150); }
+    await p.click(`.home .tile:has(b:text-is("${ex.name}"))`); await p.waitForTimeout(250);
     // Unsaved changes are offered for saving first (0.1.2): drop them.
     if (await p.$('.dlg header:has-text("Save changes?")')) { await p.click('.dlg button:has-text("Don\'t save")'); await p.waitForTimeout(300); }
     await p.waitForTimeout(150);
@@ -86,7 +89,11 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
 
   // 1. File page: every worked example, crimson sidebar.
   const tiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent));
-  check("File page shows every worked example", fix.examples_list.every(e => tiles.includes(e.name)), JSON.stringify(tiles));
+  check("Home shows the blank models and a way to the examples (0.6.1)", fix.examples_list.filter(e => e.group === "Blank").every(e => tiles.includes(e.name)) && tiles.includes("Examples") && !tiles.includes("Portal frame"), JSON.stringify(tiles));
+  await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(200);
+  const exTiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent)), exHeads = await p.$$eval(".home h2", els => els.map(e => e.textContent));
+  check("File › Examples lists every worked example under its heading", fix.examples_list.filter(e => e.group !== "Blank").every(e => exTiles.includes(e.name)) && ["Frames and trusses", "3D frames", "3D solids and assemblies", "Dynamics"].every(h => exHeads.includes(h)), JSON.stringify(exHeads));
+  await p.click('.bs aside button:has-text("Home")'); await p.waitForTimeout(150);
   check("File sidebar is the crimson accent", (await p.$eval(".bs aside", el => getComputedStyle(el).backgroundColor)) === "rgb(184, 50, 80)");
 
   // 2. The portal frame draws its members, nodes, supports and loads.
@@ -423,7 +430,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the 3D solid's Results page has the extremes, six sums and the reactions", sp3.includes("Largest and smallest values") && sp3.includes("Σ Fz") && sp3.includes("Σ Mx about the origin") && sp3.includes("Displacement in z"));
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
   await open("blank-solid");
-  check("a blank 3D solid asks for its section", (await p.textContent(".view3d")).includes("Draw the part's section"));
+  check("a blank 3D solid opens in 3D and offers a new part (0.6.1)", (await p.textContent(".view3d")).includes("Build a part") && (await p.$$('.view3d .empty button:has-text("New part")')).length === 1);
   // 0.3.5: DXF import and export.
   await open("lug"); await p.waitForTimeout(200);
   await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
@@ -855,7 +862,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the bar above the 3D view counts the parts, the tetrahedra and the ties", /3 parts, [\d,]+ (10|4)-node tetrahedra, tied at/.test(await p.textContent(".planebar")), await p.textContent(".planebar"));
   await p.click(".tree .ti:has-text('Top plate')"); await p.waitForTimeout(200);
   const pins = await p.textContent(".insp");
-  check("a part's Inspector offers its sweep, material, size, place and Edit Sketch", pins.includes("Made by") && pins.includes("Depth") && pins.includes("Moved by y") && pins.includes("Turned about x") && (await p.$$('.insp button:has-text("Edit Sketch")')).length === 1, pins.slice(0, 300));
+  check("a part's Inspector offers its sweep, material, size, place and Edit Sketch", pins.includes("Made by") && pins.includes("Depth") && pins.includes("Moved by y") && /Turned about x/i.test(pins) && (await p.$$('.insp button:has-text("Edit Sketch")')).length === 1, pins.slice(0, 300));
   await p.fill('.insp .iprow:has(> label:text-is("Depthmm")) input, .insp .iprow:has(> label:has-text("Depth")) input', "20"); await p.press('.insp .iprow:has(> label:has-text("Depth")) input', "Enter"); await p.waitForTimeout(150);
   const pd = (await lastOp())?.Set?.item?.Part;
   check("changing a part's depth sets the part", pd && pd.name === "Top plate" && Math.abs(pd.depth - 0.02) < 1e-9, JSON.stringify(pd));
@@ -890,10 +897,22 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   { const vr = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom]; }), e0 = await at3d([6, 0, 0]), e1 = await at3d([0, 0, 4]);
     const inV = q => q[0] > vr[0] && q[0] < vr[2] && q[1] > vr[1] && q[1] < vr[3];
     check("an empty 3D frame is seen from the corner over a few metres of space (0.5.9: the camera sat at the origin, edge-on)", inV(e0) && inV(e1) && Math.hypot(e1[0] - e0[0], e1[1] - e0[1]) > 200, JSON.stringify([vr, e0, e1])); }
+  // 0.6.1: the orientation cube: Top looks straight down (Z towards you), Home back to the corner.
+  await p.$eval(".view3d .vcube .cf-top", el => el.dispatchEvent(new MouseEvent("click", { bubbles: true }))); await p.waitForTimeout(200);
+  const kTop = await p.$$eval(".view3d .axkey3 line", ls => ls.map(l => [+l.getAttribute("x2"), +l.getAttribute("y2")]));
+  check("the cube's Top face looks straight down: Z points at you, X right, Y up the screen", Math.abs(kTop[2][0] - 26) < 1 && Math.abs(kTop[2][1] - 26) < 1 && kTop[0][0] > 40 && kTop[1][1] < 12, JSON.stringify(kTop));
+  await p.click(".view3d .vcube .vhome"); await p.waitForTimeout(200);
+  const kHome = await p.$$eval(".view3d .axkey3 line", ls => ls.map(l => [+l.getAttribute("x2"), +l.getAttribute("y2")]));
+  check("Home goes back to the corner view, Z up the screen", kHome[2][1] < 12 && Math.abs(kHome[2][0] - 26) < 2, JSON.stringify(kHome));
   check("an empty 3D frame offers to draw a beam in the 3D view", (await p.$$('.view3d .empty button:has-text("Draw a beam")')).length === 1);
   await p.click('.view3d .empty button:has-text("Draw a beam")'); await p.waitForTimeout(200);
-  check("drawing in 3D shows the work plane bar", (await p.$$(".view3d .draw3")).length === 1 && (await p.textContent(".view3d .draw3 .seg button.on")) === "Front");
-  let q3 = await at3d([0, 0, 0]); await p.mouse.move(q3[0], q3[1]); await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(150);
+  check("drawing in 3D first asks for a plane (0.6.1)", (await p.$$(".view3d .draw3")).length === 1 && (await p.textContent(".view3d .draw3")).includes("Pick a plane") && (await p.$$(".view3d .draw3 .seg button.on")).length === 0);
+  let q3 = await at3d([1.6, 0, -1.8]); await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(250);
+  const keyNow = await p.$$eval(".view3d .axkey3 line", ls => ls.map(l => [l.getAttribute("x2"), l.getAttribute("y2")]));
+  check("clicking the floor square at the origin picks the Top plane and looks down on it", (await p.textContent(".view3d .draw3 .seg button.on")) === "Top" && Math.abs(+keyNow[2][0] - 26) < 1 && Math.abs(+keyNow[2][1] - 26) < 1, JSON.stringify(keyNow));
+  await p.click('.view3d .draw3 .seg button:text-is("Front")'); await p.waitForTimeout(250);
+  check("the bar picks the Front plane too, showing its depth as Y", (await p.textContent(".view3d .draw3 .seg button.on")) === "Front" && (await p.textContent(".view3d .draw3")).includes("Y ="));
+  q3 = await at3d([0, 0, 0]); await p.mouse.move(q3[0], q3[1]); await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(150);
   q3 = await at3d([1, 0, 0]); await p.mouse.move(q3[0], q3[1]); await p.waitForTimeout(100);
   check("the point under the pointer is shown with its coordinates and the length", (await p.textContent(".view3d .hover3").catch(() => "")).includes("·"), await p.textContent(".view3d .hover3").catch(() => "none"));
   await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(200);
@@ -906,7 +925,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the next click goes on from the last point, off along z", d3b && Math.abs(d3b.from[0] - 1) < 1e-6 && Math.abs(d3b.to[0] - 1) < 1e-6 && Math.abs(d3b.z[0]) < 1e-9 && Math.abs(d3b.z[1] - 1) < 1e-6, JSON.stringify(d3b));
   const cu = await p.$eval(".view3d .pt3", el => el.title);
   const cun = (cu.match(/ in (\S+) and /) ?? [])[1], five = cun === "mm" ? "1000" : cun === "in" ? String(1 / 0.0254) : "1";
-  await p.fill(".view3d .pt3", `@0, ${five}, 0`); await p.press(".view3d .pt3", "Enter"); await p.waitForTimeout(200);
+  await p.fill(".view3d .pt3", `@0, 0, ${five}`); await p.press(".view3d .pt3", "Enter"); await p.waitForTimeout(200);
   const d3c = (await lastOp())?.AddMember;
   check("a typed @dx, dy, dz goes on from the last point", d3c && Math.abs(d3c.to[1] - 1) < 1e-6 && Math.abs(d3c.from[1]) < 1e-9 && Math.abs(d3c.to[0] - 1) < 1e-6 && Math.abs(d3c.z[0] - 1) < 1e-6 && Math.abs(d3c.z[1] - 1) < 1e-6 && (await p.inputValue(".view3d .pt3")) === "", JSON.stringify(d3c) + " " + cu);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "draw3d.png") });
@@ -959,6 +978,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   // (2) Unsaved changes are offered for saving before an example replaces them.
   await p.click(".tree .ti:has-text('Member 1')"); await p.click('.tabs > button:text-is("Home")'); await p.click('.ribbon button[title="Delete"]'); await p.waitForTimeout(150);
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
+  await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(150);
   await p.click(`.home .tile:has(b:text-is("Roof truss"))`); await p.waitForTimeout(250);
   check("opening an example asks to save the changes first (0.1.1 bug)", !!(await p.$('.dlg header:has-text("Save changes?")')));
   const before = await p.evaluate(() => window.__calls.filter(c => c[0] === "new_model").length);

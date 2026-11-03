@@ -8,17 +8,21 @@ import { defaultLoad } from "./panels";
 import * as D from "./dialogs";
 import * as K from "./sketch";
 import { niceGrid } from "./units";
+import { mapFields } from "./axes";
+
+/** A model just opened or made (0.6.1): a 3D one opens in the 3D view, with nothing being drawn. */
+const fresh3d = () => import("./plane3").then(p => { p.setPlane("3d"); setTool("select"); });
 
 export const C = {
   // ---------- file ----------
   save: async (asNew = false) => { const o = await call<Out | null>("save", { asNew }); if (o) { setOut(o); toast("Saved.", true); } },
   // Each of these replaces the open model, so unsaved changes are offered for saving first (0.1.1 bug: they were lost).
-  open: () => D.keepChanges(() => loadOut("open", { path: null }).then(o => { if (o) setTimeout(fit, 60); })),
+  open: () => D.keepChanges(() => loadOut("open", { path: null }).then(o => { if (o) { fresh3d(); setTimeout(fit, 60); } })),
   /** File › Import Mesh (0.5.5): a tetrahedral mesh (.msh, .inp) as a new 3D solid; `unit` is the
    * file's length unit in metres. */
   importMesh: (unit: number, path: string | null = null) => D.keepChanges(() => loadOut("import_mesh", { path, unit }).then(o => { if (o) { import("./plane3").then(p => p.setPlane("3d")); toast(`Imported ${o.m.volume?.elements.toLocaleString()} tetrahedra; ${o.m.volume?.faces.length} faces found. Put supports and loads on them (Loads tab, then click a face).`, true); setTimeout(fit, 60); } })),
-  openPath: (path: string) => D.keepChanges(() => loadOut("open", { path }).then(o => { if (o) setTimeout(fit, 60); })),
-  newModel: (example: string | null, analysis: Analysis = "frame") => D.keepChanges(() => loadOut("new_model", { example, analysis }).then(o => { if (o) setTimeout(fit, 60); })),
+  openPath: (path: string) => D.keepChanges(() => loadOut("open", { path }).then(o => { if (o) { fresh3d(); setTimeout(fit, 60); } })),
+  newModel: (example: string | null, analysis: Analysis = "frame") => D.keepChanges(() => loadOut("new_model", { example, analysis }).then(o => { if (o) { fresh3d(); setTimeout(fit, 60); } })),
   print: () => setBackstage("print"),
   undo: async () => { const o = await call<Out>("history", { redo: false }); if (o) { setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
   redo: async () => { const o = await call<Out>("history", { redo: true }); if (o) { setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
@@ -29,7 +33,9 @@ export const C = {
     const m = model(); if (!m) return;
     setSolving(true);
     try {
-      const w = active(), r = fromWire(await invoke("solve", { which: w })), first = !results();
+      const w = active(), r0 = fromWire(await invoke("solve", { which: w })), first = !results();
+      // 3D solids (0.6.1): component fields as shown, Z up.
+      const r = (r0.kind === "solid" || r0.kind === "solidheat") ? mapFields(r0) : r0;
       setSolvedFor(w ? whichName(m, w) : "");
       batch(() => {
         setResults(r); setStale(false); setTab("results"); setModeOn(false);

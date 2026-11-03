@@ -6,6 +6,7 @@ import { model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, 
 import { stepsDialog } from "./steps";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
+import { zUp, toD, fromD, AX, engineAxis, V3 } from "./axes";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
 import * as D from "./dialogs";
@@ -124,7 +125,7 @@ export const Tree = () => {
             <Branch t="Members" icon="frame" n={mm().members.length} open={mm().members.length <= 12} help="members" add={() => setTool("beam")} addText="Draw members (Geometry › Beam)" mark={{ ok: drawn(), why: "Draw members: Geometry › Beam or Truss Bar" }}>
               <For each={mm().members}>{(b, i) => <Leaf id={b.id} icon={b.kind === "truss" ? "truss" : "beam"} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Branch>
             <Show when={sp() && plates().length}><Branch t="Plates" icon="rect" n={plates().length} help="plates"><For each={plates()}>{s => <Leaf id={s.id} icon={s.hole ? "hrect" : "rect"} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Branch></Show>
-            <Branch t="Nodes" icon="node" n={mm().nodes.length} help="nodes" add={() => setTool("node")} open={mm().nodes.length <= 12}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} icon="node" label={`Node ${i() + 1}`} sub={`${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}${sp() ? `, ${num(toU("coord", n.z ?? 0))}` : ""}`} />}</For></Branch>
+            <Branch t="Nodes" icon="node" n={mm().nodes.length} help="nodes" add={() => setTool("node")} open={mm().nodes.length <= 12}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} icon="node" label={`Node ${i() + 1}`} sub={sp() ? toD([n.x, n.y, n.z ?? 0]).map(c => num(toU("coord", c))).join(", ") : `${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}`} />}</For></Branch>
           </Show>
           </Show>
           </Show>
@@ -185,11 +186,20 @@ const Choice = (p: { v: string; set: (v: string) => void; opts: [string, string]
 );
 const set = (kind: string, item: object) => act({ Set: { item: { [kind]: item } } });
 
+/** A vector in the Inspector (0.6.1): shown in the shown axes (Z up in 3D), kept in the
+ * engine's; `pre` is put before each axis name (Fx, Mz, gx…). */
+const Vec3 = (p: { pre: string; q: Q; v: V3; set: (v: V3) => void; hint?: string; post?: string }) => {
+  const d = () => toD(p.v);
+  return <>{[0, 1, 2].map(k => <NumField label={`${p.pre}${AX[k]}${p.post ?? ""}`} q={p.q} v={d()[k]} set={x => { const n = [...d()] as V3; n[k] = x; p.set(fromD(n)); }} hint={k === 2 ? p.hint : undefined} />)}</>;
+};
+
 const NodeInsp = (p: { n: Node; m: Model }) => (
   <>
-    <NumField label="x" q="coord" v={p.n.x} set={x => set("Node", { ...p.n, x })} />
-    <NumField label="y" q="coord" v={p.n.y} set={y => set("Node", { ...p.n, y })} />
-    <Show when={p.m.analysis === "space"}><NumField label="z" q="coord" v={p.n.z ?? 0} set={z => set("Node", { ...p.n, z })} /></Show>
+    <Show when={p.m.analysis === "space"} fallback={<>
+      <NumField label="x" q="coord" v={p.n.x} set={x => set("Node", { ...p.n, x })} />
+      <NumField label="y" q="coord" v={p.n.y} set={y => set("Node", { ...p.n, y })} /></>}>
+      <Vec3 pre="" q="coord" v={[p.n.x, p.n.y, p.n.z ?? 0]} set={v => set("Node", { ...p.n, x: v[0], y: v[1], z: v[2] })} hint="Z is up." />
+    </Show>
     <Attached m={p.m} at={{ on: "node", id: p.n.id }} />
   </>
 );
@@ -253,12 +263,15 @@ const PartInsp = (p: { p: Part; m: Model }) => {
     <Row label="Material"><Choice v={String(p.p.material)} set={v => put({ material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row>
     <NumField label="Element size" q="len" v={p.p.size} min={0} set={size => put({ size })} hint="0: the model's size (Mesh); thin walls want two or three elements across" />
     <p class="isub">Where it is</p>
-    <NumField label="Moved by x" q="coord" v={p.p.at[0]} set={x => put({ at: [x, p.p.at[1], p.p.at[2]] })} />
-    <NumField label="Moved by y" q="coord" v={p.p.at[1]} set={y => put({ at: [p.p.at[0], y, p.p.at[2]] })} />
-    <NumField label="Moved by z" q="coord" v={p.p.at[2]} set={z => put({ at: [p.p.at[0], p.p.at[1], z] })} />
-    <DegField label="Turned about x" v={p.p.turn[0]} set={a => put({ turn: [a, p.p.turn[1], p.p.turn[2]] })} hint="The part is turned about x, then y, then z, then moved" />
-    <DegField label="Turned about y" v={p.p.turn[1]} set={a => put({ turn: [p.p.turn[0], a, p.p.turn[2]] })} />
-    <DegField label="Turned about z" v={p.p.turn[2]} set={a => put({ turn: [p.p.turn[0], p.p.turn[1], a] })} />
+    <Vec3 pre="Moved by " q="coord" v={p.p.at} set={at => put({ at })} />
+    <Show when={zUp()} fallback={<>
+      <DegField label="Turned about x" v={p.p.turn[0]} set={a => put({ turn: [a, p.p.turn[1], p.p.turn[2]] })} hint="The part is turned about x, then y, then z, then moved" />
+      <DegField label="Turned about y" v={p.p.turn[1]} set={a => put({ turn: [p.p.turn[0], a, p.p.turn[2]] })} />
+      <DegField label="Turned about z" v={p.p.turn[2]} set={a => put({ turn: [p.p.turn[0], p.p.turn[1], a] })} /></>}>
+      <DegField label="Turned about X" v={p.p.turn[0]} set={a => put({ turn: [a, p.p.turn[1], p.p.turn[2]] })} hint="Its sketch starts flat in the X-Z plane (upright, facing you). It is turned about X, then Z, then Y, then moved." />
+      <DegField label="Turned about Z" v={p.p.turn[1]} set={a => put({ turn: [p.p.turn[0], a, p.p.turn[2]] })} />
+      <DegField label="Turned about Y" v={-p.p.turn[2]} set={a => put({ turn: [p.p.turn[0], p.p.turn[1], -a] })} />
+    </Show>
     <p class="muted small">Parts that touch are tied together where they touch. Put supports and loads on a part's faces: pick one on the Loads tab, then click the face in 3D.</p>
   </>;
 };
@@ -332,7 +345,7 @@ const SupportInsp = (p: { s: Support; m: Model }) => {
     </>; }}</Show>
     <Show when={k().kind === "temperature"}><NumField label="Temperature" q="temp" v={(k() as any).t} set={t => put({ kind: "temperature", t })} /></Show>
     <Show when={k().kind === "hold"}>{_ => { const h = k() as Extract<SupportKind, { kind: "hold" }>; return <div class="cks">
-      {(["x", "y", "z"] as const).map(a => <label class="chk"><input type="checkbox" checked={h[a]} onChange={e => { const v = { ...h, [a]: e.currentTarget.checked }; if (v.x || v.y || v.z) put(v); else e.currentTarget.checked = true; }} />Hold {a}</label>)}</div>; }}</Show>
+      {[0, 1, 2].map(k => { const a = (["x", "y", "z"] as const)[engineAxis(k)[0]]; return <label class="chk"><input type="checkbox" checked={h[a]} onChange={e => { const v = { ...h, [a]: e.currentTarget.checked }; if (v.x || v.y || v.z) put(v); else e.currentTarget.checked = true; }} />Hold {AX[k]}</label>; })}</div>; }}</Show>
     <Show when={sol() && (p.s.at.on === "edge" || p.s.at.on === "line")}>{_ => { const at = p.s.at as any; return <>
       <Row label="Where"><Choice v={at.on} set={v => set("Support", { ...p.s, at: v === "line" ? { on: "line", shape: at.shape, edge: at.edge, at: 0.5 } : { on: "edge", shape: at.shape, edge: at.edge }, kind: v === "line" && !["fixed", "hold"].includes(k().kind) ? defaultSupport("hold") : k() })} opts={[["edge", "The whole side face"], ["line", "A line along it"]]} /></Row>
       <Show when={at.on === "line"}><div class="iprow"><label>Line at<span class="unit">%</span></label><input class="mono" value={num(at.at * 100, 4)} onChange={numIn(v => v >= 0 && v <= 100 && set("Support", { ...p.s, at: { ...at, at: v / 100 } }), () => num(at.at * 100, 4))} /><span class="hint">of the way {p.m.revolve ? "round the turn" : "through the thickness"} (50 % is the middle; it goes to the nearest layer of nodes).</span></div></Show>
@@ -350,34 +363,40 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
     <Row label="On"><span>{targetName(p.m, p.l.at)}</span></Row>
     <Row label="Kind"><span>{LOAD_NAMES[k().kind]}</span></Row>
     <Show when={p.m.cases?.length}><Row label="Load case"><Choice v={String(caseOf(p.m, p.l))} set={v => set("Load", { ...p.l, case: +v })} opts={(p.m.cases ?? []).map(c => [String(c.id), c.name])} /></Row></Show>
-    <Show when={k().kind === "force"}><NumField label="Fx" q="force" v={f("force").fx} set={fx => put({ ...f("force"), fx })} /><NumField label="Fy" q="force" v={f("force").fy} set={fy => put({ ...f("force"), fy })} hint={sp() ? undefined : "Up is positive."} /><Show when={sp()}><NumField label="Fz" q="force" v={f("force").fz ?? 0} set={fz => put({ ...f("force"), fz })} hint="Up (y) is positive; z points towards the front." /></Show></Show>
+    <Show when={k().kind === "force" && sp()}><Vec3 pre="F" q="force" v={[f("force").fx, f("force").fy, f("force").fz ?? 0]} set={v => put({ ...f("force"), fx: v[0], fy: v[1], fz: v[2] })} hint="Up (Z) is positive." /></Show>
+    <Show when={k().kind === "force" && !sp()}><NumField label="Fx" q="force" v={f("force").fx} set={fx => put({ ...f("force"), fx })} /><NumField label="Fy" q="force" v={f("force").fy} set={fy => put({ ...f("force"), fy })} hint={sp() ? undefined : "Up is positive."} /></Show>
     <Show when={k().kind === "moment"}><Show when={sp()} fallback={<NumField label="M" q="moment" v={f("moment").m} set={m => put({ kind: "moment", m })} hint="Counter-clockwise is positive." />}>
-      <NumField label="Mx" q="moment" v={f("moment").mx ?? 0} set={mx => put({ ...f("moment"), mx })} /><NumField label="My" q="moment" v={f("moment").my ?? 0} set={my => put({ ...f("moment"), my })} /><NumField label="Mz" q="moment" v={f("moment").m} set={m => put({ ...f("moment"), m })} hint="About the global axes, by the right-hand rule." /></Show></Show>
+      <Vec3 pre="M" q="moment" v={[f("moment").mx ?? 0, f("moment").my ?? 0, f("moment").m]} set={v => put({ ...f("moment"), mx: v[0], my: v[1], m: v[2] })} hint="About the global axes, by the right-hand rule." /></Show></Show>
     <Show when={k().kind === "dist"}>
-      <Row label="Direction"><Choice v={f("dist").dir} set={v => put({ ...f("dist"), dir: v as any })} opts={sp() ? [["y", "Global y (gravity)"], ["x", "Global x"], ["z", "Global z"], ["local", "Along the member's local y"]] : [["y", "Global y (gravity)"], ["x", "Global x (wind)"], ["local", "Across the member"]]} /></Row>
+      <Row label="Direction"><Choice v={f("dist").dir} set={v => put({ ...f("dist"), dir: v as any })} opts={sp() ? [["y", "Vertical, Z (gravity)"], ["x", "Global X"], ["z", "Global Y, towards −Y"], ["local", "Along the member's local y"]] : [["y", "Global y (gravity)"], ["x", "Global x (wind)"], ["local", "Across the member"]]} /></Row>
       <NumField label="At the start" q="dist" v={f("dist").w1} set={w1 => put({ ...f("dist"), w1 })} />
       <NumField label="At the end" q="dist" v={f("dist").w2} set={w2 => put({ ...f("dist"), w2 })} hint="Equal values make a uniform load. Up (or +x) is positive." />
     </Show>
     <Show when={k().kind === "pressure"}><NumField label="Pressure" q="stress" v={f("pressure").p} set={pp => put({ kind: "pressure", p: pp })} hint="Positive pushes into the part." /></Show>
     <Show when={k().kind === "traction"}>
       <label class="chk"><input type="checkbox" checked={f("traction").total} onChange={e => put({ ...f("traction"), total: e.currentTarget.checked })} />The whole force (not per length)</label>
-      <NumField label="Fx" q={f("traction").total ? "force" : "dist"} v={f("traction").fx} set={fx => put({ ...f("traction"), fx })} />
-      <NumField label="Fy" q={f("traction").total ? "force" : "dist"} v={f("traction").fy} set={fy => put({ ...f("traction"), fy })} />
-      <Show when={p.m.analysis === "solid"}><NumField label="Fz" q={f("traction").total ? "force" : "stress"} v={f("traction").fz ?? 0} set={fz => put({ ...f("traction"), fz })} hint={f("traction").total ? "The whole force on the face." : "Per area of the face."} /></Show>
+      <Show when={p.m.analysis === "solid"} fallback={<>
+        <NumField label="Fx" q={f("traction").total ? "force" : "dist"} v={f("traction").fx} set={fx => put({ ...f("traction"), fx })} />
+        <NumField label="Fy" q={f("traction").total ? "force" : "dist"} v={f("traction").fy} set={fy => put({ ...f("traction"), fy })} /></>}>
+        <Vec3 pre="F" q={f("traction").total ? "force" : "stress"} v={[f("traction").fx, f("traction").fy, f("traction").fz ?? 0]} set={v => put({ ...f("traction"), fx: v[0], fy: v[1], fz: v[2] })} hint={f("traction").total ? "The whole force on the face; Z is up." : "Per area of the face; Z is up."} />
+      </Show>
     </Show>
     <Show when={k().kind === "bearing"}>
       <NumField label="Fx" q="force" v={f("bearing").fx} set={fx => put({ ...f("bearing"), fx })} />
       <NumField label="Fy" q="force" v={f("bearing").fy} set={fy => put({ ...f("bearing"), fy })} hint="The pin's whole force on the part. It presses on the side of the hole it pushes into, most in line with the force." />
     </Show>
-    <Show when={k().kind === "gravity"}><NumField label="gx" q="accel" v={f("gravity").gx} set={gx => put({ ...f("gravity"), gx })} /><NumField label="gy" q="accel" v={f("gravity").gy} set={gy => put({ ...f("gravity"), gy })} hint="Self-weight from each material's density." /><Show when={sp()}><NumField label="gz" q="accel" v={f("gravity").gz ?? 0} set={gz => put({ ...f("gravity"), gz })} /></Show></Show>
+    <Show when={k().kind === "gravity" && zUp()}><Vec3 pre="g" q="accel" v={[f("gravity").gx, f("gravity").gy, f("gravity").gz ?? 0]} set={v => put({ ...f("gravity"), gx: v[0], gy: v[1], gz: v[2] })} hint="Self-weight from each material's density; down is −Z." /></Show>
+    <Show when={k().kind === "gravity" && !zUp()}><NumField label="gx" q="accel" v={f("gravity").gx} set={gx => put({ ...f("gravity"), gx })} /><NumField label="gy" q="accel" v={f("gravity").gy} set={gy => put({ ...f("gravity"), gy })} hint="Self-weight from each material's density." /><Show when={sp()}><NumField label="gz" q="accel" v={f("gravity").gz ?? 0} set={gz => put({ ...f("gravity"), gz })} /></Show></Show>
     <Show when={k().kind === "flux"}><NumField label="Heat flux" q="flux" v={f("flux").q} set={q => put({ kind: "flux", q })} hint="Positive flows into the part." /></Show>
     <Show when={k().kind === "convection"}><NumField label="Film coefficient h" q="film" v={f("convection").h} min={0} set={h => put({ ...f("convection"), h })} /><NumField label="Fluid temperature" q="temp" v={f("convection").t_inf} set={t_inf => put({ ...f("convection"), t_inf })} /></Show>
     <Show when={k().kind === "warming"}><NumField label="Change" q="dtemp" v={f("warming").dt} set={dt => put({ kind: "warming", dt })} hint={isFrame(p.m.analysis) ? "Every member grows by αΔT per length; where it cannot, it pushes on its supports." : "A uniform change from the stress-free temperature (Inspector, with nothing selected); added to any temperatures set on edges."} /></Show>
     <Show when={k().kind === "heat"}><NumField label="Heat generated" q="heatgen" v={f("heat").q} set={q => put({ kind: "heat", q })} /></Show>
     <Show when={k().kind === "settlement"}>
-      <NumField label="Moves x" q="len" v={f("settlement").dx} set={dx => put({ ...f("settlement"), dx })} />
-      <NumField label="Moves y" q="len" v={f("settlement").dy} set={dy => put({ ...f("settlement"), dy })} hint="Down is negative." />
-      <Show when={p.m.analysis === "space"}><NumField label="Moves z" q="len" v={f("settlement").dz ?? 0} set={dz => put({ ...f("settlement"), dz })} /></Show>
+      <Show when={p.m.analysis === "space"} fallback={<>
+        <NumField label="Moves x" q="len" v={f("settlement").dx} set={dx => put({ ...f("settlement"), dx })} />
+        <NumField label="Moves y" q="len" v={f("settlement").dy} set={dy => put({ ...f("settlement"), dy })} hint="Down is negative." /></>}>
+        <Vec3 pre="Moves " q="len" v={[f("settlement").dx, f("settlement").dy, f("settlement").dz ?? 0]} set={v => put({ ...f("settlement"), dx: v[0], dy: v[1], dz: v[2] })} hint="Down is −Z." />
+      </Show>
       <p class="hint">The support moves by this much in the directions it holds; the frame follows, and the forces it takes to make it are in the results.</p></Show>
     <Show when={k().kind === "mass"}><NumField label="Mass" q="mass" v={f("mass").m} min={0} set={m => m >= 0 && put({ kind: "mass", m })} hint="Moves with the node in every direction, for natural frequencies and dynamics. It is in every load case and adds no weight to a static solve (use loads for that)." /></Show>
   </>;

@@ -61,7 +61,7 @@ export interface Model {
   mesh: MeshSettings; next: number;
 }
 export interface Out { m: Model; path: string | null; dirty: boolean; undo: boolean; redo: boolean; created: number[]; warnings: string[] }
-export interface Example { id: string; name: string; what: string; analysis: Analysis }
+export interface Example { id: string; name: string; what: string; analysis: Analysis; group?: string }
 export interface Props { a: number; i: number; c: number; iy: number; cy: number; j: number }
 export interface Options {
   autosave: number; beta: boolean; theme: string; openLast: boolean; units: "SI" | "US"; snap: boolean; grid: boolean; rulers: boolean;

@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.6.1 — 2026-11-03
+
+A cleaner start: examples in their own place, and 3D with Z up, a view cube and planes to draw on.
+
+**Examples**
+- File › Home shows the blank models to start from; the worked examples have their own page, File › Examples, under headings (frames and trusses, 3D frames, plane parts and heat, 3D solids and assemblies, nonlinear, dynamics), each from simple to harder. The Examples button on the Home tab lists them by heading too.
+
+**3D, Z up**
+- 3D models are shown with Z up, as CAD programs do: the floor is the X-Y plane. Coordinates, loads, supports, part placement and results are shown and typed that way. Files are unchanged, and plane frames and sections keep x across and y up.
+- A view cube at the top right: click Front, Back, Left, Right, Top or Bottom to look from that side; the house goes back to the corner view. An axes key at the bottom left turns with the view.
+- A floor grid that stays the same size as you draw and fades into the distance, with the axes at the origin.
+- 3D models open in the 3D view. A blank 3D solid offers a new part; a blank 3D frame shows three small planes at the origin.
+
+**Drawing 3D frames**
+- Pick Beam, then a plane to draw on: one of the three squares at the origin (Front X-Z, Side Y-Z, Top X-Y), or the bar above the view. The view turns to face the plane, and still turns freely. The plane is drawn at a fixed size, faint, and the rest of the model stays in view.
+
 ## 0.6.0 — 2026-11-02
 
 Parts and assembly: 3D models made of several parts.
