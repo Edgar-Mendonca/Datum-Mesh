@@ -13,6 +13,7 @@ import { ResultsLayer, ResultsProbe } from "./results";
 import { PartLayer, PartMarkers, PartProbe } from "./parts";
 import { FrameModeLayer } from "./modes";
 import { planeModel as model, ghosts, lift, onPlane, plane, unproj, in3d, fit3d } from "./plane3";
+import { toD } from "./axes";
 
 /** Edits from the canvas, turned into 3D when drawing on a plane of a 3D frame. */
 const act = (op: object) => act0(lift(op));
@@ -96,8 +97,21 @@ const snapPt = (p: Pt): Pt => {
   const tol = 8 / scale();
   for (const n of m.nodes) if (Math.hypot(n.x - p[0], n.y - p[1]) < tol) return [n.x, n.y];
   for (const s of m.shapes) for (const k of keyPts(s.geom)) if (Math.hypot(k[0] - p[0], k[1] - p[1]) < tol) return k;
-  return [snapV(p[0]), snapV(p[1])];
+  const q: Pt = [snapV(p[0]), snapV(p[1])];
+  // Sketching (0.6.2): level or plumb with the last point placed when nearly so (within 3°).
+  const dr = draft(), last = dr[dr.length - 1];
+  if (last) {
+    const dx = q[0] - last[0], dy = q[1] - last[1], a = Math.abs(Math.atan2(dy, dx)) % Math.PI;
+    if (Math.min(a, Math.PI - a) < 0.052) return [q[0], last[1]];
+    if (Math.abs(a - Math.PI / 2) < 0.052) return [last[0], q[1]];
+  }
+  return q;
 };
+
+/** A point placed by typing (0.6.2): the drawing tools take it as a click there. */
+export const canvasPlace: { run: ((p: Pt) => Promise<void>) | null } = { run: null };
+/** The last point placed by the drawing tool, for points typed relative to it. */
+export const lastPlaced = (): Pt | null => { const d = draft(); return d.length ? d[d.length - 1] : null; };
 
 // ---------- drawing state ----------
 const [hover, setHover] = createSignal<Hit>(null);
@@ -266,6 +280,8 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean; np: Map<
 export const Canvas = () => {
   let svg!: SVGSVGElement;
   const [size, setSize] = createSignal<[number, number]>([800, 600]);
+  onMount(() => { canvasPlace.run = p => placeAt(p, p); });
+  onCleanup(() => { canvasPlace.run = null; });
   onMount(() => {
     const ro = new ResizeObserver(() => { const r = box!.getBoundingClientRect(); setSize([r.width, r.height]); });
     ro.observe(box!);
@@ -369,7 +385,11 @@ export const Canvas = () => {
       if (dd && d.moved && (dd[0] || dd[1])) await act({ Move: { ids: sel(), dx: dd[0], dy: dd[1] } });
       return;
     }
-    const p = snapPt(w);
+    await placeAt(snapPt(w), w);
+  };
+  /** What a drawing tool does with a point p (snapped) clicked at w. */
+  const placeAt = async (p: Pt, w: Pt) => {
+    const t = tool(), mm = m(); if (!mm) return;
     if (t === "node") { const o = await act({ Add: { item: { Node: { id: 0, x: p[0], y: p[1] } } } }); if (o?.created.length) setSel(o.created); return; }
     if (t === "beam" || t === "truss") {
       const dr = draft();
@@ -461,7 +481,7 @@ export const Canvas = () => {
   };
   const draftLabel = () => {
     const dr = draft(), p = ptr(), t = tool(); if (!p) return "";
-    if (!dr.length) return onPlane() ? unproj(p[0], p[1]).map(v => fmt("coord", v).split(" ")[0]).join(", ") : `${fmt("coord", p[0])}, ${fmt("coord", p[1])}`;
+    if (!dr.length) return onPlane() ? toD(unproj(p[0], p[1])).map(v => fmt("coord", v).split(" ")[0]).join(", ") : `${fmt("coord", p[0])}, ${fmt("coord", p[1])}`;
     const d = [p[0] - dr[dr.length - 1][0], p[1] - dr[dr.length - 1][1]];
     if (t === "rect" || t === "hrect") return `${fmt("coord", Math.abs(p[0] - dr[0][0]))} × ${fmt("coord", Math.abs(p[1] - dr[0][1]))}`;
     if (t === "circle" || t === "hcircle") return `r ${fmt("coord", Math.hypot(d[0], d[1]))}`;

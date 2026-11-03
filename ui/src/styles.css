@@ -1004,3 +1004,19 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .view3d .axkey3 text { font: 700 9px var(--mono); text-anchor: middle; }
 .view3d .probe { top: 128px; }
 .view3d .empty.corner { top: auto; bottom: 74px; left: 16px; transform: none; max-width: 360px; font-size: 12px; padding: 12px 14px; align-items: flex-start; text-align: left; }
+
+/* 0.6.2: sketching on a plane: the 3D view behind, the sketch canvas over it, lined up */
+.sketchstage { flex: 1; position: relative; min-height: 0; display: flex; }
+.sketchstage > .view3d { position: absolute; inset: 0; }
+.sketchover { position: absolute; inset: 0; display: flex; }
+.sketchover .canvas { background: transparent; }
+.sketchover .canvas .gminor { opacity: .55; }
+.sketchbar { position: absolute; left: 30px; right: 112px; top: 26px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--panel); border: 1px solid #2E9D57; border-left-width: 4px; padding: 5px 10px; font-size: 12px; z-index: 5; }
+.sketchbar b { color: #2E9D57; letter-spacing: .04em; text-transform: uppercase; font-size: 11px; }
+.sketchbar input.num { width: 76px; font: 12px var(--mono); padding: 2px 5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.sketchbar input.pt2 { width: 130px; font: 12px var(--mono); padding: 2px 5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.sketchbar .grow { flex: 1; }
+.tabs .sktab { color: #2E9D57; font-weight: 600; }
+.tabs .sktab.on { color: #fff; background: #2E9D57; }
+.view3d .pickbar { border-left: 4px solid #2E9D57; }
+.sketchbar .btn { letter-spacing: 0; text-transform: none; padding: 2px 8px; }

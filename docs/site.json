@@ -13,7 +13,7 @@
   "steps": [
     {
       "title": "Draw and mesh",
-      "text": "Draw a frame of beams and truss bars, in the plane or in 3D on working planes, or the outline of a part with its holes, shaped with rounds, bevels, cut-outs and patterns (extruded or revolved into a 3D solid if you like), on a grid with snap and rulers."
+      "text": "Draw a frame of beams and truss bars, in the plane or in 3D in sketches on planes you pick, or the outline of a part with its holes, shaped with rounds, bevels, cut-outs and patterns (extruded or revolved into a 3D solid, or sketched as parts of an assembly), on a grid with snap and rulers."
     },
     {
       "title": "Load and support",
@@ -26,8 +26,9 @@
   ],
   "highlights": [
     "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration, heat, plasticity and large deformation",
-    "3D with Z up, a view cube and planes to draw on: pick a plane at the origin and the view turns to face it",
+    "Sketch on a plane: pick a plane at the origin, the view turns square to it and you draw over the model, with typed points and level and upright snapping; Finish or Cancel",
     "Worked examples on their own page, under headings, from simple to harder",
+    "3D with Z up and a view cube",
     "Parts and assembly: parts sketched, extruded or revolved, each with its own material, placed in 3D and tied where they touch, then solved for stress, vibration, heat and yielding",
     "3D frames drawn straight in the 3D view: points snap to nodes and to a work plane that turns through the last point, or are typed",
     "Icons coloured by meaning: supports green, loads red, heat orange, geometry blue, mesh teal, materials amber",
@@ -83,7 +84,7 @@
       "title": "Modelling, animation, crushing and impact",
       "when": "Next",
       "items": [
-        "Sketch on a plane or a part's face: lines, rectangles, circles, arcs, trim, offset, fillet, mirror and patterns, with sizes typed",
+        "Sketch on a part's face, with trim and open lines and arcs (sketching on a plane came in 0.6.2)",
         "Basic modelling: extrude and revolve with a preview, cut, hole, fillet and chamfer, move, copy, mirror and pattern of parts",
         "Animation of results: deformation through the load steps, modes and time histories, with play, pause and speed",
         "Explicit dynamics",

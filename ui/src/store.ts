@@ -113,6 +113,14 @@ export const whichName = (m: Model, w: Which | null) => {
 };
 /** The case or combination the shown results are for. */
 export const [solvedFor, setSolvedFor] = createSignal<string>("");
+/** Sketching (0.6.2): what is being sketched and on which plane. A part's sketch lies in its own
+ * x-y plane, placed with the part; a 3D frame's on a working plane (xy Front, zy Side, xz Top) at a
+ * depth. `facing`: the view looks square at the plane and the sketch canvas lies over it. `edits`
+ * counts the edits made while sketching, so Cancel can undo them. */
+export type SketchOn = { kind: "part" | "frame"; part: number; isNew: boolean; plane: "xy" | "zy" | "xz"; depth: number; facing: boolean; edits: number };
+export const [sketch, setSketch] = createSignal<SketchOn | null>(null);
+/** New Sketch was asked for: a plane is to be picked in the 3D view. */
+export const [sketchPick, setSketchPick] = createSignal(false);
 /** Assemblies (0.6.0): the part whose sketch the Section view shows and edits. */
 export const [activePart, setActivePart] = createSignal(0);
 /** The active part, if the model has parts (else 0, the model's own solid). */
@@ -135,7 +143,7 @@ const withCase = (op: any): any => {
 // ---------- editing ----------
 export const act = async (op: object, quiet = false): Promise<Out | null> => {
   op = withPart(withCase(op));
-  try { const o = await invoke<Out>("apply", { op }); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
+  try { const o = await invoke<Out>("apply", { op }); setOut(o); const sk = sketch(); if (sk) setSketch({ ...sk, edits: sk.edits + 1 }); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
   catch (e) { if (!quiet) toast(String(e)); return null; }
 };
 export const call = async <T = any>(cmd: string, args?: object): Promise<T | undefined> => {

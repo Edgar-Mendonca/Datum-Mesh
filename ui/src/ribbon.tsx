@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes, spaceRes } from "./store";
+import { sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes, spaceRes } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
@@ -88,6 +88,7 @@ export const TitleBar = (p: { update: string | null }) => (
     </div>
     <nav class="tabs">
       <button class="file" onClick={() => setBackstage("home")}>File</button>
+      <Show when={sketch()}><button class="sktab" classList={{ on: tab() === "sketch" }} onClick={() => setTab("sketch")}>Sketch</button></Show>
       <For each={[["home", "Home"], ["geometry", "Geometry"], ["mesh", "Mesh"], ["loads", "Loads"], ["solve", "Solve"], ["results", "Results"], ["view", "View"], ["help", "Help"]]}>{([k, l]) => <button classList={{ on: tab() === k }} onClick={() => setTab(k)}>{l}</button>}</For>
       <div class="ctxgrp" style={{ visibility: fmtKind() ? "visible" : "hidden" }}><small>{fmtKind() === "shape" ? "Shape Tools" : "Member Tools"}</small><button classList={{ on: tab() === "format" }} onClick={() => setTab("format")}>Format</button></div>
     </nav>
@@ -138,6 +139,18 @@ const formatShapes = (f: (s: any) => object) => { const m = model()!, s = new Se
 const formatMembers = (f: (s: any) => object) => { const m = model()!, s = new Set(sel()); act({ Batch: m.members.filter(x => s.has(x.id)).map(x => ({ Set: { item: { Member: { ...x, ...f(x) } } } })) }); };
 
 /** Sketch tools on the selected shapes (Geometry and Format tabs). */
+/** The shapes a sketch is drawn with (plane parts, and a part's sketch, 0.6.2). */
+const SketchDraw = () => <>
+          <G l="Part" h="shapes"><T big i="rect" l="Rectangle" t="rect" /><S><T i="circle" l="Circle" t="circle" /><T i="poly" l="Polygon" t="poly" /></S></G>
+          <G l="Holes" h="holes"><S><T i="hrect" l="Rectangular Hole" t="hrect" /><T i="hcircle" l="Round Hole" t="hcircle" /></S></G>
+          <G l="Ready-made" h="sketch"><S><B i="slot" l="Slot…" run={() => K.makeShape("slot")} /><B i="rrect" l="Rounded Rectangle…" run={() => K.makeShape("rounded")} /><B i="ngon" l="Regular Polygon…" run={() => K.makeShape("polygon")} /></S></G>
+          <SketchTools />
+</>;
+
+/** Plates drawn on a plane of a 3D frame (0.4.1). */
+const FramePlates = () => <G l="Plates" h="plates"><T big i="rect" l="Plate" t="rect" title="Draw a rectangular plate on this plane: click two corners" /><S><T i="poly" l="Polygon Plate" t="poly" /><T i="circle" l="Round Plate" t="circle" /><T i="hrect" l="Opening" t="hrect" title="Cut a rectangular opening out of the plates on this plane" /></S>
+            <S><label class="ribnum" title="Thickness of the plates drawn next (each plate's own is in the Inspector)">Thickness<input class="mono" value={toU("len", plateT())} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null && v > 0) setPlateT(fromU("len", v)); else e.currentTarget.value = String(toU("len", plateT())); }} /><span class="unit">{unit("len")}</span></label></S></G>;
+
 const SketchTools = () => <>
   <G l="Combine" h="sketch"><S><B i="union" l="Union" run={() => K.combine("union")} title="Join the two selected shapes into one" /><B i="subtract" l="Subtract" run={() => K.combine("subtract")} title="Cut the second selected shape out of the first" /><B i="intersect" l="Intersect" run={() => K.combine("intersect")} title="Keep only where the two selected shapes overlap" /></S></G>
   <G l="Modify" h="sketch"><S><B i="fillet" l="Round Corners…" run={() => K.corners(true)} title="Fillet: round corners of the selected polygon" /><B i="chamfer" l="Bevel Corners…" run={() => K.corners(false)} title="Chamfer: bevel corners of the selected polygon" /><B i="offset" l="Offset…" run={K.offset} title="A new outline parallel to the selected shape's" /></S>
@@ -159,19 +172,22 @@ export const Ribbon = () => {
         <G l="Examples" h="examples"><B big i="open" l="Examples" dd={exampleMenu} /></G>
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" /></G>
       </Show>
+      <Show when={tab() === "sketch" && sketch()}>{sk => <>
+        <Show when={sk().kind === "part"} fallback={<G l="Draw" h="members"><T big i="beam" l="Line (Beam)" t="beam" title="Draw beams: click two points; it goes on from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>}><SketchDraw /></Show>
+        <Show when={sk().kind === "frame"}><FramePlates /></Show>
+        <G l="Exit" h="sketchplane"><B big i="check" l="Finish Sketch" run={() => import("./sketchmode").then(k => k.finishSketch())} title="Keep the sketch" /><B big i="del" l="Cancel" run={() => import("./sketchmode").then(k => k.cancelSketch())} title="Throw the sketch away" /></G>
+      </>}</Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
-          <Show when={isSolidA(m()?.analysis)}><G l="Assembly" h="parts"><B big i="solid" l="New Part" run={() => import("./panels").then(k => k.newPart())} title="Add a part: draw its sketch, then extrude or revolve it, and place it (Inspector)" /></G></Show>
-          <G l="Part" h="shapes"><T big i="rect" l="Rectangle" t="rect" /><S><T i="circle" l="Circle" t="circle" /><T i="poly" l="Polygon" t="poly" /></S></G>
-          <G l="Holes" h="holes"><S><T i="hrect" l="Rectangular Hole" t="hrect" /><T i="hcircle" l="Round Hole" t="hcircle" /></S></G>
-          <G l="Ready-made" h="sketch"><S><B i="slot" l="Slot…" run={() => K.makeShape("slot")} /><B i="rrect" l="Rounded Rectangle…" run={() => K.makeShape("rounded")} /><B i="ngon" l="Regular Polygon…" run={() => K.makeShape("polygon")} /></S></G>
-          <SketchTools />
+          <Show when={isSolidA(m()?.analysis)}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and sketch a new part on it; then extrude or revolve it" /></G></Show>
+          <Show when={!(isSolidA(m()?.analysis) && (m()?.parts?.length || !m()?.shapes.length))}><SketchDraw /></Show>
+
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G>
           <G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /><B big i="solid" l="Mesh" dd={(e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); openMenu({ x: r.left, y: r.bottom + 2 }, [["Coordinates in millimetres", 1e-3], ["Coordinates in metres", 1], ["Coordinates in inches", 0.0254]].map(([l, u]) => ({ label: `${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) }))); }} title="A part of any shape: a tetrahedral mesh from a mesher (Gmsh .msh, CalculiX-format .inp), as a new 3D solid" /></G>
         </>}>
+          <Show when={sp()}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and draw members on it" /></G></Show>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
-          <Show when={sp() && onPlane()}><G l="Plates" h="plates"><T big i="rect" l="Plate" t="rect" title="Draw a rectangular plate on this plane: click two corners" /><S><T i="poly" l="Polygon Plate" t="poly" /><T i="circle" l="Round Plate" t="circle" /><T i="hrect" l="Opening" t="hrect" title="Cut a rectangular opening out of the plates on this plane" /></S>
-            <S><label class="ribnum" title="Thickness of the plates drawn next (each plate's own is in the Inspector)">Thickness<input class="mono" value={toU("len", plateT())} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null && v > 0) setPlateT(fromU("len", v)); else e.currentTarget.value = String(toU("len", plateT())); }} /><span class="unit">{unit("len")}</span></label></S></G></Show>
+          <Show when={sp() && onPlane()}><FramePlates /></Show>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
         </Show>

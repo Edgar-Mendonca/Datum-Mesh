@@ -8,20 +8,21 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Model, SpaceMember, Target, clean, isSolidA, solidDisp, parseNum } from "./api";
-import { model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
+import { Model, SpaceMember, Target, clean, isSolidA, solidDisp } from "./api";
+import { sketch, sketchPick, setSketchPick, model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
 import { palette, BANDS, curField, rangeOf } from "./parts";
 import { outline, edgePts, inside } from "./geom";
 import { defaultLoad, defaultSupport } from "./panels";
-import { fmt, unit, toU, fromU } from "./units";
+import { fmt, unit } from "./units";
+import { scale, pan } from "./canvas";
+import { sketchFrame } from "./sketchmode";
 import { setPlane, fit3d } from "./plane3";
-import { toD, fromD } from "./axes";
+import { toD } from "./axes";
 import { C } from "./cmds";
 import { P3, at3, span3, dlen, deform3, vals, q3, range3, cut, pq, plateRange } from "./space3";
 import { plate3 } from "./plane3";
 import { modeAmp } from "./modes";
 
-const num3 = (v: number) => String(+v.toPrecision(6));
 const css = (name: string) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 
 
@@ -49,7 +50,7 @@ export const View3D = () => {
   const lineMats: LineMaterial[] = [];
   const size = () => [host?.clientWidth || 1, host?.clientHeight || 1];
   let frame = 0;
-  const draw = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; camera.updateMatrixWorld(); gizmo(); renderer.render(scene, camera); }); };
+  const draw = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; camera.updateMatrixWorld(); gizmo(); renderer.render(scene, cam()); }); };
 
   // The stage (0.6.1): a floor grid fixed in size, fading into the distance, the axes (Z up, as
   // shown: red X, green Y, blue Z) and, while nothing is drawn or a plane is to be picked, the
@@ -93,7 +94,7 @@ export const View3D = () => {
     const quads: [string, number[][]][] = [["xy", [[0, 0, 0], [s, 0, 0], [s, s, 0], [0, s, 0]]], ["zy", [[0, 0, 0], [0, 0, -s], [0, s, -s], [0, s, 0]]], ["xz", [[0, 0, 0], [s, 0, 0], [s, 0, -s], [0, 0, -s]]]];
     for (const [k, q] of quads) {
       const g = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([...q[0], ...q[1], ...q[2], ...q[0], ...q[2], ...q[3]]), 3));
-      const on = drawing() && wpOn() && wp() === k;
+      const on = false;
       const o = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: new THREE.Color("#E8A26A"), transparent: true, opacity: on ? 0.55 : 0.3, side: THREE.DoubleSide, depthWrite: false }));
       o.userData.origin = k;
       world.add(o);
@@ -118,7 +119,7 @@ export const View3D = () => {
   const lookFrom = (d: P3) => fit(false, [d[0], d[1], d[2] + (d[1] ? 0.001 : 0)]);
   const FACES: [string, P3][] = [["Front", [0, 0, 1]], ["Back", [0, 0, -1]], ["Right", [1, 0, 0]], ["Left", [-1, 0, 0]], ["Top", [0, 1, 0]], ["Bottom", [0, -1, 0]]];
   const gizmo = () => {
-    const e = camera.matrixWorldInverse.elements, R = (i: number, j: number) => e[j * 4 + i], S = [1, -1, 1];
+    const e = (cam() as THREE.Camera).matrixWorldInverse.elements, R = (i: number, j: number) => e[j * 4 + i], S = [1, -1, 1];
     void S;
     if (cubeEl) {
       // Each face's four corners turned with the view; a face shows when it faces the viewer.
@@ -185,7 +186,7 @@ export const View3D = () => {
     const L = stageL(m);
     if (opts().grid) floor(L);
     axes(L);
-    if (!m.shapes.length && !m.volume && !m.parts?.length) originPlanes(L);
+    if (picking() || (!m.shapes.length && !m.volume && !m.parts?.length && !sketch())) originPlanes(L);
     renderer.localClippingEnabled = false;
     /** A section point a fraction f of the way along the sweep, in 3D. */
     const sweep = (p: number[], f: number): P3 => rev ? [p[0] * Math.cos(rev * f), p[1], p[0] * Math.sin(rev * f)] : [p[0], p[1], t * f];
@@ -346,7 +347,7 @@ export const View3D = () => {
     const SL = stageL(m);
     if (opts().grid) floor(SL);
     axes(SL);
-    if (empty ? !wpOn() : drawing() && !wpOn()) originPlanes(SL);
+    if (picking() || (empty && !sketch())) originPlanes(SL);
     const r = spaceRes(), f = r ? deform3(m, r) : 0, q = q3(), rg = range3(), cols = palette(opts().contours).map(c => new THREE.Color(c));
     const showRes = !!r && r.members.length === m.members.length;
     // Members: as drawn (faint when the deflected shape is on top), selected ones in the accent.
@@ -488,102 +489,42 @@ export const View3D = () => {
     draw();
   };
 
-  // Drawing a 3D frame in the 3D view (0.5.9): Beam, Truss and Node work here. The pointer snaps
-  // to a node, else to the grid on the work plane (Front, Side or Plan) through the last point;
-  // each click goes on from the last point; Tab turns the plane; a point can be typed (x, y, z, or
-  // @dx, dy, dz from the last point); Esc stops.
+  // Sketching (0.6.2). New Sketch, or a drawing tool of a 3D frame, asks for a plane: the squares
+  // at the origin. While sketching, the view looks square at the plane through an orthographic
+  // camera lined up with the sketch canvas lying over it (same scale and pan), so the sketch sits
+  // on the model; turned away, the usual camera comes back.
   type WP = "xy" | "zy" | "xz";
-  // Shown Z up: the engine's x-y plane is the Front (X–Z) plane at a depth Y = −z, its z-y plane
-  // the Side (Y–Z) plane at X = x, its x-z plane the Top (X–Y) plane at a height Z = y.
-  const WPN: Record<WP, [number, string, string]> = { xy: [2, "Front", "X–Z"], zy: [0, "Side", "Y–Z"], xz: [1, "Top", "X–Y"] };
-  /** The shown depth of the plane: its axis name and value. */
-  const depthShown = (k: WP, at: number): [string, number] => k === "xy" ? ["Y", -at || 0] : k === "zy" ? ["X", at] : ["Z", at];
-  const [wp, setWp] = createSignal<WP>("xy");
-  const [wpAt, setWpAt] = createSignal(0);
-  const [start3, setStart3] = createSignal<P3 | null>(null);
-  /** A plane has been picked to draw on (0.6.1): one of the origin planes, Tab, or a node clicked. */
-  const [wpOn, setWpOn] = createSignal(false);
-  /** Draw on plane k through a depth: the view turns to face it (it still turns freely). */
-  const pickPlane = (k: WP, at: number) => {
-    setWp(k); setWpAt(at); setWpOn(true);
-    fit(false, ({ xy: [0, 0, 1], zy: [1, 0, 0], xz: [0, 1, 0.001] } as Record<WP, P3>)[k]);
-  };
-  const [hover3, setHover3] = createSignal<{ p: P3; node: boolean; sx: number; sy: number } | null>(null);
-  const drawing = () => model()?.analysis === "space" && ["beam", "truss", "node"].includes(tool());
-  createEffect(() => { if (!drawing()) { setStart3(null); setHover3(null); setWpOn(false); } });
-  const drawGroup = new THREE.Group();
-  scene.add(drawGroup);
-  /** The node under the pointer, else the grid point on the work plane under it. */
-  const hit3 = (x: number, y: number): { p: P3; node: boolean } | null => {
-    const m = model(); if (!m) return null;
-    let best: { p: P3; d: number } | null = null;
-    for (const n of m.nodes) { const p: P3 = [n.x, n.y, n.z ?? 0], s = screen(p), d = Math.hypot(s[0] - x, s[1] - y); if (d < 10 && (!best || d < best.d)) best = { p, d }; }
-    if (best) return { p: best.p, node: true };
-    if (!wpOn()) return null;
-    const [w, h] = size(), ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
-    const k = WPN[wp()][0], nv = new THREE.Vector3(k === 0 ? 1 : 0, k === 1 ? 1 : 0, k === 2 ? 1 : 0);
-    const q = ray.ray.intersectPlane(new THREE.Plane(nv, -wpAt()), new THREE.Vector3()); if (!q) return null;
-    const g = m.grid > 0 ? m.grid : 0.5, p: P3 = [q.x, q.y, q.z];
-    for (let i = 0; i < 3; i++) p[i] = i === k ? wpAt() : Math.round(p[i] / g) * g + 0;
-    return { p, node: false };
-  };
-  /** A point placed: a node, or the end of a member from the last point. */
-  const place3 = async (p: P3) => {
-    const t = tool(), k = WPN[wp()][0];
-    if (t === "node") { const o = await act({ Add: { item: { Node: { id: 0, x: p[0], y: p[1], z: p[2] } } } }); if (o?.created.length) setSel(o.created); return; }
-    const s = start3();
-    if (s && Math.hypot(p[0] - s[0], p[1] - s[1], p[2] - s[2]) > 1e-9) {
-      const o = await act({ AddMember: { from: [s[0], s[1]], to: [p[0], p[1]], kind: t, section: null, material: null, z: [s[2], p[2]] } });
-      if (!o) return;
-    }
-    setStart3(p); setWpAt(p[k]);
-  };
-  const turnPlane = () => { const order: WP[] = ["xy", "zy", "xz"], n = order[(order.indexOf(wp()) + 1) % 3], s = start3(); setWp(n); setWpOn(true); if (s) setWpAt(s[WPN[n][0]]); else setWpAt(0); };
-  /** A typed point: "x, y, z" in the shown units, or "@dx, dy, dz" from the last point. */
-  const typed = async (text: string) => {
-    const rel = text.trim().startsWith("@"), v = text.replace("@", "").split(/[\s,;]+/).filter(Boolean).map(parseNum);
-    if (v.length !== 3 || v.some(x => x === null)) { toast("Type a point as X, Y, Z (or @dX, dY, dZ from the last point), in " + unit("coord") + "."); return false; }
-    const d = fromD(v.map(x => fromU("coord", x!)) as P3), s = start3() ?? [0, 0, 0];
-    setWpOn(true);
-    await place3(rel ? [s[0] + d[0], s[1] + d[1], s[2] + d[2]] : d);
-    return true;
-  };
+  const picking = () => sketchPick() || (!sketch() && model()?.analysis === "space" && ["beam", "truss", "node"].includes(tool()));
+  const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  const cam = (): THREE.Camera => (sketch()?.facing ? ortho : camera);
+  // Turning away from the sketch: the usual camera starts from the sketch's side, a little turned,
+  // framing the whole model, so the sketch stays in sight.
+  let wasFacing = false;
   createEffect(() => {
-    const m = model(), on = drawing() && wpOn(), s = start3(), hv = hover3(), k = WPN[wp()][0], at = wpAt();
-    themeTick();
-    drawGroup.traverse(o => { const x = o as any; x.geometry?.dispose?.(); x.material?.dispose?.(); });
-    drawGroup.clear();
-    if (!on || !m) { draw(); return; }
-    // The work plane's grid (0.6.1): a fixed size from the stage, round the origin (upright
-    // planes standing on the floor), so it does not grow and shrink as you draw.
-    const g = m.grid > 0 ? m.grid : 0.5, SL = stageL(m) * 0.5;
-    const [a, b] = [0, 1, 2].filter(i => i !== k);
-    const lo = [a, b].map(i => i === 1 ? 0 : -Math.ceil(SL / g) * g), hi = [a, b].map(() => Math.ceil(SL / g) * g);
-    const step = Math.max(g, nice(SL / 20));
-    const pt = (u: number, v: number): number[] => { const r = [0, 0, 0]; r[a] = u; r[b] = v; r[k] = at; return r; };
-    const gl: number[] = [];
-    for (let u = lo[0]; u <= hi[0] + 1e-9; u += step) gl.push(...pt(u, lo[1]), ...pt(u, hi[1]));
-    for (let v = lo[1]; v <= hi[1] + 1e-9; v += step) gl.push(...pt(lo[0], v), ...pt(hi[0], v));
-    const lg = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(gl), 3));
-    drawGroup.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.12 })));
-    // A faint fill, so the grid reads as a plane, with a firmer outline.
-    const c4 = [pt(lo[0], lo[1]), pt(hi[0], lo[1]), pt(hi[0], hi[1]), pt(lo[0], hi[1])];
-    const fg = new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([...c4[0], ...c4[1], ...c4[2], ...c4[0], ...c4[2], ...c4[3]]), 3));
-    drawGroup.add(new THREE.Mesh(fg, new THREE.MeshBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.035, side: THREE.DoubleSide, depthWrite: false })));
-    drawGroup.add(new THREE.LineLoop(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array(c4.flat()), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color("#2F6FD0"), transparent: true, opacity: 0.55 })));
-    const r = Math.max(span3(m), g * 4) * 0.008;
-    if (hv) { const mk = new THREE.Mesh(new THREE.SphereGeometry(r * (hv.node ? 1.6 : 1), 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(hv.node ? "#2E9D57" : "#2F6FD0") })); mk.position.set(...hv.p); drawGroup.add(mk); }
-    if (s) {
-      const mk = new THREE.Mesh(new THREE.SphereGeometry(r * 1.3, 12, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(css("--blue")) })); mk.position.set(...s); drawGroup.add(mk);
-      if (hv && tool() !== "node") drawGroup.add(new THREE.Line(new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(new Float32Array([...s, ...hv.p]), 3)), new THREE.LineBasicMaterial({ color: new THREE.Color(css("--blue")) })));
+    const on = !!sketch()?.facing, f = sketchFrame();
+    if (wasFacing && !on && sketch() && f) {
+      const N = new THREE.Vector3(...f.N).normalize(), U = new THREE.Vector3(...f.U).normalize(), V = new THREE.Vector3(...f.V).normalize();
+      const d = N.multiplyScalar(1).addScaledVector(U, 0.45).addScaledVector(V, 0.35);
+      queueMicrotask(() => fit(false, [d.x, d.y, d.z]));
     }
+    wasFacing = on;
+  });
+  createEffect(() => {
+    const sk = sketch(), s = scale(), pn = pan(), m = model();
+    if (!sk?.facing || !m) { draw(); return; }
+    const f = sketchFrame(); if (!f) return;
+    const [w, h] = size(), U = new THREE.Vector3(...f.U).normalize(), V = new THREE.Vector3(...f.V).normalize(), N = new THREE.Vector3(...f.N).normalize();
+    const L = stageL(m) * 20, c = new THREE.Vector3(...f.O).addScaledVector(U, (w / 2 - pn[0]) / s).addScaledVector(V, (pn[1] - h / 2) / s);
+    ortho.left = -w / 2 / s; ortho.right = w / 2 / s; ortho.top = h / 2 / s; ortho.bottom = -h / 2 / s; ortho.near = 0; ortho.far = 2 * L;
+    ortho.position.copy(c).addScaledVector(N, L); ortho.up.copy(V); ortho.lookAt(c); ortho.updateProjectionMatrix(); ortho.updateMatrixWorld();
     draw();
   });
+  /** Sketch on plane k: for a part, a new part placed on it; for a 3D frame, its working plane. */
+  const sketchOn = (k: WP) => import("./sketchmode").then(x => x.beginSketch(k));
 
   /** Screen position of a 3D point. */
   const screen = (p: P3): [number, number] => {
-    const v = new THREE.Vector3(...p).project(camera), [w, h] = size();
+    const v = new THREE.Vector3(...p).project(cam()), [w, h] = size();
     return [(v.x + 1) / 2 * w, (1 - v.y) / 2 * h];
   };
   const segDist = (q: [number, number], a: [number, number], b: [number, number]) => {
@@ -624,6 +565,12 @@ export const View3D = () => {
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4; down = null;
     if (moved) return;
     const rc = host.getBoundingClientRect(), t = tool();
+    // Picking the plane to sketch on (0.6.2).
+    if (picking()) {
+      const o = pickOrigin(e.clientX - rc.left, e.clientY - rc.top);
+      if (o) sketchOn(o); else toast("Pick a plane to sketch on: click one of the three squares at the origin.");
+      return;
+    }
     if (isSolidA(model()?.analysis)) {
       if (t === "select") { setSel([]); return; }
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
@@ -648,16 +595,6 @@ export const View3D = () => {
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) setSel(o.created);
       return;
-    }
-    // Drawing tools draw here, on the work plane or from node to node (0.5.9).
-    if (drawing()) {
-      // Before the first point, a click on a plane at the origin picks the plane to draw on.
-      const o = !wpOn() ? pickOrigin(e.clientX - rc.left, e.clientY - rc.top) : null;
-      if (o) { pickPlane(o, 0); return; }
-      const h = hit3(e.clientX - rc.left, e.clientY - rc.top);
-      if (!h) { if (!wpOn()) toast("Pick a plane to draw on: click one of the three squares at the origin, or start from a node."); return; }
-      if (!wpOn()) setWpOn(true);
-      await place3(h.p); return;
     }
     setPlane("xy");
   };
@@ -700,7 +637,6 @@ export const View3D = () => {
   const onMove = (e: PointerEvent) => {
     if (e.buttons) { setProbe(null); setProbe3(null); return; }
     const rc = host.getBoundingClientRect();
-    if (drawing()) { const h = hit3(e.clientX - rc.left, e.clientY - rc.top); setHover3(h ? { ...h, sx: e.clientX - rc.left, sy: e.clientY - rc.top } : null); return; }
     if (isSolidA(model()?.analysis)) setProbe3(probeSolid(e.clientX - rc.left, e.clientY - rc.top));
     else setProbe(probeAt(e.clientX - rc.left, e.clientY - rc.top));
   };
@@ -787,20 +723,18 @@ export const View3D = () => {
   });
   // A new model (another file or example) is framed afresh.
   let lastName = "";
-  createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}|${m.shapes.length === 0}` : ""; if (key !== lastName) { const was = lastName; lastName = key; if (!(drawing() && was.split("|")[0] === key.split("|")[0])) queueMicrotask(() => fit()); } });
+  createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}|${m.shapes.length === 0}` : ""; if (key !== lastName) { const was = lastName; lastName = key; if (!((picking() || sketch()) && was.split("|")[0] === key.split("|")[0])) queueMicrotask(() => fit()); } });
 
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
-      onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Tab" && drawing()) { e.preventDefault(); turnPlane(); } else if (e.key === "Escape") { if (start3()) setStart3(null); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
-      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length}><div class="empty corner"><b>Build a part</b><span>A part is a sketch, extruded or revolved. Add one: its sketch opens to draw the outline and holes in; then extrude or revolve it, and place it, in the Inspector. Add more parts the same way; where they touch they are tied.</span><button class="btn pri" onClick={() => import("./panels").then(k => k.newPart())}>New part</button></div></Show>
-      <Show when={model()?.analysis === "space" && !model()?.nodes.length}><Show when={!drawing()}><div class="empty corner"><b>Draw a 3D frame</b><span>Pick Beam, then a plane to draw on: one of the three squares at the origin (the view turns to face it, and still turns freely). Points snap to the grid on the plane and to nodes; each click goes on from the last. Tab turns the plane through the last point; or type a point (X, Y, Z, Z up). The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
-      <Show when={drawing()}><div class="draw3" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
-        <span class="seg">{(["xy", "zy", "xz"] as WP[]).map(k => <button classList={{ on: wpOn() && wp() === k }} title={`Draw on the ${WPN[k][1]} plane (${WPN[k][2]}) through the last point (Tab turns it); the view turns to face it`} onClick={() => { const s = start3(); pickPlane(k, s ? s[WPN[k][0]] : 0); host.focus(); }}>{WPN[k][1]}</button>)}</span>
-        <Show when={wpOn()} fallback={<span class="muted">Pick a plane: a square at the origin, or above</span>}><span class="muted">{depthShown(wp(), wpAt())[0]} = {fmt("coord", depthShown(wp(), wpAt())[1])}</span></Show>
-        <input class="pt3" placeholder="X, Y, Z  or  @dX, dY, dZ" title={`Type a point in ${unit("coord")} and press Enter: X, Y, Z (Z up), or @dX, dY, dZ from the last point`} onKeyDown={async e => { e.stopPropagation(); const el = e.currentTarget; if (e.key === "Enter" && await typed(el.value)) el.value = ""; else if (e.key === "Escape") { if (start3()) setStart3(null); else { el.blur(); host.focus(); } } }} />
-        <span class="muted small">{start3() ? "Click the next point · Esc: stop here" : tool() === "node" ? "Click to place a node" : "Click the first point"} · Tab: turn the plane</span>
+      onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Escape") { if (sketchPick()) setSketchPick(false); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
+      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length}><div class="empty corner"><b>Build a part</b><span>A part is a sketch, extruded or revolved. New Sketch: pick a plane (a square at the origin) and the view turns to face it; draw the outline and holes with the Sketch tab, then Finish Sketch and set how far it is extruded or revolved in the Inspector. Add more parts the same way; where they touch they are tied.</span><button class="btn pri" onClick={() => import("./sketchmode").then(k => k.newSketch())}>New sketch</button></div></Show>
+      <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>Start a sketch: pick one of the three squares at the origin and the view turns square to it. Draw beams with clicks (each goes on from the last; nearly level or upright snaps level or upright) or typed points; move the plane with its offset; Finish Sketch, then sketch on the next plane. The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
+      <Show when={picking()}><div class="draw3 pickbar" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
+        <b>New sketch</b><span class="muted">Pick a plane: click a square at the origin, or</span>
+        <span class="seg">{(["xy", "zy", "xz"] as WP[]).map(k => <button title={`Sketch on the ${({ xy: "Front (X–Z)", zy: "Side (Y–Z)", xz: "Top (X–Y)" } as Record<WP, string>)[k]} plane`} onClick={() => sketchOn(k)}>{({ xy: "Front", zy: "Side", xz: "Top" } as Record<WP, string>)[k]}</button>)}</span>
+        <button class="btn sm" onClick={() => { setSketchPick(false); setTool("select"); }}>Cancel</button>
       </div></Show>
-      <Show when={drawing() && hover3()}>{h => <div class="hover3" style={{ left: `${h().sx + 14}px`, top: `${h().sy + 10}px` }}>{h().node ? "Node " : ""}{toD(h().p).map(c => num3(toU("coord", c))).join(", ")} {unit("coord")}{start3() && tool() !== "node" ? ` · ${fmt("len", Math.hypot(h().p[0] - start3()![0], h().p[1] - start3()![1], h().p[2] - start3()![2]))}` : ""}</div>}</Show>
       <Show when={probe3() && solidRes()}>{_ => { const r = solidRes()!, i = probe3()!.i, p = r.surface.nodes[i], fd = curField(), v = r.fields.find(f => f.key === fd.key)?.v[i] ?? 0, d = solidDisp(r)[i]; return (
         <div class="probe"><b>At {toD(p as P3).map(c => fmt("coord", c).split(" ")[0]).join(", ")} {unit("coord")}</b><span>{fd.short} {fmt(fd.q, v)}</span><Show when={r.kind === "solid"}><span>|u| {fmt("len", Math.hypot(d[0], d[1], d[2]))}</span></Show></div>); }}</Show>
       <Show when={probe()}>{p => { const mr = p().mr, i = p().i, d = mr.d[i]; return (

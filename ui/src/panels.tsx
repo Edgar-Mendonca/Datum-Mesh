@@ -233,12 +233,7 @@ const MemberInsp = (p: { b: Member; m: Model }) => {
 };
 
 /** A new part (0.6.0): added, made the one being sketched, and its sketch opened to draw in. */
-export const newPart = async () => {
-  const o = await act({ Add: { item: { Part: { id: 0, name: "", depth: 0.1, angle: 0, material: model()?.materials[0]?.id ?? 0, at: [0, 0, 0], turn: [0, 0, 0], size: 0 } } } });
-  const id = o?.created[0]; if (!id) return;
-  setActivePart(id); setSel([id]);
-  import("./plane3").then(k => k.setPlane("xy")); setTool("rect");
-};
+export const newPart = () => import("./sketchmode").then(k => k.newSketch());
 
 /** An angle shown and typed in degrees, kept in radians. */
 const DegField = (p: { label: string; v: number; set: (v: number) => void; hint?: string }) => (
@@ -255,7 +250,7 @@ const PartInsp = (p: { p: Part; m: Model }) => {
   return <>
     <Row label="Name"><input value={p.p.name} onChange={e => put({ name: e.currentTarget.value })} /></Row>
     <p class="muted small">{shapes().length ? `Its sketch: ${shapes().filter(s => !s.hole).length} outline${shapes().filter(s => !s.hole).length === 1 ? "" : "s"}${shapes().some(s => s.hole) ? `, ${shapes().filter(s => s.hole).length} hole${shapes().filter(s => s.hole).length === 1 ? "" : "s"}` : ""}.` : "Its sketch is empty: draw its outline."}</p>
-    <p class="ibtns"><button class="btn sm pri" title="Draw or change this part's outline and holes, on its own sketch plane (x across, y up)" onClick={() => { setActivePart(p.p.id); import("./plane3").then(k => k.setPlane("xy")); setTool("select"); }}>Edit Sketch</button></p>
+    <p class="ibtns"><button class="btn sm pri" title="Draw or change this part's outline and holes, on its own sketch plane (x across, y up)" onClick={() => import("./sketchmode").then(k => k.editSketch(p.p.id))}>Edit Sketch</button></p>
     <Row label="Made by"><Choice v={rev() ? "revolve" : "extrude"} set={v => put(v === "revolve" ? { angle: Math.PI * 2, depth: p.p.depth } : { angle: 0, depth: p.p.depth > 0 ? p.p.depth : 0.1 })} opts={[["extrude", "Extruding the sketch along its z"], ["revolve", "Revolving the sketch about its y axis"]]} /></Row>
     <Show when={rev()} fallback={<NumField label="Depth" q="len" v={p.p.depth} min={0} set={depth => depth > 0 && put({ depth })} hint="How far the sketch is extruded, along the sketch's z" />}>
       <DegField label="Turned through" v={p.p.angle} set={angle => angle > 0 && angle <= 360.0001 * Math.PI / 180 && put({ angle: Math.min(angle, Math.PI * 2) })} hint="360° for a whole ring or shaft; draw the sketch right of its y axis" />

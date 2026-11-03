@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.2 — 2026-11-03
+
+Sketch on a plane: drawing in 3D starts with a sketch, square to you, on a plane you pick.
+
+**New Sketch**
+- Geometry › New Sketch, then click one of the three squares at the origin (Front X-Z, Side Y-Z, Top X-Y) or a button on the bar. The view turns square to the plane and the sketch lies over the model, lined up with it, so what you draw sits where it goes in 3D.
+- A Sketch tab opens with the drawing tools, and Finish Sketch and Cancel. Finish keeps what you drew; Cancel takes back every change made while sketching.
+- The sketch bar names the plane, moves it along its normal (type the offset, or pick a plane that already has nodes), takes typed points (across, up, or @d-across, d-up from the last point), and turns the view: Turn the View looks round the model in 3D with the sketch kept open, starting from the sketch's side; Look At comes back square to it.
+- A line nearly level or upright with the last point snaps level or upright. Sizes are typed, not solved: there are no sketch constraints to keep.
+
+**3D solids**
+- New Sketch makes a new part on the plane picked and opens its sketch with the Rectangle tool; Finish selects the part so its depth or revolve angle can be set in the Inspector; an empty sketch makes no part. Edit Sketch in the Inspector opens a part's sketch the same way.
+
+**3D frames**
+- Beams, truss bars, nodes and plates are drawn in a sketch on a plane too (the Sketch tab has Line (Beam), Truss Bar, Node and the plate tools). The Front/Side/Plan bar above the 3D view, Tab to turn the plane, and the 3D typed X, Y, Z point give way to the sketch.
+- While sketching, the pointer and the status bar give coordinates with Z up.
+
 ## 0.6.1 — 2026-11-03
 
 A cleaner start: examples in their own place, and 3D with Z up, a view cube and planes to draw on.

@@ -2,12 +2,12 @@
 // legend under the 3D view and the plane bar over it. The 3D view itself (view3d.tsx, with
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
 import { Show, createMemo, createSignal } from "solid-js";
-import { Model, SpaceMember, SpaceResults, num, parseNum, isSolidA, solidDisp } from "./api";
-import { model, spaceRes, solidRes, stale, show, opts, setView, setTool, tool, act, setSel, solvedFor, curPart, setActivePart } from "./store";
+import { Model, SpaceMember, SpaceResults, num, isSolidA, solidDisp } from "./api";
+import { model, spaceRes, solidRes, stale, show, opts, setView, tool, act, setSel, solvedFor } from "./store";
 import { defaultLoad, defaultSupport } from "./panels";
 import { palette, BANDS, curField, fieldsFor, rangeOf, ColourBar } from "./parts";
-import { fmt, unit, fromU, Q } from "./units";
-import { setPlane, plane, PLANES, space, solid, depth, setDepth, depths, depthAxis } from "./plane3";
+import { fmt, unit, Q } from "./units";
+import { setPlane, plane, solid } from "./plane3";
 import { C, imbalanceOf } from "./cmds";
 import { Icon } from "./ui";
 import { dynDialog } from "./steps";
@@ -81,7 +81,6 @@ export const SpaceLegend = () => {
 
 /** Over the model view of a 3D frame: the 3D view or a working plane, and the plane's depth. */
 export const PlaneBar = () => {
-  const [typed, setTyped] = createSignal("");
   /** Put the support or load being placed on the back or front face of a solid. */
   const onEnd = async (front: boolean) => {
     const t = tool(), [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4) === "pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
@@ -98,8 +97,6 @@ export const PlaneBar = () => {
     </div>; })()}</Show>
     <Show when={solid() && !model()?.volume && model()?.parts?.length}>
       <div class="planebar">
-        <span class="seg"><button classList={{ on: plane() === "3d" }} title="The assembly in 3D: turn it with the left button, pan with the right, zoom with the wheel; click a part's face to put a support or load on it" onClick={() => setPlane("3d")}>3D</button><button classList={{ on: plane() !== "3d" }} title="The sketch of the part picked here, drawn and edited as a plane part; the part is its sketch extruded or revolved" onClick={() => setPlane("xy")}>Sketch</button></span>
-        <select class="partpick" title="The part whose sketch Sketch shows" value={String(curPart())} onChange={e => setActivePart(+e.currentTarget.value)}>{(model()?.parts ?? []).map(p => <option value={String(p.id)} selected={p.id === curPart()}>{p.name}</option>)}</select>
         <Show when={model()?.assembly} fallback={<span class="warn small">{model()?.assembly_error ?? "Not meshed"}</span>}>{a => <span class="muted">{model()!.parts!.length} part{model()!.parts!.length === 1 ? "" : "s"}, {a().elements.toLocaleString()} {a().order === 2 ? "10-node" : "4-node"} tetrahedra{a().ties ? `, tied at ${a().ties.toLocaleString()} nodes where they touch` : ""}</span>}</Show>
         <Show when={placing()}><span class="grow" /><span class="muted">Click a face of a part in 3D to put it on</span></Show>
       </div>
@@ -111,17 +108,7 @@ export const PlaneBar = () => {
         <Show when={placing()}><span class="grow" /><span class="muted">Click a face in 3D, or put it on</span><Show when={!full()}><button class="btn sm" onClick={() => onEnd(false)} title={model()?.revolve ? "The cut face where the turn starts" : "The face at z = 0"}>the back face</button><button class="btn sm" onClick={() => onEnd(true)} title={model()?.revolve ? "The cut face where the turn ends" : "The face at z = thickness"}>the front face</button></Show><span class="muted">or an edge in Section</span></Show>
       </div>
     </Show>
-    <Show when={space()}>
-      <div class="planebar">
-        <span class="seg">{PLANES.map(([k, l, t]) => <button classList={{ on: plane() === k }} title={t} onClick={() => { setPlane(k); if (k === "3d") setTool("select"); }}>{l}</button>)}</span>
-        <Show when={plane() !== "3d"}>
-          <label>{depthAxis()} =</label>
-          <select value={String(depth())} onChange={e => setDepth(+e.currentTarget.value)}>{[...new Set([...depths(), depth()])].sort((a, b) => a - b).map(d => <option value={String(d)} selected={d === depth()}>{fmt("coord", d)}</option>)}</select>
-          <input class="mono" placeholder="other" value={typed()} title={`Another depth (${unit("coord")})`} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null) { setDepth(fromU("coord", v)); setTyped(""); e.currentTarget.value = ""; } }} />
-          <span class="muted">{plane() === "xy" ? "x across, y up" : plane() === "zy" ? "z across, y up (from the left)" : "x across, z towards you (from above)"} · members off this plane are faint</span>
-        </Show>
-      </div>
-    </Show>
+
   </>);
 };
 

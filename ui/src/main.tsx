@@ -2,9 +2,10 @@
 import { render } from "solid-js/web";
 import { For, Show, Switch, Match, onMount, createEffect, on, lazy, Suspense } from "solid-js";
 import "./fonts.css";
+import { toD } from "./axes";
 import "./styles.css";
 import { invoke, listen, Out, Options, num, isFrame } from "./api";
-import { out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed, modes, modeOn, closeDialog } from "./store";
+import { sketch, out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, stale, solving, partRes, meshed, modes, modeOn, closeDialog } from "./store";
 import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
@@ -18,6 +19,7 @@ const ReportPage = lazy(() => import("./print").then(m => ({ default: m.ReportPa
 import { PlaneBar, SpaceLegend, SolidLegend } from "./space3";
 // The 3D view brings three.js: loaded only when a 3D frame is shown.
 const View3D = lazy(() => import("./view3d").then(m => ({ default: m.View3D })));
+const SketchBar = lazy(() => import("./sketchmode").then(m => ({ default: m.SketchBar })));
 import { in3d, plane, onPlane, unproj } from "./plane3";
 import { Menu, Toast, Icon } from "./ui";
 import { fmt } from "./units";
@@ -40,7 +42,7 @@ const Status = () => {
   return (
     <footer class="status">
       <span>{toolHint()}</span>
-      <Show when={cursor()}>{c => <span class="mono muted">{onPlane() ? (() => { const p = unproj(c()[0], c()[1]); return `x ${fmt("coord", p[0])} · y ${fmt("coord", p[1])} · z ${fmt("coord", p[2])}`; })() : `x ${fmt("coord", c()[0])} · y ${fmt("coord", c()[1])}`}</span>}</Show>
+      <Show when={cursor()}>{c => <span class="mono muted">{onPlane() ? (() => { const p = toD(unproj(c()[0], c()[1])); return `X ${fmt("coord", p[0])} · Y ${fmt("coord", p[1])} · Z ${fmt("coord", p[2])}`; })() : `x ${fmt("coord", c()[0])} · y ${fmt("coord", c()[1])}`}</span>}</Show>
       <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${isFrame(model()!.analysis) ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : model()!.volume ? `${model()!.volume!.elements.toLocaleString()} tetrahedra` : model()!.parts?.length ? `${model()!.parts!.length} parts` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
       <span class="grow" />
       <span class="vsc"><For each={SIDE.filter(x => x !== "-") as [View, string, string][]}>{x => <button title={x[2]} onClick={() => setView(x[0])}><Icon n={x[1]} /></button>}</For></span>
@@ -93,7 +95,9 @@ const App = () => {
         <nav class="side"><For each={SIDE}>{x => x === "-" ? <hr /> : <button classList={{ on: view() === x[0] }} onClick={() => setView(x[0])} title={x[2]}><Icon n={x[1]} /><span>{x[2]}</span></button>}</For></nav>
         <div class="content">
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="center"><PlaneBar /><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
+            <Switch fallback={<div class="modelview"><Tree /><div class="center"><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
+                // Sketching (0.6.2): the 3D view behind, square to the plane, the sketch canvas over it.
+                <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
               <Match when={view() === "results"}><ResultsPage /></Match>
               <Match when={view() === "report"}><Suspense><ReportPage /></Suspense></Match>
             </Switch>
