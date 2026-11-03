@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes, spaceRes } from "./store";
+import { holeD, setHoleD, edgeSize, setEdgeSize, sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes, spaceRes } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
@@ -32,6 +32,11 @@ const B = (p: { i: string; l: string; run?: (e: MouseEvent) => void; big?: boole
 );
 const G = (p: { l: string; h?: string; children: JSX.Element }) => <div class="grp"><div class="items">{p.children}</div><div class="cap">{p.l}{p.h && <Help k={p.h} />}</div></div>;
 const S = (p: { children: JSX.Element }) => <div class="stack">{p.children}</div>;
+/** A length typed on the ribbon (shown units), kept in metres. */
+const Num = (p: { l: string; title: string; v: () => number; set: (v: number) => void }) => (
+  <label class="ribnum" title={p.title}>{p.l}<input class="mono" value={toU("len", p.v())} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null && v > 0) p.set(fromU("len", v)); else e.currentTarget.value = String(toU("len", p.v())); }} /><span class="unit">{unit("len")}</span></label>
+);
+const Mo = () => import("./modelling");
 /** A planned tool: shown dimmed with the release it arrives in. */
 const Planned = (p: { i: string; l: string; v: string; big?: boolean }) => <B i={p.i} l={p.l} big={p.big} off title={`${p.l}: planned for ${p.v}`} />;
 /** A contour field button: shows that result on the part. */
@@ -180,6 +185,13 @@ export const Ribbon = () => {
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
           <Show when={isSolidA(m()?.analysis)}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and sketch a new part on it; then extrude or revolve it" /></G></Show>
+          <Show when={isSolidA(m()?.analysis) && m()?.parts?.length}>
+            <G l="Features" h="modelling"><B big i="solid" l="Extrude" run={() => Mo().then(k => k.editSweep())} title="Extrude or revolve the selected part, with a preview: how far, and which way" />
+              <S><T i="hcircle" l="Hole" t="hole3" title="Click a part's front or back face: a round hole right through it" /><T i="fillet" l="Fillet" t="fillet3" title="Click a part near an edge along its depth: the edge is rounded" /><T i="chamfer" l="Chamfer" t="chamfer3" title="Click a part near an edge along its depth: the edge is bevelled" /></S>
+              <S><Num l="Ø" title="Diameter of the holes made next" v={holeD} set={setHoleD} /><Num l="Size" title="Radius of the next fillet, or how much the next chamfer cuts off each side" v={edgeSize} set={setEdgeSize} /></S>
+              <B big i="subtract" l="Cut" run={() => Mo().then(k => k.cutParts())} title="Cut the selected part right through another: its outlines become holes there" /></G>
+            <G l="Arrange" h="modelling"><S><B i="repeat" l="Move or Copy…" run={() => Mo().then(k => k.moveParts())} title="Move the selected parts, or copy them in a row" /><B i="cpattern" l="Turn or Pattern…" run={() => Mo().then(k => k.turnParts())} title="Turn the selected parts about an axis, or copy them round it" /><B i="symmetry" l="Mirror…" run={() => Mo().then(k => k.mirrorParts())} title="Mirror the selected parts in a plane" /></S></G>
+          </Show>
           <Show when={!(isSolidA(m()?.analysis) && (m()?.parts?.length || !m()?.shapes.length))}><SketchDraw /></Show>
 
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G>

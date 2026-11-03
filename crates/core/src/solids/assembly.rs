@@ -95,12 +95,18 @@ fn part_mesh(m: &Model, p: &Part, order: u8) -> Result<PartMesh, String> {
     if p.size > 0.0 {
         sub.mesh.size = p.size;
     } else if m.mesh.size <= 0.0 {
-        // Automatic: the sketch's own size, but no finer than about 15 000 tetrahedra over the
-        // part's sweep (3 per prism, area / 0.43 h² triangles, length / h layers).
-        let area: f64 = sub.shapes.iter().map(|s| if s.hole { -s.geom.area().abs() } else { s.geom.area().abs() }).sum::<f64>().max(0.0);
-        let rmax = sub.bounds().map_or(0.0, |b| b[2].abs().max(b[0].abs()));
-        let length = if p.angle > 0.0 { p.angle * rmax } else { p.depth };
-        let by_volume = (3.0 * area * length / (0.43 * 15_000.0)).cbrt();
+        // Automatic: the sketch's own size, but no finer than about 15 000 tetrahedra over all
+        // the parts (3 per prism, area / 0.43 h² triangles, length / h layers), shared by the
+        // parts' volumes (0.6.3: each part took 15 000, and three copies went over the limit).
+        let bulk = |p: &Part| -> f64 {
+            let sk: Vec<&crate::model::Shape> = m.shapes.iter().filter(|s| s.part == p.id && s.plate.is_none()).collect();
+            let area: f64 = sk.iter().map(|s| if s.hole { -s.geom.area().abs() } else { s.geom.area().abs() }).sum::<f64>().max(0.0);
+            let rmax = sk.iter().flat_map(|s| s.geom.outline(f64::MAX, 0).0).fold(0.0_f64, |r, q| r.max(q[0].abs()));
+            area * if p.angle > 0.0 { p.angle * rmax } else { p.depth }
+        };
+        let total: f64 = m.parts.iter().map(bulk).sum::<f64>().max(1e-300);
+        let share = (15_000.0 * bulk(p) / total).max(2_000.0);
+        let by_volume = (3.0 * bulk(p) / (0.43 * share)).cbrt();
         sub.mesh.size = super::mesh::auto_size(&sub).max(by_volume);
     }
     if sub.shapes.iter().all(|s| s.hole) {
@@ -123,10 +129,10 @@ fn part_mesh(m: &Model, p: &Part, order: u8) -> Result<PartMesh, String> {
     // the layers), in the part's own space, then placed.
     let local = |x: f64, y: f64, f: f64| -> [f64; 3] {
         if rev {
-            let th = p.angle * f;
+            let th = p.from + p.angle * f;
             [x * th.cos(), y, x * th.sin()]
         } else {
-            [x, y, p.depth * f]
+            [x, y, p.from + p.depth * f]
         }
     };
     let mut nodes: Vec<[f64; 3]> = vec![];
@@ -415,6 +421,16 @@ mod tests {
             assert!(warn.is_empty(), "{}: {warn:?}", e.id);
             assert_eq!(b, m, "{}", e.id);
         }
+    }
+
+    #[test]
+    fn automatic_parts_share_one_budget() {
+        // 0.6.3, found in the app: a small plate copied twice went over the node limit at the
+        // automatic size (each part was given about 15 000 tetrahedra).
+        let mut d = parts(&[(Geom::rect(0.0, 0.0, 0.05, 0.04), 0.02, 0.0, [0.0; 3], [0.0; 3]), (Geom::rect(0.0, 0.0, 0.05, 0.04), 0.02, 0.0, [0.1, 0.0, 0.0], [0.0; 3]), (Geom::rect(0.0, 0.0, 0.05, 0.04), 0.02, 0.0, [0.2, 0.0, 0.0], [0.0; 3])]);
+        d.m.mesh.size = 0.0;
+        let a = mesh(&d.m).unwrap();
+        assert!(a.mesh.nodes.len() < 40_000 && a.mesh.tets.len() > 3_000, "{} {}", a.mesh.nodes.len(), a.mesh.tets.len());
     }
 
     #[test]

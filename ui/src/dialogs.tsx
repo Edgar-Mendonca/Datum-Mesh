@@ -7,6 +7,7 @@ import { C } from "./cmds";
 import { numIn } from "./panels";
 import { Dialog, Icon } from "./ui";
 import { Q, toU, fromU, unit, fmt } from "./units";
+import { fromD } from "./axes";
 
 /** A number field inside a dialog: display units in, SI out. */
 export const F = (p: { l: string; q: Q; v: number; set: (v: number) => void }) => (
@@ -145,15 +146,16 @@ export const nodeAt = () => openDialog(() => {
 export const repeat = () => openDialog(() => {
   const m = model()!, chosen = () => { const s = new Set(sel()); const ids = m.members.filter(b => s.has(b.id)).map(b => b.id); return ids.length ? ids : m.members.map(b => b.id); };
   const step0 = Math.max(m.grid * 8, 1);
-  const [d, setD] = createSignal<[number, number, number]>([0, 0, step0]), [n, setN] = createSignal(1), [link, setLink] = createSignal<string>("beam");
+  // The step as shown (Z up, 0.6.3: it was taken in the engine's axes, y up), sent in the engine's.
+  const [d, setD] = createSignal<[number, number, number]>([0, step0, 0]), [n, setN] = createSignal(1), [link, setLink] = createSignal<string>("beam");
   const axis = (k: number, l: string) => <><label>{l} ({unit("coord")})</label><input class="mono" value={num(toU("coord", d()[k]), 6).replace("−", "-")} onChange={numIn(v => setD(d().map((q, i) => i === k ? fromU("coord", v) : q) as [number, number, number]), () => num(toU("coord", d()[k]), 6).replace("−", "-"))} /></>;
   return <Dialog title="Repeat" okText="Repeat" help="space" ok={async () => {
-    const o = await act({ Repeat: { ids: chosen(), step: d(), times: n(), link: link() === "none" ? null : link() } });
+    const o = await act({ Repeat: { ids: chosen(), step: fromD(d()), times: n(), link: link() === "none" ? null : link() } });
     if (!o) return false;
     toast(`Made ${o.created.length} items: ${n()} ${n() === 1 ? "copy" : "copies"} of ${chosen().length} members${link() === "none" ? "" : ", joined"}.`, true);
   }}>
     <p class="muted small">{sel().length ? `${chosen().length} selected members` : `The whole frame (${chosen().length} members); select members first to repeat only those`}, copied with their supports and loads, each step further on.</p>
-    <div class="form">{axis(0, "Step along x")}{axis(1, "Step along y")}{axis(2, "Step along z")}
+    <div class="form">{axis(0, "Step along X")}{axis(1, "Step along Y")}{axis(2, "Step along Z")}
       <label>Copies</label><input class="mono" value={n()} onChange={numIn(v => v >= 1 && v <= 100 && Number.isInteger(v) ? setN(v) : false, n)} />
       <label>Join each copy</label><select value={link()} onChange={e => setLink(e.currentTarget.value)}><option value="beam" selected={link() === "beam"}>with beams</option><option value="truss" selected={link() === "truss"}>with truss bars</option><option value="none" selected={link() === "none"}>not at all</option></select></div>
   </Dialog>;

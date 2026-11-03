@@ -15,7 +15,7 @@ export const setOut = (o: Out | null | undefined) => {
   });
   if (o.warnings?.length) toast(`Opened with repairs: ${o.warnings.join(" ")}`);
 };
-export const allIds = (m: Model) => [...m.nodes, ...m.members, ...m.shapes, ...m.supports, ...m.loads].map(x => x.id);
+export const allIds = (m: Model) => [...m.nodes, ...m.members, ...m.shapes, ...m.supports, ...m.loads, ...(m.parts ?? []), ...m.materials, ...m.sections, ...(m.cases ?? []), ...(m.combos ?? []), ...(m.steps ?? [])].map(x => x.id);
 
 /** auto, light or dark; auto follows Windows. */
 export const [theme, setThemeRaw] = createSignal("auto");
@@ -117,7 +117,13 @@ export const [solvedFor, setSolvedFor] = createSignal<string>("");
  * x-y plane, placed with the part; a 3D frame's on a working plane (xy Front, zy Side, xz Top) at a
  * depth. `facing`: the view looks square at the plane and the sketch canvas lies over it. `edits`
  * counts the edits made while sketching, so Cancel can undo them. */
-export type SketchOn = { kind: "part" | "frame"; part: number; isNew: boolean; plane: "xy" | "zy" | "xz"; depth: number; facing: boolean; edits: number };
+export type SketchOn = { kind: "part" | "frame"; part: number; isNew: boolean; plane: "xy" | "zy" | "xz"; depth: number; facing: boolean; edits: number;
+  /** Sketching on a part's face (0.6.3): that part, whether it is its front or back face (a cut can go through it), and where the new part's plane starts. */
+  face?: { of: number; end: boolean }; base?: [number, number, number] };
+/** Basic modelling (0.6.3): the hole size and the round or bevel size of the 3D tools, and the part whose extrusion is being set (0: none). */
+export const [holeD, setHoleD] = createSignal(0.01);
+export const [edgeSize, setEdgeSize] = createSignal(0.002);
+export const [sweepOn, setSweepOn] = createSignal(0);
 export const [sketch, setSketch] = createSignal<SketchOn | null>(null);
 /** New Sketch was asked for: a plane is to be picked in the 3D view. */
 export const [sketchPick, setSketchPick] = createSignal(false);

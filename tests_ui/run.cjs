@@ -391,7 +391,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.ribbon button[title^="Copy the selected members along the depth"]'); await p.waitForTimeout(150);
   await p.click('.dlg button:text-is("Repeat")'); await p.waitForTimeout(150);
   const rp = await lastOp();
-  check("Repeat sends the whole frame one step along z, joined by beams", !!rp.Repeat && rp.Repeat.ids.length === pm.members.length && rp.Repeat.step[2] > 0 && rp.Repeat.times === 1 && rp.Repeat.link === "beam", JSON.stringify(rp));
+  check("Repeat sends the whole frame one step along Y (Z up: the engine's −z), joined by beams", !!rp.Repeat && rp.Repeat.ids.length === pm.members.length && rp.Repeat.step[2] < 0 && rp.Repeat.step[1] === 0 && rp.Repeat.times === 1 && rp.Repeat.link === "beam", JSON.stringify(rp));
   await p.click(`.tree .ti:has-text("Node 3")`); await p.waitForTimeout(100);
   check("the Inspector shows a node's z in 3D", (await p.$$eval(".insp .iprow label", ls => ls.map(l => l.textContent))).some(t => t.startsWith("z")));
   await p.evaluate(() => { window.__solveKey = "platform_results"; });
@@ -906,8 +906,70 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const nUndo = (await p.evaluate(() => window.__calls.filter(c => c[0] === "history").length));
   await p.click('.sketchbar button:has-text("Cancel")'); await p.waitForTimeout(300);
   check("Cancel undoes the new part and closes the sketch", (await p.evaluate(() => window.__calls.filter(c => c[0] === "history").length)) === nUndo + 1 && (await p.$$(".sketchstage")).length === 0);
-  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(150);
+  // 0.6.3: basic modelling on the assembly.
   const atp = async q => { const v = await p.$eval(".view3d", el => { const r = el.getBoundingClientRect(); return [r.left, r.top]; }); const s = await p.evaluate(q => window.__screen3(q), q); return [v[0] + s[0], v[1] + s[1]]; };
+  const ops0 = async () => (await ops()).slice(-1)[0];
+  await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
+  const grt = await p.textContent(".ribbon");
+  check("Geometry offers the modelling tools for an assembly (0.6.3)", ["Extrude", "Hole", "Fillet", "Chamfer", "Cut", "Move or Copy", "Turn or Pattern", "Mirror"].every(t => grt.includes(t)), grt.slice(0, 300));
+  const onTop = await atp([0.03, 0.11, 0.03]);
+  await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(250);
+  const ti = await p.textContent(".insp");
+  check("clicking a part in 3D selects it; its Inspector gives its volume, mass and which way it goes", (await p.inputValue(".insp input")) === "Top plate" && ti.includes("Volume") && ti.includes("Mass") && ti.includes("Which way"), ti.slice(0, 200));
+  check("the Inspector's volume is the plate's 80 × 80 × 10 mm", ti.includes("64 cm³"), ti.slice(0, 400));
+  // Move or Copy: 100 mm along X, two copies.
+  await p.click('.ribbon button:has-text("Move or Copy")'); await p.waitForTimeout(150);
+  const mi = await p.$$(".dlg .form input");
+  await mi[0].fill("100"); await mi[0].press("Tab"); await mi[3].fill("2"); await mi[3].press("Tab"); await p.click(".dlg footer .btn.pri"); await p.waitForTimeout(150);
+  const mvp = (await ops0())?.PlaceParts;
+  check("Move or Copy sends the parts, the step in the engine's axes and the copies", mvp && mvp.ids.length === 1 && mvp.ids[0] === topId && mvp.how.kind === "move" && Math.abs(mvp.how.by[0] - 0.1) < 1e-12 && mvp.how.by[1] === 0 && mvp.how.by[2] === 0 && mvp.copies === 2, JSON.stringify(mvp));
+  check("a selected part stays selected after an edit (every edit dropped it before 0.6.3)", (await p.inputValue(".insp input").catch(() => "")) === "Top plate");
+  // Turn or Pattern about Z (the engine's y), 90°, three copies.
+  await p.click('.ribbon button:has-text("Turn or Pattern")'); await p.waitForTimeout(150); await p.click(".dlg footer .btn.pri"); await p.waitForTimeout(150);
+  const tn = (await ops0())?.PlaceParts;
+  check("Turn or Pattern about Z turns about the engine's y axis", tn && tn.how.kind === "turn" && tn.how.axis[1] === 1 && tn.how.axis[0] === 0 && Math.abs(tn.how.angle - Math.PI / 2) < 1e-12 && tn.copies === 3, JSON.stringify(tn));
+  // Mirror in the Y-Z plane, as a copy.
+  await p.click('.ribbon button:has-text("Mirror")'); await p.waitForTimeout(150); await p.click(".dlg footer .btn.pri"); await p.waitForTimeout(150);
+  const mr = (await ops0())?.PlaceParts;
+  check("Mirror in the Y-Z plane sends a mirror with normal X, one copy", mr && mr.how.kind === "mirror" && mr.how.normal[0] === 1 && mr.copies === 1, JSON.stringify(mr));
+  // Hole and Fillet: the tool, then a click on the part.
+  await p.click('.ribbon button:has-text("Hole")'); await p.waitForTimeout(80);
+  await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(200);
+  const hle = (await ops0())?.Hole;
+  check("Hole, clicked on the top plate's upper face, sends a hole there", hle && hle.part === topId && Math.abs(hle.at[1] - 0.11) < 1e-6 && Math.abs(hle.d - 0.01) < 1e-12, JSON.stringify(await ops0()));
+  await p.click('.ribbon button:has-text("Fillet")'); await p.waitForTimeout(80);
+  const nearEdge = await atp([0.039, 0.105, 0.039]); await p.mouse.click(nearEdge[0], nearEdge[1]); await p.waitForTimeout(200);
+  const fe = (await ops0())?.PartEdge;
+  check("Fillet, clicked near an edge, sends the point and the size to round", fe && fe.round === true && Math.abs(fe.size - 0.002) < 1e-12 && fe.part === topId, JSON.stringify(await ops0()));
+  await p.keyboard.press("Escape");
+  // The Extrude panel: distance 30 mm, both ways.
+  await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(150);
+  await p.click('.ribbon button:has-text("Extrude")'); await p.waitForTimeout(200);
+  check("Extrude opens its panel over the 3D view, with a preview drawn", (await p.$$(".view3d .sweeppanel")).length === 1 && (await p.textContent(".view3d .sweeppanel")).includes("Top plate"));
+  await p.fill(".view3d .sweeppanel input.num", "30"); await p.press(".view3d .sweeppanel input.num", "Tab");
+  await p.selectOption(".view3d .sweeppanel select", "both"); await p.waitForTimeout(100);
+  await p.click('.view3d .sweeppanel button:has-text("OK")'); await p.waitForTimeout(200);
+  const sw = (await ops0())?.Set?.item?.Part;
+  check("OK sets the part's depth and where its sweep starts (both ways: half back)", sw && sw.id === topId && Math.abs(sw.depth - 0.03) < 1e-12 && Math.abs(sw.from + 0.015) < 1e-12 && (await p.$$(".view3d .sweeppanel")).length === 0, JSON.stringify(sw));
+  // Sketch on the top plate's upper face; Cut Through.
+  await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(200);
+  await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(400);
+  const fp = (await ops()).reverse().find(o => o?.Add?.item?.Part)?.Add.item.Part;
+  // The plate's front face is at y = 0.11, facing +y: the new part sits there, its z along +y.
+  const zAxis = fp ? [Math.cos(fp.turn[2]) * Math.sin(fp.turn[1]) * Math.cos(fp.turn[0]) + Math.sin(fp.turn[2]) * Math.sin(fp.turn[0]), Math.sin(fp.turn[2]) * Math.sin(fp.turn[1]) * Math.cos(fp.turn[0]) - Math.cos(fp.turn[2]) * Math.sin(fp.turn[0]), Math.cos(fp.turn[1]) * Math.cos(fp.turn[0])] : null;
+  check("New Sketch on a part's face makes a part on that face, going out of it", !!fp && Math.abs(fp.at[1] - 0.11) < 1e-9 && zAxis && Math.abs(zAxis[1] - 1) < 1e-9 && (await p.textContent(".sketchbar")).includes("on a face of Top plate"), JSON.stringify(fp) + " " + JSON.stringify(zAxis));
+  check("a sketch on a front or back face can be cut through the part", (await p.$$('.sketchbar button:has-text("Cut Through")')).length === 1);
+  await p.click('.sketchbar button:has-text("Cancel")'); await p.waitForTimeout(300);
+  // Parts that cannot be meshed together: the view keeps them in sight (outlines) and says why.
+  const keep = await p.evaluate(() => window.__cur);
+  await p.evaluate(() => { const c = window.__cur; window.__cur = { ...c, m: { ...c.m, assembly: undefined, assembly_error: "The parts' meshes have over 66000 nodes together." } }; });
+  await p.click(".tree .ti:has-text('Top plate')"); await p.waitForTimeout(100);
+  await p.fill(".insp input", "Top plate 2"); await p.press(".insp input", "Tab"); await p.waitForTimeout(250);
+  check("an assembly that cannot be meshed says why above the view and still shows its parts", (await p.textContent(".planebar")).includes("66000") && (await p.$$(".view3d canvas")).length === 1 && (await p.textContent(".tree")).includes("Top plate"), await p.textContent(".planebar"));
+  await p.evaluate(k => { window.__cur = k; }, keep);
+  await p.click(".tree .ti:has-text('Top plate')"); await p.waitForTimeout(100);
+  await p.fill(".insp input", "Top plate"); await p.press(".insp input", "Tab"); await p.waitForTimeout(250);
+  await p.click('.tabs > button:text-is("Loads")'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(150);
   const tq = await atp([0.01, 0.11, -0.01]); await p.mouse.click(tq[0], tq[1]); await p.waitForTimeout(250);
   const pl = (await lastOp())?.Add?.item?.Load;
   check("clicking a part's face in 3D puts the load on that part face", pl && pl.at.on === "partend" && pl.at.part === tpM.parts.find(x => x.name === "Top plate").id && pl.at.front === true, JSON.stringify(await lastOp()));

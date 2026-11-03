@@ -352,11 +352,15 @@ pub struct Part {
     pub turn: [f64; 3],
     /// The part's element size (m); 0: the model's.
     pub size: f64,
+    /// Where the sweep starts (0.6.3): along the sketch's z (m) for an extrusion, or the angle
+    /// (radians) it starts from for a turned part; the sweep runs from `from` to `from` + its
+    /// depth or angle. Negative: back from the sketch (reversed, or both ways).
+    pub from: f64,
 }
 
 impl Default for Part {
     fn default() -> Self {
-        Part { id: 0, name: String::new(), depth: 0.1, angle: 0.0, material: 0, at: [0.0; 3], turn: [0.0; 3], size: 0.0 }
+        Part { id: 0, name: String::new(), depth: 0.1, angle: 0.0, material: 0, at: [0.0; 3], turn: [0.0; 3], size: 0.0, from: 0.0 }
     }
 }
 
@@ -912,7 +916,7 @@ impl Model {
             return Err("The minimum angle must be between 5° and 33°.".into());
         }
         for p in &self.parts {
-            if !(p.depth.is_finite() && p.angle.is_finite() && p.size.is_finite() && p.size >= 0.0 && p.at.iter().chain(&p.turn).all(|v| v.is_finite())) {
+            if !(p.depth.is_finite() && p.angle.is_finite() && p.from.is_finite() && p.size.is_finite() && p.size >= 0.0 && p.at.iter().chain(&p.turn).all(|v| v.is_finite())) {
                 return Err("A part's size, turn and place need numbers.".into());
             }
             if p.angle <= 0.0 && p.depth <= 0.0 {
@@ -1269,6 +1273,9 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
             p.angle = 0.0;
         }
         p.angle = p.angle.min(std::f64::consts::TAU);
+        if !p.from.is_finite() {
+            p.from = 0.0;
+        }
         if !(p.size.is_finite() && p.size >= 0.0) {
             p.size = 0.0;
         }
@@ -1391,6 +1398,10 @@ pub fn repair(m: &mut Model, warn: &mut Vec<String>) {
     let sec0 = m.sections.first().map(|s| s.id).unwrap_or(0);
     let nodes: std::collections::HashSet<u32> = m.nodes.iter().map(|n| n.id).collect();
     let (mats, secs): (std::collections::HashSet<u32>, std::collections::HashSet<u32>) = (m.materials.iter().map(|x| x.id).collect(), m.sections.iter().map(|x| x.id).collect());
+    // A part whose material was dropped just above takes the first (0.6.3: found by the fuzz).
+    for p in m.parts.iter_mut().filter(|p| !mats.contains(&p.material)) {
+        p.material = mat0;
+    }
     let mut pairs = std::collections::HashSet::new();
     // Where each node is, in 3D (0.6.0: comparing x and y only dropped every 3D member along z,
     // and the loads on it, each time a file was opened).

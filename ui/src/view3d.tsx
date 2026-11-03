@@ -15,7 +15,8 @@ import { outline, edgePts, inside } from "./geom";
 import { defaultLoad, defaultSupport } from "./panels";
 import { fmt, unit } from "./units";
 import { scale, pan } from "./canvas";
-import { sketchFrame } from "./sketchmode";
+import { sketchFrame, placeOn } from "./sketchmode";
+import { draft, SweepPanel, toolOnPart, PartHit } from "./modelling";
 import { setPlane, fit3d } from "./plane3";
 import { toD } from "./axes";
 import { C } from "./cmds";
@@ -106,7 +107,10 @@ export const View3D = () => {
     const [w, h] = size(), ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
     const hit = ray.intersectObjects(world.children.filter(o => o.userData.origin), false)[0];
-    return hit ? hit.object.userData.origin : null;
+    if (!hit) return null;
+    // A part in front of the square hides it (0.6.3: its face is picked instead).
+    const part = ray.intersectObjects(world.children.filter(o => o.userData.pick), false)[0];
+    return part && part.distance < hit.distance ? null : hit.object.userData.origin;
   };
 
   // The orientation cube and the axes key (0.6.1), turned with the view.
@@ -254,7 +258,8 @@ export const View3D = () => {
       if (asm) {
         const hues = ["#9CC2F7", "#F7D48A", "#A8DDB5", "#F2B3C0", "#C9B8F0", "#9ED9D3"], ids = (m.parts ?? []).map(p => p.id);
         const col = new Float32Array(vp.surface.nodes.length * 3);
-        vp.tface.forEach((f, i) => { const c = new THREE.Color(hues[Math.max(0, ids.indexOf(asm.face_part[f])) % hues.length]); for (const n of vp.surface.tris[i]) { col[3 * n] = c.r; col[3 * n + 1] = c.g; col[3 * n + 2] = c.b; } });
+        const picked = new Set(sel()), selC = new THREE.Color(css("--sel2"));
+        vp.tface.forEach((f, i) => { const c = picked.has(asm.face_part[f]) ? selC : new THREE.Color(hues[Math.max(0, ids.indexOf(asm.face_part[f])) % hues.length]); for (const n of vp.surface.tris[i]) { col[3 * n] = c.r; col[3 * n + 1] = c.g; col[3 * n + 2] = c.b; } });
         g.setAttribute("color", new THREE.BufferAttribute(col, 3));
       }
       const o = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: asm ? 0xffffff : new THREE.Color(css("--sky")), vertexColors: !!asm, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
@@ -264,7 +269,7 @@ export const View3D = () => {
       const pts: number[] = [];
       for (const [a, b] of vp.surface.lines) pts.push(...vp.surface.nodes[a], ...vp.surface.nodes[b]);
       if (pts.length) fat(pts, null, ink, 1.2);
-    } else if (m.shapes.some(s => !s.hole) && (t > 0 || rev > 0)) {
+    } else if (!m.parts?.length && m.shapes.some(s => !s.hole) && (t > 0 || rev > 0)) {
       // The part as it will be: each solid shape with the holes inside it, extruded or revolved.
       const holes = m.shapes.filter(s => s.hole).map(s => outline(s.geom, tol));
       const sky = () => new THREE.MeshLambertMaterial({ color: new THREE.Color(css("--sky")), side: THREE.DoubleSide });
@@ -287,6 +292,31 @@ export const View3D = () => {
       const pts: number[] = [];
       for (const s of m.shapes) for (const f of full ? [0, 0.5] : [0, 1]) loop(pts, [...outline(s.geom, tol), outline(s.geom, tol)[0]], f);
       if (pts.length) fat(pts, null, ink, 1.2);
+    }
+    // The sweep being set in the Extrude panel (0.6.3): its outlines at the start and the end (and
+    // in between, turned), joined along the sweep, over the model.
+    const sweepLines = (dp: NonNullable<Model["parts"]>[number], dr: { depth: number; angle: number; from: number }) => {
+      const g: number[] = [], rv = dr.angle > 0, len = rv ? dr.angle : dr.depth;
+      const at = (q: number[], f: number): P3 => { const s = dr.from + len * f; return placeOn(dp, rv ? [q[0] * Math.cos(s), q[1], q[0] * Math.sin(s)] : [q[0], q[1], s]); };
+      const steps = rv ? Math.max(2, Math.ceil(len / (Math.PI / 24))) : 1;
+      for (const s of m.shapes.filter(x => x.part === dp.id)) {
+        const ring = outline(s.geom, tol);
+        for (let k = 0; k <= steps; k++) for (let i = 0; i < ring.length; i++) g.push(...at(ring[i], k / steps), ...at(ring[(i + 1) % ring.length], k / steps));
+        const every = Math.max(1, Math.floor(ring.length / 12));
+        for (let i = 0; i < ring.length; i += every) for (let k = 0; k < steps; k++) g.push(...at(ring[i], k / steps), ...at(ring[i], (k + 1) / steps));
+      }
+      return g;
+    };
+    // Parts that could not be meshed together (too fine, or a sketch to mend): their outlines,
+    // swept, so they stay in sight; the bar above says why.
+    if (m.parts?.length && !asm) {
+      const g = m.parts.flatMap(p => sweepLines(p, { depth: p.depth, angle: p.angle, from: p.from ?? 0 }));
+      if (g.length) fat(g, null, ink, 1.2);
+    }
+    const dr = draft(), dp = dr && m.parts?.find(p => p.id === dr.part);
+    if (dr && dp) {
+      const g = sweepLines(dp, dr);
+      if (g.length) fat(g, null, accent, 2.2);
     }
     // Supported and loaded faces outlined: green for supports, crimson for loads.
     const selSet = new Set(sel());
@@ -568,11 +598,27 @@ export const View3D = () => {
     // Picking the plane to sketch on (0.6.2).
     if (picking()) {
       const o = pickOrigin(e.clientX - rc.left, e.clientY - rc.top);
-      if (o) sketchOn(o); else toast("Pick a plane to sketch on: click one of the three squares at the origin.");
+      if (o) { sketchOn(o); return; }
+      // A flat face of a part (0.6.3).
+      const ph = model()?.analysis !== "space" ? hitPart(e.clientX - rc.left, e.clientY - rc.top) : null;
+      if (ph) { import("./sketchmode").then(k => k.beginSketchOnFace(ph)); return; }
+      toast(model()?.parts?.length ? "Pick a plane to sketch on: a square at the origin, or a flat face of a part." : "Pick a plane to sketch on: click one of the three squares at the origin.");
       return;
     }
     if (isSolidA(model()?.analysis)) {
-      if (t === "select") { setSel([]); return; }
+      // The 3D modelling tools (0.6.3) act on the part clicked.
+      if (["hole3", "fillet3", "chamfer3"].includes(t)) {
+        const ph = hitPart(e.clientX - rc.left, e.clientY - rc.top);
+        if (!ph) { toast(t === "hole3" ? "Click the front or back face of a part where the hole goes." : "Click a part near the edge to round or bevel (an edge along its depth)."); return; }
+        await toolOnPart(t, ph); return;
+      }
+      if (t === "select") {
+        // Parts are picked in 3D: click one, Shift or Ctrl to add or take away.
+        const ph = hitPart(e.clientX - rc.left, e.clientY - rc.top);
+        if (!ph) { if (!e.shiftKey && !e.ctrlKey) setSel([]); return; }
+        setSel(e.shiftKey || e.ctrlKey ? (sel().includes(ph.part) ? sel().filter(i => i !== ph.part) : [...sel(), ph.part]) : [ph.part]);
+        return;
+      }
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
       const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction"].includes(t);
       if (!at || !ok) { toast(model()?.volume ? (ok ? "Click on a face of the mesh." : "On an imported mesh, supports (fixed, pinned, roller, symmetry, held directions) and pressures or face forces go on its faces.") : ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
@@ -597,6 +643,18 @@ export const View3D = () => {
       return;
     }
     setPlane("xy");
+  };
+  /** The part under the pointer in an assembly (0.6.3): the part, its face, the point and the
+   * face's normal towards the viewer. */
+  const hitPart = (x: number, y: number): PartHit | null => {
+    const m = model(); if (!m?.assembly) return null;
+    const [w, h] = size(), ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
+    const hit = ray.intersectObjects(world.children.filter(o => o.userData.pick), false)[0]; if (!hit || hit.faceIndex == null) return null;
+    const f = m.assembly.tface[hit.faceIndex]; if (f === undefined) return null;
+    const n = hit.face ? hit.face.normal.clone() : new THREE.Vector3(0, 0, 1);
+    if (n.dot(ray.ray.direction) > 0) n.negate();
+    return { part: m.assembly.face_part[f], target: m.assembly.targets[f] ?? null, point: [hit.point.x, hit.point.y, hit.point.z], normal: [n.x, n.y, n.z] };
   };
   /** The face of a solid under the pointer (0.3.2): the back or front face, or the side face of the
    * section edge nearest the point hit. */
@@ -730,8 +788,9 @@ export const View3D = () => {
       onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Escape") { if (sketchPick()) setSketchPick(false); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
       <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length}><div class="empty corner"><b>Build a part</b><span>A part is a sketch, extruded or revolved. New Sketch: pick a plane (a square at the origin) and the view turns to face it; draw the outline and holes with the Sketch tab, then Finish Sketch and set how far it is extruded or revolved in the Inspector. Add more parts the same way; where they touch they are tied.</span><button class="btn pri" onClick={() => import("./sketchmode").then(k => k.newSketch())}>New sketch</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>Start a sketch: pick one of the three squares at the origin and the view turns square to it. Draw beams with clicks (each goes on from the last; nearly level or upright snaps level or upright) or typed points; move the plane with its offset; Finish Sketch, then sketch on the next plane. The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
+      <SweepPanel />
       <Show when={picking()}><div class="draw3 pickbar" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
-        <b>New sketch</b><span class="muted">Pick a plane: click a square at the origin, or</span>
+        <b>New sketch</b><span class="muted">{model()?.parts?.length ? "Pick a plane: a square at the origin, a flat face of a part, or" : "Pick a plane: click a square at the origin, or"}</span>
         <span class="seg">{(["xy", "zy", "xz"] as WP[]).map(k => <button title={`Sketch on the ${({ xy: "Front (X–Z)", zy: "Side (Y–Z)", xz: "Top (X–Y)" } as Record<WP, string>)[k]} plane`} onClick={() => sketchOn(k)}>{({ xy: "Front", zy: "Side", xz: "Top" } as Record<WP, string>)[k]}</button>)}</span>
         <button class="btn sm" onClick={() => { setSketchPick(false); setTool("select"); }}>Cancel</button>
       </div></Show>

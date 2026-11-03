@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.6.3 — 2026-11-03
+
+Basic modelling: shape and arrange parts in 3D.
+
+**Extrude**
+- Finish Sketch on a new part opens the Extrude panel over the 3D view: extrude or revolve, the distance or the angle, and which way (out of the sketch, into it, or both ways evenly). A preview follows as you type; OK keeps it. Geometry › Extrude (or Extrude… in the Inspector) opens it again for the part selected. The Inspector also has Which way.
+
+**Sketch on a face**
+- New Sketch, then click a flat face of a part: the new part starts on that face and goes out of it. On a front or back face, Cut Through on the sketch bar cuts the sketch's outlines right through the part: a hole where an outline lies inside it, a notch where it runs across its edge.
+
+**Features** (Geometry › Features)
+- Hole: set Ø and click a part's front or back face; the hole goes right through.
+- Fillet and Chamfer: set the size and click a part near an edge along its depth; that edge is rounded or bevelled all the way along.
+- Cut: select a part and cut it right through another; its outlines become holes there.
+
+**Arrange** (Geometry › Arrange)
+- Move or Copy (a row of copies), Turn or Pattern (about an axis through a point; copies round it make a ring), Mirror (in a plane, as a copy or in place). Steps, points and axes are typed with Z up. Parts are picked by clicking them in 3D (Shift or Ctrl to add); the ones picked are tinted.
+
+**Volume and mass**
+- The Inspector gives each part's volume and mass, worked out exactly from its sketch (area × depth, or Pappus' theorem when turned).
+
+**Verification**
+- Benchmark 33: a reversed block, a plate cut through, drilled, rounded and notched, a ring and a torus turned, a mirror copy and a ring of copies; exact volumes and meshed volumes against hand formulas.
+
+**Fixed**
+- A selected part was let go of after every change.
+- An automatic element size gave every part about 15 000 tetrahedra, so three small copies went over the node limit; the parts now share one budget by volume.
+- When the parts cannot be meshed together, the 3D view shows their outlines (and the bar says why) instead of a misleading picture.
+- A garbled file whose part's material was dropped would not open.
+- The 3D frame's Repeat took its step in y-up axes; it is now X, Y, Z with Z up, as shown elsewhere.
+
 ## 0.6.2 — 2026-11-03
 
 Sketch on a plane: drawing in 3D starts with a sketch, square to you, on a plane you pick.

@@ -2222,6 +2222,88 @@ fn space_large() -> Vec<Check> {
 /// Benchmark 32 (0.6.0): assemblies of parts. Parts sketched, extruded or revolved, turned and
 /// placed, meshed on their own and tied where they touch: a cantilever as one part and cut into
 /// two, a bar of two materials, a revolved thick cylinder, and heat through two parts.
+/// Benchmark 33 (0.6.3): basic modelling. Parts reversed, cut, drilled, rounded, turned,
+/// mirrored and copied in a ring; their exact volumes (area × depth, Pappus) and their meshes'
+/// volumes against hand formulas, and a mirror copy against the mirror image.
+fn modelling() -> Vec<Check> {
+    use crate::model::Part;
+    use crate::solids::modelling::{volume, Placing};
+    use std::f64::consts::PI;
+    let mut v = vec![];
+    let new = |size: f64| { let mut d = Doc::new(Model::new(Analysis::Solid)); d.m.mesh.size = size; d.m.mesh.order = 1; d };
+    let part = |d: &mut Doc, p: Part, gs: &[Geom]| -> u32 {
+        let id = add_id(d, Item::Part(p));
+        for g in gs {
+            add_id(d, Item::Shape(Shape { geom: g.clone(), material: d.m.materials[0].id, part: id, ..Default::default() }));
+        }
+        id
+    };
+    let meshed = |m: &Model| -> f64 {
+        let a = crate::solids::assembly::mesh(m).expect("meshes");
+        a.mesh.tets.iter().map(|el| {
+            let p = |i: usize| a.mesh.nodes[el[i] as usize];
+            let s = |x: [f64; 3], y: [f64; 3]| [x[0] - y[0], x[1] - y[1], x[2] - y[2]];
+            let (u, w, z) = (s(p(1), p(0)), s(p(2), p(0)), s(p(3), p(0)));
+            (u[0] * (w[1] * z[2] - w[2] * z[1]) - u[1] * (w[0] * z[2] - w[2] * z[0]) + u[2] * (w[0] * z[1] - w[1] * z[0])) / 6.0
+        }).sum()
+    };
+    let src = "Volume of a prism: area × depth";
+    // A block 0.2 × 0.1 extruded 0.3 back from its sketch (reversed).
+    {
+        let mut d = new(0.05);
+        part(&mut d, Part { depth: 0.3, from: -0.3, ..Default::default() }, &[Geom::rect(0.0, 0.0, 0.2, 0.1)]);
+        v.push(check(33, "Block 0.2 × 0.1 m extruded 0.3 m the other way", "Meshed volume abh", "ratio", 0.006, meshed(&d.m), 1e-12, src));
+    }
+    // A plate 0.2 × 0.1 × 0.02: a disc r = 20 mm sketched on its front face cut through it, a
+    // hole 20 mm across drilled at a point on its back face, one edge along its depth rounded
+    // to r = 10 mm.
+    {
+        let mut d = new(0.005);
+        let plate = part(&mut d, Part { depth: 0.02, ..Default::default() }, &[Geom::rect(0.0, 0.0, 0.2, 0.1)]);
+        let tool = part(&mut d, Part { depth: 0.01, at: [0.0, 0.0, 0.02], ..Default::default() }, &[Geom::Circle { c: [0.05, 0.05], r: 0.02 }]);
+        add(&mut d, Op::Cut { tool, from: plate });
+        let cut = (0.02 - PI * 4e-4) * 0.02;
+        v.push(check(33, "Plate 0.2 × 0.1 × 0.02 m, a disc of r = 20 mm cut through", "Volume (ab − πr²)t", "ratio", cut, volume(&d.m, plate).unwrap_or(0.0), 1e-12, src));
+        add(&mut d, Op::Hole { part: plate, at: [0.15, 0.05, 0.0], d: 0.02 });
+        let drilled = cut - PI * 1e-4 * 0.02;
+        v.push(check(33, "… and a hole 20 mm across drilled through", "Volume (ab − πr₁² − πr₂²)t", "ratio", drilled, volume(&d.m, plate).unwrap_or(0.0), 1e-12, src));
+        add(&mut d, Op::PartEdge { part: plate, near: [0.2, 0.1, 0.01], size: 0.01, round: true });
+        let rounded = drilled - 1e-4 * (1.0 - PI / 4.0) * 0.02;
+        v.push(check(33, "… and one edge rounded to r = 10 mm", "Volume, less r²(1 − π/4)t at the edge", "ratio", rounded, volume(&d.m, plate).unwrap_or(0.0), 1e-12, src));
+        let tool = part(&mut d, Part { depth: 0.01, at: [0.0, 0.0, 0.02], ..Default::default() }, &[Geom::Circle { c: [0.1, 0.0], r: 0.01 }]);
+        add(&mut d, Op::Cut { tool, from: plate });
+        let notched = rounded - PI * 1e-4 / 2.0 * 0.02;
+        v.push(check(33, "… and a disc of r = 10 mm across its edge cut as a notch", "Volume, less half the disc × t", "ratio", notched, volume(&d.m, plate).unwrap_or(0.0), 1e-12, src));
+        v.push(check(33, "… meshed (circles as straight pieces)", "Meshed volume against the exact one", "ratio", notched, meshed(&d.m), 0.01, "The exact volume above"));
+    }
+    // Turned parts: a ring of rectangular section and a torus of round section (Pappus).
+    {
+        let mut d = new(0.01);
+        let ring = part(&mut d, Part { angle: 2.0 * PI, ..Default::default() }, &[Geom::rect(0.1, 0.0, 0.2, 0.05)]);
+        v.push(check(33, "Ring, rectangle 0.1 ≤ r ≤ 0.2, 0.05 high, turned a full turn", "Volume π(r₂² − r₁²)h", "ratio", PI * 0.03 * 0.05, volume(&d.m, ring).unwrap_or(0.0), 1e-12, "Pappus' theorem"));
+        let mut d = new(0.01);
+        let torus = part(&mut d, Part { angle: 2.0 * PI, ..Default::default() }, &[Geom::Circle { c: [0.2, 0.0], r: 0.05 }]);
+        let want = 2.0 * PI * PI * 0.2 * 0.05 * 0.05;
+        v.push(check(33, "Torus, a circle r = 0.05 m at R = 0.2 m turned a full turn", "Volume 2π²Rr²", "ratio", want, volume(&d.m, torus).unwrap_or(0.0), 1e-12, "Pappus' theorem"));
+        v.push(check(33, "Torus, meshed", "Meshed volume against 2π²Rr²", "ratio", want, meshed(&d.m), 0.02, "Pappus' theorem (circle and turn as straight pieces)"));
+    }
+    // A block turned and moved, mirrored in the plane x = 0; copies in a ring of four.
+    {
+        let mut d = new(0.05);
+        let p = part(&mut d, Part { depth: 0.1, at: [0.1, 0.2, 0.3], turn: [0.3, 0.2, -0.4], ..Default::default() }, &[Geom::rect(0.5, 0.0, 0.7, 0.1)]);
+        add(&mut d, Op::PlaceParts { ids: vec![p], how: Placing::Mirror { point: [0.0; 3], normal: [1.0, 0.0, 0.0] }, copies: 1 });
+        let a = crate::solids::assembly::mesh(&d.m).expect("meshes");
+        let half = a.mesh.nodes.len() / 2;
+        let worst = a.mesh.nodes[..half].iter().map(|n| a.mesh.nodes[half..].iter().map(|m| crate::model::dist3(*m, [-n[0], n[1], n[2]])).fold(f64::MAX, f64::min)).fold(0.0, f64::max);
+        v.push(check(33, "Block turned, moved and mirrored in x = 0", "Mirror copy's nodes on the mirror image (1 + farthest miss, m)", "ratio", 1.0, 1.0 + worst, 1e-12, "Geometry: a mirror image"));
+        let mut d = new(0.05);
+        let p = part(&mut d, Part { depth: 0.1, ..Default::default() }, &[Geom::rect(0.5, 0.0, 0.7, 0.1)]);
+        add(&mut d, Op::PlaceParts { ids: vec![p], how: Placing::Turn { about: [0.0; 3], axis: [0.0, 1.0, 0.0], angle: PI / 2.0 }, copies: 3 });
+        v.push(check(33, "Block copied three times a quarter turn apart", "Meshed volume of the four, 4abh", "ratio", 4.0 * 0.002, meshed(&d.m), 1e-12, src));
+    }
+    v
+}
+
 fn assembly() -> Vec<Check> {
     use crate::model::Part;
     use std::f64::consts::FRAC_PI_2;
@@ -2419,6 +2501,7 @@ pub fn run() -> Vec<Check> {
     v.extend(tetra_nonlinear());
     v.extend(space_large());
     v.extend(assembly());
+    v.extend(modelling());
     v
 }
 

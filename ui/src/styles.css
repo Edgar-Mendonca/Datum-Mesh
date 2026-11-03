@@ -1020,3 +1020,8 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .tabs .sktab.on { color: #fff; background: #2E9D57; }
 .view3d .pickbar { border-left: 4px solid #2E9D57; }
 .sketchbar .btn { letter-spacing: 0; text-transform: none; padding: 2px 8px; }
+.view3d .sweeppanel { position: absolute; left: 12px; top: 10px; z-index: 6; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--blue); padding: 6px 10px; font-size: 12px; max-width: calc(100% - 140px); }
+.view3d .sweeppanel b { color: var(--blue); text-transform: uppercase; letter-spacing: .04em; font-size: 11px; }
+.view3d .sweeppanel label { display: flex; align-items: center; gap: 4px; }
+.view3d .sweeppanel input.num { width: 76px; font: 12px var(--mono); padding: 2px 5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+.view3d .sweeppanel .btn { letter-spacing: 0; text-transform: none; padding: 2px 8px; }

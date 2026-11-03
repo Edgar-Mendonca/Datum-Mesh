@@ -241,6 +241,9 @@ const DegField = (p: { label: string; v: number; set: (v: number) => void; hint?
     <input class="mono" value={num(p.v * 180 / Math.PI, 6).replace("−", "-")} onChange={e => { const v = parseNum(e.currentTarget.value); if (v === null) { e.currentTarget.value = num(p.v * 180 / Math.PI, 6); return; } p.set(v * Math.PI / 180); }} />{p.hint && <span class="hint">{p.hint}</span>}</div>
 );
 
+/** Which way a part's sweep goes from its sketch (0.6.3): out of it, into it, or both ways. */
+const dirOf = (p: Part) => { const l = p.angle > 0 ? p.angle : p.depth, f = p.from ?? 0; return Math.abs(f) < 1e-12 ? "one" : Math.abs(f + l) < 1e-9 * Math.max(1, l) ? "other" : "both"; };
+
 /** A part of an assembly (0.6.0): how its sketch is swept, its material and size, where it is. */
 const PartInsp = (p: { p: Part; m: Model }) => {
   setActivePart(p.p.id);
@@ -255,7 +258,10 @@ const PartInsp = (p: { p: Part; m: Model }) => {
     <Show when={rev()} fallback={<NumField label="Depth" q="len" v={p.p.depth} min={0} set={depth => depth > 0 && put({ depth })} hint="How far the sketch is extruded, along the sketch's z" />}>
       <DegField label="Turned through" v={p.p.angle} set={angle => angle > 0 && angle <= 360.0001 * Math.PI / 180 && put({ angle: Math.min(angle, Math.PI * 2) })} hint="360° for a whole ring or shaft; draw the sketch right of its y axis" />
     </Show>
+    <Row label="Which way"><Choice v={dirOf(p.p)} set={v => { const l = rev() ? p.p.angle : p.p.depth; put({ from: v === "one" ? 0 : v === "other" ? -l : -l / 2 }); }} opts={[["one", rev() ? "One way" : "Out of the sketch"], ["other", rev() ? "The other way" : "Into the sketch"], ["both", "Both ways, evenly"]]} /></Row>
+    <p class="ibtns"><button class="btn sm" title="Set the extrusion or revolve with a preview in 3D" onClick={() => import("./modelling").then(k => k.editSweep(p.p.id))}>Extrude…</button></p>
     <Row label="Material"><Choice v={String(p.p.material)} set={v => put({ material: +v })} opts={p.m.materials.map(s => [String(s.id), s.name])} /></Row>
+    <Show when={p.m.part_volume?.[String(p.p.id)] !== undefined}>{(() => { const v = () => p.m.part_volume?.[String(p.p.id)] ?? 0, rho = () => p.m.materials.find(x => x.id === p.p.material)?.rho ?? 0; return <table class="vmini"><tbody><tr><td>Volume</td><td class="r">{fmt("vol", v())}</td></tr><tr><td>Mass</td><td class="r">{fmt("mass", v() * rho())}</td></tr></tbody></table>; })()}</Show>
     <NumField label="Element size" q="len" v={p.p.size} min={0} set={size => put({ size })} hint="0: the model's size (Mesh); thin walls want two or three elements across" />
     <p class="isub">Where it is</p>
     <Vec3 pre="Moved by " q="coord" v={p.p.at} set={at => put({ at })} />

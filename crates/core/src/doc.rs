@@ -116,6 +116,23 @@ pub enum Op {
     },
     SetSettings { s: Settings },
     SetMeta { name: String, notes: String },
+    /// Parts (0.6.3): move, turn or mirror parts (`copies` 0), or make `copies` copies of them
+    /// with their sketches, copy k placed by the change applied k times (a mirror makes one).
+    PlaceParts {
+        ids: Vec<u32>,
+        how: crate::solids::modelling::Placing,
+        #[serde(default)]
+        copies: u32,
+    },
+    /// Cut one part through another: the outlines of `tool` go right through `from` as holes,
+    /// along `from`'s depth (both extruded, their sketches parallel); `tool` goes.
+    Cut { tool: u32, from: u32 },
+    /// A round hole of diameter `d` right through an extruded part, at a point on its front or
+    /// back face.
+    Hole { part: u32, at: [f64; 3], d: f64 },
+    /// Round (radius `size`) or bevel (`size` off each side) the part's edge along its sweep
+    /// nearest the point `near`: the sketch corner under it.
+    PartEdge { part: u32, near: [f64; 3], size: f64, round: bool },
     Batch(Vec<Op>),
 }
 
@@ -718,6 +735,172 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             }
             m.name = name.into();
             m.notes = notes;
+        }
+        Op::PlaceParts { ids, how, copies } => {
+            use crate::solids::modelling::{placed, Placing};
+            if matches!(how, Placing::Mirror { .. }) && copies > 1 {
+                return Err("A mirror makes one copy.".into());
+            }
+            if copies > 1000 {
+                return Err("A pattern makes 1 to 1000 copies.".into());
+            }
+            let src: Vec<crate::model::Part> = m.parts.iter().filter(|p| ids.contains(&p.id)).cloned().collect();
+            if src.is_empty() {
+                return Err("Select the parts first.".into());
+            }
+            if copies == 0 {
+                for p in &src {
+                    let q = placed(p, &how, 1)?;
+                    if let Some(x) = m.parts.iter_mut().find(|x| x.id == p.id) {
+                        *x = q;
+                    }
+                }
+            }
+            for k in 1..=copies {
+                for p in &src {
+                    let mut q = placed(p, &how, k)?;
+                    let id = fresh(m);
+                    q.id = id;
+                    q.name = format!("{} copy {k}", p.name);
+                    created.push(id);
+                    let sk: Vec<Shape> = m.shapes.iter().filter(|s| s.part == p.id).cloned().collect();
+                    for mut s in sk {
+                        s.id = fresh(m);
+                        s.part = id;
+                        created.push(s.id);
+                        m.shapes.push(s);
+                    }
+                    m.parts.push(q);
+                }
+            }
+        }
+        Op::Cut { tool, from } => {
+            use crate::solids::modelling::{local, rot};
+            if tool == from {
+                return Err("Pick another part to cut.".into());
+            }
+            let gone = "That part no longer exists.";
+            let pt = m.parts.iter().find(|p| p.id == tool).cloned().ok_or(gone)?;
+            let pf = m.parts.iter().find(|p| p.id == from).cloned().ok_or(gone)?;
+            if pt.angle > 0.0 || pf.angle > 0.0 {
+                return Err("A cut goes straight through an extruded part, along its depth: both parts must be extruded.".into());
+            }
+            let (a, b) = (rot(pt.turn), rot(pf.turn));
+            let dot: f64 = (0..3).map(|i| a[i][2] * b[i][2]).sum();
+            if dot.abs() < 1.0 - 1e-6 {
+                return Err(format!("A cut goes through {} along its depth: sketch it on the part's front or back face, or on a plane parallel to its sketch.", pf.name));
+            }
+            let map = |q: [f64; 2]| {
+                let l = local(&pf, pt.place([q[0], q[1], 0.0]));
+                [l[0], l[1]]
+            };
+            let cuts: Vec<Shape> = m.shapes.iter().filter(|s| s.part == tool && !s.hole && s.plate.is_none()).cloned().collect();
+            if cuts.is_empty() {
+                return Err(format!("{} has nothing in its sketch to cut with.", pt.name));
+            }
+            for s in cuts {
+                let mut geom = s.geom.clone();
+                match &mut geom {
+                    Geom::Poly { pts, bulge } => {
+                        pts.iter_mut().for_each(|p| *p = map(*p));
+                        // Seen from the other side, the arcs bulge the other way.
+                        if dot < 0.0 {
+                            bulge.iter_mut().for_each(|b| *b = -*b);
+                        }
+                    }
+                    Geom::Circle { c, .. } => *c = map(*c),
+                }
+                // Inside an outline of the part: a hole. Across its edge: a notch, cut out of the
+                // outline. Clear of it: refused.
+                use crate::solids::modelling::contains;
+                let pts = geom.outline(f64::MAX, 0).0;
+                let size = pts.iter().fold(0.0_f64, |s, a| s.max(a[0].abs()).max(a[1].abs())).max(1e-9);
+                let ring = geom.outline(size / 200.0, 64).0;
+                let solid: Vec<Shape> = m.shapes.iter().filter(|s| s.part == from && !s.hole && s.plate.is_none()).cloned().collect();
+                // A cut that only touches an edge (or another hole) leaves a sliver of no width.
+                let ext = solid.iter().flat_map(|s| s.geom.outline(f64::MAX, 0).0).fold(0.0_f64, |e, q| e.max(q[0].abs()).max(q[1].abs()));
+                let near = 1e-3 * ext.max(size);
+                let others: Vec<&Shape> = m.shapes.iter().filter(|s| s.part == from && s.plate.is_none()).collect();
+                if others.iter().any(|s| crate::solids::modelling::gap(&s.geom, &ring) < near) && !others.iter().any(|s| !s.hole && ring.iter().any(|q| !contains(&s.geom, *q)) && ring.iter().any(|q| contains(&s.geom, *q))) {
+                    return Err(format!("The cut touches an edge of {} or one of its holes: move it in a little, or right across the edge for a notch.", pf.name));
+                }
+                let within = solid.iter().find(|s| ring.iter().all(|q| contains(&s.geom, *q)));
+                let across = solid.iter().find(|s| ring.iter().any(|q| contains(&s.geom, *q)) || s.geom.outline(f64::MAX, 0).0.iter().any(|q| contains(&geom, *q)));
+                let id = fresh(m);
+                let name = shape_name(m, within.is_some());
+                match (within, across) {
+                    (Some(_), _) => {
+                        m.shapes.push(Shape { id, name, hole: true, material: pf.material, geom, plate: None, part: from });
+                        created.push(id);
+                    }
+                    (None, Some(s)) => {
+                        let a = s.id;
+                        m.shapes.push(Shape { id, name, hole: false, material: pf.material, geom, plate: None, part: from });
+                        exec(m, Op::Combine { a, b: id, how: How::Subtract }, created)?;
+                    }
+                    (None, None) => return Err(format!("The cut misses {}: draw it over the part.", pf.name)),
+                }
+            }
+            exec(m, Op::Delete { ids: vec![tool] }, &mut vec![])?;
+        }
+        Op::Hole { part, at, d } => {
+            use crate::solids::modelling::{contains, local};
+            let p = m.parts.iter().find(|p| p.id == part).cloned().ok_or("That part no longer exists.")?;
+            if p.angle > 0.0 {
+                return Err("A hole goes straight through an extruded part; for a turned part, draw the groove in its sketch.".into());
+            }
+            if !(d.is_finite() && d > 0.0 && at.iter().all(|v| v.is_finite())) {
+                return Err("A hole needs a diameter.".into());
+            }
+            let l = local(&p, at);
+            let tol = 1e-6_f64.max(1e-4 * p.depth);
+            if (l[2] - p.from).abs() > tol && (l[2] - p.from - p.depth).abs() > tol {
+                return Err(format!("Click the front or back face of {}: a hole goes through along its depth.", p.name));
+            }
+            let c = [l[0], l[1]];
+            let on = |hole: bool| m.shapes.iter().any(|s| s.part == part && s.hole == hole && s.plate.is_none() && contains(&s.geom, c));
+            if !on(false) || on(true) {
+                return Err("The hole's centre must be on the part.".into());
+            }
+            // The whole hole on the face: a hole that reaches the edge is a notch (draw it in the sketch).
+            let r = d / 2.0;
+            let rim: Vec<[f64; 2]> = (0..48).map(|k| { let t = k as f64 / 48.0 * std::f64::consts::TAU; [c[0] + r * t.cos(), c[1] + r * t.sin()] }).collect();
+            let inside = m.shapes.iter().any(|s| s.part == part && !s.hole && s.plate.is_none() && rim.iter().all(|q| contains(&s.geom, *q)));
+            let clear = !m.shapes.iter().any(|s| s.part == part && s.hole && s.plate.is_none() && (rim.iter().any(|q| contains(&s.geom, *q)) || s.geom.outline(f64::MAX, 0).0.iter().any(|q| (q[0] - c[0]).hypot(q[1] - c[1]) < r)));
+            let ext = m.shapes.iter().filter(|s| s.part == part && s.plate.is_none()).flat_map(|s| s.geom.outline(f64::MAX, 0).0).fold(0.0_f64, |e, q| e.max(q[0].abs()).max(q[1].abs()));
+            let touches = m.shapes.iter().filter(|s| s.part == part && s.plate.is_none()).any(|s| crate::solids::modelling::gap(&s.geom, &rim) < 1e-3 * ext.max(r));
+            if !inside || !clear || touches {
+                return Err("The hole reaches the face's edge or another hole: make it smaller, or move it.".into());
+            }
+            let id = fresh(m);
+            let name = shape_name(m, true);
+            m.shapes.push(Shape { id, name, hole: true, material: p.material, geom: Geom::Circle { c, r: d / 2.0 }, plate: None, part });
+            created.push(id);
+        }
+        Op::PartEdge { part, near, size, round } => {
+            let p = m.parts.iter().find(|p| p.id == part).cloned().ok_or("That part no longer exists.")?;
+            let q = crate::solids::modelling::sketch_point(&p, near);
+            let mut best: Option<(f64, u32, u32)> = None;
+            let (mut lo, mut hi) = ([f64::MAX; 2], [f64::MIN; 2]);
+            for s in m.shapes.iter().filter(|s| s.part == part && s.plate.is_none()) {
+                if let Geom::Poly { pts, .. } = &s.geom {
+                    for (i, c) in pts.iter().enumerate() {
+                        for k in 0..2 {
+                            lo[k] = lo[k].min(c[k]);
+                            hi[k] = hi[k].max(c[k]);
+                        }
+                        let dd = (c[0] - q[0]).hypot(c[1] - q[1]);
+                        if best.is_none_or(|b| dd < b.0) {
+                            best = Some((dd, s.id, i as u32));
+                        }
+                    }
+                }
+            }
+            let (dd, shape, corner) = best.ok_or(format!("{} has no corners to round: its sketch is circles only.", p.name))?;
+            if dd > 0.2 * (hi[0] - lo[0]).hypot(hi[1] - lo[1]) {
+                return Err("Click nearer an edge along the part's depth (where two of its side faces meet).".into());
+            }
+            round_corners(m, shape, vec![corner], size, round)?;
         }
         Op::Batch(ops) => {
             for op in ops {

@@ -1419,6 +1419,9 @@ pub fn for_window(m: &Model) -> serde_json::Value {
                 Ok(p) => o.insert("assembly".into(), p),
                 Err(e) => o.insert("assembly_error".into(), e.into()),
             };
+            // Each part's exact volume (0.6.3), for the Inspector.
+            let vols: serde_json::Map<String, serde_json::Value> = m.parts.iter().filter_map(|p| Some((p.id.to_string(), super::modelling::volume(m, p.id)?.into()))).collect();
+            o.insert("part_volume".into(), vols.into());
         }
     }
     v
