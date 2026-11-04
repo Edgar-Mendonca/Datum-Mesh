@@ -233,6 +233,19 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const pr2 = unpack(fix.portal_results);
   check("F5 solves and the status bar says so", (await p.textContent(".status")).includes(`Solved · ${pr2.stats.equations} equations`), await p.textContent(".status"));
   check("the deflected shape is drawn for every member", (await p.$$(".defl")).length === pr2.members.length);
+  // 0.6.4: the player. A linear result grows from no load to the whole load.
+  check("a solved model has the player, at the end of the result", (await p.$$(".player")).length === 1 && (await p.textContent(".player .plabel")).includes("100 %"), await p.textContent(".player").catch(() => "none"));
+  const dEnd = await p.$eval(".defl", e => e.getAttribute("d"));
+  const slide = async v => { await p.$eval(".player input[type=range]", (el, v) => { el.value = String(v); el.dispatchEvent(new Event("input", { bubbles: true })); }, v); await p.waitForTimeout(150); };
+  await slide(500);
+  const dHalf = await p.$eval(".defl", e => e.getAttribute("d"));
+  check("the slider half way draws the frame at half the load, deflecting less", (await p.textContent(".player .plabel")).includes("50 %") && dHalf !== dEnd, dHalf.slice(0, 60) + " | " + dEnd.slice(0, 60));
+  await p.click(".player .pbtn >> nth=0"); await p.waitForTimeout(500);
+  const lPlay = await p.textContent(".player .plabel");
+  await p.click(".player .pbtn >> nth=0"); await p.waitForTimeout(100);
+  check("Play moves on through the result, and pauses", lPlay !== "50 % of the load" && (await p.$$(".player .pbtn use[href='#i-play']")).length === 1, lPlay);
+  await slide(1000);
+  check("at the end of the slider the result is drawn as solved", (await p.$eval(".defl", e => e.getAttribute("d"))) === dEnd);
   check("the moment diagram is drawn for every member", (await p.$$(".diag.d-m")).length === pr2.members.length);
   check("reactions are drawn at the supports", (await p.$$(".rarrow")).length >= 4);
   check("the legend shows the equilibrium check", (await p.textContent(".legend")).includes("reactions balance the loads"));
@@ -600,6 +613,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(150);
   const yfs = await p.$$eval(".legend select.fpick option", os => os.map(o => o.textContent)).catch(() => []);
   check("a yielding 3D solid can be coloured by its equivalent plastic strain", yfs.includes("Equivalent plastic strain"), yfs.join("|"));
+  check("a nonlinear solve plays through its increments: the player counts the load factor", (await p.textContent(".player .plabel").catch(() => "")).includes("load factor"), await p.textContent(".player").catch(() => "none"));
   await p.selectOption(".legend select.fpick", { label: "Equivalent plastic strain" }).catch(() => {}); await p.waitForTimeout(300);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "yield3d-peeq.png") });
   await p.click('.ribbon button:has-text("Load–Deflection")'); await p.waitForTimeout(250);
@@ -772,6 +786,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("F5"); await p.waitForTimeout(400);
   await p.evaluate(() => { window.__solveKey = null; });
   check("a time history's legend says when its results are, inertia included", (await p.textContent(".legend")).includes("Equilibrium at t ="));
+  check("a time history plays through its times", (await p.textContent(".player .plabel").catch(() => "")).includes("t = "), await p.textContent(".player").catch(() => "none"));
   await p.click('.ribbon button:has-text("Dynamics")'); await p.waitForTimeout(250);
   const qhd = await p.textContent(".dlg");
   check("Results › Dynamics plots a time history's movement against time and lists the largest movements", (await p.$$(".dlg svg.curve path.line")).length === 1 && qhd.includes("Largest movements") && qhd.includes("Newmark"), qhd.slice(0, 200));

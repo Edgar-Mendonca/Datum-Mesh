@@ -55,6 +55,9 @@ pub struct PlaneResults {
     /// increment, and how far it got.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<PartPath>,
+    /// The increments as frames to play (0.6.4), at the mesh nodes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frames: Option<crate::engine::frames::Frames>,
 }
 
 /// An elastic-plastic solve's record (0.5.0).
@@ -580,6 +583,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>, plastic: Option<usize>)
     // Plasticity (0.5.0): the elastic-plastic solve gives the movements, the correction of the
     // internal forces (K u minus them) and each element's stresses and plastic strain.
     let mut path = None;
+    let mut frames = None;
     let mut corr = vec![0.0; 2 * nn];
     let mut gauss_out: Option<Vec<([f64; 4], f64)>> = None;
     let (u, stats) = if let Some(inc) = plastic {
@@ -601,6 +605,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>, plastic: Option<usize>)
             }
         }
         path = Some(pe.path);
+        frames = crate::engine::frames::Frames::from_snaps("load", "vm", &pe.snaps, &(0..nn).collect::<Vec<_>>(), 2);
         (pe.u, Stats { equations: held.iter().filter(|h| !**h).count(), ms: t0.elapsed().as_secs_f64() * 1e3, ..Default::default() })
     } else {
         sys.solve(&held, &vec![0.0; 2 * nn])?
@@ -761,7 +766,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>, plastic: Option<usize>)
     } else {
         imbalance(applied.sum, reacted.sum, applied.scale)
     };
-    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings, path })))
+    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings, path, frames })))
 }
 
 /// What the elastic-plastic solve hands back to `run`.
@@ -772,6 +777,7 @@ struct PlasticOut {
     /// Each element's mean stress (xx, yy, zz, xy) and equivalent plastic strain.
     elem: Vec<([f64; 4], f64)>,
     path: PartPath,
+    snaps: Vec<crate::engine::frames::Snap>,
 }
 
 /// Initial-stress iterations (0.5.0): the elastic stiffness factorised once; every iteration
@@ -933,6 +939,7 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
     let first = 1.0 / inc as f64;
     let mut step = first;
     let mut path = PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
+    let mut snaps = vec![];
     let mut sig_last = vec![[0.0; 4]; pts.len()];
     while lam < 1.0 - 1e-12 {
         let target = (lam + step).min(1.0);
@@ -980,6 +987,23 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
                 path.load.push(lam);
                 path.umax.push((0..n / 2).map(|i| u[2 * i].hypot(u[2 * i + 1])).fold(0.0, f64::max));
                 path.peeq.push(peeq);
+                // A frame for animation (0.6.4): von Mises from the element means, at the nodes.
+                let (mut es, mut ec) = (vec![[0.0; 4]; ms.tris.len()], vec![0.0; ms.tris.len()]);
+                for (p, s) in pts.iter().zip(&sig_last) {
+                    for r in 0..4 {
+                        es[p.el][r] += s[r];
+                    }
+                    ec[p.el] += 1.0;
+                }
+                let (mut nv, mut nc) = (vec![0.0; n / 2], vec![0.0; n / 2]);
+                for ((tri, s), c) in ms.tris.iter().zip(&es).zip(&ec) {
+                    let v = crate::engine::frames::vm(&[s[0] / c, s[1] / c, s[2] / c, s[3] / c, 0.0, 0.0]);
+                    for &q in tri.iter() {
+                        nv[q as usize] += v;
+                        nc[q as usize] += 1.0;
+                    }
+                }
+                snaps.push(crate::engine::frames::Snap { at: lam, u: u.iter().map(|&x| x as f32).collect(), v: nv.iter().zip(&nc).map(|(v, c)| (v / f64::max(*c, 1.0)) as f32).collect() });
                 if it < 6 {
                     step = (step * 1.5).min(first);
                 }
@@ -1013,7 +1037,7 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
         }
         e.1 /= c;
     }
-    Ok(PlasticOut { u, corr, elem, path })
+    Ok(PlasticOut { u, corr, elem, path, snaps })
 }
 
 /// Temperatures for thermal stress: the nodal temperatures when the model has fixed temperatures

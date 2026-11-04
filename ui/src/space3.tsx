@@ -3,7 +3,7 @@
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
 import { Show, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, isSolidA, solidDisp } from "./api";
-import { model, spaceRes, solidRes, stale, show, opts, setView, tool, act, setSel, solvedFor } from "./store";
+import { solved, model, spaceRes, solidRes, stale, show, opts, setView, tool, act, setSel, solvedFor } from "./store";
 import { defaultLoad, defaultSupport } from "./panels";
 import { palette, BANDS, curField, fieldsFor, rangeOf, ColourBar } from "./parts";
 import { fmt, unit, Q } from "./units";
@@ -37,7 +37,7 @@ export const dlen = (d: P3) => Math.hypot(d[0], d[1], d[2]);
 export const deform3 = (m: Model, r: SpaceResults) => {
   // Large rotations (0.5.8): the shape as it truly is.
   if (r.path) return show().scale;
-  const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(dlen)), ...(r.plates?.disp.map(dlen) ?? []));
+  const sv = solved(r), dmax = Math.max(0, ...sv.members.flatMap(mr => mr.d.map(dlen)), ...(sv.plates?.disp.map(dlen) ?? []));
   if (!(dmax > 1e-12 * span3(m))) return 0;
   const f = 0.08 * span3(m) / dmax, p = 10 ** Math.floor(Math.log10(f)), k = f / p;
   return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale;

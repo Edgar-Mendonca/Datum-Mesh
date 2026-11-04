@@ -67,6 +67,10 @@ pub struct FrameResults {
     /// A nonlinear solution's load–deflection curve (0.4.0).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<crate::frames::corot::Curve>,
+    /// Frames to play (0.6.4): the members' stations (member after member, as in `members`),
+    /// increment by increment or time by time.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub frames: Option<crate::engine::frames::Frames>,
     /// A dynamic solution (0.4.2): the modes of a spectrum, or a time history's record.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dynamic: Option<crate::engine::dynamics::DynInfo>,
@@ -543,7 +547,7 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     if umax > 0.1 * span {
         warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span * 100.0));
     }
-    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, dynamic: None, slack: vec![] };
+    let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, frames: None, dynamic: None, slack: vec![] };
     r.check_balance();
     Ok(r)
 }
@@ -910,7 +914,7 @@ impl crate::engine::dynamics::Structure for Dyn {
             let pcs: Vec<Elem> = asm.parts[sp.clone()].iter().map(|x| Elem { p: x.p.map(|v| v * p), at: x.at * p, ..x.clone() }).collect();
             stitch(e, &pcs, u)
         }).collect();
-        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats: Stats { equations: asm.held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings: vec![], path: None, dynamic: None, slack: vec![] };
+        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats: Stats { equations: asm.held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings: vec![], path: None, frames: None, dynamic: None, slack: vec![] };
         r.check_balance();
         r
     }

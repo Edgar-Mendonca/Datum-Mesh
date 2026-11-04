@@ -1025,3 +1025,13 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .view3d .sweeppanel label { display: flex; align-items: center; gap: 4px; }
 .view3d .sweeppanel input.num { width: 76px; font: 12px var(--mono); padding: 2px 5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
 .view3d .sweeppanel .btn { letter-spacing: 0; text-transform: none; padding: 2px 8px; }
+/* The results player (0.6.4). */
+.player { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 4px 12px 4px 6px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.player .pbtn { width: 28px; height: 28px; border-radius: 50%; border: none; background: transparent; color: var(--text); display: grid; place-items: center; cursor: pointer; }
+.player .pbtn:first-child { background: var(--blue); color: #fff; }
+.player .pbtn svg { width: 16px; height: 16px; }
+.player input[type=range] { width: 220px; accent-color: var(--blue); }
+.player .plabel { min-width: 130px; color: var(--muted); }
+.player select { font-size: 12px; }
+.player .ploop { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.playwrap { position: relative; height: 0; z-index: 7; }

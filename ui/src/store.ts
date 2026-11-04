@@ -1,5 +1,5 @@
 // Window state: the open model, the selection, the drawing tool, menus, dialogs and messages.
-import { createSignal, batch, JSX } from "solid-js";
+import { createSignal, createMemo, createRoot, batch, JSX } from "solid-js";
 import { invoke, Out, Options, Model, Target, FrameResults, Results, PartResults, SpaceResults, SolidResults, SolidHeatResults, Mesh, ModeResults, Load, Which } from "./api";
 
 export const [out, setOutRaw] = createSignal<Out | null>(null);
@@ -53,7 +53,13 @@ export const selTargets = (): Target[] => {
 
 // ---------- results ----------
 /** The last solve, and whether the model has changed since. */
-export const [results, setResults] = createSignal<Results | null>(null);
+export const [rawResults, setResults] = createSignal<Results | null>(null);
+/** Playing results (0.6.4): the player's view of the results at its position (player.tsx), or
+ * null to show them as solved. Everything drawn reads `results`, so it plays along. */
+export const [playView, setPlayView] = createSignal<((r: Results) => Results) | null>(null);
+/** The result as solved, for one being played (its scale for drawing is the whole result's). */
+export const solved = <T extends Results>(r: T): T => { const x = rawResults(); return (x && x.kind === r.kind ? x : r) as T; };
+export const results = createRoot(() => createMemo(() => { const r = rawResults(), f = playView(); return r && f ? f(r) : r; }));
 export const frameRes = (): FrameResults | null => { const r = results(); return r?.kind === "frame" ? r : null; };
 export const partRes = (): PartResults | null => { const r = results(); return r && (r.kind === "plane" || r.kind === "heat") ? r : null; };
 export const spaceRes = (): SpaceResults | null => { const r = results(); return r?.kind === "space" ? r : null; };

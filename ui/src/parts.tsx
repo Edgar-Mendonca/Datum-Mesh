@@ -80,6 +80,8 @@ export const palette = (kind: string, reverse = false): string[] => {
 
 /** The values the colours span. Safety factors span the smallest to 10 (over 10 is all safe). */
 export const rangeOf = (d: FieldDef, v: number[]): [number, number] | null => {
+  // While a result plays (0.6.4) its range stays that of the whole result, so colours grow.
+  const fixed = (v as unknown as { range?: [number, number] }).range; if (fixed) return fixed;
   let lo = Infinity, hi = -Infinity;
   for (const x of v) { if (d.key === "sf" && !(x > 0)) continue; if (x < lo) lo = x; if (x > hi) hi = x; }
   if (!(lo <= hi)) return null;

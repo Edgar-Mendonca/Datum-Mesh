@@ -76,6 +76,9 @@ pub struct SolidResults {
     /// Plasticity (0.5.1): the load factor against the largest movement, as for plane parts.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<crate::plane::PartPath>,
+    /// The increments as frames to play (0.6.4), at the surface nodes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frames: Option<crate::engine::frames::Frames>,
     /// Large deformation (0.5.2): the movements are drawn true to size.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub large: bool,
@@ -854,6 +857,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, nl: Option<(usize, bool)>) -> Re
         size: sw.ms.size,
         quality: sw.ms.quality.clone(),
         volume,
+        frames: pl.as_ref().and_then(|p| crate::engine::frames::Frames::from_snaps("load", "vm", &p.snaps, &ids, 3)),
         path: pl.map(|p| p.path),
         large,
     })
@@ -1283,6 +1287,8 @@ pub(super) struct Plastic3 {
     pub(super) stress: Vec<[f64; 6]>,
     pub(super) peeq: Vec<f64>,
     pub(super) path: crate::plane::PartPath,
+    /// Each converged increment, for animation (0.6.4): movements and von Mises stress per node.
+    pub(super) snaps: Vec<crate::engine::frames::Snap>,
 }
 
 /// One strain row set per unknown of a node: the six strains (xx, yy, zz, γxy, γyz, γzx) one unit
@@ -1480,6 +1486,27 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
     let mut step = first;
     let mut path = crate::plane::PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
     let mut sig_last = vec![[0.0; 6]; pts.len()];
+    // Von Mises stress at the nodes from the points' stresses (element means, then by volume).
+    let nodal_vm = |sig: &[[f64; 6]]| -> Vec<f32> {
+        let mut em = vec![([0.0; 6], 0.0); els.len()];
+        for (p, s) in pts.iter().zip(sig) {
+            for r in 0..6 {
+                em[p.el].0[r] += p.w * s[r];
+            }
+            em[p.el].1 += p.w;
+        }
+        let (mut acc, mut ws) = (vec![[0.0; 6]; nn], vec![0.0; nn]);
+        for ((en, _, vol), (s, w)) in els.iter().zip(&em) {
+            for &q in en {
+                for r in 0..6 {
+                    acc[q][r] += s[r] / w.max(1e-300) * vol;
+                }
+                ws[q] += vol;
+            }
+        }
+        acc.iter().zip(&ws).map(|(a, w)| crate::engine::frames::vm(&a.map(|x| x / w.max(1e-300))) as f32).collect()
+    };
+    let mut snaps = vec![];
     while lam < 1.0 - 1e-12 {
         let target = (lam + step).min(1.0);
         let mut ut = u.clone();
@@ -1541,6 +1568,7 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
                 path.load.push(lam);
                 path.umax.push((0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max));
                 path.peeq.push(peeq);
+                snaps.push(crate::engine::frames::Snap { at: lam, u: u.iter().map(|&x| x as f32).collect(), v: nodal_vm(&sig_last) });
                 if it < 6 {
                     step = (step * 1.5).min(first);
                 }
@@ -1587,7 +1615,7 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
         }
         peeq[q] /= w;
     }
-    Ok(Plastic3 { u, kint, lam, stress, peeq, path })
+    Ok(Plastic3 { u, kint, lam, stress, peeq, path, snaps })
 }
 
 /// Sum the entries of a triplet list that share a place (sorted by row, then column).
@@ -1719,6 +1747,28 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
     let first = 1.0 / inc.max(1) as f64;
     let mut step = first;
     let mut path = crate::plane::PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
+    // True (Cauchy) von Mises stress at the nodes for movements u (element means, then by volume).
+    let nodal_vm = |u: &[f64]| -> Vec<f32> {
+        let (mut acc, mut ws) = (vec![[0.0; 6]; nn], vec![0.0; nn]);
+        for (en, vol, (g0, g1)) in &els {
+            let (mut s, mut w) = ([0.0; 6], 0.0);
+            for p in &pts[*g0..*g1] {
+                let c = p.mat.cauchy(&fgrad(p, en, u)).unwrap_or([0.0; 6]);
+                for r in 0..6 {
+                    s[r] += p.w * c[r];
+                }
+                w += p.w;
+            }
+            for &q in en {
+                for r in 0..6 {
+                    acc[q][r] += s[r] / f64::max(w, 1e-300) * vol;
+                }
+                ws[q] += vol;
+            }
+        }
+        acc.iter().zip(&ws).map(|(a, w)| crate::engine::frames::vm(&a.map(|x| x / w.max(1e-300))) as f32).collect()
+    };
+    let mut snaps = vec![];
     while lam < 1.0 - 1e-12 {
         let target = (lam + step).min(1.0);
         let mut ut = u.clone();
@@ -1767,6 +1817,7 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
                 path.load.push(lam);
                 path.umax.push((0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max));
                 path.peeq.push(0.0);
+                snaps.push(crate::engine::frames::Snap { at: lam, u: u.iter().map(|&x| x as f32).collect(), v: nodal_vm(&u) });
                 if it < 6 {
                     step = (step * 1.5).min(first);
                 }
@@ -1808,7 +1859,7 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
             stress[q][r] /= w;
         }
     }
-    Ok(Plastic3 { u, kint, lam, stress, peeq: vec![], path })
+    Ok(Plastic3 { u, kint, lam, stress, peeq: vec![], path, snaps })
 }
 
 #[cfg(test)]

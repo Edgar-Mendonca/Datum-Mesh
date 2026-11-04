@@ -1094,6 +1094,7 @@ pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, 
         size: mean_edge(ms),
         quality,
         volume: Volume { nodes: ms.nodes.clone(), disp: (0..nn).map(|q| [u[3 * q], u[3 * q + 1], u[3 * q + 2]]).collect(), tets: corner_tets(ms), v: all },
+        frames: pl.as_ref().and_then(|p| crate::engine::frames::Frames::from_snaps("load", "vm", &p.snaps, &ids, 3)),
         path: pl.map(|p| p.path),
         large,
     })

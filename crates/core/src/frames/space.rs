@@ -77,6 +77,9 @@ pub struct SpaceResults {
     /// Large rotations (0.5.8): the load against the movement of the node followed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub path: Option<super::corot::Curve>,
+    /// Frames to play (0.6.4), as for plane frames.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub frames: Option<crate::engine::frames::Frames>,
 }
 
 /// Plate results (0.4.1): the mesh in 3D, the movements of its nodes and fields averaged at them:
@@ -908,7 +911,7 @@ pub(super) fn results_at(m: &Model, asm: &Assembly, u: &[f64], f: &[f64], p: f64
     let fb = if scale[0] > 0.0 { (0..3).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[0] } else { 0.0 };
     let mo = if scale[1] > 0.0 { (3..6).map(|k| (applied[k] + reacted[k]).abs()).fold(0.0, f64::max) / scale[1] } else { 0.0 };
     warnings.dedup();
-    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None, slack: vec![], path: None }
+    SpaceResults { disp, reactions, members, applied, reacted, scale, imbalance: fb.max(mo), stats: Stats { equations: held.iter().filter(|h| !**h).count(), ..Default::default() }, warnings, plates, dynamic: None, slack: vec![], path: None, frames: None }
 }
 
 fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {

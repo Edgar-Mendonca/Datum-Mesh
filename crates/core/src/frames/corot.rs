@@ -191,7 +191,7 @@ impl Corot {
         if fscale == 0.0 && scale[1] == 0.0 {
             warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
         }
-        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, dynamic: None, slack: vec![] };
+        let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, frames: None, dynamic: None, slack: vec![] };
         r.check_balance();
         r
     }

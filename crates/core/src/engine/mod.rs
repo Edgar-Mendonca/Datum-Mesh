@@ -3,6 +3,7 @@
 
 pub mod cases;
 pub mod dynamics;
+pub mod frames;
 pub mod modal;
 pub mod path;
 pub mod sparse;

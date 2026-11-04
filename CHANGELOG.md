@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.4 — 2026-11-04
+
+Results that move: play any solved result.
+
+**The player**
+- A bar over the drawing of every solved result: Play and Pause, back to the start, a slider to any moment, the speed (0.25× to 4×) and Loop.
+- A linear result grows from no load to the whole load: the shape, the colours and the diagrams in proportion, against the whole result's colour scale.
+- A nonlinear result (yielding, large deformation, large deflection, past the limit) plays through its increments, the slider showing the load factor; its colours (von Mises stress) grow as it yields.
+- A time history plays through its times, the slider showing the time.
+- A natural frequency or buckling mode swings, at the speed set; the slider holds it at any point of its swing.
+
+**Engine**
+- Nonlinear solves and time histories keep up to 60 frames for playing: the movements of the drawn points (and von Mises stress for parts and solids) at each.
+
 ## 0.6.3 — 2026-11-03
 
 Basic modelling: shape and arrange parts in 3D.

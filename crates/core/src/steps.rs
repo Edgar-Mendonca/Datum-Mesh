@@ -165,6 +165,14 @@ fn frame(m: &Model, which: Option<Which>) -> Result<Results, String> {
     let stats = Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros, residual, ms: t0.elapsed().as_secs_f64() * 1e3 };
     let mut r = c.results(m, &u, &base, stats, warnings);
     r.path = Some(curve);
+    // Frames to play (0.6.4): the members' shapes at each converged point.
+    r.frames = Some(crate::engine::frames::Frames {
+        what: "load",
+        field: "",
+        at: crate::engine::frames::pick(points.len()).iter().map(|&k| points[k].1).collect(),
+        disp: crate::engine::frames::pick(points.len()).iter().map(|&k| c.results(m, &points[k].2, &base, Stats::default(), vec![]).members.iter().flat_map(|mr| mr.d.iter().map(|d| [d[0] as f32, d[1] as f32, 0.0])).collect()).collect(),
+        v: vec![],
+    });
     Ok(Results::Frame(r))
 }
 
@@ -255,6 +263,12 @@ fn space(m: &Model, which: Option<Which>) -> Result<Results, String> {
     let stats = Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros, residual, ms: t0.elapsed().as_secs_f64() * 1e3 };
     let mut r = c.results(m, &u, &base, stats, warnings)?;
     r.path = Some(curve);
+    let keep = crate::engine::frames::pick(points.len());
+    let mut disp = vec![];
+    for &k in &keep {
+        disp.push(c.results(m, &points[k].2, &base, Stats::default(), vec![])?.members.iter().flat_map(|mr| mr.d.iter().map(|d| [d[0] as f32, d[1] as f32, d[2] as f32])).collect());
+    }
+    r.frames = Some(crate::engine::frames::Frames { what: "load", field: "", at: keep.iter().map(|&k| points[k].1).collect(), disp, v: vec![] });
     Ok(Results::Space(r))
 }
 
@@ -270,7 +284,14 @@ fn dynamic(m: &Model, which: Option<Which>, st: &Step) -> Result<Results, String
     match m.analysis {
         Analysis::Frame => {
             let s = crate::frame::Dyn::new(base, pieces)?;
-            let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else { history(&s, st, s.load(), m)? };
+            let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else {
+                let (r, info, samples) = history(&s, st, s.load(), m)?;
+                let zero = vec![0.0; s.k().n];
+                let disp = samples.iter().map(|(_, u)| s.results(u, &zero, 0.0).members.iter().flat_map(|mr| mr.d.iter().map(|d| [d[0] as f32, d[1] as f32, 0.0])).collect()).collect();
+                let mut r = r;
+                r.frames = Some(crate::engine::frames::Frames { what: "time", field: "", at: samples.iter().map(|x| x.0).collect(), disp, v: vec![] });
+                (r, info)
+            };
             r.warnings.extend(info.warnings.iter().cloned());
             r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
             r.dynamic = Some(info);
@@ -278,7 +299,14 @@ fn dynamic(m: &Model, which: Option<Which>, st: &Step) -> Result<Results, String
         }
         Analysis::Space => {
             let s = crate::space::Dyn::new(base, pieces)?;
-            let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else { history(&s, st, s.load(), m)? };
+            let (mut r, info) = if st.kind == StepKind::Spectrum { spectrum(&s, st, |o, rho| s.combine(o, rho))? } else {
+                let (r, info, samples) = history(&s, st, s.load(), m)?;
+                let zero = vec![0.0; s.k().n];
+                let disp = samples.iter().map(|(_, u)| s.results(u, &zero, 0.0).members.iter().flat_map(|mr| mr.d.iter().map(|d| [d[0] as f32, d[1] as f32, d[2] as f32])).collect()).collect();
+                let mut r = r;
+                r.frames = Some(crate::engine::frames::Frames { what: "time", field: "", at: samples.iter().map(|x| x.0).collect(), disp, v: vec![] });
+                (r, info)
+            };
             r.warnings.extend(info.warnings.iter().cloned());
             r.stats.ms = t0.elapsed().as_secs_f64() * 1e3;
             r.dynamic = Some(info);
@@ -304,7 +332,10 @@ fn spectrum<S: Structure>(s: &S, st: &Step, combine: impl Fn(&[S::Out], &[Vec<f6
     Ok((combine(&outs, &rho), info))
 }
 
-fn history<S: Structure>(s: &S, st: &Step, load: &[f64], m: &Model) -> Result<(S::Out, DynInfo), String> {
+/// The movements at evenly spread times of a history, for frames to play (0.6.4).
+type Samples = Vec<(f64, Vec<f64>)>;
+
+fn history<S: Structure>(s: &S, st: &Step, load: &[f64], m: &Model) -> Result<(S::Out, DynInfo, Samples), String> {
     let n = s.k().n;
     let free = s.held().iter().filter(|h| !**h).count();
     let (modes, _) = crate::modal::lowest(s.k(), s.mass(), s.held(), 2.min(free))?;
@@ -326,10 +357,15 @@ fn history<S: Structure>(s: &S, st: &Step, load: &[f64], m: &Model) -> Result<(S
     let mut times = vec![];
     let mut peak = vec![0.0f64; nn];
     let mut best = (-1.0f64, 0.0, vec![0.0; n], vec![0.0; n], 0.0);
+    let every = steps.div_ceil(crate::engine::frames::MAX - 1).max(1);
+    let mut samples: Samples = vec![];
     // The time of the largest movement of the node followed (or of any node): the results are
     // shown then, with the inertia and damping forces among the loads so they balance.
-    let mut each = |_: usize, t: f64, u: &[f64], v: &[f64], a: &[f64], f: &[f64]| {
+    let mut each = |k: usize, t: f64, u: &[f64], v: &[f64], a: &[f64], f: &[f64]| {
         times.push(t);
+        if k.is_multiple_of(every) || k == steps {
+            samples.push((t, u.to_vec()));
+        }
         for i in 0..nn {
             let d = at(u, dofs[i]);
             let size = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
@@ -358,7 +394,7 @@ fn history<S: Structure>(s: &S, st: &Step, load: &[f64], m: &Model) -> Result<(S
     }
     info.notes.push(format!("The results shown are at t = {:.3} s, when {} moves most{}; the largest movement of every node over the whole history is in the record.", best.1, m.nodes.get(node).map_or("the model".to_string(), |_| format!("node {}", node + 1)), if ground { " (relative to the ground)" } else { "" }));
     let out = s.results(&best.2, &best.3, best.4);
-    Ok((out, info))
+    Ok((out, info, samples))
 }
 
 #[cfg(test)]

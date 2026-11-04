@@ -25,6 +25,7 @@
     }
   ],
   "highlights": [
+    "Results that move: play a result growing to its load, a nonlinear solve through its increments, a time history through time, or a mode swinging; pause, scrub and set the speed",
     "Basic modelling: extrude or revolve with a preview, sketch on a part's face, holes, fillets, chamfers and cuts, and parts moved, copied, mirrored and patterned, with exact volumes and masses",
     "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration, heat, plasticity and large deformation",
     "Sketch on a plane: pick a plane at the origin, the view turns square to it and you draw over the model, with typed points and level and upright snapping; Finish or Cancel",
@@ -85,8 +86,9 @@
       "title": "Modelling, animation, crushing and impact",
       "when": "Next",
       "items": [
+        "Modelling as in CAD programs: a history timeline, line and arc sketches with trim and typed dimensions, extrude by dragging, join and cut chosen for you",
+        "A calmer, easier layout and a first-run walkthrough",
         "Trim and open lines and arcs in sketches",
-        "Animation of results: deformation through the load steps, modes and time histories, with play, pause and speed",
         "Explicit dynamics",
         "Contact, first for a thin tube crushed between rigid plates",
         "Implicit dynamics and transient heat for solids"

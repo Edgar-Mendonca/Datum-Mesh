@@ -4,7 +4,7 @@
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Pt, MemberResult, Model, FrameResults, SpaceResults, SolidResults, SolidHeatResults, num, clean, isFrame } from "./api";
 import { fieldsFor } from "./parts";
-import { frameRes as results, partRes, spaceRes, solidRes, stale, show, model, cursor, setView, sel, setSel, modeOn, solvedFor } from "./store";
+import { solved, frameRes as results, partRes, spaceRes, solidRes, stale, show, model, cursor, setView, sel, setSel, modeOn, solvedFor } from "./store";
 import { toS, scale } from "./canvas";
 import { fmt, unit } from "./units";
 import { C, imbalanceOf } from "./cmds";
@@ -29,7 +29,7 @@ const comp = (v: number[], k: number) => { const [e, sg] = engineAxis(k % 3); re
 export const deformFactor = (m: Model, r: FrameResults) => {
   // Large deflection (0.4.0): the shape as it truly is, not exaggerated.
   if (r.path) return show().scale;
-  const dmax = Math.max(0, ...r.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))));
+  const dmax = Math.max(0, ...solved({ ...r, kind: "frame" as const }).members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))));
   // Nothing moves (no loads): no exaggeration to speak of (0.1.1 showed "× 2e+299").
   if (!(dmax > 1e-12 * span(m))) return 0;
   const f = 0.08 * span(m) / dmax;
