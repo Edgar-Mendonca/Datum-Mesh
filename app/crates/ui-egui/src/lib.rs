@@ -2901,6 +2901,8 @@ impl SolveApp {
         // key must build its translated hint in the user's language, not in English.
         let _language = crate::i18n::scope(&self.preferences.language);
         panel_runtime::tick_app(self);
+        // Datum Mesh: a finished mesh or solve is collected whatever the workspace.
+        sim::tick(self, ctx);
         // Sleep/wake often skips frames without a device-lost signal; refresh egui GPU textures
         // when the frame clock jumps so the chrome is not stuck blank (#8749).
         let frame_time = ctx.input(|i| i.time);

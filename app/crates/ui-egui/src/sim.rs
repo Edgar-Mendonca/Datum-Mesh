@@ -87,8 +87,10 @@ pub fn enter(app: &mut SolveApp, on: bool) -> Result<(), String> {
         if crate::render_workspace::active(app) {
             crate::render_workspace::enter(app, false)?;
         }
-        app.ui.tab = TAB.into();
+        // Faces are what supports and loads go on. (A command can move the ribbon to its own
+        // tab, so the workspace's tab is set after it.)
         let _ = app.run("select.filter", serde_json::json!({"mode": "face"}));
+        app.ui.tab = TAB.into();
     } else {
         app.ui.tab = "MODEL".into();
     }
@@ -189,8 +191,8 @@ fn start(app: &mut SolveApp, solve: bool) {
     let _ = doc;
 }
 
-/// Collect a finished job.
-fn tick(app: &mut SolveApp, ctx: &egui::Context) {
+/// Collect a finished job (every frame, whichever workspace shows).
+pub fn tick(app: &mut SolveApp, ctx: &egui::Context) {
     let Some(job) = &app.sim.job else { return };
     match job.rx.try_recv() {
         Ok(done) => {
