@@ -1,0 +1,14 @@
+[package]
+name = "datum-analysis"
+description = "Datum Mesh analysis of a design's solids: the study (materials, supports and loads on named faces), meshing through Gmsh, solving with datum-core"
+version.workspace = true
+edition.workspace = true
+license = "MIT"
+publish = false
+
+[dependencies]
+datum-core = { path = "../../../crates/core" }
+solidcraft-geom = { workspace = true }
+solidcraft-kernel = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

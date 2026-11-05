@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/core", "src-tauri"]
+# The application (built on SolidCraft) is its own workspace.
+exclude = ["app"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

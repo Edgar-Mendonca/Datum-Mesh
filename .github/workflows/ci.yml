@@ -58,3 +58,35 @@ jobs:
       - run: npm ci
       - run: npm run build:ui
       - run: cargo test --workspace
+
+  # The application (built on SolidCraft, in app/) with the analysis: it builds, the analysis
+  # crate's tests pass, and its own clippy is clean.
+  app:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app -> target
+      - name: Analysis tests
+        working-directory: app
+        run: cargo test --release -p datum-analysis
+      - name: Clippy on the analysis and the window
+        working-directory: app
+        run: cargo clippy --release -p datum-analysis -p solidcraft-ui-egui -- -D warnings
+      - name: The program builds
+        working-directory: app
+        run: cargo build --release -p solidcraft --bin datum-mesh
+
+  # The application's licences and sources (app/deny.toml).
+  app-deny:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          manifest-path: app/Cargo.toml
