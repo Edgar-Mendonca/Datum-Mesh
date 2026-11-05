@@ -28,7 +28,7 @@ Checks before pushing:
 - `cargo test --workspace` (includes the `hardening` tests and the benchmarks)
 - `npm run check:ui`, then `npm run test:ui` (dumps the engine fixture, builds the window, runs the Playwright checks)
 - `cargo deny check` (licences, advisories, sources; CI runs it)
-- The program: `cd app && cargo clippy -p datum-analysis -p solidcraft-ui-egui -- -D warnings`, `cargo test -p datum-analysis`, and a driven run under Xvfb (`--control PORT`; docs/MEMORY.md §1)
+- The program: `cd app && cargo clippy -p datum-analysis -p solidcraft-ui-egui --no-deps -- -D warnings` (`--no-deps`: the inherited crates follow upstream's lints), `cargo test -p datum-analysis`, and a driven run under Xvfb (`--control PORT`; docs/MEMORY.md §1)
 - A change you can see: check it in the real app (`cargo build -p datum-mesh && tests_ui/realapp.sh steps.sh shots/`) and add a UI check for every bug
 
 Releasing:

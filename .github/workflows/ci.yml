@@ -77,7 +77,7 @@ jobs:
         run: cargo test --release -p datum-analysis
       - name: Clippy on the analysis and the window
         working-directory: app
-        run: cargo clippy --release -p datum-analysis -p solidcraft-ui-egui -- -D warnings
+        run: cargo clippy --release -p datum-analysis -p solidcraft-ui-egui --no-deps -- -D warnings
       - name: The program builds
         working-directory: app
         run: cargo build --release -p solidcraft --bin datum-mesh
