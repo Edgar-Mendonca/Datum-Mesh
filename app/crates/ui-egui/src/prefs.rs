@@ -115,7 +115,7 @@ use NavMode::{Orbit, Pan, Zoom};
 pub const NAV_PRESETS: &[NavPreset] = &[
     NavPreset {
         id: "fusion",
-        label: "Fusion",
+        label: "Middle drag pans",
         help: "Middle drag pans, Shift+middle orbits, right drag orbits",
         reverse_zoom: false,
         reverse_drag_zoom: false,
@@ -125,7 +125,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "solidworks",
-        label: "SolidWorks",
+        label: "Middle drag orbits, Ctrl pans",
         help: "Middle drag orbits, Ctrl+middle pans, Shift+middle zooms, right drag orbits",
         reverse_zoom: true,
         reverse_drag_zoom: false,
@@ -143,7 +143,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     // https://support.ptc.com/help/creo/creo_pma/r12/usascii/fundamentals/fundamentals/About_Dynamic_Viewing.html
     NavPreset {
         id: "creo",
-        label: "Creo",
+        label: "Middle drag orbits, Ctrl drag zooms",
         help: "Middle drag orbits, Shift+middle pans, Ctrl+middle drag vertically zooms (down to zoom in); scroll the wheel to zoom",
         reverse_zoom: false,
         reverse_drag_zoom: true,
@@ -153,11 +153,11 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "nx",
-        label: "NX",
+        label: "Middle drag orbits, right drag free",
         // NX's CAD1 scheme drags middle to rotate, middle + left to zoom and middle + right to
         // pan; the bindings here hold one button at a time, so the two-button drags are the
         // middle drag with Ctrl (zoom) and Shift (pan).
-        help: "Middle drag orbits, Shift+middle pans (NX's middle + right), Ctrl+middle zooms (NX's middle + left); right drag leaves the camera",
+        help: "Middle drag orbits, Shift+middle pans, Ctrl+middle zooms; right drag leaves the camera",
         reverse_zoom: false,
         reverse_drag_zoom: false,
         middle_double_click: Some("fit"),
@@ -166,7 +166,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "inventor",
-        label: "Inventor",
+        label: "Middle drag pans, Ctrl zooms",
         help: "Middle drag pans, Shift+middle orbits, Ctrl+middle zooms, right drag orbits",
         reverse_zoom: false,
         reverse_drag_zoom: false,
@@ -181,7 +181,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "alias",
-        label: "Alias",
+        label: "Shift+Alt drags",
         help: "Shift+Alt+left drag orbits, Shift+Alt+middle pans, Shift+Alt+right zooms; middle drag also pans and right drag orbits",
         reverse_zoom: false,
         reverse_drag_zoom: false,
@@ -198,7 +198,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "maya",
-        label: "Maya",
+        label: "Alt drags",
         help: "Alt+left drag orbits, Alt+middle pans, Alt+right zooms; middle drag also pans",
         reverse_zoom: false,
         reverse_drag_zoom: false,
@@ -223,7 +223,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "tinkercad",
-        label: "Tinkercad",
+        label: "Right drag orbits, middle pans",
         help: "Right drag orbits, middle or Shift+right drag pans",
         reverse_zoom: false,
         reverse_drag_zoom: false,
@@ -249,7 +249,7 @@ pub const NAV_PRESETS: &[NavPreset] = &[
     },
     NavPreset {
         id: "hfss",
-        label: "HFSS",
+        label: "Alt drag pans, Ctrl drag orbits",
         help: "Alt+left drag pans, Shift+Alt+left zooms, Ctrl+left drag on empty space orbits",
         reverse_zoom: false,
         reverse_drag_zoom: false,
@@ -286,7 +286,6 @@ impl NavPreset {
 
     pub(crate) fn translated_label(&self) -> &str {
         match self.id {
-            "creo" => crate::i18n::tr("nav.creo.label"),
             TOUCHPAD_NAV => crate::i18n::tr("nav.touchpad.label"),
             _ => crate::i18n::tr_label(self.label),
         }

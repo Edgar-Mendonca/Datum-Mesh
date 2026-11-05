@@ -605,10 +605,10 @@ pub(crate) fn nav_rows(app: &mut SolveApp, ui: &mut egui::Ui, t: &Tokens) {
         if app.preferences.nav != MOUSE_MODE {
             crate::ui_kit::text(
                 ui,
-                crate::i18n::tr_label("Mouse gestures only work with the SolidWorks mouse mode (the wheel orbits, Ctrl + wheel pans)."),
+                crate::i18n::tr_label("Mouse gestures only work with the mouse mode “Middle drag orbits, Ctrl pans” (the wheel orbits, Ctrl + wheel pans)."),
                 crate::ui_kit::Text::Hint("mouse_gesture_mode"),
             );
-            if crate::ui_kit::button(ui, crate::i18n::tr_label("Use the SolidWorks mouse mode"), crate::ui_kit::Button::Normal).clicked() {
+            if crate::ui_kit::button(ui, crate::i18n::tr_label("Use that mouse mode"), crate::ui_kit::Button::Normal).clicked() {
                 crate::prefs::choose_nav_preset(&mut app.preferences, crate::prefs::nav_preset(MOUSE_MODE));
             }
         } else if app.preferences.mouse_gestures.enabled {
@@ -639,7 +639,7 @@ fn editor(app: &mut SolveApp, ctx: &egui::Context) {
             if app.preferences.nav != MOUSE_MODE {
                 ui.colored_label(
                     t.warning,
-                    crate::i18n::tr_label("Mouse gestures only work with the SolidWorks mouse mode (the wheel orbits, Ctrl + wheel pans)."),
+                    crate::i18n::tr_label("Mouse gestures only work with the mouse mode “Middle drag orbits, Ctrl pans” (the wheel orbits, Ctrl + wheel pans)."),
                 );
             }
             ui.horizontal(|ui| {

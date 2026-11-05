@@ -7,24 +7,38 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
+    "From 0.7.0 Datum Mesh is a full 3D modeller, built on the open-source SolidCraft CAD program in the Datum look. Sketch with lines, arcs, circles (by centre, two or three points), rectangles (two corners, three points or centre), polygons of any number of sides and slots. Then extrude, revolve, sweep, loft, fillet, chamfer, shell, drill and pattern, with a history you can edit.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
     "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load, in 2D and 3D; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both; 3D solids also follow large deformation, rubber included (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
   ],
   "steps": [
     {
-      "title": "Draw and mesh",
-      "text": "Draw a frame of beams and truss bars, in the plane or in 3D in sketches on planes you pick, or the outline of a part with its holes, shaped with rounds, bevels, cut-outs and patterns (extruded or revolved into a 3D solid, or sketched as parts of an assembly), on a grid with snap and rulers."
+      "title": "Model",
+      "text": "Sketch on a plane or a face and build the part with extrude, revolve, holes, fillets and patterns, or open a STEP file."
     },
     {
-      "title": "Load and support",
-      "text": "Put supports, forces, pressures, gravity and heat on nodes, members and edges, and set their values with units."
+      "title": "Material",
+      "text": "Open the Simulation workspace and pick the material from the library."
     },
     {
-      "title": "Solve and report",
-      "text": "Solve, read the deflections, stresses and temperatures, and print a report with the equilibrium check."
+      "title": "Supports & Loads",
+      "text": "Click faces and hold them (fixed, roller, symmetry), or put a force or a pressure on them."
+    },
+    {
+      "title": "Mesh",
+      "text": "Set the element size or leave it automatic; Gmsh fills the part with ten-node tetrahedra."
+    },
+    {
+      "title": "Solve",
+      "text": "Datum Mesh's own engine solves and checks that the reactions balance the loads."
+    },
+    {
+      "title": "Results",
+      "text": "Von Mises stress or movement in colour bands on the deformed part, with a legend."
     }
   ],
   "highlights": [
+    "A new program on the open-source SolidCraft CAD base: full sketch and 3D tools, smooth and quick, with the analysis in five numbered steps (Material, Supports & Loads, Mesh, Solve, Results)",
     "Results that move: play a result growing to its load, a nonlinear solve through its increments, a time history through time, or a mode swinging; pause, scrub and set the speed",
     "Basic modelling: extrude or revolve with a preview, sketch on a part's face, holes, fillets, chamfers and cuts, and parts moved, copied, mirrored and patterned, with exact volumes and masses",
     "Parts of any shape: import a tetrahedral mesh (Gmsh .msh, CalculiX-format .inp), its faces found by themselves, solved with our own 4- and 10-node tetrahedra for stress, vibration, heat, plasticity and large deformation",
@@ -73,35 +87,49 @@
   ],
   "roadmap": [
     {
-      "v": "0.5.x",
-      "title": "Nonlinear solids",
+      "v": "0.7.1",
+      "title": "Analysis on real solids",
       "when": "Next",
       "items": [
-        "Rubber and large deformation for plane parts",
-        "Thermal stress on imported meshes"
+        "Loads on edges and points, gravity",
+        "Held and loaded faces shown in colour",
+        "Probe and more results"
       ]
     },
     {
-      "v": "0.6",
-      "title": "Modelling, animation, crushing and impact",
-      "when": "Next",
+      "v": "0.7.2",
+      "title": "More analyses of solids",
+      "when": "Later",
       "items": [
-        "Modelling as in CAD programs: a history timeline, line and arc sketches with trim and typed dimensions, extrude by dragging, join and cut chosen for you",
-        "A calmer, easier layout and a first-run walkthrough",
-        "Trim and open lines and arcs in sketches",
+        "Natural frequencies, buckling, heat",
+        "Yielding and large deformation",
+        "The results player"
+      ]
+    },
+    {
+      "v": "0.7.3",
+      "title": "Frames and trusses",
+      "when": "Later",
+      "items": [
+        "Frames and trusses drawn from sketch lines, with sections and load cases"
+      ]
+    },
+    {
+      "v": "0.7.4",
+      "title": "Plane parts and the report",
+      "when": "Later",
+      "items": [
+        "Plane stress, plane strain and axisymmetric parts",
+        "The report and Help › Verification in the new program"
+      ]
+    },
+    {
+      "v": "0.7.5+",
+      "title": "Crushing and impact",
+      "when": "Later",
+      "items": [
         "Explicit dynamics",
-        "Contact, first for a thin tube crushed between rigid plates",
-        "Implicit dynamics and transient heat for solids"
-      ]
-    },
-    {
-      "v": "1.0",
-      "title": "Validated",
-      "when": "Goal",
-      "items": [
-        "A validation report covering every analysis",
-        "User guide",
-        "Signed installer"
+        "Contact"
       ]
     }
   ]

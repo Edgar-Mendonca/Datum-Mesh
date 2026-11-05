@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.0 — 2026-11-05
+
+A new start: Datum Mesh is now a full 3D modeller with the analysis laid out in steps.
+
+**A new program**
+- Datum Mesh is rebuilt on SolidCraft, the open-source CAD program (MIT or Apache-2.0), in the Datum look: the crimson accent and the Datum mark. It is quick and smooth, and it has a full set of modelling tools.
+- Sketch tools with their variants:
+  - line and arc chains;
+  - circle by centre, by two points or by three points;
+  - rectangle by two corners, by three points or by its centre;
+  - polygon with any number of sides, drawn inside or outside a circle or by one edge;
+  - slots.
+  - Dimensions and constraints are typed, and the sketch is solved as you draw.
+- 3D tools: extrude, revolve, sweep, loft, fillet, chamfer, shell, hole, patterns and mirror, with a history timeline you can edit. Parts can be joined into assemblies, and STEP files can be opened and saved.
+- Design files are `.dmx`. Files from 0.6 and earlier (`.dmesh`) do not open in this version; 0.6.4 stays on the releases page for them.
+
+**Simulation, step by step**
+- The Simulation workspace (the workspace menu, top left) puts the analysis in order on one bar:
+  1. **Material**: pick it from the library.
+  2. **Supports & Loads**: click faces, then Fixed, Roller or Symmetry, or a force (kN, along X, Y, Z) or a pressure (MPa). Each set shows as a chip, and × removes it.
+  3. **Mesh**: the element size (or automatic), then Mesh.
+  4. **Solve**: says what is still missing, then solves.
+  5. **Results**: von Mises stress or movement in colour bands, on the deformed shape, with a legend.
+- The study is saved in the design and follows its faces by name.
+- Parts are meshed into ten-node tetrahedra by Gmsh. Gmsh is installed beside the program and always runs as a separate program (GPL). The solve uses Datum Mesh's own verified engine and checks equilibrium every time.
+
+**Not in 0.7.0 (they return in 0.7.x)**
+- Frames, trusses and plane parts.
+- Natural frequencies, buckling, heat, yielding, large deformation and time histories.
+- The results player.
+- The report.
+- All of these remain in the engine and its 268 verification checks; the new window will reach them in the coming releases (docs/MEMORY.md, roadmap).
+
 ## 0.6.4 — 2026-11-04
 
 Results that move: play any solved result.

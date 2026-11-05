@@ -41,6 +41,18 @@ To show any engineer or student how a part or structure carries load, heat and v
 
 Units: the engine and the file use SI base units (m, N, Pa, K, W). The window converts for display in one place (`ui/src/units.ts`): SI shows mm, kN, MPa, °C; US shows in, kip, ksi, °F; frames show coordinates in m (ft), parts in mm (in).
 
+### From 0.7.0: the program is `app/`
+
+The window people use is `app/`, a fork of SolidCraft (egui + wgpu, Rust 2024; MIT or Apache-2.0, upstream commit f8a98ee), restyled as Datum Mesh. `app/AGENTS.md` lists what is ours there. It is its own cargo workspace (the root workspace has `exclude = ["app"]`) and it links `crates/core` by path.
+
+- `app/crates/analysis` (datum-analysis) holds the study (material, supports and loads on named faces, element size; stored in the design under the metadata key `com.edgarmendonca.datummesh.study`). It also meshes: STEP out → `gmsh mesh.geo -parse_and_exit` (OpenCASCADE, fragments, second order, msh 4.1) → `tet::read_msh` → `trace_faces` (each mesh face to a model face by nearest surface triangles). Then it builds the model and solves with `crates/core`.
+- `app/crates/ui-egui/src/sim.rs` is the Simulation workspace. Its stage bar has five steps: Material, Supports & Loads, Mesh, Solve, Results. Solves run on a background thread; results are drawn in the viewport scene. Its hooks are in `lib.rs` (`sim::tick`), `toolbar.rs`, `context_menu.rs`, `control.rs` (`ui.sim` for driven tests), `viewport.rs` and `workspace.rs` (`sync_context` leaves the Simulation tab alone).
+- `app/packaging/windows/datum-mesh.nsi` is the per-user setup. It installs `datum-mesh.exe` and `gmsh\gmsh.exe`, replaces the old `Datum Mesh.exe`, and associates `.dmx` files.
+- Building takes about 25 minutes from scratch: `cd app && cargo build --release -p solidcraft --bin datum-mesh`.
+- Gmsh is found through `DATUM_GMSH`, then `gmsh\gmsh.exe` beside the program, then PATH.
+- The 0.6 window (`ui/`, `src-tauri/`) stays in the repository as the reference for the analyses still to be brought across.
+- Driven checks: run `datum-mesh --sample --control PORT` under Xvfb. The token is in `$HOME/.local/share/solidcraft/control/PORT.token`. Requests are JSON lines (`ui.screenshot`, `engine.execute`, `ui.workspace`, `ui.sim`).
+
 ### Files
 
 | File | What it does |
@@ -123,6 +135,8 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 
 `release.yml` (windows-latest): checks a pushed tag matches the version, takes the notes from CHANGELOG, runs the engine tests, builds the NSIS installer, writes `SHA256SUMS.txt` and publishes the GitHub Release. Run it from the Actions tab (tag pushes are blocked from Claude sessions).
 
+From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml`), runs the engine and analysis tests, fetches Gmsh for Windows from gmsh.info on the runner, builds `DatumMesh-x.y.z-setup.exe` with makensis, and checks it against a 150 MB budget. The updater (`app/crates/ui-egui/src/update.rs`) reads this repository's releases.
+
 ### How we work
 
 1. The user reviews a release and sends screenshots.
@@ -139,6 +153,12 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 
 | Version | Decision | Why |
 | --- | --- | --- |
+| 0.7.0 | Rebuild the program on SolidCraft (the user chose "build on it, with Datum's essence and style"); the Datum look (crimson accent, mark, name) | Several releases of our own modelling in the web window did not get it easy to use. The open project already has the CAD tools students expect, and it is fast and smooth. Licence: MIT or Apache-2.0 |
+| 0.7.0 | Mesh real solids with Gmsh, bundled and run as a separate program (GPL, never linked) | Exact B-rep geometry needs a robust tetrahedral mesher. The user allowed it. Our engine still solves and checks equilibrium |
+| 0.7.0 | The analysis runs in a stage bar in the order a student follows: Material → Supports & Loads → Mesh → Solve → Results | The user asked for numbered steps instead of a tree |
+| 0.7.0 | The study lives in the design's metadata and refers to faces by persistent names (`F2:side:l4`) | It survives saving and undo, and needs no change to the CAD document model |
+| 0.7.0 | Design files `.dmx`; `.dmesh` is not read by 0.7.0 | The old model and the CAD model differ. 0.6.4 stays downloadable. A converter can come later if the user asks |
+| 0.7.0 | AI-client connections and the control channel are off by default | Keep the program offline and simple. The control channel is for our driven checks |
 | plan | Everything in the brief §1 (name, crimson accent, identifier, `.dmesh`, stack, own Rust solver, 12-band blue-to-red contours with viridis in Options, ribbon tabs, logo) | Made with the user in the hub, session 13 |
 | plan | The shell and window are copied from Datum Sim, which is Plan's skeleton already adapted to a canvas app, without Sim's Python and run thread | The brief says copy, don't reinvent; Sim's copy is the closest to a drawing app |
 | 0.1.0 | Model in SI base units; display units in one window module; frames show m (ft), parts mm (in) | One owner for conversions; no rounding when the user switches units |
@@ -299,7 +319,13 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 | 0.6.2 | Sketch on a plane: New Sketch, pick a plane, the view square to it with the canvas over the 3D view, Sketch tab, Finish/Cancel, offset, typed points, level/upright snapping; the same for 3D frames | ✅ |
 | 0.6.3 | Basic modelling: Extrude panel with preview, sketch on a face, Cut Through, Hole, Fillet, Chamfer, Cut, Move/Copy, Turn/Pattern, Mirror, volume and mass, benchmark 33 | ✅ |
 | 0.6.4 | Animation of results: the player (linear growth, increments, time histories, modes), engine frames | ✅ |
-| 0.6.5 | Modelling that works as students expect from CAD: workspace laid out Sketch · Create · Modify · Arrange · Inspect, a history timeline, line and arc chains with trim and typed dimensions, extrude by dragging, Join/Cut/New chosen for you, shortcuts and a right-click menu | ⬜ |
+| 0.7.0 | Datum Mesh on the open CAD program: full sketching and 3D modelling, the Simulation stage bar, Gmsh meshing, linear stress of solids | ✅ |
+| 0.7.1 | Analysis on real solids: more materials and units, loads on edges and points, gravity, bolt-hole and contact-free assemblies, held/loaded faces highlighted, probe | 🔜 |
+| 0.7.2 | Natural frequencies, buckling, heat, yielding and large deformation of solids; the results player | ⬜ |
+| 0.7.3 | Frames and trusses from sketch lines (sections, releases, load cases) | ⬜ |
+| 0.7.4 | Plane parts, the report, Help › Verification in the new program | ⬜ |
+| 0.7.5+ | Explicit dynamics and contact (tube crushing) | ⬜ |
+| 0.6.5 | (replaced by 0.7) Modelling that works as students expect from CAD: workspace laid out Sketch · Create · Modify · Arrange · Inspect, a history timeline, line and arc chains with trim and typed dimensions, extrude by dragging, Join/Cut/New chosen for you, shortcuts and a right-click menu | ⬜ |
 | 0.6.6 | Easier on the eyes: calmer layout and colours, collapsible panels, a first-run walkthrough | ⬜ |
 | 0.6.7–0.6.8 | Explicit dynamics; contact (tube crushing) | ⬜ |
 | 0.5–0.7 | Nonlinear materials and tetrahedra with mesh import (0.5), implicit/explicit dynamics for solids (0.6), contact (0.7) | ⬜ |
@@ -410,6 +436,25 @@ Units: the engine and the file use SI base units (m, N, Pa, K, W). The window co
 - **0.6.2 built and released (2026-11-03).** Sketch on a plane. `ui/src/sketchmode.tsx` (above); `store.ts` `sketch` (kind frame/part, part, isNew, plane, depth, facing, edits; `act` counts edits) and `sketchPick`; `canvas.tsx` `placeAt` (the tools' click logic), `canvasPlace`/`lastPlaced` for typed points, level/upright snap within 3° of the last draft point, Z-up pointer label; `view3d.tsx` old drawing-in-3D removed (hit3/place3/Tab/typed XYZ/hover), `picking()`, pick bar, orthographic `cam()` aligned to the canvas (render, cube, `screen`), Turn the View starts the free camera from the sketch's side; `ribbon.tsx` Sketch tab (`SketchDraw`, `FramePlates`, Exit), New Sketch on Geometry; `space3.tsx` plane bar and part picker removed. Cancel undoes before closing (the 3D view that comes back is built from the restored model; real-app find). UI checks rewritten for the sketch flow (alignment of canvas and 3D, side-plane lift, plates on a Top sketch, part sketch, Turn the View/Look At, Cancel, typed and snapped points). Real app: frame and part sketches, Turn the View, Finish, Cancel.
 - **0.6.3 built and released (2026-11-03).** Basic modelling. Engine: `Part.from`, `solids/modelling.rs`, ops `PlaceParts`, `Cut`, `Hole`, `PartEdge` (above), part volumes sent to the window (`part_volume` in `tet::for_window`), automatic element size shared by the parts' volumes (`automatic_parts_share_one_budget`), parts re-pointed to the first material when theirs is dropped in repair (found by the garbled-file fuzz). Benchmark 33 (10 rows, all passing first run once the bench meshes were made linear for speed). Window: `modelling.tsx` (above), Geometry › Features and Arrange, Extrude panel after Finish Sketch, sketching on a part's face (`hitPart`; parts in front hide the origin squares), parts picked and tinted in 3D, Inspector Which way / Extrude… / volume and mass, help topic `modelling`, `vol` unit; `allIds` now keeps parts (and materials, sections, cases, combinations, steps) selected across edits; the 3D view outlines parts that cannot be meshed; Repeat in Z-up axes. Real app: sketch, Extrude panel (preview, 20 mm both ways), Hole, Fillet, Copy ×2, sketch on a face, Cut Through (a touching circle refused with a message, then a clean cut); found and fixed there: the node limit hit by three copies, the misleading picture when meshing failed, a cut beside the part accepted (now refused, or a notch across an edge), a circle touching the edge leaving a flat element (now refused).
 - **0.6.4 built and released (2026-11-04).** The user, after 0.6.3: modelling still looks different from the CAD programs students know; make it very simple (copy the open CAD project's features, not its UI), the app may grow (100–150 MB is fine) but must run smoothly, look calm and be well arranged; then go ahead with 0.6.4. Surveyed the open project (read only): a full parametric CAD (about 750 k lines: own constraint solver in its `sketch` crate, a B-rep kernel over an external NURBS library, a feature timeline, drag handles, auto Join/Cut), no volume meshing. Plan agreed in the roadmap above: 0.6.5 the modelling workflow, 0.6.6 the calmer layout, then explicit dynamics and contact. Built 0.6.4: engine frames (above) with a test that the last frame is the result and histories are sampled; the player; scales for drawing from the solved result (`solved`), so a growing result is not re-scaled each frame. Real app: the yielding 3D plate played (stress growing on a fixed 0–354 MPa scale), slider and pause.
+- **0.7.0 built (2026-11-05).** The user, after 0.6.4, said the program was still hard to use and asked for a rethink: full sketching and modelling tools as students know them, the analysis in numbered steps, smooth and simple. They chose to build on SolidCraft with Datum's look and allowed Gmsh as a separate mesher. The plan (six steps, sketch and 3D tool tables, releases 0.7.0–0.7.4) is a private artifact shown to the user. Built:
+  - SolidCraft copied to `app/` and renamed: name, mark, crimson accent, app ID, `.dmx`, updater and issue links, Windows setup. AI connections are off.
+  - `datum-analysis`: study, Gmsh meshing, face tracing, solve. Unit tests cover the study file and the Gmsh script.
+  - The Simulation workspace and stage bar: held faces are tinted blue and loaded faces amber, with matching chips. Results are drawn as colour bands on the deformed shape.
+  - The release workflow, the CI jobs for `app/`, NOTICE, and the docs.
+  - Mouse modes and messages that named commercial programs were given descriptive names, and the translations that named them were dropped (they fall back to English). Internal preset IDs and test names in the inherited code still carry those names (not shown to users).
+  - Checked outside the program: a Gmsh-meshed cantilever (1,031 T10) gave a tip deflection of −0.9918 mm against −1.0078 mm from beam theory with shear, with equilibrium to 4e-12.
+  - Checked in the real program over the control channel: the sample plate solved with 5,886 tetrahedra and an imbalance of 1.5e-12. The Simulation tab had been reset by `workspace::sync_context`; that is fixed.
+
+## 5. Known limits (0.7.0)
+
+- The new program solves only linear static stress of solids, in the Simulation workspace. Frames, trusses, plane parts, natural frequencies, buckling, heat, yielding, large deformation, time histories, the player, the report and Help › Verification are still only in the 0.6 window (and the engine) until 0.7.1–0.7.4.
+- `.dmesh` files do not open.
+- Faces held or loaded are listed as chips but not yet tinted in the view.
+- Each analysis meshes all visible bodies together (fragments, so touching parts are bonded).
+- The deformed shape uses a fixed scale (5 % of the size).
+- Meshing needs Gmsh: the setup installs it, and a development build finds it through `DATUM_GMSH`.
+- Not verified in this release: the Windows setup on a real machine (checked only by CI's build), and the updater moving from 0.6.4 (Tauri) to 0.7.0. The 0.6.4 updater looks for `DatumMesh-x.y.z-setup.exe`, and the new setup replaces `Datum Mesh.exe`.
+
 ## 5. Known limits (0.6.4)
 
 - The 3D view rebuilds its scene for each frame played: smooth for the examples, slower on the largest meshes. Linear results grow in proportion (no frames from the engine); only von Mises colours follow a nonlinear result's increments (other fields show the final values while playing). Heat results are not played.

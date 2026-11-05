@@ -306,7 +306,7 @@ pub fn show(app: &mut SolveApp, ctx: &egui::Context) {
                 ui_kit::Text::Report("why", false),
             );
             if app.stand_up_reason {
-                ui_kit::text(ui, crate::i18n::tr_label("Exported by SolidWorks, which usually saves Y up"), ui_kit::Text::Report("reason", false));
+                ui_kit::text(ui, crate::i18n::tr_label("Exported by a program that usually saves Y up"), ui_kit::Text::Report("reason", false));
             }
             ui_kit::text(
                 ui,

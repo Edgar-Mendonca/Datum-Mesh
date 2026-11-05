@@ -598,7 +598,7 @@ fn scene_key(app: &SolveApp) -> u64 {
     // The section plane (its cut outlines are part of the model scene).
     section_plane(app).map(|(o, n)| [o.x, o.y, o.z, n.x, n.y, n.z].map(f64::to_bits)).hash(&mut h);
     // The Simulation workspace's results (Datum Mesh).
-    (crate::sim::showing_results(app), app.sim.revision).hash(&mut h);
+    (crate::sim::active(app), crate::sim::showing_results(app), app.sim.revision).hash(&mut h);
     app.cam.up.hash(&mut h);
     app.session.visibility.hidden_bodies.hash(&mut h);
     app.dialog.as_ref().map(|d| &d.edit_source_bodies).hash(&mut h);

@@ -14,8 +14,15 @@ The materials library (crates/core/data/materials.json, built by tools/materials
 from Datum Atlas (MIT, https://github.com/Edgar-Mendonca/Datum-Atlas), with each value's source
 as Atlas gives it. Poisson's ratios are typical values for each material family (Atlas has none).
 
-No GPL, LGPL or AGPL code is linked into or bundled with Datum Mesh. Open solvers and meshers
-under those licences, planned for later releases, will only ever run as separate programs.
+From 0.7.0 the program (app/) is built on SolidCraft (MIT or Apache-2.0,
+https://github.com/tangency-labs/solidcraft, commit f8a98ee), renamed and restyled as Datum Mesh; its
+own notices are kept in app/NOTICE, app/THIRD-PARTY-LICENSES.txt and app/ATTRIBUTION.md and are
+included in the installer's NOTICE.txt. The engine above (crates/core) is linked into it.
+
+No GPL, LGPL or AGPL code is linked into Datum Mesh. The installer carries Gmsh (GPL-2.0-or-later,
+https://gmsh.info, source at https://gitlab.onelab.info/gmsh/gmsh) unchanged in its own folder, with
+its licence; Datum Mesh only ever runs it as a separate program, writing a geometry file and reading
+the mesh it writes.
 
 The family workflow, ribbon, File page, updater and printing are taken from Datum Plan, by way of
 Datum Sim (both MIT, same author). The structural steel values come from EN 1993-1-1 §3.2 and

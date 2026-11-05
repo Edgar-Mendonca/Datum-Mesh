@@ -304,7 +304,7 @@ fn tools(app: &mut SolveApp, ui: &mut egui::Ui) {
             // What is set: each as a chip, × to take it away.
             let mut drop = None;
             for x in &s.supports {
-                let text = format!("{:?} · {} face{}  ×", x.hold, x.faces.len(), if x.faces.len() == 1 { "" } else { "s" });
+                let text = egui::RichText::new(format!("{:?} · {} face{}  ×", x.hold, x.faces.len(), if x.faces.len() == 1 { "" } else { "s" })).color(egui::Color32::from_rgb(40, 110, 220));
                 if ui.small_button(text).on_hover_text("Take this support away").clicked() {
                     drop = Some(x.id);
                 }
@@ -314,6 +314,7 @@ fn tools(app: &mut SolveApp, ui: &mut egui::Ui) {
                     da::Push::Force { x: fx, y, z } => format!("Force {:.3} kN · {} face{}  ×", (fx * fx + y * y + z * z).sqrt() / 1e3, x.faces.len(), if x.faces.len() == 1 { "" } else { "s" }),
                     da::Push::Pressure { p } => format!("Pressure {:.3} MPa · {} face{}  ×", p / 1e6, x.faces.len(), if x.faces.len() == 1 { "" } else { "s" }),
                 };
+                let text = egui::RichText::new(text).color(egui::Color32::from_rgb(205, 120, 10));
                 if ui.small_button(text).on_hover_text("Take this load away").clicked() {
                     drop = Some(x.id);
                 }
@@ -400,7 +401,11 @@ fn legend(ui: &mut egui::Ui, lo: f64, hi: f64, unit: &str) {
 /// The results in the view: the surface coloured by the field, moved by the movements (scaled
 /// so the largest is a twentieth of the size), in place of the solids. Millimetres, as the design.
 pub fn scene(app: &SolveApp, sc: &mut crate::gpu::GpuScene) {
+    if !active(app) {
+        return;
+    }
     if !showing_results(app) {
+        marks(app, sc);
         return;
     }
     let Some(r) = app.sim.results.as_ref() else { return };
@@ -434,8 +439,38 @@ pub fn scene(app: &SolveApp, sc: &mut crate::gpu::GpuScene) {
         for (p, i) in [(a, t[0]), (b, t[1]), (c, t[2])] {
             let v = f.v.get(i as usize).copied().unwrap_or(f.min);
             let k = ((((v - f.min) / span).clamp(0.0, 1.0) * 10.0) as usize).min(9);
-            let _ = band;
             sc.tri(p, n, colours[k]);
+        }
+    }
+}
+
+/// Faces held (blue) and loaded (amber), drawn a hair outside the body so they show over it.
+fn marks(app: &SolveApp, sc: &mut crate::gpu::GpuScene) {
+    let st = study(app);
+    let Ok(state) = app.session.world_state() else { return };
+    let sets = st.supports.iter().map(|s| (&s.faces, [40u8, 110, 220])).chain(st.loads.iter().map(|l| (&l.faces, [235u8, 150, 30])));
+    for (faces, rgb) in sets {
+        let colour = sc.color([rgb[0], rgb[1], rgb[2], 255]);
+        for f in faces {
+            let Some(b) = state.bodies.iter().find(|b| b.name == f.body && app.body_visible(&b.name)) else { continue };
+            let names = solidcraft_engine::doc::naming::face_names(b);
+            let Some(index) = names.iter().position(|n| *n == f.face) else { continue };
+            let m = b.mesh();
+            let lift = 0.002 * m.positions.iter().fold(0.0_f64, |a, p| a.max(p.x.abs()).max(p.y.abs()).max(p.z.abs())).max(1.0);
+            for (t, &face) in m.triangles.iter().zip(&m.tri_face) {
+                if face as usize != index {
+                    continue;
+                }
+                let [a, b2, c] = t.map(|i| m.positions.get(i as usize).map_or([0.0; 3], |p| [p.x, p.y, p.z]));
+                let (u, v) = ([b2[0] - a[0], b2[1] - a[1], b2[2] - a[2]], [c[0] - a[0], c[1] - a[1], c[2] - a[2]]);
+                let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+                let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-30);
+                let n = n.map(|x| x / l);
+                for p in [a, b2, c] {
+                    let q = [p[0] + n[0] * lift, p[1] + n[1] * lift, p[2] + n[2] * lift];
+                    sc.tri(q.map(|x| x as f32), n.map(|x| x as f32), colour);
+                }
+            }
         }
     }
 }
