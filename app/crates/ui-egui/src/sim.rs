@@ -384,18 +384,22 @@ fn range(r: &datum_core::solid::SolidResults, field: usize) -> (f64, f64, &'stat
 /// Ten bands from blue to red.
 const BANDS: [[u8; 3]; 10] = [[38, 70, 180], [40, 110, 220], [50, 160, 230], [60, 200, 200], [90, 200, 120], [170, 210, 70], [235, 205, 60], [245, 150, 50], [230, 90, 40], [200, 35, 35]];
 
-fn band(t: f64) -> [u8; 3] {
-    BANDS[((t.clamp(0.0, 1.0) * 10.0) as usize).min(9)]
+
+/// A value with about four significant figures, for the legend.
+fn nice(v: f64) -> String {
+    let a = v.abs();
+    let d = if a == 0.0 || a >= 1000.0 { 0 } else if a >= 100.0 { 1 } else if a >= 10.0 { 2 } else { 3 };
+    format!("{v:.d$}")
 }
 
 fn legend(ui: &mut egui::Ui, lo: f64, hi: f64, unit: &str) {
-    ui.label(format!("{lo:.3}"));
+    ui.label(format!("{} {unit}", nice(lo)));
     let (r, p) = ui.allocate_painter(egui::vec2(200.0, 14.0), egui::Sense::hover());
     let w = r.rect.width() / BANDS.len() as f32;
     for (i, c) in BANDS.iter().enumerate() {
         p.rect_filled(egui::Rect::from_min_size(r.rect.min + egui::vec2(i as f32 * w, 0.0), egui::vec2(w + 0.5, r.rect.height())), 0.0, egui::Color32::from_rgb(c[0], c[1], c[2]));
     }
-    ui.label(format!("{hi:.3} {unit}"));
+    ui.label(format!("{} {unit}", nice(hi)));
 }
 
 /// The results in the view: the surface coloured by the field, moved by the movements (scaled

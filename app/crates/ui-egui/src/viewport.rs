@@ -952,7 +952,8 @@ fn update_refinement(app: &mut SolveApp, ctx: &egui::Context, proj: &Proj) {
     for (b, (name, bx)) in st.bodies.iter().zip(bounds.iter()) {
         let id = crate::display_lod::body_id(b).0;
         live.insert(id);
-        if b.name != *name || b.body.is_mesh() {
+        // The Simulation workspace's results are drawn in place of the solids (Datum Mesh).
+        if b.name != *name || b.body.is_mesh() || crate::sim::showing_results(app) {
             continue;
         }
         let shown = app.body_visible(&b.name) && !app.preview.effective_replaced().contains(&b.name);
