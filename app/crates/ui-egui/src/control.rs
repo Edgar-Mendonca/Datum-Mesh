@@ -742,15 +742,28 @@ fn dispatch(app: &mut SolveApp, ctx: &egui::Context, method: &str, p: &Value) ->
         "ui.status_fixture" => wrap(crate::viewport_status_fixture::control(app, p)),
         "ui.workspace" => {
             if let Some(workspace) = s("workspace") {
-                if !matches!(workspace, "design" | "render") {
-                    return err("workspace must be design or render");
+                if !matches!(workspace, "design" | "render" | "simulation") {
+                    return err("workspace must be design, render or simulation");
                 }
-                if let Err(e) = crate::render_workspace::enter(app, workspace == "render") {
+                let r = if workspace == "simulation" {
+                    crate::sim::enter(app, true)
+                } else {
+                    if crate::sim::active(app) {
+                        let _ = crate::sim::enter(app, false);
+                    }
+                    crate::render_workspace::enter(app, workspace == "render")
+                };
+                if let Err(e) = r {
                     return err(e);
                 }
             }
-            ok(json!({"workspace":if crate::render_workspace::active(app) {"render"} else {"design"}}))
+            ok(json!({"workspace":if crate::sim::active(app) {"simulation"} else if crate::render_workspace::active(app) {"render"} else {"design"}}))
         }
+        // Datum Mesh: the Simulation workspace's step, a solve, and its state.
+        "ui.sim" => match crate::sim::control(app, p) {
+            Ok(v) => ok(v),
+            Err(e) => err(e),
+        },
         "engine.execute" | "command" => {
             let Some(id) = s("command").or(s("id")) else { return err("missing `command`") };
             wrap(execute(app, id, p.get("params").cloned().filter(|v| !v.is_null()).unwrap_or(json!({}))))

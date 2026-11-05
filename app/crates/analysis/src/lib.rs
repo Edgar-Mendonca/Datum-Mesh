@@ -272,7 +272,7 @@ pub fn model(meshed: &Meshed, study: &Study) -> Result<Model, String> {
             return Err("A support's faces are no longer on the model: pick them again.".into());
         }
         for face in on {
-            m.supports.push(Support { id: next, at: Target::Face { face }, kind });
+            m.supports.push(Support { id: next, at: Target::Face { face }, kind: kind.clone() });
             next += 1;
         }
     }

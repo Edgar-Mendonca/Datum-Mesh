@@ -347,7 +347,7 @@ fn tools(app: &mut SolveApp, ui: &mut egui::Ui) {
         Stage::Results => {
             if let Some(r) = app.sim.results.clone() {
                 let mut field = app.sim.field;
-                ui_kit::segmented(ui, &mut field, &["Von Mises stress".to_string(), "Movement".to_string()], ui_kit::Segments { dense: true, intrinsic: true, ..Default::default() });
+                ui_kit::segmented(ui, &mut field, &["Von Mises stress", "Movement"], ui_kit::Segments { dense: true, intrinsic: true, ..Default::default() });
                 if field != app.sim.field {
                     app.sim.field = field;
                     app.sim.revision += 1;
@@ -436,4 +436,39 @@ pub fn scene(app: &SolveApp, sc: &mut crate::gpu::GpuScene) {
             sc.tri(p, n, colours[k]);
         }
     }
+}
+
+/// The control channel's `ui.sim` (tests and automation): `stage` (material, holds, mesh, solve,
+/// results), `start` ("mesh" or "solve"); replies with the study, the note, whether a job runs and
+/// the results' extremes.
+pub fn control(app: &mut SolveApp, p: &serde_json::Value) -> Result<serde_json::Value, String> {
+    if let Some(st) = p.get("stage").and_then(serde_json::Value::as_str) {
+        app.sim.stage = match st {
+            "material" => Stage::Material,
+            "holds" => Stage::Holds,
+            "mesh" => Stage::Mesh,
+            "solve" => Stage::Solve,
+            "results" => Stage::Results,
+            _ => return Err("stage must be material, holds, mesh, solve or results".into()),
+        };
+        app.sim.revision += 1;
+    }
+    match p.get("start").and_then(serde_json::Value::as_str) {
+        Some("mesh") => start(app, false),
+        Some("solve") => start(app, true),
+        Some(_) => return Err("start must be mesh or solve".into()),
+        None => {}
+    }
+    if let Some(f) = p.get("field").and_then(serde_json::Value::as_u64) {
+        app.sim.field = (f as usize).min(1);
+        app.sim.revision += 1;
+    }
+    let results = app.sim.results.as_ref().map(|r| {
+        let f = |k: &str| r.fields.iter().find(|f| f.key == k).map(|f| serde_json::json!([f.min, f.max]));
+        serde_json::json!({"vm": f("vm"), "umag": f("umag"), "uz": f("uz"), "imbalance": r.imbalance, "elements": r.elements})
+    });
+    Ok(serde_json::json!({
+        "active": active(app), "study": study(app).to_json(), "note": app.sim.note, "busy": app.sim.job.is_some(), "results": results,
+        "gmsh": gmsh().to_string_lossy(),
+    }))
 }
