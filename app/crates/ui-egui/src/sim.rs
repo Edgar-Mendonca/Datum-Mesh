@@ -210,6 +210,8 @@ pub fn tick(app: &mut SolveApp, ctx: &egui::Context) {
                     app.sim.results = Some(std::sync::Arc::new(*r));
                     app.sim.stage = Stage::Results;
                     app.sim.revision += 1;
+                    // Picked faces would light up over the results.
+                    let _ = app.run("select.clear", serde_json::json!({}));
                 }
                 Err(e) => app.sim.note = e,
             }
