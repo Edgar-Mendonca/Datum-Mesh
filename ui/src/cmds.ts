@@ -1,6 +1,6 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
-import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame, isBuckle } from "./api";
+import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame, isBuckle, isSolidA } from "./api";
 import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn , active, whichName, setSolvedFor } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
@@ -31,6 +31,8 @@ export const C = {
   solve: async () => {
     if (solving()) return;
     const m = model(); if (!m) return;
+    // Modelled solids (0.7.3): meshed first, if not yet or changed since.
+    if (isSolidA(m.analysis) && !(await import("./study").then(k => k.ensureMesh()))) return;
     setSolving(true);
     try {
       const w = active(), r0 = fromWire(await invoke("solve", { which: w })), first = !results();

@@ -1,6 +1,7 @@
 // 3D frames without three.js (0.2.6): what the members are coloured by, the deflection scale, the
 // legend under the 3D view and the plane bar over it. The 3D view itself (view3d.tsx, with
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
+import { showMesh } from "./study";
 import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, isSolidA, solidDisp } from "./api";
 import { solved, model, spaceRes, solidRes, stale, show, opts, setView, tool, act, setSel, solvedFor } from "./store";
@@ -92,9 +93,10 @@ export const PlaneBar = () => {
   const full = () => (model()?.revolve ?? 0) >= Math.PI * 2 - 1e-9;
   const placing = () => model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(tool()) : (tool().startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(tool())) || ["load:pressure", "load:traction"].includes(tool());
   return (<>
-    <Show when={solid() && model()?.volume}>{(() => { const v = () => model()!.volume!; return <div class="planebar">
-      <span class="seg"><button class="on" title="The imported mesh in 3D: turn it with the left button, pan with the right, zoom with the wheel">3D</button></span>
-      <span class="muted">Imported mesh{v().source ? ` (${v().source})` : ""}: {v().elements.toLocaleString()} {v().order === 2 ? "10-node" : "4-node"} tetrahedra, {v().faces.length} faces</span>
+    <Show when={solid() && model()?.volume && (model()!.volume!.source !== "geometry" || showMesh())}>{(() => { const v = () => model()!.volume!; return <div class="planebar">
+      <Show when={v().source === "geometry"} fallback={<><span class="seg"><button class="on" title="The imported mesh in 3D: turn it with the left button, pan with the right, zoom with the wheel">3D</button></span>
+      <span class="muted">Imported mesh{v().source ? ` (${v().source})` : ""}: {v().elements.toLocaleString()} {v().order === 2 ? "10-node" : "4-node"} tetrahedra, {v().faces.length} faces</span></>}>
+        <span class="muted">Meshed from the solids: {v().elements.toLocaleString()} {v().order === 2 ? "10-node" : "4-node"} tetrahedra, {v().nodes.toLocaleString()} nodes, {v().faces.length} faces</span></Show>
       <Show when={placing()}><span class="grow" /><span class="muted">Click a face of the mesh to put it on</span></Show>
     </div>; })()}</Show>
     <Show when={solid() && !model()?.volume && model()?.parts?.length}>
@@ -139,7 +141,7 @@ export const SolidLegend = () => {
           <input type="range" min="0.1" max="5" step="0.1" value={show().scale} onInput={e => C.show({ scale: +e.currentTarget.value })} title="Exaggeration" /></div></Show>
         <Show when={r()!.volume}><div><b>Cut</b><span class="seg">{(["off", "x", "y", "z"] as CutAxis[]).map(a => <button classList={{ on: cut().axis === a }} title={a === "off" ? "The whole part" : `Cut across ${a}: the part beyond the plane is hidden and the inside shown`} onClick={() => setCut({ ...cut(), axis: a })}>{a === "off" ? "Off" : a}</button>)}</span>
           <Show when={cut().axis !== "off"}><input type="range" min="0" max="1" step="0.01" value={cut().at} onInput={e => setCut({ ...cut(), at: +e.currentTarget.value })} title="Where the plane cuts, across the part" /></Show></div></Show>
-        <div><b>Mesh</b><span>{model()?.parts?.length ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, ${model()!.parts!.length} parts` : model()?.volume ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, imported` : `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "18-node" : "6-node"} wedges, ${r()!.layers} ${r()!.layers === 1 ? "layer" : "layers"}`}</span></div>
+        <div><b>Mesh</b><span>{model()?.parts?.length ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, ${model()!.parts!.length} parts` : model()?.volume ? `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "10-node" : "4-node"} tetrahedra, ${model()!.volume!.source === "geometry" ? "from the solids" : "imported"}` : `${r()!.elements.toLocaleString()} ${r()!.order === 2 ? "18-node" : "6-node"} wedges, ${r()!.layers} ${r()!.layers === 1 ? "layer" : "layers"}`}</span></div>
         <div class="eqline" classList={{ bad: imbalanceOf(r()!) > 1e-6 }}><Icon n={imbalanceOf(r()!) > 1e-6 ? "info" : "check"} /><span>{hot() ? (imbalanceOf(r()!) > 1e-6 ? "Heat in and out do not balance" : "Heat balance: heat in equals heat out") : imbalanceOf(r()!) > 1e-6 ? "Reactions do not balance the loads" : "Equilibrium: reactions balance the loads"}</span><button class="lnk" onClick={() => setView("results")}>Details</button></div>
       </div>
     </Show>

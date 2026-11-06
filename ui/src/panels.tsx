@@ -1,6 +1,7 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
-import { cad, cadRun } from "./cad";
+import { cad, cadRun, meshOld } from "./cad";
+import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
@@ -45,6 +46,8 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
 export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement" };
+/** A load's name: a force spread over a solid's face is a face force (0.7.3). */
+export const loadName = (l: { kind: { kind: string }; at: Target }) => l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : LOAD_NAMES[l.kind.kind];
 
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
@@ -54,7 +57,7 @@ const targetName = (m: Model, t: Target) => {
   if (t.on === "point") return `Point ${fmt("coord", t.x)}, ${fmt("coord", t.y)}`;
   if (t.on === "end") return t.front ? "Front face" : "Back face";
   if (t.on === "partend") { const a = m.assembly, f = a ? a.targets.findIndex(x => x?.on === "partend" && x.part === t.part && x.front === t.front) : -1; return f >= 0 ? a!.faces[f].name : `${m.parts?.find(p => p.id === t.part)?.name ?? "Part"}, ${t.front ? "end" : "start"} face`; }
-  if (t.on === "face") return m.volume?.faces[t.face]?.name ?? `Face ${t.face + 1}`;
+  if (t.on === "face") { const n = m.volume?.faces[t.face]?.name; return n ? (m.volume?.source === "geometry" ? faceLabel(n) : n) : `Face ${t.face + 1}`; }
   if (t.on === "plate") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Plate"}, whole face`;
   if (t.on === "line") return `${m.shapes.find(s => s.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}, line at ${num(t.at * 100, 3)} %`;
   return "Whole model";
@@ -65,7 +68,7 @@ export const itemName = (m: Model, id: number): string => {
   if (i(m.members) >= 0) return `Member ${i(m.members) + 1}`;
   const s = m.shapes.find(x => x.id === id); if (s) return s.name;
   const sp = m.supports.find(x => x.id === id); if (sp) return `${SUPPORT_NAMES[sp.kind.kind]} · ${targetName(m, sp.at)}`;
-  const l = m.loads.find(x => x.id === id); if (l) return `${LOAD_NAMES[l.kind.kind]} · ${targetName(m, l.at)}`;
+  const l = m.loads.find(x => x.id === id); if (l) return `${loadName(l)} · ${targetName(m, l.at)}`;
   return "";
 };
 
@@ -136,8 +139,8 @@ export const Tree = () => {
             <Branch t="Solids" icon="solid" n={cad()!.bodies.length} mark={{ ok: cad()!.bodies.every(b => b.closed), why: "A body is not closed: it cannot be meshed as a solid" }}>
               <For each={cad()!.bodies}>{b => <button class="ti" title="Right-click for more" onContextMenu={e => bodyMenu(e, b.name)}><Ic n="solid" /><span>{b.name}</span><small>{`${new Set(b.face).size} faces${b.closed ? "" : " · open"}`}</small></button>}</For></Branch>
           </Show>
-          <Show when={!mm().volume} fallback={<Branch t="Imported mesh" icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }}>
-            <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>
+          <Show when={!mm().volume} fallback={<Branch t={geoMesh() ? "Faces of the mesh" : "Imported mesh"} icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }} open={!geoMesh()}>
+            <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={geoMesh() ? faceLabel(f.name) : f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>
           <Show when={frame() || !(isSolidA(mm().analysis) && (mm().parts?.length || !parts().length))} fallback={
             <Show when={(mm().parts?.length ?? 0) > 0}><Branch t="Parts" icon="solid" n={mm().parts?.length ?? 0} help="parts" add={newPart} addText="Add a part: sketch it, then extrude or revolve it" mark={{ ok: (mm().parts?.length ?? 0) > 0 && !mm().assembly_error, why: mm().assembly_error ?? "Add a part: Geometry › New Part" }}>
               <For each={mm().parts ?? []}>{pt => <Leaf id={pt.id} icon={pt.angle > 0 ? "axi" : "solid"} label={pt.name} sub={`${pt.angle > 0 ? `revolved ${num(pt.angle * 180 / Math.PI, 4)}°` : `extruded ${fmt("len", pt.depth)}`} · ${mm().materials.find(x => x.id === pt.material)?.name ?? ""}`} />}</For></Branch></Show>}>
@@ -163,15 +166,15 @@ export const Tree = () => {
             <For each={sups()}>{s => <Leaf id={s.id} icon={SUP_ICON[s.kind.kind] ?? "fixed"} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Branch>
           <Branch t={heat() ? "Heat loads" : "Loads"} icon={heat() ? "flux" : "force"} n={mm().loads.length} help="loads" add={() => setTool(heat() ? "load:flux" : "load:force")} addText={heat() ? "Add heat flux or convection (Loads tab)" : "Add a load (Loads › Force, Pressure…)"}
             mark={drawn() && !heat() ? { ok: mm().loads.length > 0, why: "Add a load (natural frequencies need none)" } : null}>
-            <Show when={(mm().cases ?? []).length > 1} fallback={<For each={mm().loads}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For>}>
+            <Show when={(mm().cases ?? []).length > 1} fallback={<For each={mm().loads}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={loadName(l)} sub={targetName(mm(), l.at)} />}</For>}>
               <For each={mm().cases!}>{c => <details class="tsub" open><summary><Ic n="list" /><span>{c.name}</span><span class="pill">{mm().loads.filter(l => caseOf(mm(), l) === c.id).length}</span></summary>
-                <For each={mm().loads.filter(l => caseOf(mm(), l) === c.id)}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={LOAD_NAMES[l.kind.kind]} sub={targetName(mm(), l.at)} />}</For></details>}</For></Show></Branch>
+                <For each={mm().loads.filter(l => caseOf(mm(), l) === c.id)}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={loadName(l)} sub={targetName(mm(), l.at)} />}</For></details>}</For></Show></Branch>
           <Show when={(mm().combos ?? []).length}><Branch t="Combinations" icon="table" n={mm().combos!.length} help="cases" open={false}><For each={mm().combos!}>{c => <Row2 icon="table" label={c.name} sub={c.parts.map(x => `${num(x.f, 3)} ${mm().cases?.find(k => k.id === x.case)?.name ?? ""}`).join(" + ")} />}</For></Branch></Show>
           </Step>
           <Step n={4} t="Mesh" done={frame() || !!mm().volume || !!mm().assembly || !!(meshed() ?? partRes()?.mesh) || !!solidRes()} why="Made when you solve, or Mesh › Mesh now">
           <Show when={frame()}><Row2 icon="frame" label="Each member is one element" sub="no mesh needed" /></Show>
           <Show when={!frame()}><Branch t="Mesh" icon="mesh" n={mm().mesh.refine.length || undefined} help="mesh">
-            <Show when={mm().volume}>{v => <Row2 icon="solid" label={`${v().elements.toLocaleString()} ${v().order === 2 ? "10-node" : "4-node"} tetrahedra`} sub={`${v().nodes.toLocaleString()} nodes, imported`} />}</Show>
+            <Show when={mm().volume}>{v => <Row2 icon="solid" label={`${v().elements.toLocaleString()} ${v().order === 2 ? "10-node" : "4-node"} tetrahedra`} sub={geoMesh() ? (meshOld() ? "the solids changed: meshed again when you solve" : `${v().nodes.toLocaleString()} nodes, from the solids`) : `${v().nodes.toLocaleString()} nodes, imported`} />}</Show>
             <Show when={!mm().volume}><Row2 icon={mm().mesh.order === 2 ? "tri6" : "tri3"} label={mesh()} sub={mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} run={() => C.mesh()} />
             <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><Ic n="refine" /><span>Finer near {targetName(mm(), r.at)}</span>
               <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => v > 0 && C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }), () => num(toU("len", r.size), 4))} />
@@ -397,7 +400,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
   const sp = () => p.m.analysis === "space";
   return <>
     <Row label="On"><span>{targetName(p.m, p.l.at)}</span></Row>
-    <Row label="Kind"><span>{LOAD_NAMES[k().kind]}</span></Row>
+    <Row label="Kind"><span>{loadName(p.l)}</span></Row>
     <Show when={p.m.cases?.length}><Row label="Load case"><Choice v={String(caseOf(p.m, p.l))} set={v => set("Load", { ...p.l, case: +v })} opts={(p.m.cases ?? []).map(c => [String(c.id), c.name])} /></Row></Show>
     <Show when={k().kind === "force" && sp()}><Vec3 pre="F" q="force" v={[f("force").fx, f("force").fy, f("force").fz ?? 0]} set={v => put({ ...f("force"), fx: v[0], fy: v[1], fz: v[2] })} hint="Up (Z) is positive." /></Show>
     <Show when={k().kind === "force" && !sp()}><NumField label="Fx" q="force" v={f("force").fx} set={fx => put({ ...f("force"), fx })} /><NumField label="Fy" q="force" v={f("force").fy} set={fy => put({ ...f("force"), fy })} hint={sp() ? undefined : "Up is positive."} /></Show>
@@ -439,7 +442,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
 };
 
 /** A solid made with the modelling tools (0.7.2), or a blank one: no section, thickness or sweep. */
-export const cadSolid = (m: Model) => isSolidA(m.analysis) && !m.volume && !m.shapes.length && !m.parts?.length;
+export const cadSolid = (m: Model) => isSolidA(m.analysis) && (!m.volume || m.volume.source === "geometry") && !m.shapes.length && !m.parts?.length;
 
 /** A feature picked in the history (0.7.2): what it is, and what can be done with it. */
 const FeatureInsp = (p: { id: number }) => {
@@ -467,7 +470,7 @@ const ModelInsp = (p: { m: Model }) => {
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
     <Show when={!cadSolid(p.m)}><NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} /></Show>
     <Show when={p.m.analysis === "space"}><label class="chk" title="At each height above the lowest, the nodes move together in the floor's plane: x and z together, turning about y together (a concrete floor that does not stretch in its plane)"><input type="checkbox" checked={!!p.m.rigid_floors} onChange={e => settings({ rigid_floors: e.currentTarget.checked })} />Rigid floors</label></Show>
-    <Show when={p.m.volume}>{v => <Row label="Material of the mesh"><Choice v={String(v().material)} set={x => settings({ material: +x })} opts={p.m.materials.map(x => [String(x.id), x.name])} /></Row>}</Show>
+    <Show when={p.m.volume}>{v => <Row label={v().source === "geometry" ? "Material" : "Material of the mesh"}><Choice v={String(v().material)} set={x => settings({ material: +x })} opts={p.m.materials.map(x => [String(x.id), x.name])} /></Row>}</Show>
     <Show when={isSolidA(p.m.analysis) && !p.m.volume && !cadSolid(p.m)}><Row label="Solid"><Choice v={p.m.revolve ? "revolve" : "extrude"} set={v => settings({ revolve: v === "revolve" ? Math.PI * 2 : 0 })} opts={[["extrude", "Extruded along z"], ["revolve", "Revolved about the y axis"]]} /></Row>
       <Show when={p.m.revolve}><div class="iprow"><label>Turned through<span class="unit">°</span></label><input class="mono" value={num((p.m.revolve ?? 0) * 180 / Math.PI, 6)} onChange={numIn(v => v > 0 && v <= 360 && settings({ revolve: v * Math.PI / 180 }), () => num((p.m.revolve ?? 0) * 180 / Math.PI, 6))} /><span class="hint">360° for the whole part; less for a sector, with symmetry on its two cut faces (the back and front faces). The section is drawn right of the y axis (x is the radius).</span></div></Show></Show>
     <Show when={!p.m.volume && (p.m.analysis === "stress" || p.m.analysis === "heat" || (isSolidA(p.m.analysis) && !p.m.revolve && !cadSolid(p.m)))}><NumField label={isSolidA(p.m.analysis) ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>

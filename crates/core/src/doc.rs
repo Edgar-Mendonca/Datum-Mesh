@@ -207,6 +207,23 @@ impl Doc {
         Ok(created)
     }
 
+    /// Replace the whole model by one made outside the edit operations (a mesh of the design's
+    /// solids, 0.7.3), checked, as one step that Undo takes back.
+    pub fn replace(&mut self, m: Model) -> Result<(), String> {
+        m.check()?;
+        if m == self.m {
+            return Ok(());
+        }
+        let old = std::mem::replace(&mut self.m, m);
+        self.undo.push(old);
+        if self.undo.len() > UNDO_LIMIT {
+            self.undo.remove(0);
+        }
+        self.redo.clear();
+        self.update_dirty();
+        Ok(())
+    }
+
     pub fn undo(&mut self) -> bool {
         match self.undo.pop() {
             Some(m) => {

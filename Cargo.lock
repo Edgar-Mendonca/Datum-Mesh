@@ -755,9 +755,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "datum-analysis"
+version = "0.7.0"
+dependencies = [
+ "datum-core",
+ "serde",
+ "serde_json",
+ "solidcraft-geom",
+ "solidcraft-kernel",
+]
+
+[[package]]
 name = "datum-cad"
 version = "0.7.2"
 dependencies = [
+ "datum-analysis",
+ "datum-core",
  "serde",
  "serde_json",
  "solidcraft-doc",

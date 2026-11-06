@@ -108,6 +108,63 @@ fn cad_run(st: State<CadSt>, app: State<St>, id: String, params: serde_json::Val
     c.scene()
 }
 
+/// Gmsh, the mesher (a separate program, GPL): `DATUM_GMSH`, then the copy installed with Datum
+/// Mesh (`gmsh/gmsh.exe` beside the program), then `gmsh` on the path.
+fn gmsh_path() -> PathBuf {
+    if let Ok(p) = std::env::var("DATUM_GMSH") {
+        return p.into();
+    }
+    let exe = if cfg!(windows) { "gmsh.exe" } else { "gmsh" };
+    if let Some(d) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+        for p in [d.join("gmsh").join(exe), d.join("resources").join("gmsh").join(exe)] {
+            if p.exists() {
+                return p;
+            }
+        }
+    }
+    exe.into()
+}
+
+/// Mesh the design's solids (0.7.3): Gmsh fills them with 10-node tetrahedra about `size` mm
+/// across (0: chosen from their size), and the mesh becomes the model's solid. Supports and loads
+/// already on faces stay on the same faces of the solid (found by the face's lasting name); one
+/// whose face is gone is dropped, and said so.
+#[tauri::command]
+async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out> {
+    let work = std::env::temp_dir().join(format!("datum-mesh-{}", std::process::id()));
+    let ms = st.lock().mesh(if size.is_finite() && size > 0.0 { size } else { 0.0 }, &gmsh_path(), &work)?;
+    let _ = std::fs::remove_dir_all(&work);
+    let mut a = app.lock();
+    let mut m = a.doc.m.clone();
+    let old: Vec<String> = m.volume.as_ref().map(|v| v.faces.iter().map(|f| f.name.clone()).collect()).unwrap_or_default();
+    let new_of = |f: u32| old.get(f as usize).and_then(|n| ms.faces.iter().position(|g| &g.name == n)).map(|i| i as u32);
+    let mut lost = 0;
+    m.supports.retain_mut(|s| match &mut s.at {
+        datum_core::model::Target::Face { face } => match new_of(*face) { Some(n) => { *face = n; true } None => { lost += 1; false } },
+        _ => true,
+    });
+    m.loads.retain_mut(|l| match &mut l.at {
+        datum_core::model::Target::Face { face } => match new_of(*face) { Some(n) => { *face = n; true } None => { lost += 1; false } },
+        _ => true,
+    });
+    let mut v = ms;
+    v.material = m.volume.as_ref().map(|o| o.material).filter(|id| m.materials.iter().any(|x| x.id == *id)).unwrap_or(m.materials[0].id);
+    v.mats.clear();
+    m.volume = Some(Box::new(v));
+    a.doc.replace(m)?;
+    let mut o = out(&a);
+    if lost > 0 {
+        o.warnings.push(format!("{lost} support{} or load{} were on faces the solid no longer has, and were taken off.", if lost == 1 { "" } else { "s" }, if lost == 1 { "" } else { "s" }));
+    }
+    Ok(o)
+}
+
+/// The element size (mm) the mesh uses when none is given.
+#[tauri::command]
+fn cad_auto_size(st: State<CadSt>) -> f64 {
+    st.lock().auto_size()
+}
+
 /// The geometry engine's scene as it is.
 #[tauri::command]
 fn cad_scene(st: State<CadSt>) -> R<datum_cad::Scene> {
@@ -631,7 +688,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            cad_run, cad_scene, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_auto_size, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

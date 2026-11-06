@@ -10,5 +10,7 @@ publish = false
 solidcraft-engine = { path = "../../app/crates/engine" }
 solidcraft-doc = { path = "../../app/crates/doc" }
 solidcraft-sketch = { path = "../../app/crates/sketch" }
+datum-analysis = { path = "../../app/crates/analysis" }
+datum-core = { path = "../core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

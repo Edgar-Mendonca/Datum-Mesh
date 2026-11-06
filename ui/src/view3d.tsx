@@ -4,6 +4,7 @@
 // nodes and members (and places supports and loads); drawing happens on a working plane.
 import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack } from "./cad";
 import { Timeline, bodyMenu } from "./history";
+import { showMesh, geoMesh } from "./study";
 import { ExtrudePanel } from "./extrude";
 import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
@@ -215,12 +216,12 @@ export const View3D = () => {
    * the surface coloured by the chosen result on the deformed shape. */
   /** 0.7.1: the geometry engine's solids and finished sketches. The engine models in millimetres
    * with Z up; the view keeps the engine's metres with y up: (X, Y, Z) mm → (X, Z, −Y) m. */
-  const addCad = () => {
+  const addCad = (bodies = true) => {
     const c = cad(); if (!c) return;
     const sky = new THREE.Color(css("--solid")), ink = new THREE.Color(css("--text")), faint = new THREE.Color(css("--blue2"));
     const put = (a: Float32Array, i: number, x: number, y: number, z: number) => { a[i] = x * 1e-3; a[i + 1] = z * 1e-3; a[i + 2] = -y * 1e-3; };
     const lines = (pts: number[], col: THREE.Color) => { const a = new Float32Array(pts.length); for (let i = 0; i < pts.length; i += 3) put(a, i, pts[i], pts[i + 1], pts[i + 2]); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(a, 3)); world.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col }))); };
-    for (const b of c.bodies) {
+    for (const b of bodies ? c.bodies : []) {
       const pos = new Float32Array(b.pos.length), nrm = new Float32Array(b.nrm.length);
       for (let i = 0; i < b.pos.length; i += 3) put(pos, i, b.pos[i], b.pos[i + 1], b.pos[i + 2]);
       for (let i = 0; i < b.nrm.length; i += 3) { nrm[i] = b.nrm[i]; nrm[i + 1] = b.nrm[i + 2]; nrm[i + 2] = -b.nrm[i + 1]; }
@@ -429,7 +430,8 @@ export const View3D = () => {
     themeTick();
     const m = model(); if (!m) return;
     clear();
-    if (isSolidA(m.analysis)) { buildSolid(m); addCad(); return; }
+    // Modelled solids (0.7.3): the solids in step 1, their mesh after it (with supports, loads, results).
+    if (isSolidA(m.analysis)) { const sm = showMesh(); buildSolid(geoMesh() && !sm ? { ...m, volume: undefined, supports: [], loads: [] } : m); addCad(!sm); return; }
     // An empty frame (0.6.0): the floor covers the 6 × 4 × 4 m space the view first looks at.
     const empty = !m.nodes.length && !m.shapes.length;
     const P = at3(m), span = empty ? 6 : span3(m), selSet = new Set(sel());
@@ -716,7 +718,7 @@ export const View3D = () => {
     if (!down || e.button !== 0) { down = null; return; }
     const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4; down = null;
     if (moved) return;
-    const rc = host.getBoundingClientRect(), t = tool();
+    const rc = host.getBoundingClientRect(); let t = tool();
     // Picking the plane to sketch on (0.6.2).
     if (picking()) {
       const o = pickOrigin(e.clientX - rc.left, e.clientY - rc.top);
@@ -750,9 +752,11 @@ export const View3D = () => {
         setSel(e.shiftKey || e.ctrlKey ? (sel().includes(ph.part) ? sel().filter(i => i !== ph.part) : [...sel(), ph.part]) : [ph.part]);
         return;
       }
+      // On a solid, Force on a face is shared over the face (0.7.3).
+      if (t === "load:force") t = "load:traction";
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
       const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction"].includes(t);
-      if (!at || !ok) { toast(model()?.volume ? (ok ? "Click on a face of the mesh." : "On an imported mesh, supports (fixed, pinned, roller, symmetry, held directions) and pressures or face forces go on its faces.") : ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
+      if (!at || !ok) { toast(model()?.volume ? (ok ? "Click on a face of the mesh." : `On a ${model()?.volume?.source === "geometry" ? "solid" : "meshed solid"}, supports (fixed, pinned, roller, symmetry, held directions) and forces or pressures go on its faces.`) : ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
       const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(at.on === "end" && t === "sup:pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) setSel(o.created);

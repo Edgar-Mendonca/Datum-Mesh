@@ -20,8 +20,10 @@ https://github.com/tangency-labs/solidcraft, commit f8a98ee, kept in app/) and i
 window through crates/cad; their notices are in app/NOTICE, app/THIRD-PARTY-LICENSES.txt and
 app/ATTRIBUTION.md. Their dependencies are permissive (checked by cargo deny).
 
-No GPL, LGPL or AGPL code is linked into or bundled with Datum Mesh. Open meshers and solvers
-under those licences (Gmsh, planned for meshing these solids) only ever run as separate programs.
+No GPL, LGPL or AGPL code is linked into Datum Mesh. Gmsh (GPL-2.0-or-later, https://gmsh.info,
+source at https://gitlab.onelab.info/gmsh/gmsh) is installed beside Datum Mesh, unchanged, in its own
+folder with its licence, and run as a separate program to mesh the solids (from 0.7.3); Datum Mesh
+only writes its input files and reads the mesh it writes.
 
 The family workflow, ribbon, File page, updater and printing are taken from Datum Plan, by way of
 Datum Sim (both MIT, same author). The structural steel values come from EN 1993-1-1 §3.2 and

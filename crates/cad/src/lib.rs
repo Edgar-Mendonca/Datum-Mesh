@@ -24,6 +24,8 @@ pub struct Body {
     pub tris: Vec<u32>,
     /// The face of each triangle (its index in the solid).
     pub face: Vec<u32>,
+    /// Each face's lasting name (it follows the face through edits): `names[face[t]]`.
+    pub names: Vec<String>,
     /// Each edge as a polyline: x, y, z after one another (mm).
     pub edges: Vec<Vec<f32>>,
     pub closed: bool,
@@ -139,6 +141,49 @@ impl Cad {
         self.session.execute(id, params).map_err(|e| e.to_string())
     }
 
+    /// Mesh the solids into quadratic tetrahedra (0.7.3) with Gmsh (`gmsh`, a separate program),
+    /// `size` mm across (0: chosen from the solids), passing files through `work`. Each mesh face
+    /// is named `Body/face` after the solid's face it lies on, so supports and loads find their
+    /// faces again after the design changes and is meshed again. Coordinates in metres.
+    pub fn mesh(&self, size: f64, gmsh: &std::path::Path, work: &std::path::Path) -> Result<datum_core::solids::tet::TetMesh, String> {
+        let st = self.session.world_state().map_err(|e| e.to_string())?;
+        let parts: Vec<_> = st.bodies.iter().map(|b| (b.name.clone(), b.body.clone(), (*b.mesh()).clone(), (*solidcraft_engine::doc::naming::face_names(b)).clone())).collect();
+        if parts.is_empty() {
+            return Err("There is no solid to mesh yet: make one in step 1 (New Sketch, then Extrude).".into());
+        }
+        if let Some(b) = st.bodies.iter().find(|b| !b.is_closed()) {
+            return Err(format!("{} is not closed, so it cannot be filled with elements. Close it (or delete it) first.", b.name));
+        }
+        let list: Vec<datum_analysis::Solid> = parts.iter().map(|(n, b, m, f)| datum_analysis::Solid { name: n, body: b, surface: m, face_names: f }).collect();
+        let meshed = datum_analysis::mesh(&list, size, gmsh, work)?;
+        let mut ms = meshed.mesh;
+        for (f, o) in ms.faces.iter_mut().zip(&meshed.owner) {
+            if let Some(o) = o {
+                f.name = format!("{}/{}", o.body, o.face);
+            }
+        }
+        // Faces of one solid face split by Gmsh (seams) come back as one.
+        let mut merged: Vec<datum_core::solids::tet::FaceSet> = vec![];
+        for f in ms.faces.drain(..) {
+            match merged.iter_mut().find(|g| g.name == f.name) {
+                Some(g) => g.facets.extend(f.facets),
+                None => merged.push(f),
+            }
+        }
+        ms.faces = merged;
+        ms.source = "geometry".into();
+        Ok(ms)
+    }
+
+    /// The element size (mm) used when none is given: about a twentieth of the largest extent.
+    pub fn auto_size(&self) -> f64 {
+        let Ok(st) = self.session.world_state() else { return 5.0 };
+        let parts: Vec<_> = st.bodies.iter().map(|b| (b.name.clone(), b.body.clone(), (*b.mesh()).clone())).collect();
+        let none: Vec<String> = vec![];
+        let list: Vec<datum_analysis::Solid> = parts.iter().map(|(n, b, m)| datum_analysis::Solid { name: n, body: b, surface: m, face_names: &none }).collect();
+        datum_analysis::auto_size(&list)
+    }
+
     /// The design as the window draws it.
     pub fn scene(&self) -> Result<Scene, String> {
         let st = self.session.world_state().map_err(|e| e.to_string())?;
@@ -153,6 +198,7 @@ impl Cad {
                     nrm: m.normals.iter().flat_map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect(),
                     tris: m.triangles.iter().flatten().copied().collect(),
                     face: m.tri_face.clone(),
+                    names: (*solidcraft_engine::doc::naming::face_names(b)).clone(),
                     edges: m.edges.iter().map(|e| e.iter().flat_map(|p| [p.x as f32, p.y as f32, p.z as f32]).collect()).collect(),
                     closed: b.is_closed(),
                 }
@@ -321,6 +367,58 @@ mod tests {
         assert_eq!(a.bodies[0].tris.len(), b.bodies[0].tris.len());
         assert_eq!(a.sketches.len(), b.sketches.len());
         assert!(!d.is_empty() && Cad::new().is_empty());
+    }
+
+    /// Gmsh for the tests: `DATUM_GMSH`, or `gmsh` on the path; none: the test says so and stops.
+    pub(crate) fn gmsh() -> Option<std::path::PathBuf> {
+        if let Ok(p) = std::env::var("DATUM_GMSH") {
+            return Some(p.into());
+        }
+        std::process::Command::new("gmsh").arg("--version").output().ok().filter(|o| o.status.success()).map(|_| "gmsh".into())
+    }
+
+    /// 0.7.3: a solid modelled here, meshed by Gmsh and solved by datum-core: a 100 × 20 × 20 mm
+    /// steel cantilever with an end load of 1 kN, against beam theory with shear (Timoshenko).
+    #[test]
+    fn mesh_and_solve_a_cantilever() {
+        let Some(g) = gmsh() else {
+            eprintln!("Gmsh is not installed: mesh_and_solve_a_cantilever did not run");
+            return;
+        };
+        let mut c = Cad::new();
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [100, 20]}));
+        run(&mut c, "sketch.finish", json!({}));
+        run(&mut c, "solid.extrude", json!({"distance": 20.0, "direction": "positive"}));
+        let work = std::env::temp_dir().join(format!("datum-cad-test-{}", std::process::id()));
+        let ms = c.mesh(4.0, &g, &work).expect("meshed");
+        let _ = std::fs::remove_dir_all(&work);
+        assert_eq!(ms.order, 2);
+        assert!(ms.tets.len() > 200, "{} elements", ms.tets.len());
+        assert_eq!(ms.faces.len(), 6, "one mesh face per face of the block: {:?}", ms.faces.iter().map(|f| &f.name).collect::<Vec<_>>());
+        assert!(ms.faces.iter().all(|f| f.name.starts_with("Body1/")), "named after the solid's faces");
+        // The faces at x = 0 and x = 0.1 m, by their nodes.
+        let at = |x: f64| ms.faces.iter().position(|f| f.facets.iter().all(|&(e, k)| datum_core::solids::tet::FACES[k as usize].iter().all(|&i| (ms.nodes[ms.tets[e as usize][i] as usize][0] - x).abs() < 1e-9))).expect("end face");
+        let (fixed, free) = (at(0.0), at(0.1));
+        use datum_core::model::{Analysis, Load, LoadKind, Model, Support, SupportKind, Target};
+        let mut m = Model::new(Analysis::Solid);
+        let mut v = ms.clone();
+        v.material = m.materials[0].id;
+        let (e, nu) = (m.materials[0].e, m.materials[0].nu);
+        m.volume = Some(Box::new(v));
+        m.supports.push(Support { id: 50, at: Target::Face { face: fixed as u32 }, kind: SupportKind::Fixed });
+        m.loads.push(Load { case: 0, id: 51, at: Target::Face { face: free as u32 }, kind: LoadKind::Traction { fx: 0.0, fy: -1000.0, fz: 0.0, total: true } });
+        m.next = 52;
+        let r = match datum_core::solve_for(&m, None).expect("solved") {
+            datum_core::Results::Solid(r) => r,
+            _ => panic!("not a solid's results"),
+        };
+        let tip = r.disp.iter().map(|d| d[1]).fold(0.0_f64, f64::min);
+        let (l, h) = (0.1, 0.02);
+        let i = h * h * h * h / 12.0;
+        let g_mod = e / (2.0 * (1.0 + nu));
+        let want = -(1000.0 * l * l * l / (3.0 * e * i) + 1000.0 * l / (5.0 / 6.0 * g_mod * h * h));
+        assert!(((tip - want) / want).abs() < 0.04, "tip {tip:e} m against {want:e} m");
     }
 
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).

@@ -38,19 +38,36 @@ jobs:
           cat notes.md
           test -s notes.md || { echo "CHANGELOG.md has no section for $V"; exit 1; }
       - run: cargo test -p datum-core
+      - name: The mesher (Gmsh, a separate program, GPL; installed beside Datum Mesh)
+        shell: bash
+        run: |
+          mkdir -p src-tauri/gmsh
+          ok=""
+          for v in 4.15.2 4.14.1 4.13.1; do
+            if curl -fsSL -o gmsh.zip "https://gmsh.info/bin/Windows/gmsh-$v-Windows64.zip"; then ok=$v; break; fi
+          done
+          test -n "$ok" || { echo "Gmsh could not be downloaded"; exit 1; }
+          echo "Gmsh $ok"
+          7z x -y gmsh.zip -ogmsh_unz > /dev/null
+          exe=$(find gmsh_unz -iname gmsh.exe | head -1)
+          test -n "$exe" || { echo "gmsh.exe not found in the download"; exit 1; }
+          cp "$exe" src-tauri/gmsh/gmsh.exe
+          d=$(dirname "$exe")
+          for f in LICENSE.txt CREDITS.txt; do [ -f "$d/$f" ] && cp "$d/$f" "src-tauri/gmsh/$f"; done
+          echo "Gmsh $ok from gmsh.info, run by Datum Mesh as a separate program (GPL). Source: https://gitlab.onelab.info/gmsh/gmsh" > src-tauri/gmsh/README.txt
       - name: Installer
         shell: bash
         run: |
-          npx tauri build --bundles nsis
+          npx tauri build --bundles nsis --config '{"bundle":{"resources":{"gmsh/":"gmsh/"}}}'
           mkdir -p out
           cp target/release/bundle/nsis/*-setup.exe "out/DatumMesh-$V-setup.exe"
           cd out && sha256sum "DatumMesh-$V-setup.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -la
-      - name: Size budget of the installer (60 MB, docs/MEMORY.md)
+      - name: Size budget of the installer (150 MB, docs/MEMORY.md)
         shell: bash
         run: |
           N=$(wc -c < "out/DatumMesh-$V-setup.exe")
-          echo "Installer: $N bytes (budget 60000000)"
-          test "$N" -le 60000000 || { echo "The installer is over its 60 MB budget."; exit 1; }
+          echo "Installer: $N bytes (budget 150000000)"
+          test "$N" -le 150000000 || { echo "The installer is over its 150 MB budget."; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.V }}

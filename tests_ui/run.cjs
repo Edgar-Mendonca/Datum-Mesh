@@ -48,6 +48,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
         invoke: async (c, a) => {
           window.__calls.push([c, a]);
           if (c === "cad_scene") return window.__cad ?? f.cad.empty;
+          if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
+          if (c === "cad_auto_size") return 5;
           if (c === "cad_query") return a.id === "timeline.inspect" ? f.cad.inspect_extrude : a.id === "sketch.inspect" ? { curves: [], points: [] } : a.id === "parameters.list" ? [] : {};
           if (c === "cad_run") { const id = a.id; const k = id === "sketch.create" ? "sketch" : id === "sketch.finish" ? "finished" : id === "sketch.cancel" ? "empty" : id.startsWith("sketch.") ? "drawn" : id === "solid.extrude" ? "extruded" : id === "solid.revolve" ? "revolved" : null; if (k) window.__cad = f.cad[k]; return window.__cad ?? f.cad.empty; }
           if (c === "state") return window.__cur;
@@ -1272,6 +1274,20 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("right-clicking a solid offers Rename and Delete", ["Rename", "Delete"].every(x => fm.includes(x)) && (await p.$$eval(".menu button span", els => els.map(e => e.textContent))).includes("Rename"));
   await p.mouse.click(5, 5); await p.waitForTimeout(100);
   check("the browser's own menu never shows (0.7.2, the user)", await p.evaluate(() => { const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); document.querySelector(".tree").dispatchEvent(ev); return ev.defaultPrevented; }));
+  // 0.7.3: analysis of the modelled solids: meshed by Gmsh on entering Supports & Loads, the mesh's
+  // faces named after the features, supports put on them, solved; meshed again after a change.
+  const meshCalls = () => p.evaluate(() => window.__calls.filter(c => c[0] === "cad_mesh").length);
+  await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.waitForTimeout(400);
+  check("Supports & Loads on a modelled solid meshes it first (0.7.3)", (await meshCalls()) === 1);
+  check("the bar over the view says the mesh is from the solids", (await p.textContent("body")).includes("Meshed from the solids"));
+  check("the mesh's faces are named after the feature that made them", (await p.textContent(".tree")).includes("Body1: Extrude1 top") && !(await p.textContent(".tree")).includes("F2:"));
+  check("the Mesh step counts the tetrahedra", (await p.textContent(".tree .step:nth-of-type(4)")).includes("10-node tetrahedra"));
+  check("a modelled solid has no 3D/Section switch in the analysis steps either", !(await p.$('.planebar button:text-is("Section")')));
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Extrude the last sketch"]'); await p.waitForTimeout(400);
+  await p.click('.view3d .xpanel button:has-text("OK")'); await p.waitForTimeout(100);
+  await p.keyboard.press("F5"); await p.waitForTimeout(500);
+  check("Solve after the solids changed meshes them again first", (await meshCalls()) === 2);
+  check("the File page's Roadmap icon follows the text colour like the others (0.7.3, the user)", await p.evaluate(() => document.querySelector("#i-roadmap path")?.getAttribute("stroke") === "currentColor" && [...document.querySelectorAll(".bs aside button use, .tabs use")].length >= 0));
   await open("portal");
 
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100);

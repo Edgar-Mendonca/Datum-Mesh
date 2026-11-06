@@ -1,6 +1,7 @@
 //! Scenes from the real geometry engine for the window's checks (tests_ui): a sketch with each
-//! way of drawing, the sketch finished, a block extruded from it, and a revolved ring.
-//! cargo run -q -p datum-cad --example fixture > tests_ui/cad.json
+//! way of drawing, the sketch finished, a block extruded from it, the block meshed by Gmsh (0.7.3),
+//! and a revolved ring.
+//! DATUM_GMSH=/path/to/gmsh cargo run -q -p datum-cad --example fixture > tests_ui/cad.json
 use serde_json::{json, Value};
 
 fn main() {
@@ -21,6 +22,17 @@ fn main() {
     out.insert("extruded".into(), serde_json::to_value(c.scene().expect("scene")).expect("json"));
     let ex = c.scene().expect("scene").features[1].id;
     out.insert("inspect_extrude".into(), run(&mut c, "timeline.inspect", json!({"feature": ex})));
+    // 0.7.3: the block meshed by Gmsh (DATUM_GMSH), as the window receives the model after `cad_mesh`.
+    let gmsh = std::env::var("DATUM_GMSH").unwrap_or_else(|_| "gmsh".into());
+    let work = std::env::temp_dir().join("datum-cad-fixture");
+    let ms = c.mesh(12.0, std::path::Path::new(&gmsh), &work).expect("meshed (set DATUM_GMSH)");
+    let _ = std::fs::remove_dir_all(&work);
+    let mut m = datum_core::model::Model::new(datum_core::model::Analysis::Solid);
+    m.name = "Blank 3D solid".into();
+    let mut v = ms;
+    v.material = m.materials[0].id;
+    m.volume = Some(Box::new(v));
+    out.insert("meshed_model".into(), datum_core::solids::tet::for_window(&m));
     let mut r = datum_cad::Cad::new();
     run(&mut r, "sketch.create", json!({"plane": "XZ"}));
     run(&mut r, "sketch.rectangle.two_point", json!({"p0": [30, 0], "p1": [45, 50]}));

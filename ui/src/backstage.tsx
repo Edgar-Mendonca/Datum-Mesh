@@ -176,7 +176,7 @@ export const Backstage = () => (
   <div class="bs">
     <aside>
       <button class="back" onClick={() => out() && setBackstage(null)} title="Back">←</button>
-      <For each={[["home", "home", "Home"], ["new", "new", "New"], ["examples", "folder", "Examples"], ["open", "open", "Open"], ["save", "save", "Save"], ["saveas", "save", "Save As"], ["export", "export", "Export"], ["print", "print", "Print"], ["roadmap", "list", "Roadmap"]]}>{([k, i, l]) =>
+      <For each={[["home", "home", "Home"], ["new", "new", "New"], ["examples", "folder", "Examples"], ["open", "open", "Open"], ["save", "save", "Save"], ["saveas", "save", "Save As"], ["export", "export", "Export"], ["print", "print", "Print"], ["roadmap", "roadmap", "Roadmap"]]}>{([k, i, l]) =>
         <button classList={{ on: backstage() === k }} onClick={() => {
           if (k === "open") C.open(); else if (k === "save") C.save(); else if (k === "saveas") C.save(true);
           else setBackstage(k);

@@ -1,8 +1,9 @@
 // Title bar, quick access toolbar, Tell Me and the ribbon (Home · Geometry · Mesh · Loads · Solve ·
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
+import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
-import { holeD, setHoleD, edgeSize, setEdgeSize, sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, frameRes, spaceRes } from "./store";
+import { holeD, setHoleD, edgeSize, setEdgeSize, sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, setView, frameRes, spaceRes } from "./store";
 import { fieldsFor, curField } from "./parts";
 import { C, ALL_CMDS } from "./cmds";
 import * as D from "./dialogs";
@@ -389,7 +390,12 @@ export const Ribbon = () => {
         <Show when={!activeSketch()}><G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G></Show>
       </Show>
       <Show when={tab() === "mesh"}>
-        <Show when={!frame()} fallback={<G l="Mesh" h="mesh"><div class="rnote">Frames and trusses are not meshed: each member is one exact element. Meshing is for parts.</div></G>}>
+        <Show when={hasSolids()}>
+          <G l="Mesh" h="mesh"><B big i="mesh" l="Mesh" run={() => meshSolids()} off={solving()} title="Fill the solids with 10-node tetrahedra (Gmsh); made again by itself when the solids change" />
+            <S><B i="mesh" l="Element Size" dd={sizeMenu} /><B i="view" l="Show Elements" on={view() === "mesh"} run={() => setView(view() === "mesh" ? "model" : "mesh")} title="Draw the elements' edges on the solid" /></S></G>
+          <G l="Elements" h="elements"><div class="rnote">10-node tetrahedra (quadratic): accurate for stress in any shape.</div></G>
+        </Show>
+        <Show when={!frame() && !hasSolids()} fallback={<Show when={frame()}><G l="Mesh" h="mesh"><div class="rnote">Frames and trusses are not meshed: each member is one exact element. Meshing is for parts.</div></G></Show>}>
           <G l="Mesh" h="mesh"><B big i="mesh" l="Mesh" run={C.mesh} off={solving()} title="Mesh the part and show it" />
             <S><B i="mesh" l="Element Size" dd={sizeMenu} /><T i="refine" l="Refine Near" t="refine" title="Click an edge or a point: elements a quarter of the size there" /></S></G>
           <G l="Elements" h="elements"><S><B i="tri6" l="Quadratic (6-node)" on={m()?.mesh.order === 2} run={() => C.meshSettings({ order: 2 })} /><B i="tri3" l="Linear (3-node)" on={m()?.mesh.order === 1} run={() => C.meshSettings({ order: 1 })} /></S></G>
@@ -401,7 +407,7 @@ export const Ribbon = () => {
           <G l="Supports" h="supports"><T big i="fixed" l="Fixed" t="sup:fixed" /><T big i="pinned" l="Pinned" t="sup:pinned" />
             <S><Show when={frame()} fallback={<><T i="roller" l="Roller" t="sup:roller" /><T i="symmetry" l="Symmetry" t="sup:symmetry" /><Show when={solid3()}><T i="roller" l="Hold Directions" t="sup:hold" title="Hold only chosen directions (x, y, z) of a face; set them in the Inspector, or make it a line along the face" /></Show></>}><T i="rollerx" l="Roller (along x)" t="sup:rollerx" /><T i="rollery" l="Roller (along y)" t="sup:rollery" /><T i="spring" l="Spring" t="sup:spring" /></Show></S></G>
           <G l="Loads" h="loads"><T big i="force" l="Force" t="load:force" />
-            <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l="Edge Force" t="load:traction" /><Show when={m()?.analysis !== "axi" && !solid3()}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
+            <Show when={frame()} fallback={<S><T i="pressure" l="Pressure" t="load:pressure" /><T i="edgeforce" l={solid3() ? "Face Force" : "Edge Force"} t="load:traction" /><Show when={m()?.analysis !== "axi" && !solid3()}><T i="pin" l="Pin Load" t="load:bearing" title="Pin Load: click a hole's edge; the pin presses on the side it pushes into" /></Show><B i="gravity" l="Gravity" run={() => C.body("gravity")} /></S>}>
               <T big i="dist" l="Distributed" t="load:dist" /><S><T i="moment" l="Moment" t="load:moment" /><B i="gravity" l="Self-weight" run={() => C.body("gravity")} /><T i="settle" l="Settlement" t="load:settlement" title="Move a support: click a supported node; set how far in the Inspector" /></S><S><T i="mass" l="Mass" t="load:mass" title="A mass at a node, for natural frequencies and dynamics (in every load case; no weight in a static solve)" /><Show when={sp()}><T i="pressure" l="Plate Pressure" t="load:platepressure" title="Pressure on a plate: click inside it (positive pushes a floor down)" /></Show></S></Show></G>
         </Show>
         <Show when={heat()}>

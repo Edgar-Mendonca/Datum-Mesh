@@ -51,7 +51,7 @@ export const ModelDrawing = (q: { m: Model; w: number; h: number }) => {
       <For each={p.m.members}>{mb => { const a = np.get(mb.a)!, b = np.get(mb.b)!; return <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#1B2733" stroke-width={mb.kind === "truss" ? 1.4 : 2.4} />; }}</For>
       <For each={p.m.nodes}>{n => { const q = np.get(n.id)!; return <rect x={q[0] - 2.5} y={q[1] - 2.5} width={5} height={5} fill="#1B2733" />; }}</For>
       <For each={p.m.supports}>{sp => { const q = at(sp.at); return q && <><path d={`M${q[0]} ${q[1]}l-7 11h14z`} fill="none" stroke="#1F7A4D" stroke-width="1.4" /><text x={q[0] + 9} y={q[1] + 12} font-size="8.5" fill="#1F7A4D">{SUPPORT_NAMES[sp.kind.kind].split(" ")[0]}</text></>; }}</For>
-      <For each={p.m.loads.filter(l => l.at.on !== "body")}>{l => { const q = at(l.at); return q && <><path d={`M${q[0]} ${q[1] - 26}V${q[1] - 3}m-4 -6l4 6l4 -6`} fill="none" stroke="#B83250" stroke-width="1.4" /><text x={q[0] + 6} y={q[1] - 20} font-size="8.5" fill="#B83250">{LOAD_NAMES[l.kind.kind]}</text></>; }}</For>
+      <For each={p.m.loads.filter(l => l.at.on !== "body")}>{l => { const q = at(l.at); return q && <><path d={`M${q[0]} ${q[1] - 26}V${q[1] - 3}m-4 -6l4 6l4 -6`} fill="none" stroke="#B83250" stroke-width="1.4" /><text x={q[0] + 6} y={q[1] - 20} font-size="8.5" fill="#B83250">{l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : LOAD_NAMES[l.kind.kind]}</text></>; }}</For>
     </svg>
   );
 };

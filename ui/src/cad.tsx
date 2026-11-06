@@ -16,13 +16,15 @@ export type CadScene = { bodies: CadBody[]; sketches: CadSketch[]; features: { i
 
 export const [cad, setCad] = createSignal<CadScene | null>(null);
 /** Runs one engine command; the scene comes back. False (and a message) when it is refused. */
+/** The solids have changed since they were meshed (0.7.3): the mesh is made again before it is used. */
+export const [meshOld, setMeshOld] = createSignal(false);
 export const cadRun = async (id: string, params: object = {}) => {
-  try { setCad(await invoke<CadScene>("cad_run", { id, params })); return true; } catch (e) { toast(String(e)); return false; }
+  try { setCad(await invoke<CadScene>("cad_run", { id, params })); setMeshOld(true); return true; } catch (e) { toast(String(e)); return false; }
 };
 /** One engine command's own reply (a report, a list); null (and a message) when refused. */
 export const cadQuery = async <T,>(id: string, params: object = {}) => { try { return await invoke<T>("cad_query", { id, params }); } catch (e) { toast(String(e)); return null; } };
 export const cadLoad = async () => { try { setCad(await invoke<CadScene>("cad_scene")); } catch { /* no engine yet */ } };
-window.addEventListener("cad-reload", () => { pickTool(null); setCad3Tool(null); cadLoad(); });
+window.addEventListener("cad-reload", () => { pickTool(null); setCad3Tool(null); cadLoad().then(() => setMeshOld(false)); });
 /** The sketch being drawn in, if any. */
 export const activeSketch = () => { const c = cad(); return c && c.active != null ? c.sketches.find(s => s.id === c.active) ?? null : null; };
 
