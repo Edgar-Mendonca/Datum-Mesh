@@ -21,7 +21,7 @@ import { parseNum } from "./api";
 import { toU, fromU, unit } from "./units";
 import { setPlanePick } from "./cad";
 import { cad3Tool, pick3, TOOLS3, holeD3, setHoleD3, holeDepth, setHoleDepth, fillet3R, setFillet3R, chamfer3D, setChamfer3D, shellT, setShellT, pressD, setPressD, bodyNames } from "./cad";
-import { cad, cadRun, cadQuery, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, EDITS, CONSTRAINTS, pickEdit, consMode, setConsMode, toggleConstruction, deleteSelected, rectPattern, sel as cadSel, filletR, setFilletR, chamferD, setChamferD, offsetD, setOffsetD, patN, setPatN, patA, setPatA, rowN, setRowN, rowS, setRowS, colN, setColN, colS, setColS, newSketch, finishSketch, cancelSketch, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
+import { cad, cadRun, cadQuery, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, roundR, setRoundR, EDITS, CONSTRAINTS, pickEdit, consMode, setConsMode, toggleConstruction, deleteSelected, rectPattern, sel as cadSel, filletR, setFilletR, chamferD, setChamferD, offsetD, setOffsetD, patN, setPatN, patA, setPatA, rowN, setRowN, rowS, setRowS, colN, setColN, colS, setColS, newSketch, finishSketch, cancelSketch, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
 
@@ -77,6 +77,7 @@ const sizeFields = (): Field[] => {
   const t = cadTool() ?? "";
   if (t.startsWith("poly")) return [["Sides", "", true, sides, setSides]];
   if (t.startsWith("slot")) return [["Slot width", "mm", false, slotW, setSlotW]];
+  if (t === "rectr") return [["Corner radius", "mm", false, roundR, setRoundR]];
   if (t === "fillet") return [["Radius", "mm", false, filletR, setFilletR]];
   if (t === "chamfer") return [["Distance", "mm", false, chamferD, setChamferD]];
   if (t === "offset") return [["Distance", "mm", false, offsetD, setOffsetD]];
@@ -207,6 +208,8 @@ const CadGroups = () => {
       <G l="Create"><B big i="solid" l="Extrude" run={() => { pick3(null); import("./extrude").then(k => k.openExtrude()); }} title="Extrude the last sketch's closed regions into a solid (distance and direction under Sizes)" />
         <B big i="axi" l="Revolve" run={() => { pick3(null); revolve(); }} title="Turn the last sketch's closed regions about one of its axes into a solid" />
         <B big i={TOOLS3.hole3.icon} l="Hole" on={cad3Tool() === "hole3"} run={() => pick3("hole3")} title={TOOLS3.hole3.hint} /></G>
+      <G l="Primitives" h="modelling"><B big i="solid" l="Box" run={() => import("./primitives").then(k => k.primitiveDialog("box"))} title="A box: its corner and its length, width and height" dd={e => openMenu(e, ([["cylinder", "Cylinder"], ["cone", "Cone"], ["sphere", "Sphere"]] as const).map(([k, l]) => ({ label: `${l}…`, run: () => import("./primitives").then(m => m.primitiveDialog(k)) })))} />
+        <B big i="union" l="Combine" run={() => import("./primitives").then(k => k.combineDialog())} title="Join, cut or intersect solids" /></G>
       <G l="Modify"><For each={["fillet3", "chamfer3", "shell3", "press3"]}>{k => <B big i={TOOLS3[k].icon} l={TOOLS3[k].label} on={cad3Tool() === k} run={() => pick3(k)} title={TOOLS3[k].hint} />}</For></G>
       <G l="Arrange"><B big i="copy" l="Move / Copy" run={moveDialog} title="Move, turn or copy solids" />
         <B big i="symmetry" l="Mirror" run={mirrorDialog} title="Mirror solids in a plane, as a copy (or joined)" />

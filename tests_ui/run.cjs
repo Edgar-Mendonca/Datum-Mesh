@@ -1264,6 +1264,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the tree lists the solid with its faces, and step 1 is done", (await p.textContent(".tree .step:nth-of-type(1)")).includes("17 faces") && await p.$eval(".tree .step:nth-of-type(1)", el => el.classList.contains("done")));
 
   // 0.7.2: the history, its right-click menu, Edit Feature, the timeline; no browser menu.
+  check("the modelling ribbon offers primitives and Combine (0.7.6)", (await p.$$('.ribbon button[title^="A box: its corner"]')).length === 1 && (await p.$$('.ribbon button[title^="Join, cut or intersect solids"]')).length === 1);
   check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti span', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
   check("a modelled solid has no 3D/Section bar and no section settings (0.7.2, the user)", !(await p.$('.planebar button:text-is("Section")')) && !(await p.textContent(".insp")).includes("Thickness (extruded") && !(await p.textContent(".insp")).includes("Layers through"));
   await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))'); await p.waitForTimeout(150);

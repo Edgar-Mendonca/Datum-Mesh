@@ -573,6 +573,31 @@ mod tests {
         assert!(lines.iter().all(|(a, b)| (a[2]).abs() < 1e-9 && (b[2]).abs() < 1e-9), "on the front plane (z = 0): {lines:?}");
     }
 
+    /// 0.7.6: the primitives, Combine and the further sketch shapes, with the inputs the window
+    /// sends.
+    #[test]
+    fn primitives_combine_and_more_shapes() {
+        let mut c = Cad::new();
+        run(&mut c, "solid.box", json!({"corner": [0, 0, 0], "length": 40, "width": 30, "height": 20}));
+        run(&mut c, "solid.cylinder", json!({"base": [20, 15, 0], "radius": 8, "height": 30}));
+        let sc = c.scene().unwrap();
+        assert_eq!(sc.bodies.len(), 2, "a box and a cylinder");
+        let (a, b) = (sc.bodies[0].name.clone(), sc.bodies[1].name.clone());
+        run(&mut c, "solid.combine", json!({"target": a, "tools": [b], "operation": "cut"}));
+        assert_eq!(c.scene().unwrap().bodies.len(), 1, "the cylinder cut out of the box");
+        run(&mut c, "solid.sphere", json!({"center": [100, 0, 0], "radius": 10}));
+        run(&mut c, "solid.cone", json!({"base": [150, 0, 0], "radius": 10, "height": 20}));
+        assert_eq!(c.scene().unwrap().bodies.len(), 3, "a sphere and a cone besides");
+        let mut s = Cad::new();
+        run(&mut s, "sketch.create", json!({"plane": "XY"}));
+        run(&mut s, "sketch.ellipse", json!({"center": [0, 0], "major": [20, 0], "minor_radius": 8}));
+        run(&mut s, "sketch.spline.fit_point", json!({"points": [[40, 0], [50, 10], [60, 0], [70, 10]]}));
+        run(&mut s, "sketch.rectangle.rounded", json!({"p0": [100, -10], "p1": [140, 10], "radius": 4}));
+        let sk = &s.scene().unwrap().sketches[0];
+        assert!(sk.curves.iter().any(|c| c.kind == "ellipse") && sk.curves.iter().any(|c| c.kind == "spline"), "{:?}", sk.curves.iter().map(|c| c.kind).collect::<Vec<_>>());
+        assert_eq!(sk.profiles, 2, "the ellipse and the rounded rectangle are closed");
+    }
+
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).
     #[test]
     fn each_3d_tool() {

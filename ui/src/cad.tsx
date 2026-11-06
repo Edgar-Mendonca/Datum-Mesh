@@ -37,6 +37,10 @@ const d = (a: P2, b: P2) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 const ang = (a: P2, b: P2) => Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI;
 export const [sides, setSides] = createSignal(6);
 export const [slotW, setSlotW] = createSignal(10);
+/** The corner radius of the next rounded rectangle (mm, 0.7.6). */
+export const [roundR, setRoundR] = createSignal(5);
+/** The ellipse through centre c, major-axis end m and a point q: its minor radius, q's distance from the major axis. */
+const minorR = (c: P2, m: P2, q: P2) => { const L = d(c, m) || 1, u = [(m[0] - c[0]) / L, (m[1] - c[1]) / L]; return Math.abs(-u[1] * (q[0] - c[0]) + u[0] * (q[1] - c[1])); };
 export const TOOLS: Record<string, Tool> = {
   line: { label: "Line", icon: "beam", hint: ["Click where the line starts", "Click the next point (double-click or Esc to end the chain)"], cmd: p => ["sketch.line", { points: p }] },
   arc3: { label: "Arc · 3 points", icon: "curve", hint: ["Click where the arc starts", "Click where it ends", "Click a point it passes through"], cmd: p => ["sketch.arc.three_point", { start: p[0], end: p[1], through: p[2] }] },
@@ -52,16 +56,21 @@ export const TOOLS: Record<string, Tool> = {
   polyedge: { label: "Polygon · by one side", icon: "ngon", hint: ["Click where a side starts", "Click where it ends"], cmd: p => ["sketch.polygon.edge", { p0: p[0], p1: p[1], sides: sides() }] },
   slotc: { label: "Slot · centre to centre", icon: "slot", hint: ["Click the centre of one end", "Click the centre of the other end"], cmd: p => ["sketch.slot.center_to_center", { p0: p[0], p1: p[1], width: slotW() }] },
   slot: { label: "Slot · overall", icon: "slot", hint: ["Click one end", "Click the other end"], cmd: p => ["sketch.slot.overall", { p0: p[0], p1: p[1], width: slotW() }] },
+  // 0.7.6: more shapes the engine draws.
+  rectr: { label: "Rectangle · rounded corners", icon: "rect", hint: ["Click one corner", "Click the opposite corner (the corner radius is set beside the button)"], cmd: p => ["sketch.rectangle.rounded", { p0: p[0], p1: p[1], radius: roundR() }] },
+  ellipse: { label: "Ellipse", icon: "circle", hint: ["Click the centre", "Click the end of the long axis", "Click a point the ellipse passes through across it"], cmd: p => ["sketch.ellipse", { center: p[0], major: p[1], minor_radius: Math.max(minorR(p[0], p[1], p[2]), 1e-3) }] },
+  spline: { label: "Spline", icon: "curve", hint: ["Click where the curve starts", "Click the points it passes through: double-click or Enter on the last one"], cmd: p => ["sketch.spline.fit_point", { points: p }] },
 };
-const NEED: Record<string, number> = { line: 2, arc3: 3, arcc: 3, circle: 2, circle2: 2, circle3: 3, rect: 2, rectc: 2, rect3: 3, polyin: 2, polyout: 2, polyedge: 2, slotc: 2, slot: 2 };
+const NEED: Record<string, number> = { rectr: 2, ellipse: 3, spline: 1e9, line: 2, arc3: 3, arcc: 3, circle: 2, circle2: 2, circle3: 3, rect: 2, rectc: 2, rect3: 3, polyin: 2, polyout: 2, polyedge: 2, slotc: 2, slot: 2 };
 /** Each shape's ways of drawing, in the order its ▾ lists them. */
 export const FAMILIES: [string, string, string[]][] = [
   ["Line", "beam", ["line"]], ["Arc", "curve", ["arc3", "arcc"]], ["Circle", "circle", ["circle", "circle2", "circle3"]],
-  ["Rectangle", "rect", ["rect", "rectc", "rect3"]], ["Polygon", "ngon", ["polyin", "polyout", "polyedge"]], ["Slot", "slot", ["slotc", "slot"]],
+  ["Rectangle", "rect", ["rect", "rectc", "rect3", "rectr"]], ["Polygon", "ngon", ["polyin", "polyout", "polyedge"]], ["Slot", "slot", ["slotc", "slot"]],
+  ["Ellipse", "circle", ["ellipse"]], ["Spline", "curve", ["spline"]],
 ];
 export const [cadTool, setCadTool] = createSignal<string | null>(null);
 /** The way last used for each shape (what its button draws). */
-export const [ways, setWays] = createSignal<Record<string, string>>({ Line: "line", Arc: "arc3", Circle: "circle", Rectangle: "rect", Polygon: "polyin", Slot: "slotc" });
+export const [ways, setWays] = createSignal<Record<string, string>>({ Line: "line", Arc: "arc3", Circle: "circle", Rectangle: "rect", Polygon: "polyin", Slot: "slotc", Ellipse: "ellipse", Spline: "spline" });
 const [draft, setDraft] = createSignal<P2[]>([]);
 export const pickTool = (t: string | null) => { setCadTool(t); setDraft([]); };
 
@@ -195,6 +204,7 @@ export const SketchCanvas = () => {
     else setView({ s: Math.max(1, box().w / 220), cx: 0, cy: 0 });
     const key = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.tagName === "INPUT") return;
+      if (e.key === "Enter" && cadTool() === "spline") { endSpline(); return; }
       if (e.key === "Escape") { if (dimEdit()) setDimEdit(null); else if (draft().length || picks().length) { setDraft([]); setPicks([]); } else if (sel().length) setSel([]); else pickTool(null); }
       if ((e.key === "Delete" || e.key === "Backspace") && sel().length) deleteSelected();
     };
@@ -255,6 +265,8 @@ export const SketchCanvas = () => {
     // A line goes on from where it ended; every other shape starts again.
     setDraft(ok && t === "line" ? [p] : []);
   };
+  /** A spline's last point is in: draw it through all of them. */
+  const endSpline = async () => { const dr = draft(); if (dr.length >= 2 && await cadRun("sketch.spline.fit_point", { points: dr, ...(consMode() ? { construction: true } : {}) })) setDraft([]); };
   let pan: { x: number; y: number; cx: number; cy: number } | null = null;
   const onDown = (e: PointerEvent) => {
     if (e.button === 1 || e.button === 2) { pan = { x: e.clientX, y: e.clientY, cx: view().cx, cy: view().cy }; svg.setPointerCapture(e.pointerId); return; }
@@ -282,7 +294,8 @@ export const SketchCanvas = () => {
     switch (t) {
       case "circle": return [circ(a, d(a, b))];
       case "circle2": return [circ([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], d(a, b) / 2)];
-      case "rect": return [[a, [b[0], a[1]], b, [a[0], b[1]], a]];
+      case "rect": case "rectr": return [[a, [b[0], a[1]], b, [a[0], b[1]], a]];
+      case "ellipse": { const L = d(a, b) || 1, u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], r2 = p.length > 2 ? minorR(a, b, p[2]) : L / 2; return [Array.from({ length: 65 }, (_, i) => { const t2 = 2 * Math.PI * i / 64; return [a[0] + u[0] * L * Math.cos(t2) - u[1] * r2 * Math.sin(t2), a[1] + u[1] * L * Math.cos(t2) + u[0] * r2 * Math.sin(t2)] as P2; })]; }
       case "rectc": { const q: P2 = [2 * a[0] - b[0], 2 * a[1] - b[1]]; return [[q, [b[0], q[1]], b, [q[0], b[1]], q]]; }
       case "polyin": case "polyout": { const n = sides(), r = d(a, b) / (t === "polyout" ? Math.cos(Math.PI / n) : 1), a0 = ang(a, b) + (t === "polyout" ? 180 / n : 0); return [circ(a, r, n, a0)]; }
       case "polyedge": { const n = sides(), L = d(a, b), R = L / (2 * Math.sin(Math.PI / n)), mid: P2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], h2 = L / (2 * Math.tan(Math.PI / n)), u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], o: P2 = [mid[0] - u[1] * h2, mid[1] + u[0] * h2]; return [circ(o, R, n, ang(o, a))]; }
@@ -311,7 +324,7 @@ export const SketchCanvas = () => {
   return (
     <div class="cadsheet">
       <svg ref={svg} onPointerDown={onDown} onPointerMove={onMove} onPointerUp={() => { pan = null; }} onWheel={onWheel} onContextMenu={e => e.preventDefault()}
-        onDblClick={() => { if (cadTool() === "line") setDraft([]); }}>
+        onDblClick={() => { if (cadTool() === "line") setDraft([]); if (cadTool() === "spline") endSpline(); }}>
         <For each={gridLines()}>{l => <line x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} class={l.major ? "gmaj" : "gmin"} />}</For>
         <line class="axx" x1={0} y1={toPx([0, 0])[1]} x2={box().w} y2={toPx([0, 0])[1]} />
         <line class="axy" x1={toPx([0, 0])[0]} y1={0} x2={toPx([0, 0])[0]} y2={box().h} />
