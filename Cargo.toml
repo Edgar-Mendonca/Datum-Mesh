@@ -11,11 +11,16 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 
 [profile.release]
 opt-level = 3
-lto = true
-codegen-units = 1
+# Thin LTO in parallel pieces (0.7.1): the geometry engine (app/) is too large for whole-program
+# optimisation in one piece; our solver keeps one piece below.
+lto = "thin"
+codegen-units = 16
 panic = "abort"
 strip = true
 
 # Solvers are slow without optimisation; keep tests and dev runs usable.
+[profile.release.package.datum-core]
+codegen-units = 1
+
 [profile.dev.package.datum-core]
 opt-level = 2

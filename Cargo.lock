@@ -780,6 +780,7 @@ name = "datum-mesh"
 version = "0.7.0"
 dependencies = [
  "chrono",
+ "datum-cad",
  "datum-core",
  "serde",
  "serde_json",
