@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.7.2 — 2026-11-06
+
+Modelling that feels right: a history you can edit, sketching on any plane with the view turning to it, a grid that follows the zoom, and no leftovers of the old section view.
+
+**History**
+- The tree lists every feature in order (Sketch1, Extrude1, Hole1…), and a timeline under the 3D view shows the same, with buttons to step back and forth.
+- Right-click a feature: Edit Feature (its sizes, changed in place), Edit Sketch, Rename (F2), Suppress, Roll Back Here, Roll to the End, Delete (Del). Double-click edits. Right-click a solid, in the tree or the 3D view: Sketch on a face of it, Rename, Delete.
+- The browser's own right-click menu never shows any more.
+- A feature picked in the history shows in the inspector, with Edit, Suppress and Delete.
+
+**Sketching on a plane**
+- New Sketch asks for a plane: click one of the three planes at the origin, or a flat face of a solid, or choose Floor, Front or Side.
+- The view turns smoothly to face the plane, and you draw on it over the 3D view. Finish Sketch turns the view back to 3D, framing what was drawn.
+- A closed shape finished goes straight on to Extrude: the solid is made at once, and the Extrude panel changes it as you type the distance, press − and +, or turn the mouse wheel over it; Out, In or Both ways; OK keeps it, Cancel takes it away.
+
+**Grid**
+- The floor grid has big squares with small squares inside, sized to how close you are looking and centred under the view. The sketch sheet uses the same rule.
+
+**Solids**
+- A solid made with the modelling tools has no 3D/Section bar and no section, thickness or sweep settings: those belonged to the old extruded-section solids, which keep them.
+
+**Not yet**
+- Supports, loads, meshing and solving on the new solids come in 0.7.3, laid out as the usual analysis steps.
+
 ## 0.7.1 — 2026-11-06
 
 The Datum window again, laid out in numbered steps, with full sketching and 3D modelling.

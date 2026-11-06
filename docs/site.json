@@ -7,18 +7,18 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
-    "From 0.7.1 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: lines, arcs, circles and rectangles drawn several ways, polygons, slots, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude, revolve, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
+    "From 0.7.2 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; and a history of every feature to edit, suppress, roll back or delete. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
     "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load, in 2D and 3D; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both; 3D solids also follow large deformation, rubber included (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
   ],
   "steps": [
     {
       "title": "Geometry",
-      "text": "New Sketch on a plane or a face; draw with lines, arcs, circles, rectangles, polygons and slots, size them with dimensions and constraints; then extrude, revolve, drill, round, shell and pattern the solid."
+      "text": "Click a plane or a face and the view turns to it; draw with lines, arcs, circles, rectangles, polygons and slots, size them with dimensions and constraints; Finish, and the shape is extruded as you set the distance. Revolve, drill, round and shell; edit any step in the history."
     },
     {
-      "title": "Material",
-      "text": "Open the Simulation workspace and pick the material from the library."
+      "title": "Properties",
+      "text": "Pick the material from the library."
     },
     {
       "title": "Supports & Loads",
@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "A history of every feature, in the tree and in a timeline: right-click to edit, rename, suppress, roll back or delete; sketch on any plane or face with the view turning to it; extrude with the solid changing as you type; a grid of big and small squares that follows the zoom",
     "Numbered steps and full sketching and 3D modelling in the Datum window: each shape with its ways of drawing, trim, offset, fillet, patterns, dimensions and constraints; extrude, revolve, hole, fillet, chamfer, shell, press pull, move, mirror and pattern",
     "Results that move: play a result growing to its load, a nonlinear solve through its increments, a time history through time, or a mode swinging; pause, scrub and set the speed",
     "Basic modelling: extrude or revolve with a preview, sketch on a part's face, holes, fillets, chamfers and cuts, and parts moved, copied, mirrored and patterned, with exact volumes and masses",
@@ -87,49 +88,42 @@
   ],
   "roadmap": [
     {
-      "v": "0.7.2",
+      "v": "0.7.3",
       "title": "Analysis on the new solids",
       "when": "Next",
       "items": [
         "Supports and loads on picked faces",
-        "Meshing with Gmsh and every analysis step type",
-        "Results on the solids"
+        "Meshing with Gmsh in 3D, seen in 3D",
+        "Analysis steps and results laid out as the usual modules"
       ]
     },
     {
-      "v": "0.7.2",
+      "v": "0.7.4",
+      "title": "Harder examples",
+      "when": "Later",
+      "items": [
+        "Animations that play in every example",
+        "A tube crushed until it collapses",
+        "Mechanical, nonlinear, dynamics and structures examples"
+      ]
+    },
+    {
+      "v": "0.7.5",
       "title": "More analyses of solids",
       "when": "Later",
       "items": [
         "Natural frequencies, buckling, heat",
         "Yielding and large deformation",
-        "The results player"
+        "Frames and trusses from sketch lines"
       ]
     },
     {
-      "v": "0.7.3",
-      "title": "Frames and trusses",
-      "when": "Later",
-      "items": [
-        "Frames and trusses drawn from sketch lines, with sections and load cases"
-      ]
-    },
-    {
-      "v": "0.7.4",
-      "title": "Plane parts and the report",
-      "when": "Later",
-      "items": [
-        "Plane stress, plane strain and axisymmetric parts",
-        "The report and Help › Verification in the new program"
-      ]
-    },
-    {
-      "v": "0.7.5+",
+      "v": "0.8+",
       "title": "Crushing and impact",
       "when": "Later",
       "items": [
-        "Explicit dynamics",
-        "Contact"
+        "Folds in a crushed tube (contact)",
+        "Explicit dynamics"
       ]
     }
   ]
