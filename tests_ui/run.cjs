@@ -1221,6 +1221,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const cadCall = async () => p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1]).slice(-1)[0]);
   check("New Sketch › On the floor starts a sketch on XY and opens the sheet", JSON.stringify(await cadCall()) === JSON.stringify({ id: "sketch.create", params: { plane: "XY" } }) && !!(await p.$(".cadsheet svg")));
   check("the sheet fills the 3D view, not the window (0.7.1 bug)", await p.$eval(".cadsheet svg", el => { const r = el.getBoundingClientRect(), v = document.querySelector(".view3d").getBoundingClientRect(); return r.height > 300 && Math.abs(r.top - v.top) < 2 && Math.abs(r.width - v.width) < 2; }));
+  check("the sheet's grid has big squares with small squares inside (0.7.2, the user)", await p.evaluate(() => { const a = document.querySelectorAll(".cadsheet .gmaj").length, b = document.querySelectorAll(".cadsheet .gmin").length; return a >= 2 && b >= 3 * a; }));
   const shapes = await p.$$eval('.ribbon .grp:has(.cap:text-is("Create")) .rbw span', els => els.map(e => e.textContent));
   check("in a sketch the ribbon offers the six shapes", ["Line", "Arc", "Circle", "Rectangle", "Polygon", "Slot"].every(x => shapes.includes(x)), JSON.stringify(shapes));
   await p.click('.ribbon .rbw:has(.rb.bot span:text-is("Circle")) .rb.bot'); await p.waitForTimeout(100);
@@ -1250,6 +1251,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
 
   // 0.7.2: the history, its right-click menu, Edit Feature, the timeline; no browser menu.
   check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti span', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
+  check("a modelled solid has no 3D/Section bar and no section settings (0.7.2, the user)", !(await p.$('.planebar button:text-is("Section")')) && !(await p.textContent(".insp")).includes("Thickness (extruded") && !(await p.textContent(".insp")).includes("Layers through"));
+  await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))'); await p.waitForTimeout(150);
+  check("a feature picked in the history shows in the inspector", (await p.textContent(".insp header")).includes("Extrude1") && (await p.textContent(".insp")).includes("Place in the history"));
   await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))', { button: "right" }); await p.waitForTimeout(150);
   const fm = await p.$$eval(".menu button span", els => els.map(e => e.textContent));
   check("right-clicking a feature offers Edit Feature, Edit Sketch, Rename, Suppress, Roll Back Here and Delete (0.7.2, the user)", ["Edit Feature", "Edit Sketch", "Rename", "Suppress", "Roll Back Here", "Delete"].every(x => fm.includes(x)), JSON.stringify(fm));

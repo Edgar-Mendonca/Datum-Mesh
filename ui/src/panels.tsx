@@ -1,6 +1,6 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
-import { cad } from "./cad";
+import { cad, cadRun } from "./cad";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
@@ -438,29 +438,50 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
   </>;
 };
 
+/** A solid made with the modelling tools (0.7.2), or a blank one: no section, thickness or sweep. */
+export const cadSolid = (m: Model) => isSolidA(m.analysis) && !m.volume && !m.shapes.length && !m.parts?.length;
+
+/** A feature picked in the history (0.7.2): what it is, and what can be done with it. */
+const FeatureInsp = (p: { id: number }) => {
+  const f = () => cad()?.features.find(x => x.id === p.id), i = () => cad()?.features.findIndex(x => x.id === p.id) ?? -1;
+  const sk = () => cad()?.sketches.find(x => x.id === p.id);
+  return <Show when={f()}>{ft => <>
+    <table class="vmini"><tbody>
+      <tr><td>Kind</td><td class="r">{ft().kind}</td></tr>
+      <tr><td>Place in the history</td><td class="r">{i() + 1} of {cad()?.features.length}</td></tr>
+      <tr><td>State</td><td class="r">{ft().suppressed ? "suppressed" : rolledBack(i()) ? "rolled back" : ft().id === cad()?.active ? "open for drawing" : "in the model"}</td></tr>
+      <Show when={sk()}>{k => <><tr><td>Curves</td><td class="r">{k().curves.length}</td></tr><tr><td>Closed regions</td><td class="r">{k().profiles}</td></tr><tr><td>Constraints</td><td class="r">{k().status}</td></tr></>}</Show>
+    </tbody></table>
+    <p class="ibtns"><button class="btn sm" onClick={() => editFeature(ft())}>Edit {ft().kind === "Sketch" ? "Sketch" : "Feature"}</button>
+      <button class="btn sm" onClick={() => cadRun("timeline.suppress", { feature: ft().id })}>{ft().suppressed ? "Unsuppress" : "Suppress"}</button>
+      <button class="btn sm" onClick={() => cadRun("timeline.delete", { feature: ft().id }).then(ok => ok && setSelFeature(null))}>Delete</button></p>
+    <p class="hint">Right-click it in the tree or the timeline for more: Rename, Roll Back Here, Edit Sketch.</p>
+  </>}</Show>;
+};
+
 const ModelInsp = (p: { m: Model }) => {
   const settings = (s: object) => act({ SetSettings: { s: { analysis: p.m.analysis, units: p.m.units, grid: p.m.grid, thickness: p.m.thickness, mesh: p.m.mesh, ...s } } });
   return <>
     <Row label="Name"><input value={p.m.name} onChange={e => act({ SetMeta: { name: e.currentTarget.value, notes: p.m.notes } })} /></Row>
     <Row label="Analysis"><Choice v={p.m.analysis} set={v => settings({ analysis: v })} opts={ANALYSES} /></Row>
     <Row label="Units"><Choice v={p.m.units} set={v => settings({ units: v })} opts={[["SI", "SI (mm, kN, MPa)"], ["US", "US (in, kip, ksi)"]]} /></Row>
-    <NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} />
+    <Show when={!cadSolid(p.m)}><NumField label="Grid step" q="coord" v={p.m.grid} min={0} set={grid => grid > 0 && settings({ grid })} /></Show>
     <Show when={p.m.analysis === "space"}><label class="chk" title="At each height above the lowest, the nodes move together in the floor's plane: x and z together, turning about y together (a concrete floor that does not stretch in its plane)"><input type="checkbox" checked={!!p.m.rigid_floors} onChange={e => settings({ rigid_floors: e.currentTarget.checked })} />Rigid floors</label></Show>
     <Show when={p.m.volume}>{v => <Row label="Material of the mesh"><Choice v={String(v().material)} set={x => settings({ material: +x })} opts={p.m.materials.map(x => [String(x.id), x.name])} /></Row>}</Show>
-    <Show when={isSolidA(p.m.analysis) && !p.m.volume}><Row label="Solid"><Choice v={p.m.revolve ? "revolve" : "extrude"} set={v => settings({ revolve: v === "revolve" ? Math.PI * 2 : 0 })} opts={[["extrude", "Extruded along z"], ["revolve", "Revolved about the y axis"]]} /></Row>
+    <Show when={isSolidA(p.m.analysis) && !p.m.volume && !cadSolid(p.m)}><Row label="Solid"><Choice v={p.m.revolve ? "revolve" : "extrude"} set={v => settings({ revolve: v === "revolve" ? Math.PI * 2 : 0 })} opts={[["extrude", "Extruded along z"], ["revolve", "Revolved about the y axis"]]} /></Row>
       <Show when={p.m.revolve}><div class="iprow"><label>Turned through<span class="unit">°</span></label><input class="mono" value={num((p.m.revolve ?? 0) * 180 / Math.PI, 6)} onChange={numIn(v => v > 0 && v <= 360 && settings({ revolve: v * Math.PI / 180 }), () => num((p.m.revolve ?? 0) * 180 / Math.PI, 6))} /><span class="hint">360° for the whole part; less for a sector, with symmetry on its two cut faces (the back and front faces). The section is drawn right of the y axis (x is the radius).</span></div></Show></Show>
-    <Show when={!p.m.volume && (p.m.analysis === "stress" || p.m.analysis === "heat" || (isSolidA(p.m.analysis) && !p.m.revolve))}><NumField label={isSolidA(p.m.analysis) ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
+    <Show when={!p.m.volume && (p.m.analysis === "stress" || p.m.analysis === "heat" || (isSolidA(p.m.analysis) && !p.m.revolve && !cadSolid(p.m)))}><NumField label={isSolidA(p.m.analysis) ? "Thickness (extruded along z)" : "Thickness"} q="len" v={p.m.thickness} min={0} set={thickness => thickness > 0 && settings({ thickness })} /></Show>
     <Show when={p.m.analysis !== "heat"}><NumField label="Stress-free temperature" q="temp" v={p.m.t_ref ?? 293.15} set={t_ref => settings({ t_ref })} hint="Thermal stress comes from the change from this temperature." /></Show>
     <Show when={!isFrame(p.m.analysis) && !p.m.volume}>
       <h4>Mesh<Help k="mesh" /></h4>
       <NumField label="Element size" q="len" v={p.m.mesh.size} min={0} set={size => settings({ mesh: { ...p.m.mesh, size } })} hint="0 = automatic (a twenty-fifth of the part, finer for thin parts)." />
-      <Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row>
-      <Show when={isSolidA(p.m.analysis)}><div class="iprow"><label>Layers {p.m.revolve ? "round the turn" : "through the thickness"}</label><input class="mono" value={p.m.mesh.layers || "auto"} onChange={numIn(v => v >= 0 && v <= 128 && Number.isInteger(v) && settings({ mesh: { ...p.m.mesh, layers: v } }), () => p.m.mesh.layers || "auto")} /><span class="hint">0 = automatic (about one element size each{p.m.revolve ? ", at most 22.5° each" : ""}). The 2D mesh is swept {p.m.revolve ? "round the turn" : "through the thickness"} in layers of wedges.</span></div></Show>
+      <Show when={!cadSolid(p.m)}><Row label="Elements"><Choice v={String(p.m.mesh.order)} set={v => settings({ mesh: { ...p.m.mesh, order: +v } })} opts={[["2", "Quadratic, 6-node (accurate)"], ["1", "Linear, 3-node"]]} /></Row></Show>
+      <Show when={isSolidA(p.m.analysis) && !cadSolid(p.m)}><div class="iprow"><label>Layers {p.m.revolve ? "round the turn" : "through the thickness"}</label><input class="mono" value={p.m.mesh.layers || "auto"} onChange={numIn(v => v >= 0 && v <= 128 && Number.isInteger(v) && settings({ mesh: { ...p.m.mesh, layers: v } }), () => p.m.mesh.layers || "auto")} /><span class="hint">0 = automatic (about one element size each{p.m.revolve ? ", at most 22.5° each" : ""}). The 2D mesh is swept {p.m.revolve ? "round the turn" : "through the thickness"} in layers of wedges.</span></div></Show>
       <div class="iprow"><label>Smallest angle<span class="unit">°</span></label><input class="mono" value={p.m.mesh.min_angle} onChange={numIn(v => v >= 5 && v <= 33 && settings({ mesh: { ...p.m.mesh, min_angle: v } }), () => p.m.mesh.min_angle)} /><span class="hint">5° to 33°; 25° is a good balance.</span></div>
     </Show>
     <Row label="Notes"><textarea rows="4" value={p.m.notes} onChange={e => act({ SetMeta: { name: p.m.name, notes: e.currentTarget.value } })} /></Row>
     <table class="vmini"><tbody>
-      <Show when={isFrame(p.m.analysis)} fallback={p.m.volume ? <tr><td>Imported mesh</td><td class="r">{p.m.volume.elements.toLocaleString()} tetrahedra, {p.m.volume.faces.length} faces</td></tr> : <tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>
+      <Show when={isFrame(p.m.analysis)} fallback={cadSolid(p.m) ? <><tr><td>Solids</td><td class="r">{cad()?.bodies.length ?? 0}</td></tr><tr><td>Features</td><td class="r">{cad()?.features.length ?? 0}</td></tr></> : p.m.volume ? <tr><td>Imported mesh</td><td class="r">{p.m.volume.elements.toLocaleString()} tetrahedra, {p.m.volume.faces.length} faces</td></tr> : <tr><td>Shapes</td><td class="r">{p.m.shapes.filter(s => !s.hole).length} + {p.m.shapes.filter(s => s.hole).length} holes</td></tr>}>
         <tr><td>Nodes</td><td class="r">{p.m.nodes.length}</td></tr><tr><td>Members</td><td class="r">{p.m.members.length}</td></tr></Show>
       <tr><td>Supports</td><td class="r">{p.m.supports.length}</td></tr><tr><td>Loads</td><td class="r">{p.m.loads.length}</td></tr>
     </tbody></table>
@@ -480,6 +501,7 @@ export const Inspector = () => {
     if (sel().length > 1) return `${sel().length} items`;
     if (sel().length === 1) return itemName(mm, sel()[0]).split(" · ")[0];
     if (edgeSel()) return `Edge ${edgeSel()!.edge + 1}`;
+    const ft = cad()?.features.find(x => x.id === selFeature()); if (ft) return ft.name;
     return "Model";
   };
   return (
@@ -495,7 +517,8 @@ export const Inspector = () => {
           <Show when={one()?.load}>{l => <LoadInsp l={l()} m={mm()} />}</Show>
           <Show when={one()?.part}>{p => <PartInsp p={p()} m={mm()} />}</Show>
           <Show when={!sel().length && edgeSel()}>{e => <EdgeInsp m={mm()} e={e()} />}</Show>
-          <Show when={!sel().length && !edgeSel()}><ModelInsp m={mm()} /></Show>
+          <Show when={!sel().length && !edgeSel() && cad()?.features.some(x => x.id === selFeature())}><FeatureInsp id={selFeature()!} /></Show>
+          <Show when={!sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature())}><ModelInsp m={mm()} /></Show>
           <Show when={sel().length === 1}><p class="ibtns"><button class="btn sm" onClick={C.del}>Delete</button></p></Show>
         </>}</Show>
       </div>

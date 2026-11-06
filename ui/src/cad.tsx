@@ -266,9 +266,12 @@ export const SketchCanvas = () => {
     }
   };
   const gridLines = () => {
-    const g = step(), b = box(), lo = toMm(0, b.h), hi = toMm(b.w, 0), out: { x1: number; y1: number; x2: number; y2: number; major: boolean }[] = [];
-    for (let x = Math.ceil(lo[0] / g) * g; x <= hi[0]; x += g) { const px = toPx([x, 0])[0]; out.push({ x1: px, y1: 0, x2: px, y2: b.h, major: Math.abs(x / (g * 5) - Math.round(x / (g * 5))) < 1e-6 }); }
-    for (let y = Math.ceil(lo[1] / g) * g; y <= hi[1]; y += g) { const py = toPx([0, y])[1]; out.push({ x1: 0, y1: py, x2: b.w, y2: py, major: Math.abs(y / (g * 5) - Math.round(y / (g * 5))) < 1e-6 }); }
+    // Big squares with small squares inside (0.7.2): 1 → 5, 2 → 10, 5 → 50, as on the 3D floor.
+    const g = step(), mant = Math.round(g / 10 ** Math.floor(Math.log10(g) + 1e-9)), G = g * (mant === 5 ? 10 : 5);
+    const isMaj = (v: number) => Math.abs(v / G - Math.round(v / G)) < 1e-6;
+    const b = box(), lo = toMm(0, b.h), hi = toMm(b.w, 0), out: { x1: number; y1: number; x2: number; y2: number; major: boolean }[] = [];
+    for (let i = Math.ceil(lo[0] / g); i * g <= hi[0]; i++) { const x = i * g, px = toPx([x, 0])[0]; out.push({ x1: px, y1: 0, x2: px, y2: b.h, major: isMaj(x) }); }
+    for (let i = Math.ceil(lo[1] / g); i * g <= hi[1]; i++) { const y = i * g, py = toPx([0, y])[1]; out.push({ x1: 0, y1: py, x2: b.w, y2: py, major: isMaj(y) }); }
     return out;
   };
   const hint = () => {

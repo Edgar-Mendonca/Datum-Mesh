@@ -1,7 +1,7 @@
 // 3D frames without three.js (0.2.6): what the members are coloured by, the deflection scale, the
 // legend under the 3D view and the plane bar over it. The 3D view itself (view3d.tsx, with
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
-import { Show, createMemo, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, isSolidA, solidDisp } from "./api";
 import { solved, model, spaceRes, solidRes, stale, show, opts, setView, tool, act, setSel, solvedFor } from "./store";
 import { defaultLoad, defaultSupport } from "./panels";
@@ -87,6 +87,8 @@ export const PlaneBar = () => {
     const o = await act({ Add: { item: { [kind]: { id: 0, at: { on: "end", front }, kind: val } } } });
     if (o?.created.length) setSel(o.created);
   };
+  // A solid made with the modelling tools has no section to draw on (0.7.2): always the 3D view.
+  createEffect(() => { const m = model(); if (solid() && m && !m.volume && !m.parts?.length && !m.shapes.length && plane() !== "3d") setPlane("3d"); });
   const full = () => (model()?.revolve ?? 0) >= Math.PI * 2 - 1e-9;
   const placing = () => model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(tool()) : (tool().startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(tool())) || ["load:pressure", "load:traction"].includes(tool());
   return (<>
@@ -101,7 +103,7 @@ export const PlaneBar = () => {
         <Show when={placing()}><span class="grow" /><span class="muted">Click a face of a part in 3D to put it on</span></Show>
       </div>
     </Show>
-    <Show when={solid() && !model()?.volume && !model()?.parts?.length}>
+    <Show when={solid() && !model()?.volume && !model()?.parts?.length && model()?.shapes.length}>
       <div class="planebar">
         <span class="seg"><button classList={{ on: plane() === "3d" }} title="The solid in 3D: turn it with the left button, pan with the right, zoom with the wheel" onClick={() => { setPlane("3d"); }}>3D</button><button classList={{ on: plane() !== "3d" }} title="The part's section (x-y), drawn and edited as a plane part; it is extruded along z by the thickness" onClick={() => setPlane("xy")}>Section</button></span>
         <span class="muted">{model()?.revolve ? `revolved ${num(model()!.revolve! * 180 / Math.PI, 4)}° about the y axis` : `extruded ${fmt("len", model()?.thickness ?? 0)} along z`}</span>

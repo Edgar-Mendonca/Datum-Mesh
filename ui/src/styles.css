@@ -1053,8 +1053,8 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .cadover { position: absolute; inset: 0; z-index: 5; display: flex; }
 .cadsheet { position: relative; flex: 1; display: flex; background: color-mix(in srgb, var(--bg2) 35%, transparent); }
 .cadsheet svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; user-select: none; }
-.cadsheet .gmin { stroke: var(--line); stroke-width: .5; opacity: .45; }
-.cadsheet .gmaj { stroke: var(--line3, var(--line)); stroke-width: .8; }
+.cadsheet .gmin { stroke: var(--line); stroke-width: 1; }
+.cadsheet .gmaj { stroke: var(--line3); stroke-width: 1; }
 .cadsheet .axx { stroke: var(--crit); stroke-width: 1; opacity: .7; }
 .cadsheet .axy { stroke: var(--green); stroke-width: 1; opacity: .7; }
 .cadsheet .cv { fill: none; stroke: var(--text); stroke-width: 1.8; stroke-linejoin: round; }

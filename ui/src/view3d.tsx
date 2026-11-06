@@ -54,7 +54,7 @@ export const View3D = () => {
   const lineMats: LineMaterial[] = [];
   const size = () => [host?.clientWidth || 1, host?.clientHeight || 1];
   let frame = 0;
-  const draw = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; camera.updateMatrixWorld(); gizmo(); renderer.render(scene, cam()); }); };
+  const draw = () => { if (frame) return; frame = requestAnimationFrame(() => { frame = 0; camera.updateMatrixWorld(); gizmo(); adaptFloor(); renderer.render(scene, cam()); }); };
 
   // The stage (0.6.1): a floor grid fixed in size, fading into the distance, the axes (Z up, as
   // shown: red X, green Y, blue Z) and, while nothing is drawn or a plane is to be picked, the
@@ -69,21 +69,50 @@ export const View3D = () => {
     if (key !== stage.key || want > stage.L) { stage.key = key; stage.L = Math.max(want, key === stage.key ? stage.L : 0); }
     return stage.L;
   };
-  const floor = (L: number) => {
-    const step = nice(L / 15), n = Math.round(L / step), bg = new THREE.Color(css("--bg2")), minor = new THREE.Color(css("--line2")), major = new THREE.Color(css("--line3"));
+  // The floor grid (0.7.2, the user): big squares with small squares inside, sized to the zoom
+  // (a closer look gives smaller squares), centred under what the view looks at and fading out
+  // around it. Built in its own group, again only when the squares' size or place changes.
+  const floorGrp = new THREE.Group();
+  scene.add(floorGrp);
+  let floorOn = false, floorL = 1, floorKey = "";
+  const floor = (L: number) => { floorOn = true; floorL = L; };
+  const adaptFloor = () => {
+    floorGrp.visible = floorOn && !cadFacing(); // the sheet has its own grid
+    if (!floorOn) return;
+    const t = controls?.target ?? new THREE.Vector3(), d = Math.max(camera.position.distanceTo(t), 1e-4);
+    const minor = nice(d / 30), mant = Math.round(minor / 10 ** Math.floor(Math.log10(minor) + 1e-9)), major = minor * (mant === 5 ? 10 : 5);
+    const R = Math.ceil(Math.max(floorL, d * 3) / major) * major, Rm = Math.min(R, d * 1.2);
+    const cx = Math.round(t.x / major) * major, cz = Math.round(t.z / major) * major;
+    const bgc = css("--bg2"), c1 = css("--line2"), c2 = css("--line3");
+    const key = `${minor}|${cx}|${cz}|${R}|${bgc}|${c1}|${c2}`;
+    if (key === floorKey) return;
+    floorKey = key;
+    floorGrp.children.forEach(o => { const x = o as any; x.geometry?.dispose?.(); x.material?.dispose?.(); });
+    floorGrp.clear();
+    const bg = new THREE.Color(bgc), cMin = new THREE.Color(c2).lerp(bg, 0.35), cMaj = new THREE.Color(c2).lerp(new THREE.Color(css("--text")), 0.18);
     const pos: number[] = [], col: number[] = [];
-    const seg = (a: [number, number], b: [number, number], c: THREE.Color) => {
-      const k = 12;
-      for (let i = 0; i < k; i++) for (const t of [i / k, (i + 1) / k]) {
-        const x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t, f = Math.min(1, Math.hypot(x, z) / L) ** 1.6, cc = c.clone().lerp(bg, f);
+    // A line in short pieces, each coloured by its distance from the centre (out to `reach`).
+    const seg = (a: [number, number], b: [number, number], c: THREE.Color, reach: number) => {
+      const k = 16;
+      for (let i = 0; i < k; i++) for (const u of [i / k, (i + 1) / k]) {
+        const x = a[0] + (b[0] - a[0]) * u, z = a[1] + (b[1] - a[1]) * u, f = Math.min(1, Math.hypot(x - cx, z - cz) / reach) ** 1.5, cc = c.clone().lerp(bg, f);
         pos.push(x, 0, z); col.push(cc.r, cc.g, cc.b);
       }
     };
-    for (let i = -n; i <= n; i++) { const c = i % 5 === 0 ? major : minor; seg([i * step, -L], [i * step, L], c); seg([-L, i * step], [L, i * step], c); }
+    const nm = Math.ceil(Rm / minor), nM = Math.round(R / major), per = Math.round(major / minor);
+    for (let i = -nm; i <= nm; i++) {
+      if (i % per === 0) continue;
+      const v = i * minor;
+      seg([cx + v, cz - Rm], [cx + v, cz + Rm], cMin, Rm); seg([cx - Rm, cz + v], [cx + Rm, cz + v], cMin, Rm);
+    }
+    for (let i = -nM; i <= nM; i++) {
+      const v = i * major;
+      seg([cx + v, cz - R], [cx + v, cz + R], cMaj, R); seg([cx - R, cz + v], [cx + R, cz + v], cMaj, R);
+    }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3));
     g.setAttribute("color", new THREE.BufferAttribute(new Float32Array(col), 3));
-    world.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true })));
+    floorGrp.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ vertexColors: true })));
   };
   const axes = (L: number) => {
     const a = L * 0.12;
@@ -163,6 +192,7 @@ export const View3D = () => {
     lineMats.length = 0;
     world.traverse(o => { const x = o as any; x.geometry?.dispose?.(); (Array.isArray(x.material) ? x.material : [x.material]).forEach((mt: any) => mt?.dispose?.()); });
     world.clear();
+    floorOn = false;
   };
   const fat = (pts: number[], colours: number[] | null, colour: string, width: number, dashed = false) => {
     const g = new LineSegmentsGeometry();
