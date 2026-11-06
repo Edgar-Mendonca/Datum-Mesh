@@ -2,7 +2,7 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
-import { cad } from "./cad";
+import { cad, activeSketch, SketchCanvas, newSketch } from "./cad";
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -185,7 +185,7 @@ export const View3D = () => {
    * with Z up; the view keeps the engine's metres with y up: (X, Y, Z) mm → (X, Z, −Y) m. */
   const addCad = () => {
     const c = cad(); if (!c) return;
-    const sky = new THREE.Color(css("--sky")), ink = new THREE.Color(css("--text")), faint = new THREE.Color(css("--blue2"));
+    const sky = new THREE.Color(css("--solid")), ink = new THREE.Color(css("--text")), faint = new THREE.Color(css("--blue2"));
     const put = (a: Float32Array, i: number, x: number, y: number, z: number) => { a[i] = x * 1e-3; a[i + 1] = z * 1e-3; a[i + 2] = -y * 1e-3; };
     const lines = (pts: number[], col: THREE.Color) => { const a = new Float32Array(pts.length); for (let i = 0; i < pts.length; i += 3) put(a, i, pts[i], pts[i + 1], pts[i + 2]); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(a, 3)); world.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col }))); };
     for (const b of c.bodies) {
@@ -219,7 +219,7 @@ export const View3D = () => {
     const L = stageL(m);
     if (opts().grid) floor(L);
     axes(L);
-    if (picking() || (!m.shapes.length && !m.volume && !m.parts?.length && !sketch())) originPlanes(L);
+    if (picking() || (!m.shapes.length && !m.volume && !m.parts?.length && !sketch() && !cad()?.sketches.length && !cad()?.bodies.length)) originPlanes(L);
     renderer.localClippingEnabled = false;
     /** A section point a fraction f of the way along the sweep, in 3D. */
     const sweep = (p: number[], f: number): P3 => rev ? [p[0] * Math.cos(rev * f), p[1], p[0] * Math.sin(rev * f)] : [p[0], p[1], t * f];
@@ -815,7 +815,8 @@ export const View3D = () => {
   return (
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
       onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Escape") { if (sketchPick()) setSketchPick(false); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
-      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length}><div class="empty corner"><b>Build a part</b><span>A part is a sketch, extruded or revolved. New Sketch: pick a plane (a square at the origin) and the view turns to face it; draw the outline and holes with the Sketch tab, then Finish Sketch and set how far it is extruded or revolved in the Inspector. Add more parts the same way; where they touch they are tied.</span><button class="btn pri" onClick={() => import("./sketchmode").then(k => k.newSketch())}>New sketch</button></div></Show>
+      <Show when={activeSketch()}><div class="cadover" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onPointerMove={e => e.stopPropagation()}><SketchCanvas /></div></Show>
+      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length && !cad()?.sketches.length && !cad()?.bodies.length}><div class="empty corner"><b>Build a part</b><span>Start with Geometry › New Sketch on a plane, draw a closed shape (shapes drawn inside it become holes), then Finish Sketch and Extrude or Revolve it.</span><button class="btn pri" onClick={() => newSketch("XY")}>New sketch on the floor</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>Start a sketch: pick one of the three squares at the origin and the view turns square to it. Draw beams with clicks (each goes on from the last; nearly level or upright snaps level or upright) or typed points; move the plane with its offset; Finish Sketch, then sketch on the next plane. The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
       <SweepPanel />
       <Show when={picking()}><div class="draw3 pickbar" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>

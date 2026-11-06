@@ -6,7 +6,7 @@ use serde_json::{json, Value};
 fn main() {
     let mut out = serde_json::Map::new();
     let mut c = datum_cad::Cad::new();
-    let mut run = |c: &mut datum_cad::Cad, id: &str, p: Value| c.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"));
+    let run = |c: &mut datum_cad::Cad, id: &str, p: Value| c.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"));
     out.insert("empty".into(), serde_json::to_value(c.scene().expect("scene")).expect("json"));
     run(&mut c, "sketch.create", json!({"plane": "XY"}));
     out.insert("sketch".into(), serde_json::to_value(c.scene().expect("scene")).expect("json"));

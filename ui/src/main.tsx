@@ -1,11 +1,11 @@
 // Datum Mesh window: layout, sidebar, status bar, keyboard shortcuts, startup and recovery.
-import { activeSketch, SketchCanvas, cadLoad } from "./cad";
+import { cadLoad } from "./cad";
 import { render } from "solid-js/web";
 import { For, Show, Switch, Match, onMount, createEffect, on, lazy, Suspense } from "solid-js";
 import "./fonts.css";
 import { toD } from "./axes";
 import "./styles.css";
-import { invoke, listen, Out, Options, num, isFrame, isSolidA } from "./api";
+import { invoke, listen, Out, Options, num, isFrame } from "./api";
 import { sketch, out, setOut, view, setView, View, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, rawResults, stale, solving, partRes, meshed, modes, modeOn, closeDialog } from "./store";
 import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
@@ -100,7 +100,7 @@ const App = () => {
           <Show when={out()}>
             <Switch fallback={<div class="modelview"><Tree /><div class="center"><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
                 // Sketching (0.6.2): the 3D view behind, square to the plane, the sketch canvas over it.
-                <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={activeSketch() && isSolidA(model()?.analysis)}><div class="cadover"><SketchCanvas /></div></Show><Show when={(rawResults() || (modeOn() && modes())) && !sketch() && view() !== "mesh"}><div class="playwrap"><Suspense><Player /></Suspense></div></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
+                <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={(rawResults() || (modeOn() && modes())) && !sketch() && view() !== "mesh"}><div class="playwrap"><Suspense><Player /></Suspense></div></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Inspector /></div>}>
               <Match when={view() === "results"}><ResultsPage /></Match>
               <Match when={view() === "report"}><Suspense><ReportPage /></Suspense></Match>
             </Switch>

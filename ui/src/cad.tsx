@@ -85,12 +85,13 @@ export const SketchCanvas = () => {
     const g = step(), p = toMm(x, y); return [Math.round(p[0] / g) * g, Math.round(p[1] / g) * g];
   };
   onMount(() => {
-    const ro = new ResizeObserver(() => setBox({ w: svg.clientWidth || 800, h: svg.clientHeight || 600 }));
+    const measure = () => { const r = svg.getBoundingClientRect(); setBox({ w: r.width || 800, h: r.height || 600 }); };
+    const ro = new ResizeObserver(measure); measure();
     ro.observe(svg); onCleanup(() => ro.disconnect());
     // A new sketch opens about 200 mm across, or fitted to what it already has.
     const pts = (sk()?.curves ?? []).flatMap(c => c.pts);
-    if (pts.length) { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys); setView({ s: Math.min(8, 0.6 * Math.min((svg.clientWidth || 800) / (w || 1), (svg.clientHeight || 600) / (h || 1))), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2 }); }
-    else setView({ s: Math.max(1, (svg.clientWidth || 800) / 220), cx: 0, cy: 0 });
+    if (pts.length) { const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]); const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys); setView({ s: Math.min(8, 0.6 * Math.min(box().w / (w || 1), box().h / (h || 1))), cx: (Math.max(...xs) + Math.min(...xs)) / 2, cy: (Math.max(...ys) + Math.min(...ys)) / 2 }); }
+    else setView({ s: Math.max(1, box().w / 220), cx: 0, cy: 0 });
     const key = (e: KeyboardEvent) => { if (e.key === "Escape") { if (draft().length) setDraft([]); else pickTool(null); } };
     window.addEventListener("keydown", key); onCleanup(() => window.removeEventListener("keydown", key));
   });

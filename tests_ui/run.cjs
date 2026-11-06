@@ -8,6 +8,8 @@ const fs = require("fs"), http = require("http"), path = require("path");
 const NAMES = fs.readFileSync(path.join(__dirname, "../tools/commercial-names.txt"), "utf8").split("\n").map(l => l.trim().toLowerCase()).filter(l => l && !l.startsWith("#"));
 const named = text => { const t = text.toLowerCase(); return NAMES.filter(n => new RegExp(`(^|[^\\p{L}\\p{N}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "u").test(t)); };
 const root = path.join(__dirname, "../ui/dist"), fix = JSON.parse(fs.readFileSync(path.join(__dirname, "fixture.json")));
+// 0.7.1: scenes from the real geometry engine (cargo run -p datum-cad --example fixture > tests_ui/cad.json).
+fix.cad = JSON.parse(fs.readFileSync(path.join(__dirname, "cad.json")));
 // Results in the fixture are packed as the shell sends them; unpacked here for the checks' counts.
 const unpack = v => {
   if (Array.isArray(v)) return v.map(unpack);
@@ -45,6 +47,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
       core: {
         invoke: async (c, a) => {
           window.__calls.push([c, a]);
+          if (c === "cad_scene") return window.__cad ?? f.cad.empty;
+          if (c === "cad_run") { const id = a.id; const k = id === "sketch.create" ? "sketch" : id === "sketch.finish" ? "finished" : id === "sketch.cancel" ? "empty" : id.startsWith("sketch.") ? "drawn" : id === "solid.extrude" ? "extruded" : id === "solid.revolve" ? "revolved" : null; if (k) window.__cad = f.cad[k]; return window.__cad ?? f.cad.empty; }
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
           if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat, bend45: f.bend45, tubeplates: f.tubeplates }[a.example] ?? f.frame; return window.__cur; }
@@ -915,8 +919,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   await p.click('.sketchbar button:has-text("Finish Sketch")'); await p.waitForTimeout(300);
   check("Finish Sketch goes back to the 3D view with the part selected", (await p.$$(".sketchstage")).length === 0 && (await p.$$(".view3d canvas")).length === 1 && (await p.textContent(".insp")).includes("Edit Sketch"));
-  // New Sketch on a plane makes a new part there; Cancel takes it away again.
-  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(200);
+  // New Part (0.6 parts; New Sketch is the geometry engine's from 0.7.1) on a plane makes a new part there; Cancel takes it away again.
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Part")'); await p.waitForTimeout(200);
   await p.click('.view3d .pickbar .seg button:text-is("Side")'); await p.waitForTimeout(400);
   const np = (await ops()).reverse().find(o => o?.Add?.item?.Part);
   check("New Sketch on the Side plane adds a part turned onto it", !!np && Math.abs(np.Add.item.Part.turn[1] - Math.PI / 2) < 1e-9 && (await p.textContent(".sketchbar")).includes("Side plane"), JSON.stringify(np));
@@ -966,7 +970,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   // The Extrude panel: distance 30 mm, both ways.
   await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(150);
-  await p.click('.ribbon button:has-text("Extrude")'); await p.waitForTimeout(200);
+  await p.click('.ribbon button[title^="Extrude or revolve the selected part"]'); await p.waitForTimeout(200);
   check("Extrude opens its panel over the 3D view, with a preview drawn", (await p.$$(".view3d .sweeppanel")).length === 1 && (await p.textContent(".view3d .sweeppanel")).includes("Top plate"));
   await p.fill(".view3d .sweeppanel input.num", "30"); await p.press(".view3d .sweeppanel input.num", "Tab");
   await p.selectOption(".view3d .sweeppanel select", "both"); await p.waitForTimeout(100);
@@ -974,7 +978,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const sw = (await ops0())?.Set?.item?.Part;
   check("OK sets the part's depth and where its sweep starts (both ways: half back)", sw && sw.id === topId && Math.abs(sw.depth - 0.03) < 1e-12 && Math.abs(sw.from + 0.015) < 1e-12 && (await p.$$(".view3d .sweeppanel")).length === 0, JSON.stringify(sw));
   // Sketch on the top plate's upper face; Cut Through.
-  await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(200);
+  await p.click('.ribbon button:has-text("New Part")'); await p.waitForTimeout(200);
   await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(400);
   const fp = (await ops()).reverse().find(o => o?.Add?.item?.Part)?.Add.item.Part;
   // The plate's front face is at y = 0.11, facing +y: the new part sits there, its z along +y.
@@ -1198,6 +1202,36 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   for (const v of ["Mesh", "Results", "Report", "Model"]) { await p.click(`.side button[title="${v}"]`); await p.waitForTimeout(100); }
   for (const k of ["Print", "Options", "Roadmap", "Updates", "Export", "Home"]) { await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100); await p.click(`.bs aside button:has-text("${k}")`); await p.waitForTimeout(200); }
   check("print preview draws the model", true);
+  // 0.7.1: sketch and 3D tools by the geometry engine, in the Datum window.
+  await open("blank-solid");
+  await p.click('.tree .step:nth-of-type(1) > .sthead');
+  check("a blank 3D solid offers New Sketch, Extrude and Revolve on the Geometry ribbon", (await p.$$('.ribbon button[title^="Start a sketch on a plane"]')).length === 1 && (await p.$$('.ribbon button[title^="Extrude the last sketch"]')).length === 1 && (await p.$$('.ribbon button[title^="Turn the last sketch"]')).length === 1);
+  await p.click('.ribbon button[title^="Start a sketch on a plane"]'); await p.waitForTimeout(100);
+  await p.click('.menu button:has-text("On the floor")'); await p.waitForTimeout(300);
+  const cadCall = async () => p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1]).slice(-1)[0]);
+  check("New Sketch › On the floor starts a sketch on XY and opens the sheet", JSON.stringify(await cadCall()) === JSON.stringify({ id: "sketch.create", params: { plane: "XY" } }) && !!(await p.$(".cadsheet svg")));
+  check("the sheet fills the 3D view, not the window (0.7.1 bug)", await p.$eval(".cadsheet svg", el => { const r = el.getBoundingClientRect(), v = document.querySelector(".view3d").getBoundingClientRect(); return r.height > 300 && Math.abs(r.top - v.top) < 2 && Math.abs(r.width - v.width) < 2; }));
+  const shapes = await p.$$eval('.ribbon .grp:has(.cap:text-is("Draw")) .rbw span', els => els.map(e => e.textContent));
+  check("in a sketch the ribbon offers the six shapes", ["Line", "Arc", "Circle", "Rectangle", "Polygon", "Slot"].every(x => shapes.includes(x)), JSON.stringify(shapes));
+  await p.click('.ribbon .rbw:has(.rb.bot span:text-is("Circle")) .rb.bot'); await p.waitForTimeout(100);
+  check("Circle ▾ lists its three ways", JSON.stringify(await p.$$eval(".menu button", els => els.map(e => e.textContent.replace("✓", "").trim()))) === JSON.stringify(["Circle · centre and radius", "Circle · 2 points", "Circle · 3 points"]), JSON.stringify(await p.$$eval(".menu button", els => els.map(e => e.textContent))));
+  await p.click('.menu button:has-text("3 points")'); await p.waitForTimeout(100);
+  const csb = await p.$eval(".cadsheet svg", el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; });
+  await p.mouse.click(csb.x + csb.w / 2, csb.y + csb.h / 2); await p.mouse.click(csb.x + csb.w / 2 + 100, csb.y + csb.h / 2);
+  check("a 3-point circle waits for its third point", (await cadCall()).id === "sketch.create" && (await p.$$(".cadsheet .dpt")).length === 2);
+  await p.mouse.click(csb.x + csb.w / 2 + 50, csb.y + csb.h / 2 - 50); await p.waitForTimeout(200);
+  const cc3 = await cadCall();
+  check("the third click draws it: sketch.circle.three_point with three points in mm", cc3.id === "sketch.circle.three_point" && ["p0", "p1", "p2"].every(k => Array.isArray(cc3.params[k]) && cc3.params[k].length === 2), JSON.stringify(cc3));
+  check("the circle button keeps the way last used", (await p.$eval('.ribbon .rbw:has(.rb.bot span:text-is("Circle")) .rb.top', el => el.title)).startsWith("Circle · 3 points"));
+  check("the sketch's curves from the engine are drawn on the sheet", (await p.$$(".cadsheet .cv")).length === fix.cad.drawn.sketches[0].curves.filter(c => !c.construction).length + fix.cad.drawn.sketches[0].curves.filter(c => c.construction).length);
+  await p.click('.ribbon button[title^="Keep the sketch"]'); await p.waitForTimeout(300);
+  check("Finish Sketch closes the sheet", (await cadCall()).id === "sketch.finish" && !(await p.$(".cadsheet")));
+  await p.click('.ribbon button[title^="Extrude the last sketch"]'); await p.waitForTimeout(400);
+  const ex = await cadCall();
+  check("Extrude extrudes the last sketch by the distance typed", ex.id === "solid.extrude" && ex.params.distance === 20 && ex.params.direction === "positive" && ex.params.sketch === fix.cad.finished.sketches[0].id, JSON.stringify(ex));
+  check("the tree lists the solid with its faces, and step 1 is done", (await p.textContent(".tree .step:nth-of-type(1)")).includes("17 faces") && await p.$eval(".tree .step:nth-of-type(1)", el => el.classList.contains("done")));
+  await open("portal");
+
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100);
   await p.click('.bs aside button:has-text("Print")'); await p.waitForTimeout(300);
   check("print preview draws the model and the report", (await p.$$(".pprev .printdiag line")).length === pf.members.length && (await p.textContent(".pprev")).includes("Structural steel"));

@@ -2,7 +2,7 @@
 :root {
   --bg: #F2F3EF; --bg2: #FFFFFF; --panel: #F8F8F5; --panel2: #ECEDE8; --side: #F3F4F0; --line: #D3D7D6; --line2: #E6E8E5; --line3: #B9BFC2;
   --text: #0C1A2B; --text2: #3B4859; --muted: #5B6878; --navy: #0C1A2B; --blue: #B83250; --blue2: #9C2944; --accent2: #D9667F;
-  --bar: #D9667F; --sky: #F1B3C1; --pale: #FBEBEF; --sel: #F6DCE3; --sel2: #EDBAC7; --hl: #FFF4D6;
+  --solid: #B4C6DC; --bar: #D9667F; --sky: #F1B3C1; --pale: #FBEBEF; --sel: #F6DCE3; --sel2: #EDBAC7; --hl: #FFF4D6;
   --amber: #B7791F; --crit: #C0392B; --green: #1F7A4D;
   --ok-bg: #DDF2E5; --ok-fg: #1F7A4D; --warn-bg: #FBEFD5; --warn-fg: #8A5A00; --warn-line: #E8C77A; --err-bg: #FBE3E0; --err-fg: #9B2C2C;
   --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
@@ -11,7 +11,7 @@
 :root[data-theme="dark"] {
   --bg: #0B1119; --bg2: #101823; --panel: #0D141E; --panel2: #16212E; --side: #0D141E; --line: #223041; --line2: #1A2533; --line3: #2F4157;
   --text: #E6EDF5; --text2: #B8C4D2; --muted: #8D9AAB; --navy: #E6EDF5; --blue: #EF7A93; --blue2: #F39AAE; --accent2: #EF7A93;
-  --bar: #EF7A93; --sky: #6B2033; --pale: #2A1218; --sel: #3A1820; --sel2: #5A2433; --hl: #3A3015;
+  --solid: #50627A; --bar: #EF7A93; --sky: #6B2033; --pale: #2A1218; --sel: #3A1820; --sel2: #5A2433; --hl: #3A3015;
   --amber: #F0B450; --crit: #F2766B; --green: #4CC38A;
   --ok-bg: #12301F; --ok-fg: #4CC38A; --warn-bg: #3A2C10; --warn-fg: #F0B450; --warn-line: #6B5321; --err-bg: #3A1716; --err-fg: #F2766B;
   color-scheme: dark;
@@ -1051,8 +1051,8 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 
 /* 0.7.1: the geometry engine's sketch sheet over the 3D view. */
 .cadover { position: absolute; inset: 0; z-index: 5; display: flex; }
-.cadsheet { position: relative; flex: 1; display: flex; background: color-mix(in srgb, var(--bg2) 94%, transparent); }
-.cadsheet svg { flex: 1; cursor: crosshair; user-select: none; }
+.cadsheet { position: relative; flex: 1; display: flex; background: var(--bg2); }
+.cadsheet svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; user-select: none; }
 .cadsheet .gmin { stroke: var(--line); stroke-width: .5; opacity: .6; }
 .cadsheet .gmaj { stroke: var(--line3, var(--line)); stroke-width: .8; }
 .cadsheet .axx { stroke: var(--crit); stroke-width: 1; opacity: .7; }
