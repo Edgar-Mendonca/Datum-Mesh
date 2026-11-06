@@ -539,6 +539,11 @@ export const View3D = () => {
     for (const p of (m.volume ?? m.assembly)?.surface.nodes ?? []) box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2]));
     // The geometry engine's solids (0.7.2): mm with Z up.
     if (isSolidA(m.analysis)) for (const b of cad()?.bodies ?? []) for (let i = 0; i < b.pos.length; i += 3) box.expandByPoint(new THREE.Vector3(b.pos[i] * 1e-3, b.pos[i + 2] * 1e-3, -b.pos[i + 1] * 1e-3));
+    // ...and their sketches, so a sketch just finished is in view before its solid is made.
+    if (isSolidA(m.analysis)) for (const k of cad()?.sketches ?? []) for (const cv of k.curves) for (const [x, y] of cv.pts) {
+      const q = [0, 1, 2].map(j => k.origin[j] + x * k.x[j] + y * k.y[j]);
+      box.expandByPoint(new THREE.Vector3(q[0] * 1e-3, q[2] * 1e-3, -q[1] * 1e-3));
+    }
     return box;
   };
   const fit = (keepDir = false, from?: P3) => {
@@ -611,7 +616,8 @@ export const View3D = () => {
     const box = boxOf(m), c = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
     const rad = box.isEmpty() ? stageL(m) * 0.1 : Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
     const dir = new THREE.Vector3(1, 0.75, 1.3).normalize();
-    glide(c.clone().addScaledVector(dir, rad / Math.sin(camera.fov * Math.PI / 360) * 1.15), c, new THREE.Vector3(0, 1, 0), undefined, 600);
+    camera.near = Math.min(camera.near, rad / 100); camera.far = Math.max(camera.far, rad * 200); camera.updateProjectionMatrix();
+    glide(c.clone().addScaledVector(dir, rad / Math.sin(camera.fov * Math.PI / 360) * 1.15), c, new THREE.Vector3(0, 1, 0), () => { camera.near = rad / 100; camera.far = rad * 200; camera.updateProjectionMatrix(); draw(); }, 600);
   }, { defer: true }));
   // Turning away from the sketch: the usual camera starts from the sketch's side, a little turned,
   // framing the whole model, so the sketch stays in sight.
