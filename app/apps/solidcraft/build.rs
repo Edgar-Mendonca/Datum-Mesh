@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rc = out.join("solidcraft.rc");
     let icon_line = format!("1 ICON \"{}\"\n", copy.display().to_string().replace('\\', "/"));
     std::fs::write(&rc, format!("{icon_line}{}", version_resource(&std::env::var("CARGO_PKG_VERSION")?)))?;
-    embed_resource::compile_for(&rc, ["solidcraft"], embed_resource::NONE).manifest_required()?;
+    embed_resource::compile_for(&rc, ["datum-mesh"], embed_resource::NONE).manifest_required()?;
     Ok(())
 }
 
