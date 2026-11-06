@@ -324,7 +324,7 @@ export const TOOLS3: Record<string, { label: string; icon: string; hint: string;
   chamfer3: { label: "Chamfer", icon: "chamfer", hint: "Click an edge to bevel it", needs: "edge", run: h => ["solid.chamfer", { edges: [h.edge!.at], distance: chamfer3D() }] },
   shell3: { label: "Shell", icon: "solid", hint: "Click the face to open: the solid is hollowed out to the wall thickness", needs: "face", run: h => ["solid.shell", { faces: [h.face!.at], thickness: shellT(), body: h.face!.body }] },
   press3: { label: "Press Pull", icon: "up", hint: "Click a face to push it out (or in, with a negative distance)", needs: "face", run: h => ["solid.press_pull", { face: h.face!.at, distance: pressD() }] },
-  sketchface: { label: "Sketch on a face", icon: "new", hint: "Click a flat face of a solid to sketch on it", needs: "face", run: h => ["sketch.create", { plane: { face: h.face!.at, body: h.face!.body } }] },
+  sketchface: { label: "Sketch on a face", icon: "new", hint: "Click a flat face of a solid to sketch on it", needs: "face", run: h => ["sketch.create", { plane: { face: h.face!.at, body: h.face!.body, index: h.face!.index } }] },
 };
 export const pick3 = (t: string | null) => { setCad3Tool(t); pickTool(null); };
 export const cad3Click = async (h: CadHit) => {

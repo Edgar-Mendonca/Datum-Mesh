@@ -276,7 +276,7 @@ mod tests {
         let xmin = c.scene().unwrap().bodies[0].pos.chunks(3).map(|p| p[0]).fold(f32::MAX, f32::min);
         assert!((xmin + 5.0).abs() < 1e-3, "press pull moved the end face out by 5: {xmin}");
         // Sketch on the top face, a circle, extrude a boss from it.
-        run(&mut c, "sketch.create", json!({"plane": {"face": [5.0, 15.0, 10.0], "body": "Body1"}}));
+        run(&mut c, "sketch.create", json!({"plane": {"face": [5.0, 15.0, 10.0]}}));
         let sk = c.scene().unwrap().sketches.last().unwrap().origin;
         assert!((sk[2] - 10.0).abs() < 1e-6, "the sketch lies on the top face: {sk:?}");
         run(&mut c, "sketch.finish", json!({}));
