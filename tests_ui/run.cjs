@@ -618,7 +618,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await open("yield3d"); await p.waitForTimeout(400);
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   const ysd = await p.$$eval(".dlg table.steps select >> nth=0", ss => [...ss[0].options].map(o => o.textContent)).catch(() => []);
-  check("a 3D solid's steps offer linear, elastic-plastic or large deformation", ysd.length === 3 && ysd[1].startsWith("Elastic-plastic") && ysd[2].startsWith("Large deformation") && !(await p.textContent(".dlg")).includes("parts come later"), ysd.join("|"));
+  check("a 3D solid's steps offer linear, elastic-plastic, crushing and collapse (0.7.4), or large deformation", ysd.length === 4 && ysd[1].startsWith("Elastic-plastic") && ysd[2].startsWith("Crushing and collapse") && ysd[3].startsWith("Large deformation") && !(await p.textContent(".dlg")).includes("parts come later"), ysd.join("|"));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await p.evaluate(() => { window.__solveKey = "yield3d_results"; document.activeElement?.blur?.(); });
   await p.keyboard.press("F5"); await p.waitForTimeout(600);

@@ -1862,6 +1862,342 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
     Ok(Plastic3 { u, kint, lam, stress, peeq: vec![], path, snaps })
 }
 
+/// The consistent tangent of the radial return (Simo and Hughes, *Computational Inelasticity*,
+/// Box 3.2), C_IJKL, for total strain `eps` (xx, yy, zz, xy, yz, zx; tensor) from history `st`:
+/// κ 1⊗1 + 2Gθ (I − ⅓ 1⊗1) − 2G θ̄ n⊗n, with θ = 1 − 3GΔε̄/q and θ̄ = 3G/(3G + H) − (1 − θ) past
+/// yield (θ = 1, θ̄ = 0 while elastic).
+fn j2_tangent(mt: &crate::solids::j2::J2, eps: [f64; 6], st: &crate::solids::j2::State6) -> [[[[f64; 3]; 3]; 3]; 3] {
+    let g = mt.e / (2.0 * (1.0 + mt.nu));
+    let kappa = mt.e / (3.0 * (1.0 - 2.0 * mt.nu));
+    let ee: [f64; 6] = std::array::from_fn(|i| eps[i] - st.ep[i]);
+    let tr = ee[0] + ee[1] + ee[2];
+    // The trial deviator as a 3 × 3 tensor.
+    let dev = [[2.0 * g * (ee[0] - tr / 3.0), 2.0 * g * ee[3], 2.0 * g * ee[5]], [2.0 * g * ee[3], 2.0 * g * (ee[1] - tr / 3.0), 2.0 * g * ee[4]], [2.0 * g * ee[5], 2.0 * g * ee[4], 2.0 * g * (ee[2] - tr / 3.0)]];
+    let norm = (0..3).flat_map(|i| (0..3).map(move |j| (i, j))).map(|(i, j)| dev[i][j] * dev[i][j]).sum::<f64>().sqrt();
+    let q = (1.5f64).sqrt() * norm;
+    let f = q - (mt.fy + mt.h * st.alpha);
+    let (theta, thetab) = if mt.fy > 0.0 && f > 0.0 && q > 0.0 {
+        let dg = f / (3.0 * g + mt.h);
+        let th = 1.0 - 3.0 * g * dg / q;
+        (th, 3.0 * g / (3.0 * g + mt.h) - (1.0 - th))
+    } else {
+        (1.0, 0.0)
+    };
+    let d = |i: usize, j: usize| if i == j { 1.0 } else { 0.0 };
+    let mut c = [[[[0.0; 3]; 3]; 3]; 3];
+    for i in 0..3 {
+        for j in 0..3 {
+            for k in 0..3 {
+                for l in 0..3 {
+                    let mut v = kappa * d(i, j) * d(k, l) + 2.0 * g * theta * (0.5 * (d(i, k) * d(j, l) + d(i, l) * d(j, k)) - d(i, j) * d(k, l) / 3.0);
+                    if thetab != 0.0 {
+                        v -= 2.0 * g * thetab * dev[i][j] * dev[k][l] / (norm * norm);
+                    }
+                    c[i][j][k][l] = v;
+                }
+            }
+        }
+    }
+    c
+}
+
+/// Yielding with large movements of a meshed solid (0.7.4): total Lagrangian, small strains and
+/// large rotations (Bathe, *Finite Element Procedures*, §6.6): the Green–Lagrange strain E into
+/// the J2 radial return with each material's yield stress and hardening, giving the second
+/// Piola–Kirchhoff stress S; P = F S; Newton's method with the consistent tangent (material part
+/// from Simo and Hughes, Box 3.2, and the initial-stress part). The loads and the prescribed
+/// movements (`presc`, at held unknowns) grow together in increments; with prescribed movements
+/// the path records the force they take (a crush or pull test), so a collapse shows as the force
+/// falling while the movement goes on.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn plastic_large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], presc: &[f64], penalties: &[(u32, usize, [f64; 3])], kpen: f64, inc: usize, warnings: &mut Vec<String>) -> Result<Plastic3, String> {
+    use crate::solids::hyper::M3;
+    use crate::solids::j2::{State6, J2};
+    let nn = cl.nn;
+    let n = sys.n;
+    struct Pt {
+        g: Vec<[f64; 3]>,
+        w: f64,
+        mat: J2,
+    }
+    let mut pts = vec![];
+    let mut els: Vec<(Vec<usize>, f64, (usize, usize))> = cl.els.iter().map(|en| (en.clone(), 0.0, (usize::MAX, 0))).collect();
+    for (el, g, w, k) in &cl.pts {
+        let mt = &m.materials[*k];
+        let e = &mut els[*el];
+        e.1 += w;
+        e.2 = (e.2 .0.min(pts.len()), pts.len() + 1);
+        pts.push(Pt { g: g.clone(), w: *w, mat: J2 { e: mt.e, nu: mt.nu, fy: mt.fy, h: mt.hardening } });
+    }
+    if !pts.iter().any(|p| p.mat.fy > 0.0) {
+        warnings.push("No material has a yield strength, so nothing yields: the answer is elastic with large movements.".into());
+    }
+    let moved = presc.iter().any(|v| *v != 0.0);
+    let fnorm = sys.f.iter().zip(held).filter(|(_, h)| !**h).map(|(v, _)| v * v).sum::<f64>().sqrt();
+    if fnorm == 0.0 && !moved {
+        return Err("There are no loads on the solid and no face moved, so nothing moves. Add a load, or move a face (Supports & Loads › Move a Face).".into());
+    }
+    let mut kp: Vec<(usize, usize, f64)> = vec![];
+    for &(_, q, nv) in penalties {
+        for a in 0..3 {
+            for b in 0..3 {
+                kp.push((3 * q + a, 3 * q + b, kpen * nv[a] * nv[b]));
+            }
+        }
+    }
+    let fgrad = |p: &Pt, en: &[usize], u: &[f64]| -> M3 {
+        let mut f = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        for (i, &q) in en.iter().enumerate() {
+            for a in 0..3 {
+                for c in 0..3 {
+                    f[a][c] += u[3 * q + a] * p.g[i][c];
+                }
+            }
+        }
+        f
+    };
+    let det = |f: &M3| f[0][0] * (f[1][1] * f[2][2] - f[1][2] * f[2][1]) - f[0][1] * (f[1][0] * f[2][2] - f[1][2] * f[2][0]) + f[0][2] * (f[1][0] * f[2][1] - f[1][1] * f[2][0]);
+    let green = |f: &M3| -> [f64; 6] {
+        let c = |i: usize, j: usize| (0..3).map(|k| f[k][i] * f[k][j]).sum::<f64>();
+        [0.5 * (c(0, 0) - 1.0), 0.5 * (c(1, 1) - 1.0), 0.5 * (c(2, 2) - 1.0), 0.5 * c(0, 1), 0.5 * c(1, 2), 0.5 * c(2, 0)]
+    };
+    let sym = |s: [f64; 6]| -> M3 { [[s[0], s[3], s[5]], [s[3], s[1], s[4]], [s[5], s[4], s[2]]] };
+    let mut hist = vec![State6::default(); pts.len()];
+    // Internal forces, the tangent (lower half) when asked and each point's history after the
+    // return, at movements u from the history `h`; None where an element turns inside out.
+    let eval = |u: &[f64], h: &[State6], tangent: bool| -> Option<(Vec<f64>, Vec<(usize, usize, f64)>, Vec<State6>)> {
+        let mut fi = vec![0.0; n];
+        for &(i, j, v) in &kp {
+            fi[i] += v * u[j];
+        }
+        let mut kt = vec![];
+        let mut out = h.to_vec();
+        for (en, _, (g0, g1)) in &els {
+            let nd = en.len();
+            let mut buf = if tangent { vec![0.0; 9 * nd * nd] } else { vec![] };
+            for (k, p) in pts[*g0..*g1].iter().enumerate() {
+                let pi = g0 + k;
+                let f = fgrad(p, en, u);
+                if !(det(&f) > 0.0) {
+                    return None;
+                }
+                let e = green(&f);
+                let (s6, st) = p.mat.stress6(e, &h[pi]);
+                out[pi] = st;
+                let s = sym(s6);
+                let pk: M3 = std::array::from_fn(|a| std::array::from_fn(|j| (0..3).map(|i| f[a][i] * s[i][j]).sum::<f64>()));
+                for (i, &q) in en.iter().enumerate() {
+                    for a in 0..3 {
+                        fi[3 * q + a] += p.w * (0..3).map(|c| pk[a][c] * p.g[i][c]).sum::<f64>();
+                    }
+                }
+                if tangent {
+                    let c = j2_tangent(&p.mat, e, &h[pi]);
+                    // A[a][J][b][L] = δab S_LJ + F_aI C_IJKL F_bK.
+                    let mut at = [[0.0; 9]; 9];
+                    for a in 0..3 {
+                        for jj in 0..3 {
+                            for b in 0..3 {
+                                for l in 0..3 {
+                                    let mut v = if a == b { s[l][jj] } else { 0.0 };
+                                    for i in 0..3 {
+                                        for kk in 0..3 {
+                                            v += f[a][i] * c[i][jj][kk][l] * f[b][kk];
+                                        }
+                                    }
+                                    at[3 * a + jj][3 * b + l] = v;
+                                }
+                            }
+                        }
+                    }
+                    for j in 0..nd {
+                        let mut ag = [[[0.0; 3]; 3]; 3];
+                        for a in 0..3 {
+                            for c2 in 0..3 {
+                                for b in 0..3 {
+                                    ag[a][c2][b] = (0..3).map(|l| at[3 * a + c2][3 * b + l] * p.g[j][l]).sum();
+                                }
+                            }
+                        }
+                        for i in 0..nd {
+                            for a in 0..3 {
+                                for b in 0..3 {
+                                    buf[(3 * i + a) * 3 * nd + 3 * j + b] += p.w * (0..3).map(|c2| p.g[i][c2] * ag[a][c2][b]).sum::<f64>();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if tangent {
+                for i in 0..3 * nd {
+                    for j in 0..3 * nd {
+                        let (r, c) = (3 * en[i / 3] + i % 3, 3 * en[j / 3] + j % 3);
+                        if r >= c && buf[i * 3 * nd + j] != 0.0 {
+                            kt.push((r, c, 0.5 * (buf[i * 3 * nd + j] + buf[j * 3 * nd + i])));
+                        }
+                    }
+                }
+            }
+        }
+        if tangent {
+            kt.extend(kp.iter().filter(|e| e.0 >= e.1));
+            compact(&mut kt);
+        }
+        Some((fi, kt, out))
+    };
+    // The direction the faces are moved in, for the force they take.
+    let dsum: [f64; 3] = std::array::from_fn(|c| (0..nn).map(|q| presc[3 * q + c]).sum::<f64>());
+    let dl = (dsum[0] * dsum[0] + dsum[1] * dsum[1] + dsum[2] * dsum[2]).sqrt();
+    let dhat = if dl > 0.0 { dsum.map(|v| v / dl) } else { [0.0; 3] };
+    let dmax = (0..nn).map(|q| (presc[3 * q].powi(2) + presc[3 * q + 1].powi(2) + presc[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max);
+    let reaction = |fi: &[f64]| -> f64 { (0..nn).filter(|&q| presc[3 * q] != 0.0 || presc[3 * q + 1] != 0.0 || presc[3 * q + 2] != 0.0).map(|q| (0..3).map(|c| fi[3 * q + c] * dhat[c]).sum::<f64>()).sum() };
+    let scale = if fnorm > 0.0 { fnorm } else { 1.0 };
+    let mut u = vec![0.0; n];
+    let mut u_prev: Option<(Vec<f64>, f64)> = None;
+    let mut lam = 0.0;
+    let first = 1.0 / inc.max(1) as f64;
+    let mut step = first;
+    let mut path = crate::plane::PartPath { load: vec![0.0], umax: vec![0.0], peeq: vec![0.0], ..Default::default() };
+    let mut force = vec![0.0];
+    let mut snaps = vec![];
+    let nodal = |u: &[f64], h: &[State6]| -> (Vec<[f64; 6]>, Vec<f64>) {
+        let (mut acc, mut pe, mut ws) = (vec![[0.0; 6]; nn], vec![0.0; nn], vec![0.0; nn]);
+        for (en, vol, (g0, g1)) in &els {
+            let (mut s, mut a, mut w) = ([0.0; 6], 0.0, 0.0);
+            for (k, p) in pts[*g0..*g1].iter().enumerate() {
+                let f = fgrad(p, en, u);
+                let jd = det(&f).max(1e-300);
+                let (s6, st) = p.mat.stress6(green(&f), &h[g0 + k]);
+                let sm = sym(s6);
+                // Cauchy: F S Fᵀ / J.
+                let fs: M3 = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|l| f[i][l] * sm[l][j]).sum::<f64>()));
+                let cs: M3 = std::array::from_fn(|i| std::array::from_fn(|j| (0..3).map(|l| fs[i][l] * f[j][l]).sum::<f64>() / jd));
+                let c6 = [cs[0][0], cs[1][1], cs[2][2], cs[0][1], cs[1][2], cs[2][0]];
+                for r in 0..6 {
+                    s[r] += p.w * c6[r];
+                }
+                a += p.w * st.alpha;
+                w += p.w;
+            }
+            for &q in en {
+                for r in 0..6 {
+                    acc[q][r] += s[r] / f64::max(w, 1e-300) * vol;
+                }
+                pe[q] += a / f64::max(w, 1e-300) * vol;
+                ws[q] += vol;
+            }
+        }
+        (acc.iter().zip(&ws).map(|(a, w)| a.map(|x| x / w.max(1e-300))).collect(), pe.iter().zip(&ws).map(|(a, w)| a / w.max(1e-300)).collect())
+    };
+    while lam < 1.0 - 1e-12 {
+        let target = (lam + step).min(1.0);
+        // Start from the path so far carried on (the last two converged states), the moved
+        // unknowns set where they go.
+        let mut ut = match &u_prev {
+            Some((up, lp)) if lam > *lp => (0..n).map(|i| u[i] + (u[i] - up[i]) * (target - lam) / (lam - lp)).collect::<Vec<f64>>(),
+            _ => u.clone(),
+        };
+        for i in 0..n {
+            if held[i] {
+                ut[i] = target * presc[i];
+            }
+        }
+        if eval(&ut, &hist, false).is_none() {
+            ut = u.clone();
+            for i in 0..n {
+                if held[i] {
+                    ut[i] = target * presc[i];
+                }
+            }
+        }
+        let mut done = None;
+        let mut best = f64::INFINITY;
+        let mut tol_ref = scale;
+        for it in 1..=40 {
+            let Some((fi, kt, _)) = eval(&ut, &hist, true) else { break };
+            if moved {
+                // With movements prescribed, measure the out-of-balance against the forces they take.
+                tol_ref = tol_ref.max(fi.iter().zip(held).filter(|(_, h)| **h).map(|(v, _)| v * v).sum::<f64>().sqrt());
+            }
+            let r: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { target * sys.f[i] - fi[i] }).collect();
+            let rn = r.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if !rn.is_finite() {
+                break;
+            }
+            if rn <= 1e-8 * tol_ref || (rn <= 1e-6 * tol_ref && rn > 0.5 * best) {
+                done = Some(it);
+                break;
+            }
+            if it > 6 && rn > 10.0 * best {
+                break;
+            }
+            best = best.min(rn);
+            let mut ks = System::lower(n);
+            ks.k = kt;
+            let du = match ks.factor(held, &[]) {
+                Ok(f) => f.solve(&r),
+                Err(_) => match ks.solve_many(held, &[&r]) {
+                    Ok((x, _)) => x.into_iter().next().unwrap_or_default(),
+                    Err(_) => break,
+                },
+            };
+            let mut s = 1.0;
+            loop {
+                let trial: Vec<f64> = (0..n).map(|i| if held[i] { ut[i] } else { ut[i] + s * du[i] }).collect();
+                if eval(&trial, &hist, false).is_some() || s < 1e-3 {
+                    ut = trial;
+                    break;
+                }
+                s /= 2.0;
+            }
+        }
+        match done {
+            Some(it) => {
+                let (fi, _, h2) = eval(&ut, &hist, false).ok_or("The solid turned inside out.")?;
+                hist = h2;
+                u_prev = Some((u.clone(), lam));
+                u = ut;
+                lam = target;
+                path.iterations += it;
+                let (st, pe) = nodal(&u, &hist);
+                let f_now = if moved { reaction(&fi).abs() } else { lam };
+                force.push(f_now);
+                path.load.push(lam);
+                path.umax.push(if moved { lam * dmax } else { (0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max) });
+                let pmax = pe.iter().copied().fold(0.0, f64::max);
+                path.peeq.push(pmax);
+                if path.first_yield.is_none() && pmax > 0.0 {
+                    path.first_yield = Some(lam);
+                }
+                snaps.push(crate::engine::frames::Snap { at: lam, u: u.iter().map(|&x| x as f32).collect(), v: st.iter().map(|s| crate::engine::frames::vm(s) as f32).collect() });
+                if it < 8 {
+                    step = (step * 1.5).min(first);
+                }
+            }
+            None => {
+                step /= 2.0;
+                if step < first * 1e-3 {
+                    warnings.push(format!("The solid would not settle beyond about {:.1} % of the {}: it may have collapsed or be squeezed inside out there. The results shown are at the last state it reached.", lam * 100.0, if moved { "movement" } else { "load" }));
+                    break;
+                }
+            }
+        }
+    }
+    path.reached = lam >= 1.0 - 1e-12;
+    if moved {
+        path.force = force;
+        if let Some((i, fmax)) = path.force.iter().enumerate().max_by(|a, b| a.1.total_cmp(b.1)) {
+            if i + 1 < path.force.len() && path.force.last().copied().unwrap_or(0.0) < 0.95 * fmax {
+                warnings.push(format!("Collapse: the force peaked at {:.4} kN at {:.3} mm of movement and fell after it.", fmax / 1e3, path.umax[i] * 1e3));
+            }
+        }
+    }
+    let (kint, _, _) = eval(&u, &hist, false).ok_or("The solid turned inside out.")?;
+    let (stress, peeq) = nodal(&u, &hist);
+    Ok(Plastic3 { u, kint, lam, stress, peeq, path, snaps })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

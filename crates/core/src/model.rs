@@ -632,6 +632,11 @@ pub enum StepKind {
     /// Large deformation of 3D solids (0.5.2): rubber and large movements, every material a
     /// neo-Hookean solid, the load in increments.
     Large,
+    /// Yielding with large movements of meshed solids (0.7.4): small strains, large rotations,
+    /// each material's yield stress and hardening; loads and moved faces in increments (crushing,
+    /// collapse).
+    #[serde(rename = "largeplastic")]
+    LargePlastic,
 }
 
 /// An analysis step (0.4.0): a load, its factor, and how it is solved. Nonlinear steps carry on
@@ -1114,7 +1119,7 @@ impl Model {
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
                 (LoadKind::Mass { m }, Target::Node { .. }) => m.is_finite() && *m >= 0.0,
-                (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
+                (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. } | Target::Face { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 _ => return Err("That load cannot go there.".into()),
             };

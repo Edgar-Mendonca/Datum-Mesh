@@ -28,6 +28,9 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
             None => crate::solve(&cases::select(m, which)?),
         };
     }
+    if m.analysis != Analysis::Solid && m.steps.iter().any(|s| s.kind == StepKind::LargePlastic) {
+        return Err("Yielding with large movements is for 3D solids (modelled or imported).".into());
+    }
     if m.analysis != Analysis::Solid && m.steps.iter().any(|s| s.kind == StepKind::Large) {
         return Err("Large-deformation steps (rubber) are for 3D solids in this release; frames use large-deflection steps.".into());
     }
@@ -66,6 +69,12 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
         let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
         if st.kind == StepKind::Large {
             return crate::solid::solve_large(&mm, st.increments as usize).map(Results::Solid);
+        }
+        if st.kind == StepKind::LargePlastic {
+            if mm.volume.is_none() || !mm.parts.is_empty() {
+                return Err("Yielding with large movements is solved on meshed solids: model the solid (step 1) or import its mesh.".into());
+            }
+            return crate::solids::tet::solve_large_plastic(&mm, st.increments as usize).map(Results::Solid);
         }
         return crate::solid::solve_plastic(&mm, st.increments as usize).map(Results::Solid);
     }

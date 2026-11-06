@@ -46,8 +46,10 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
 export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement" };
+/** On a solid, a settlement is a face moved by a set amount (0.7.4). */
+const MOVED = "Moved face";
 /** A load's name: a force spread over a solid's face is a face force (0.7.3). */
-export const loadName = (l: { kind: { kind: string }; at: Target }) => l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : LOAD_NAMES[l.kind.kind];
+export const loadName = (l: { kind: { kind: string }; at: Target }) => l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : l.kind.kind === "settlement" && l.at.on === "face" ? MOVED : LOAD_NAMES[l.kind.kind];
 
 const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
@@ -97,7 +99,7 @@ const Row2 = (p: { icon: string; label: string; sub?: string; run?: () => void; 
 );
 const SUP_ICON: Record<string, string> = { fixed: "fixed", pinned: "pinned", rollerx: "roller", rollery: "roller", roller: "roller", symmetry: "symmetry", spring: "spring", temperature: "temp", hold: "roller" };
 const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle" };
-const STEP_NAME: Record<string, string> = { linear: "Linear (small deflections)", newton: "Large deflection", arc: "Past limit loads", spectrum: "Response spectrum", history: "Time history", large: "Large deformation" };
+const STEP_NAME: Record<string, string> = { linear: "Linear (small deflections)", newton: "Large deflection", arc: "Past limit loads", spectrum: "Response spectrum", history: "Time history", large: "Large deformation", largeplastic: "Crushing and collapse" };
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
 // 0.7.1: the tree is laid out in numbered steps, in the order a model is made; each step's
@@ -185,7 +187,7 @@ export const Tree = () => {
           <Show when={heat()}><Row2 icon="solve" label="Steady heat conduction" sub="one solve" /></Show>
           <Show when={!heat()}><Branch t="Steps" icon="list" n={(mm().steps ?? []).length || undefined} help="steps">
             <Show when={(mm().steps ?? []).length} fallback={<Row2 icon="solve" label="Static, linear" sub="one solve" run={stepsDialog} />}>
-              <For each={mm().steps!}>{(s, i) => <Row2 icon={s.kind === "spectrum" || s.kind === "history" ? "wave" : s.kind === "linear" ? "solve" : "curve"} label={s.name || `Step ${i() + 1}`} sub={`${STEP_NAME[s.kind] ?? s.kind}${s.kind === "newton" || s.kind === "arc" || s.kind === "large" ? ` · ${plural(s.increments, "increment")}` : ""}`} run={stepsDialog} />}</For></Show></Branch></Show>
+              <For each={mm().steps!}>{(s, i) => <Row2 icon={s.kind === "spectrum" || s.kind === "history" ? "wave" : s.kind === "linear" ? "solve" : "curve"} label={s.name || `Step ${i() + 1}`} sub={`${STEP_NAME[s.kind] ?? s.kind}${s.kind === "newton" || s.kind === "arc" || s.kind === "large" || s.kind === "largeplastic" ? ` · ${plural(s.increments, "increment")}` : ""}`} run={stepsDialog} />}</For></Show></Branch></Show>
           </Step>
           <Step n={6} t="Results" done={!!results() && !stale()} why={results() ? "Out of date: solve again (F5)" : "Solve (F5) to see the results"}>
           <Branch t="Results" icon="contour" help="results" mark={results() ? { ok: !stale(), why: "The model changed since it was solved: solve again (F5)" } : null}>
@@ -436,7 +438,7 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
         <NumField label="Moves y" q="len" v={f("settlement").dy} set={dy => put({ ...f("settlement"), dy })} hint="Down is negative." /></>}>
         <Vec3 pre="Moves " q="len" v={[f("settlement").dx, f("settlement").dy, f("settlement").dz ?? 0]} set={v => put({ ...f("settlement"), dx: v[0], dy: v[1], dz: v[2] })} hint="Down is −Z." />
       </Show>
-      <p class="hint">The support moves by this much in the directions it holds; the frame follows, and the forces it takes to make it are in the results.</p></Show>
+      <p class="hint">{p.l.at.on === "face" ? "The face is moved by this much in the directions it moves (free in the others, like a smooth platen; add a support on it to hold those too). With a crushing step it is moved in increments and the force it takes is drawn against the movement." : "The support moves by this much in the directions it holds; the frame follows, and the forces it takes to make it are in the results."}</p></Show>
     <Show when={k().kind === "mass"}><NumField label="Mass" q="mass" v={f("mass").m} min={0} set={m => m >= 0 && put({ kind: "mass", m })} hint="Moves with the node in every direction, for natural frequencies and dynamics. It is in every load case and adds no weight to a static solve (use loads for that)." /></Show>
   </>;
 };

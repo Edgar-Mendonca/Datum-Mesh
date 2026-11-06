@@ -2468,6 +2468,57 @@ fn sketch() -> Vec<Check> {
     v
 }
 
+/// Benchmark 34 (0.7.4): yielding with large movements of meshed solids (total Lagrangian, small
+/// strains, large rotations; Bathe §6.6). A slender cantilever bent far with no yield, against the
+/// elastica (the large-rotation part); and a bar pulled past yield by moving its end face, the
+/// force it takes against the exact answer of this formulation, F·S·A₀ = λ σy A₀ (the plastic part
+/// with a moved face).
+fn yielding_large() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    use crate::solids::tet::{grid, TetMesh};
+    let mut v = vec![];
+    let doc = |ms: TetMesh, e: f64, nu: f64| { let mut d = Doc::new(Model::new(Analysis::Solid)); d.m.materials[0].e = e; d.m.materials[0].nu = nu; d.m.materials[0].rho = 0.0; d.m.materials[0].fy = 0.0; d.m.volume = Some(Box::new(ms)); d };
+    let on = |d: &Doc, c: usize, val: f64| Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|q| (q[c] - val).abs() < 1e-9).expect("face") };
+    let sup = |d: &mut Doc, at: Target, kind: SupportKind| { add_id(d, Item::Support(Support { id: 0, at, kind })); };
+    let load = |d: &mut Doc, at: Target, kind: LoadKind| { add_id(d, Item::Load(Load { case: 0, id: 0, at, kind })); };
+    let step = |d: &mut Doc, n: u32| { add(d, Op::Add { item: Item::Step(Step { kind: StepKind::LargePlastic, increments: n, ..Default::default() }) }); };
+    let solid = |d: &Doc| { let Ok(crate::Results::Solid(r)) = crate::solve_for(&d.m, None) else { panic!("{:?}", crate::solve_for(&d.m, None).err()) }; r };
+    // A steel cantilever bent far by a dead end load (PL²/EI = 2), nothing yields: the elastica.
+    {
+        let (e, l, h) = (200e9, 1.0, 0.05f64);
+        let ei = e * h * h.powi(3) / 12.0;
+        let mut d = doc(grid([40, 2, 2], 2, |q| [l * q[0], h * q[1], h * q[2]]).unwrap(), e, 0.3);
+        let root = on(&d, 0, 0.0);
+        sup(&mut d, root, SupportKind::Fixed);
+        let tip = on(&d, 0, l);
+        load(&mut d, tip, LoadKind::Traction { fx: 0.0, fy: -2.0 * ei / (l * l), fz: 0.0, total: true });
+        step(&mut d, 10);
+        let r = solid(&d);
+        let (dv, _, _) = elastica_tip(2.0);
+        let i = r.volume.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, [l, h / 2.0, h / 2.0]).total_cmp(&crate::model::dist3(*b.1, [l, h / 2.0, h / 2.0]))).unwrap().0;
+        v.push(check(34, "Cantilever bent far (PL²/EI = 2), yielding with large movements, nothing yields", "Tip deflection (elastica)", "len", dv * l, -r.volume.disp[i][1], 0.01, "Elastica of a cantilever with a dead end load (Bisshopp and Drucker 1945)"));
+    }
+    // A bar 1 × 0.1 × 0.1 m pulled 1 % past its length by its end face, perfectly plastic.
+    {
+        let fy = 250e6;
+        let mut d = doc(grid([8, 2, 2], 2, |q| [q[0], 0.1 * q[1], 0.1 * q[2]]).unwrap(), 200e9, 0.3);
+        d.m.materials[0].fy = fy;
+        for (c, val) in [(0, 0.0), (1, 0.0), (2, 0.0)] {
+            let t = on(&d, c, val);
+            sup(&mut d, t, SupportKind::Symmetry);
+        }
+        let end = on(&d, 0, 1.0);
+        load(&mut d, end, LoadKind::Settlement { dx: 0.01, dy: 0.0, dz: 0.0 });
+        step(&mut d, 10);
+        let r = solid(&d);
+        let p = r.path.as_ref().expect("path");
+        let name = "Bar pulled 1 % past its length by its end face, perfectly plastic, yielding with large movements";
+        v.push(check(34, name, "Force at the end, λ σy A₀", "force", 1.01 * fy * 0.01, p.force.last().copied().unwrap_or(0.0), 1e-4, "Uniaxial stress, total Lagrangian (S at yield, P = F S), exact"));
+        v.push(check(34, name, "Equivalent plastic strain (Green–Lagrange less yield)", "ratio", 0.5 * (1.01f64 * 1.01 - 1.0) - fy / 200e9, r.field("peeq").max, 1e-3, "Uniaxial stress, total Lagrangian, exact"));
+    }
+    v
+}
+
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
     v.extend(simply_supported());
@@ -2502,11 +2553,19 @@ pub fn run() -> Vec<Check> {
     v.extend(space_large());
     v.extend(assembly());
     v.extend(modelling());
+    v.extend(yielding_large());
     v
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn yielding_with_large_movements_on_its_own() {
+        for r in super::yielding_large() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
     #[test]
     fn every_benchmark_is_within_its_tolerance() {
         let rows = super::run();

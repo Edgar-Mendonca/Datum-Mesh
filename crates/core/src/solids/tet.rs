@@ -722,6 +722,8 @@ struct Built {
     warnings: Vec<String>,
     /// Each element's (λ, μ, fy, ρ).
     el_props: Vec<[f64; 4]>,
+    /// Faces moved by set amounts (0.7.4): the movement of each held unknown (m), zero elsewhere.
+    presc: Vec<f64>,
 }
 
 fn build(m: &Model) -> Result<Built, String> {
@@ -815,7 +817,9 @@ fn build(m: &Model) -> Result<Built, String> {
                 }
             }
             (LoadKind::Gravity { .. }, _) if l.at == Target::Body => {}
-            _ => warnings.push("A load that does not act on an imported mesh (only pressure, face forces and gravity do) was left out.".into()),
+            // A face moved by a set amount (0.7.4): its nodes held there (set below).
+            (LoadKind::Settlement { .. }, Some(_)) => {}
+            _ => warnings.push("A load that does not act on a meshed solid (only pressure, face forces, gravity and moved faces do) was left out.".into()),
         }
     }
     let mut applied = Tally::default();
@@ -889,7 +893,33 @@ fn build(m: &Model) -> Result<Built, String> {
             }
         }
     }
-    Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, el_props })
+    // Faces moved by set amounts (0.7.4): every node on them held and moved by that much.
+    let mut presc = vec![0.0; 3 * nn];
+    for l in &m.loads {
+        if let (LoadKind::Settlement { dx, dy, dz }, Some(fs)) = (&l.kind, face(&l.at)) {
+            let mut nodes = vec![];
+            for (_, _, ns) in points(fs) {
+                for (q, _) in ns {
+                    nodes.push(q);
+                }
+            }
+            nodes.sort_unstable();
+            nodes.dedup();
+            // Only the directions it is moved in are held (a frictionless platen); hold the face
+            // in the others too with a support on it.
+            let dirs = [*dx != 0.0, *dy != 0.0, *dz != 0.0];
+            for &q in &nodes {
+                for (c, d) in [*dx, *dy, *dz].into_iter().enumerate() {
+                    if dirs[c] {
+                        held[3 * q + c] = true;
+                        presc[3 * q + c] = d;
+                    }
+                }
+            }
+            sup_nodes.push((l.id, nodes.into_iter().map(|q| (q, dirs)).collect()));
+        }
+    }
+    Ok(Built { sys, held, sup_nodes, penalties, kpen, applied, warnings, el_props, presc })
 }
 
 /// Solve a 3D solid given as an imported tetrahedral mesh.
@@ -922,26 +952,54 @@ fn cloud(m: &Model, ms: &TetMesh) -> Result<super::solid::Cloud, String> {
 /// Solve an imported mesh linearly (`nl` None), elastic-plastic (increments, false) or through
 /// large deformation (increments, true) (0.5.7: the swept solids' nonlinear solvers, on tetrahedra).
 pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, String> {
+    solve_mode(m, nl.map(|(i, big)| (i, if big { Nl::Large } else { Nl::Plastic })))
+}
+
+/// How a meshed solid is solved past the linear (0.7.4).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Nl {
+    /// Yielding, small movements.
+    Plastic,
+    /// Large movements of rubber-like (neo-Hookean) materials.
+    Large,
+    /// Yielding with large movements (small strains, large rotations): crushing and collapse.
+    LargePlastic,
+}
+
+/// Yielding with large movements of a meshed solid (0.7.4), the load and any moved faces in
+/// `increments` steps.
+pub fn solve_large_plastic(m: &Model, increments: usize) -> Result<SolidResults, String> {
+    solve_mode(m, Some((increments.max(1), Nl::LargePlastic)))
+}
+
+pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("Imported meshes are solved as 3D solids.".into());
     }
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
     let nn = ms.nodes.len();
-    let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, el_props } = build(m)?;
-    let large = nl.is_some_and(|x| x.1);
+    let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, el_props, presc } = build(m)?;
+    let large = nl.is_some_and(|x| x.1 != Nl::Plastic);
+    if presc.iter().any(|v| *v != 0.0) && nl.is_some_and(|x| x.1 != Nl::LargePlastic) {
+        return Err("A moved face is solved linearly or with a 'Large deformation with yielding' step; change the step (Solve › Steps).".into());
+    }
     let mut pl = None;
     let (u, stats) = match nl {
         Some((inc, big)) => {
             let t0 = std::time::Instant::now();
             let cl = cloud(m, ms)?;
-            let p = if big { super::solid::large3(m, &cl, &sys, &held, &penalties, kpen, inc, &mut warnings)? } else { super::solid::plastic3(m, &cl, &sys, &held, inc, &mut warnings)? };
+            let p = match big {
+                Nl::Large => super::solid::large3(m, &cl, &sys, &held, &penalties, kpen, inc, &mut warnings)?,
+                Nl::Plastic => super::solid::plastic3(m, &cl, &sys, &held, inc, &mut warnings)?,
+                Nl::LargePlastic => super::solid::plastic_large3(m, &cl, &sys, &held, &presc, &penalties, kpen, inc, &mut warnings)?,
+            };
             for v in sys.f.iter_mut() {
                 *v *= p.lam;
             }
             applied = Tally::default();
             for q in 0..nn {
                 let x = ms.nodes[q];
-                let at = if big { [x[0] + p.u[3 * q], x[1] + p.u[3 * q + 1], x[2] + p.u[3 * q + 2]] } else { x };
+                let at = if big != Nl::Plastic { [x[0] + p.u[3 * q], x[1] + p.u[3 * q + 1], x[2] + p.u[3 * q + 2]] } else { x };
                 applied.add(at, [sys.f[3 * q], sys.f[3 * q + 1], sys.f[3 * q + 2]]);
             }
             let u = p.u.clone();
@@ -949,7 +1007,7 @@ pub fn solve_with(m: &Model, nl: Option<(usize, bool)>) -> Result<SolidResults, 
             pl = Some(p);
             (u, crate::engine::sparse::Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros: nz, residual: 0.0, ms: t0.elapsed().as_secs_f64() * 1e3 })
         }
-        None => sys.solve(&held, &vec![0.0; 3 * nn]).map_err(|e| format!("{e} A 3D solid needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?,
+        None => sys.solve(&held, &presc).map_err(|e| format!("{e} A 3D solid needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?,
     };
     if stats.residual > 1e-8 {
         warnings.push(format!("The supports barely hold the solid (solved only to {:.0e}): it can probably turn or slide.", stats.residual));

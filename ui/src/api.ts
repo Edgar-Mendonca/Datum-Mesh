@@ -42,7 +42,7 @@ export interface Case { id: number; name: string }
 export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
 export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
 /** An analysis step (0.4.0). */
-export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large";
+export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large" | "largeplastic";
 export interface Step { id: number; name: string; kind: StepKind; load: Which | null; factor: number; increments: number; pieces: number; monitor: number | null; along: [number, number, number]; spectrum: [number, number][]; damping: number; modes: number; cqc: boolean; time: [number, number][]; ground: boolean; dt: number; duration: number }
 /** A dynamic solution (0.4.2): a spectrum's modes, or a time history's record. */
 export interface ModeRow { f: number; period: number; sa: number; gamma: number; mass: number; share: number }
@@ -105,7 +105,7 @@ export interface Field { key: string; v: number[]; min: number; max: number; at_
 export interface PlaneReaction { support: number; fx: number; fy: number }
 export interface PlaneResults { kind: "plane"; mesh: Mesh; draw: [number, number, number][]; disp: Pt[]; fields: Field[]; elem: Field[]; reactions: PlaneReaction[]; applied: [number, number, number]; reacted: [number, number, number]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[]; path?: PartPath }
 /** An elastic-plastic solve's record (0.5.0). */
-export interface PartPath { load: number[]; umax: number[]; peeq: number[]; first_yield: number | null; reached: boolean; iterations: number }
+export interface PartPath { load: number[]; umax: number[]; peeq: number[]; first_yield: number | null; reached: boolean; iterations: number; /** Faces moved by set amounts (0.7.4): the force they take (N). */ force?: number[] }
 export interface Flow { id: number; q: number }
 export interface HeatResults { kind: "heat"; mesh: Mesh; draw: [number, number, number][]; fields: Field[]; elem: Field[]; supports: Flow[]; loads: Flow[]; imbalance: number; stats: SolveStats; warnings: string[] }
 /** 3D frames (0.2.4): six movements per node, forces along and moments about both section axes. */

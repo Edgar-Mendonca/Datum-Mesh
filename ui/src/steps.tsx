@@ -71,7 +71,7 @@ export const analysesFor = (a: string): [StepKind, string, string][] => {
   const lin: [StepKind, string, string] = ["linear", "Static, linear", "Small movements, elastic materials: most design checks"];
   if (a === "frame") return [lin, ["newton", "Large deflection", "Second-order (P-delta) effects and large rotations, in increments"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
   if (a === "space") return [lin, ["newton", "Large deflection", "Large rotations and second-order effects, in increments (P-delta with plates)"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length (no plates)"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
-  if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"]];
+  if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["largeplastic", "Crushing and collapse", "Yielding with large movements: a tube crushed, a part bent until it folds (meshed solids)"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"]];
   if (["stress", "strain", "axi"].includes(a)) return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"]];
   return [];
 };
@@ -94,7 +94,7 @@ export const stepsDialog = () => openDialog(() => {
   /** Parts (0.5.0) and 3D solids (0.5.1): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
   const part = () => ["stress", "strain", "axi", "solid"].includes(m().analysis);
   const solid = () => m().analysis === "solid";
-  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["large", "Large deformation (rubber, large movements)"] as [StepKind, string]] : [])] : KINDS;
+  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["largeplastic", "Crushing and collapse (yielding with large movements)"] as [StepKind, string], ["large", "Large deformation (rubber, large movements)"] as [StepKind, string]] : [])] : KINDS;
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
       <table class="tbl cases steps"><thead><tr><th>Name</th><th>How</th><th>Load</th><th class="r">Factor</th><th class="r">Increments</th><th class="r">Pieces</th><th>Curve follows</th><th /></tr></thead><tbody>
@@ -135,7 +135,7 @@ export const stepsDialog = () => openDialog(() => {
         <label class="tbl2">Spectral acceleration (m/s²) against period (s): one “period, acceleration” a line, straight between, flat beyond the ends<textarea class="mono" rows={5} value={fromTable(s.spectrum)} onChange={e => { const t = toTable(e.currentTarget.value); if (t) set(s, { spectrum: t }); else e.currentTarget.value = fromTable(s.spectrum); }} /></label>
       </Show>
     </div>}</For>
-    <Show when={part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add an elastic-plastic step</button> <Show when={solid()}><button class="btn sm" onClick={() => add("large")}>Add a large-deformation step</button> </Show><button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
+    <Show when={part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add an elastic-plastic step</button> <Show when={solid()}><button class="btn sm" onClick={() => add("largeplastic")}>Add a crushing step</button> <button class="btn sm" onClick={() => add("large")}>Add a large-deformation step</button> </Show><button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
       <Show when={solid()}><p class="muted small">A large-deformation step follows the solid through large movements and strains: every material is a neo-Hookean solid with its own E and ν (rubber: a few MPa, ν 0.49 or so; steel stays elastic, however far it bends). The loads keep their size and direction as it moves. The shape is drawn true to size.</p></Show>
       <p class="muted small">An elastic-plastic step puts the load on in increments; where the von Mises stress reaches a material's yield strength it yields, hardening as its Hardening says (0 for perfectly plastic). If the part cannot carry the whole load it collapses, and the solve says at what share of it. Small strains.</p></Show>
     <Show when={!part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button> <button class="btn sm" onClick={() => add("spectrum")}>Add a response spectrum</button> <button class="btn sm" onClick={() => add("history")}>Add a time history</button></p></Show>
@@ -153,7 +153,8 @@ export const partPathDialog = () => openDialog(() => {
   const W = 520, H = 280, P = 48;
   const plot = () => {
     const x = p(); if (!x) return null;
-    const xs = x.umax.map(v => toU("len", v)), ys = x.load;
+    // Faces moved by set amounts (0.7.4): the force they take against their movement.
+    const xs = x.umax.map(v => toU("len", v)), ys = x.force?.length ? x.force.map(v => toU("force", v)) : x.load;
     const x1 = Math.max(...xs, 1e-12), y1 = Math.max(...ys, 1e-12);
     const sx = (v: number) => P + v / x1 * (W - 2 * P), sy = (v: number) => H - P - v / y1 * (H - 2 * P);
     return { d: xs.map((v, i) => `${i ? "L" : "M"}${sx(v).toFixed(1)} ${sy(ys[i]).toFixed(1)}`).join(""), sx, sy, x1, y1, xs, ys };
@@ -164,9 +165,9 @@ export const partPathDialog = () => openDialog(() => {
       <Show when={plot()}>{q => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against the largest movement">
         <line class="ax" x1={P} y1={H - P} x2={W - P} y2={H - P} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
         <path class="line" d={q().d} fill="none" />
-        <For each={q().xs}>{(v, i) => <circle class="pt" classList={{ unstable: x().peeq[i()] > 0 }} cx={q().sx(v)} cy={q().sy(q().ys[i()])} r="3"><title>{`Load × ${num(q().ys[i()], 4)}, ${num(v, 4)} ${unit("len")}, plastic strain ${num(x().peeq[i()], 3)}`}</title></circle>}</For>
-        <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">Largest movement ({unit("len")})</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(q().x1, 3)}</text>
-        <text x={P - 6} y={P - 10} class="lbl">Load factor</text><text x={P - 6} y={q().sy(q().y1) + 4} text-anchor="end" class="lbl">{num(q().y1, 3)}</text>
+        <For each={q().xs}>{(v, i) => <circle class="pt" classList={{ unstable: x().peeq[i()] > 0 }} cx={q().sx(v)} cy={q().sy(q().ys[i()])} r="3"><title>{`${x().force?.length ? `${num(q().ys[i()], 4)} ${unit("force")}` : `Load × ${num(q().ys[i()], 4)}`}, ${num(v, 4)} ${unit("len")}, plastic strain ${num(x().peeq[i()], 3)}`}</title></circle>}</For>
+        <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">{x().force?.length ? "Movement of the moved face" : "Largest movement"} ({unit("len")})</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(q().x1, 3)}</text>
+        <text x={P - 6} y={P - 10} class="lbl">{x().force?.length ? `Force it takes (${unit("force")})` : "Load factor"}</text><text x={P - 6} y={q().sy(q().y1) + 4} text-anchor="end" class="lbl">{num(q().y1, 3)}</text>
       </svg>}</Show>
       <Show when={(results() as any)?.large} fallback={<p class="muted small">Hollow points: the part has yielded somewhere. As it yields it softens, and the curve bends over; at collapse it would run flat.</p>}><p class="muted small">A stiffening curve (bending up) is the solid carrying load by stretching, as rubber and slender parts do once they move far; a softening one (bending over) is heading for buckling or snap-through.</p></Show>
     </>}</Show>

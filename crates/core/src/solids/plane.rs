@@ -73,6 +73,10 @@ pub struct PartPath {
     pub first_yield: Option<f64>,
     pub reached: bool,
     pub iterations: usize,
+    /// With faces moved by set amounts (0.7.4): the force they take at each increment (N), the
+    /// movement being `umax`; empty otherwise.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub force: Vec<f64>,
 }
 
 impl PlaneResults {

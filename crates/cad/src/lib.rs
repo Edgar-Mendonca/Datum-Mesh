@@ -171,6 +171,12 @@ impl Cad {
             }
         }
         ms.faces = merged;
+        // The design is Z up; Datum Mesh's model is Y up (the window shows it Z up again): the
+        // same turn as the 3D view's, (X, Y, Z) → (X, Z, −Y), a rotation, so no element turns
+        // inside out.
+        for p in ms.nodes.iter_mut() {
+            *p = [p[0], p[2], -p[1]];
+        }
         ms.source = "geometry".into();
         Ok(ms)
     }
@@ -397,6 +403,9 @@ mod tests {
         assert!(ms.tets.len() > 200, "{} elements", ms.tets.len());
         assert_eq!(ms.faces.len(), 6, "one mesh face per face of the block: {:?}", ms.faces.iter().map(|f| &f.name).collect::<Vec<_>>());
         assert!(ms.faces.iter().all(|f| f.name.starts_with("Body1/")), "named after the solid's faces");
+        // Y up: the extrusion (the design's z, 0 to 20 mm) is the model's y; the design's y (0 to 20 mm) is the model's −z.
+        let (ymax, zmin) = (ms.nodes.iter().map(|p| p[1]).fold(f64::MIN, f64::max), ms.nodes.iter().map(|p| p[2]).fold(f64::MAX, f64::min));
+        assert!((ymax - 0.02).abs() < 1e-9 && (zmin + 0.02).abs() < 1e-9, "turned to Y up: y to {ymax}, z from {zmin}");
         // The faces at x = 0 and x = 0.1 m, by their nodes.
         let at = |x: f64| ms.faces.iter().position(|f| f.facets.iter().all(|&(e, k)| datum_core::solids::tet::FACES[k as usize].iter().all(|&i| (ms.nodes[ms.tets[e as usize][i] as usize][0] - x).abs() < 1e-9))).expect("end face");
         let (fixed, free) = (at(0.0), at(0.1));
@@ -419,6 +428,55 @@ mod tests {
         let g_mod = e / (2.0 * (1.0 + nu));
         let want = -(1000.0 * l * l * l / (3.0 * e * i) + 1000.0 * l / (5.0 / 6.0 * g_mod * h * h));
         assert!(((tip - want) / want).abs() < 0.04, "tip {tip:e} m against {want:e} m");
+    }
+
+    /// 0.7.4: a thin aluminium tube (radius 20 mm, wall 2 mm, 60 mm long) crushed 15 mm by its top
+    /// face: the force rises to a peak, then falls as the wall folds (collapse). Long (minutes):
+    /// `cargo test --release -p datum-cad tube_crush -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn tube_crush_collapses() {
+        let Some(g) = gmsh() else { return };
+        let mut c = Cad::new();
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.circle.center", json!({"center": [0, 0], "radius": 20}));
+        run(&mut c, "sketch.circle.center", json!({"center": [0, 0], "radius": 18}));
+        run(&mut c, "sketch.finish", json!({}));
+        run(&mut c, "solid.extrude", json!({"distance": 60.0, "direction": "positive"}));
+        let work = std::env::temp_dir().join(format!("datum-cad-tube-{}", std::process::id()));
+        let ms = c.mesh(2.5, &g, &work).expect("meshed");
+        let _ = std::fs::remove_dir_all(&work);
+        eprintln!("{} tetrahedra, {} nodes, faces {:?}", ms.tets.len(), ms.nodes.len(), ms.faces.iter().map(|f| &f.name).collect::<Vec<_>>());
+        use datum_core::model::{Analysis, Load, LoadKind, Model, Step, StepKind, Support, SupportKind, Target};
+        // The ends: the design's z = 0 and 0.06 m, the model's y (Y up).
+        let at = |z: f64| ms.faces.iter().position(|f| f.facets.iter().all(|&(e, k)| datum_core::solids::tet::FACES[k as usize].iter().all(|&i| (ms.nodes[ms.tets[e as usize][i] as usize][1] - z).abs() < 1e-9))).expect("end face");
+        let (base, top) = (at(0.0), at(0.06));
+        let mut m = Model::new(Analysis::Solid);
+        m.materials[0] = datum_core::materials::get("al-6061-t6").expect("al").to_material(1);
+        m.materials[0].hardening = 0.5e9;
+        let mut v = ms.clone();
+        v.material = 1;
+        m.volume = Some(Box::new(v));
+        m.supports.push(Support { id: 50, at: Target::Face { face: base as u32 }, kind: SupportKind::Fixed });
+        m.supports.push(Support { id: 51, at: Target::Face { face: top as u32 }, kind: SupportKind::Hold { x: true, y: false, z: true } });
+        m.loads.push(Load { case: 0, id: 52, at: Target::Face { face: top as u32 }, kind: LoadKind::Settlement { dx: 0.0, dy: -0.015, dz: 0.0 } });
+        m.steps.push(Step { kind: StepKind::LargePlastic, increments: 30, ..Default::default() });
+        m.next = 60;
+        let t0 = std::time::Instant::now();
+        let r = match datum_core::solve_for(&m, None).expect("solved") {
+            datum_core::Results::Solid(r) => r,
+            _ => panic!("not a solid's results"),
+        };
+        let p = r.path.as_ref().expect("path");
+        eprintln!("{:.1} s; warnings {:?}", t0.elapsed().as_secs_f64(), r.warnings);
+        for (u, f) in p.umax.iter().zip(&p.force) {
+            eprintln!("  {:7.3} mm  {:9.3} kN", u * 1e3, f / 1e3);
+        }
+        let (imax, fmax) = p.force.iter().enumerate().fold((0, 0.0_f64), |a, (i, &f)| if f > a.1 { (i, f) } else { a });
+        let squash = 240e6 * std::f64::consts::PI * (0.02f64.powi(2) - 0.018f64.powi(2));
+        eprintln!("peak {:.2} kN at {:.2} mm; squash load σy A = {:.2} kN", fmax / 1e3, p.umax[imax] * 1e3, squash / 1e3);
+        assert!(fmax > 0.8 * squash && fmax < 1.3 * squash, "peak near the squash load");
+        assert!(p.force.last().copied().unwrap_or(0.0) < 0.9 * fmax, "the force falls after the peak (collapse)");
     }
 
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).
