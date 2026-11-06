@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.7.1 — 2026-11-06
+
+The Datum window again, laid out in numbered steps, with full sketching and 3D modelling.
+
+**Steps**
+- The tree on the left is laid out in the order a model is made: 1 Geometry, 2 Properties, 3 Supports & Loads, 4 Mesh, 5 Analysis, 6 Results. Each step shows ✓ when it is done or says what it still needs; click it and the ribbon shows that step's tools.
+- New Properties step: materials (with Assign to the selection) and sections.
+
+**Sketching** (Geometry › New Sketch, on the floor, front or side plane, on a face of a solid, or on an offset plane)
+- Create: line; arc by 3 points or by centre and ends; circle by centre and radius, 2 points or 3 points; rectangle by 2 corners, centre and corner, or 3 points; polygon inside or around a circle or by one side, any number of sides; slot centre to centre or overall. Each shape's ▾ lists its ways; the way last used stays on the button. Construction lines (dashed guides).
+- Modify: trim, extend, offset, fillet, chamfer. Pattern: mirror, circular, rectangular.
+- Constrain: dimensions typed on the drawing (lengths, diameters, radii, distances and angles, or named parameters such as W / 2); coincident, tangent, parallel, perpendicular, equal, concentric, collinear, midpoint, symmetry, horizontal or vertical, fix. Free curves are drawn blue, fully defined ones black.
+- Sketch report, parameters, snapping to the grid and to ends, a preview of each shape as it is placed.
+
+**3D modelling**
+- Create: extrude (out, in or both ways), revolve, hole (through or to a depth). Shapes drawn inside a closed shape become holes.
+- Modify: fillet and chamfer (click an edge), shell and press pull (click a face).
+- Arrange: move, turn or copy; mirror; pattern in rows and columns or round an axis. Construct: offset plane.
+- The sketches and solids are kept in the .dmesh file, with autosave and recovery.
+
+**How it is built**
+- Sketching and solids come from SolidCraft's open-source geometry engine (MIT or Apache-2.0), working behind the Datum window; nothing of its own window is used.
+
+**Not yet**
+- Supports, loads, meshing and solving on these new solids come in 0.7.2 (the solids of 0.6 and the frames still analyse as before).
+
 ## 0.7.0 — 2026-11-05
 
 **Withdrawn on 2026-11-06.** This release was the open CAD program it was built on, renamed, rather than a Datum app; it is no longer offered. 0.7.1 brings the Datum window back, laid out in numbered steps, with the CAD program's geometry engine working behind it.

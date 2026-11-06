@@ -14,17 +14,14 @@ The materials library (crates/core/data/materials.json, built by tools/materials
 from Datum Atlas (MIT, https://github.com/Edgar-Mendonca/Datum-Atlas), with each value's source
 as Atlas gives it. Poisson's ratios are typical values for each material family (Atlas has none).
 
-From 0.7.0 the program (app/) is built on SolidCraft (MIT or Apache-2.0,
-https://github.com/tangency-labs/solidcraft, commit f8a98ee), renamed and restyled as Datum Mesh; its
-own notices are kept in app/NOTICE, app/THIRD-PARTY-LICENSES.txt and app/ATTRIBUTION.md and are
-included in the installer's NOTICE.txt. Its dependencies are permissive (checked by cargo deny,
-app/deny.toml); clipboard-win and error-code are under the Boost licence (BSL-1.0), and the window's
-default fonts (epaint_default_fonts) under the SIL Open Font Licence 1.1 and the Ubuntu Font Licence 1.0. The engine above (crates/core) is linked into it.
+From 0.7.1 the sketching and 3D modelling run on SolidCraft's geometry engine (MIT or Apache-2.0,
+https://github.com/tangency-labs/solidcraft, commit f8a98ee, kept in app/) and its kernel solidcore
+(MIT or Apache-2.0, https://github.com/tangency-labs/solidcore), used as libraries behind the Datum
+window through crates/cad; their notices are in app/NOTICE, app/THIRD-PARTY-LICENSES.txt and
+app/ATTRIBUTION.md. Their dependencies are permissive (checked by cargo deny).
 
-No GPL, LGPL or AGPL code is linked into Datum Mesh. The installer carries Gmsh (GPL-2.0-or-later,
-https://gmsh.info, source at https://gitlab.onelab.info/gmsh/gmsh) unchanged in its own folder, with
-its licence; Datum Mesh only ever runs it as a separate program, writing a geometry file and reading
-the mesh it writes.
+No GPL, LGPL or AGPL code is linked into or bundled with Datum Mesh. Open meshers and solvers
+under those licences (Gmsh, planned for meshing these solids) only ever run as separate programs.
 
 The family workflow, ribbon, File page, updater and printing are taken from Datum Plan, by way of
 Datum Sim (both MIT, same author). The structural steel values come from EN 1993-1-1 §3.2 and
