@@ -63,6 +63,14 @@ jobs:
           d=$(dirname "$exe")
           for f in LICENSE.txt CREDITS.txt; do [ -f "$d/$f" ] && cp "$d/$f" "out/stage/gmsh/$f"; done
           echo "Gmsh $ok from gmsh.info, run as a separate program (GPL). Source: https://gitlab.onelab.info/gmsh/gmsh" > out/stage/gmsh/README.txt
+      - name: NSIS (the installer builder)
+        shell: pwsh
+        run: |
+          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+            choco install nsis -y --no-progress
+            if ($LASTEXITCODE -ne 0) { exit 1 }
+          }
+          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
       - name: Installer
         shell: bash
         run: |
