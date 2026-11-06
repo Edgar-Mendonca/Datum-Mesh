@@ -1,4 +1,8 @@
 name: Release
+# Builds one Windows installer, DatumMesh-x.y.z-setup.exe, and publishes it with SHA256SUMS.txt
+# as a GitHub Release (the shape Datum Home and the in-app updater rely on, FAMILY §9).
+# Bump the version in src-tauri/Cargo.toml and crates/core/Cargo.toml, add a CHANGELOG.md section,
+# then run this workflow from the Actions tab (or push a tag: git tag v0.1.0 && git push origin v0.1.0).
 on:
   push:
     tags: ["v*"]
@@ -10,23 +14,21 @@ permissions:
 jobs:
   windows:
     runs-on: windows-latest
-    timeout-minutes: 240
-    env:
-      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
         with:
-          workspaces: |
-            . -> target
-            app -> target
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Read the app version
         shell: bash
         run: |
-          V=$(grep -m1 '^version' app/Cargo.toml | cut -d'"' -f2)
+          V=$(grep -m1 '^version' src-tauri/Cargo.toml | cut -d'"' -f2)
           if [[ "$GITHUB_REF" == refs/tags/* && "v$V" != "$GITHUB_REF_NAME" ]]; then
-            echo "Tag $GITHUB_REF_NAME does not match version $V in app/Cargo.toml"; exit 1
+            echo "Tag $GITHUB_REF_NAME does not match version $V in src-tauri/Cargo.toml"; exit 1
           fi
           echo "V=$V" >> "$GITHUB_ENV"
       - name: Release notes from CHANGELOG.md
@@ -35,58 +37,20 @@ jobs:
           awk -v v="$V" 'index($0, "## " v " ") == 1 || $0 == "## " v {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
           cat notes.md
           test -s notes.md || { echo "CHANGELOG.md has no section for $V"; exit 1; }
-      - name: Engine tests (benchmarks included)
-        run: cargo test --release -p datum-core
-      - name: Analysis tests
-        working-directory: app
-        run: cargo test --release -p datum-analysis
-      - name: The program
-        working-directory: app
-        shell: bash
-        env:
-          RUSTFLAGS: "-C target-feature=+crt-static"
-        run: cargo build --release -p solidcraft --bin datum-mesh
-      - name: The mesher (Gmsh, a separate program)
-        shell: bash
-        run: |
-          mkdir -p out/stage/gmsh
-          ok=""
-          for v in 4.15.2 4.14.1 4.13.1; do
-            if curl -fsSL -o gmsh.zip "https://gmsh.info/bin/Windows/gmsh-$v-Windows64.zip"; then ok=$v; break; fi
-          done
-          test -n "$ok" || { echo "Gmsh could not be downloaded"; exit 1; }
-          echo "Gmsh $ok"
-          7z x -y gmsh.zip -ogmsh_unz > /dev/null
-          exe=$(find gmsh_unz -iname gmsh.exe | head -1)
-          test -n "$exe" || { echo "gmsh.exe not found in the download"; exit 1; }
-          cp "$exe" out/stage/gmsh/gmsh.exe
-          d=$(dirname "$exe")
-          for f in LICENSE.txt CREDITS.txt; do [ -f "$d/$f" ] && cp "$d/$f" "out/stage/gmsh/$f"; done
-          echo "Gmsh $ok from gmsh.info, run as a separate program (GPL). Source: https://gitlab.onelab.info/gmsh/gmsh" > out/stage/gmsh/README.txt
-      - name: NSIS (the installer builder)
-        shell: pwsh
-        run: |
-          if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
-            choco install nsis -y --no-progress
-            if ($LASTEXITCODE -ne 0) { exit 1 }
-          }
-          "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Append -Encoding utf8
+      - run: cargo test -p datum-core
       - name: Installer
         shell: bash
         run: |
-          cp app/target/release/datum-mesh.exe out/stage/datum-mesh.exe
-          cat LICENSE app/LICENSE-MIT > out/stage/LICENSE.txt
-          cat NOTICE app/NOTICE app/THIRD-PARTY-LICENSES.txt > out/stage/NOTICE.txt
-          makensis -DVERSION="$V" -DSRC="$(cygpath -w "$PWD/out/stage")" app/packaging/windows/datum-mesh.nsi
-          mkdir -p out/release
-          mv "app/packaging/windows/DatumMesh-$V-setup.exe" "out/release/DatumMesh-$V-setup.exe"
-          cd out/release && sha256sum "DatumMesh-$V-setup.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -la
-      - name: Size budget of the installer (150 MB, docs/MEMORY.md)
+          npx tauri build --bundles nsis
+          mkdir -p out
+          cp target/release/bundle/nsis/*-setup.exe "out/DatumMesh-$V-setup.exe"
+          cd out && sha256sum "DatumMesh-$V-setup.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -la
+      - name: Size budget of the installer (5 MB, docs/MEMORY.md)
         shell: bash
         run: |
-          N=$(wc -c < "out/release/DatumMesh-$V-setup.exe")
-          echo "Installer: $N bytes (budget 150000000)"
-          test "$N" -le 150000000 || { echo "The installer is over its 150 MB budget."; exit 1; }
+          N=$(wc -c < "out/DatumMesh-$V-setup.exe")
+          echo "Installer: $N bytes (budget 5000000)"
+          test "$N" -le 5000000 || { echo "The installer is over its 5 MB budget."; exit 1; }
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.V }}
@@ -95,5 +59,5 @@ jobs:
           body_path: notes.md
           make_latest: true
           files: |
-            out/release/DatumMesh-${{ env.V }}-setup.exe
-            out/release/SHA256SUMS.txt
+            out/DatumMesh-${{ env.V }}-setup.exe
+            out/SHA256SUMS.txt

@@ -2,6 +2,8 @@
 
 ## 0.7.0 — 2026-11-05
 
+**Withdrawn on 2026-11-06.** This release was the open CAD program it was built on, renamed, rather than a Datum app; it is no longer offered. 0.7.1 brings the Datum window back, laid out in numbered steps, with the CAD program's geometry engine working behind it.
+
 A new start: Datum Mesh is now a full 3D modeller with the analysis laid out in steps.
 
 **A new program**

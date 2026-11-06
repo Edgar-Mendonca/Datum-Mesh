@@ -94,7 +94,7 @@ export const TitleBar = (p: { update: string | null }) => (
     <nav class="tabs">
       <button class="file" onClick={() => setBackstage("home")}>File</button>
       <Show when={sketch()}><button class="sktab" classList={{ on: tab() === "sketch" }} onClick={() => setTab("sketch")}>Sketch</button></Show>
-      <For each={[["home", "Home"], ["geometry", "Geometry"], ["mesh", "Mesh"], ["loads", "Loads"], ["solve", "Solve"], ["results", "Results"], ["view", "View"], ["help", "Help"]]}>{([k, l]) => <button classList={{ on: tab() === k }} onClick={() => setTab(k)}>{l}</button>}</For>
+      <For each={[["home", "Home"], ["geometry", "1 Geometry"], ["properties", "2 Properties"], ["loads", "3 Loads"], ["mesh", "4 Mesh"], ["solve", "5 Analysis"], ["results", "6 Results"], ["view", "View"], ["help", "Help"]]}>{([k, l]) => <button classList={{ on: tab() === k, step: /^\d/.test(l) }} onClick={() => setTab(k)}>{/^\d/.test(l) ? <><b>{l[0]}</b>{l.slice(2)}</> : l}</button>}</For>
       <div class="ctxgrp" style={{ visibility: fmtKind() ? "visible" : "hidden" }}><small>{fmtKind() === "shape" ? "Shape Tools" : "Member Tools"}</small><button classList={{ on: tab() === "format" }} onClick={() => setTab("format")}>Format</button></div>
     </nav>
   </header>
@@ -227,6 +227,11 @@ export const Ribbon = () => {
         <Show when={!heat()}><G l="Thermal" h="thermal"><B big i="tchange" l="Temperature Change" run={() => C.body("warming")} title="A uniform change of temperature: thermal stress" />
           <Show when={!frame()}><S><T i="tedge" l="Edge Temperature" t="sup:temperature" title="Hold an edge at a temperature; the temperatures inside are solved first, then the thermal stress" /><T i="convection" l="Convection" t="load:convection" /></S></Show></G></Show>
         <G l="Load Cases" h="cases"><S><CasePicker /><B i="table" l="Cases and Combinations…" run={casesDialog} title="Name the load cases and give each combination its factors" /></S></G>
+      </Show>
+      <Show when={tab() === "properties"}>
+        <G l="Materials" h="materials"><B big i="material" l="Materials" run={() => D.materials()} title="The materials of the model: pick from the library or type your own" />
+          <S><B i="material" l="Assign ▾" off={!sel().length} dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => (frame() ? formatMembers : formatShapes)(() => ({ material: x.id })) })))} title="Give the selected parts or members a material" /></S></G>
+        <Show when={frame()}><G l="Sections" h="sections"><B big i="section" l="Sections" run={() => D.sections()} title="Cross-sections of the members: steel tables, or typed sizes" /></G></Show>
       </Show>
       <Show when={tab() === "solve"}>
         <G l="Solve" h="solve"><B big i="solve" l="Solve" run={C.solve} off={solving()} title="Solve the model (F5)" />
