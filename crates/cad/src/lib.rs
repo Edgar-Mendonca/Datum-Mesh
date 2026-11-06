@@ -395,7 +395,7 @@ mod tests {
         let sc = c.scene().unwrap();
         assert_eq!(sc.bodies.len(), 1);
         let b = &sc.bodies[0];
-        assert!(b.closed && b.tris.len() >= 36 && b.tris.len() == b.face.len() * 3 && b.pos.len() % 3 == 0);
+        assert!(b.closed && b.tris.len() >= 36 && b.tris.len() == b.face.len() * 3 && b.pos.len().is_multiple_of(3));
         assert!(b.face.iter().max() == Some(&5), "six faces on a block");
         assert!(sc.undo && sc.active.is_none());
         let zmax = b.pos.chunks(3).map(|p| p[2]).fold(f32::MIN, f32::max);
