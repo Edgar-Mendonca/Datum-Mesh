@@ -24,6 +24,8 @@ export const applyTheme = () => { document.documentElement.dataset.theme = theme
 export const [themeTick, setThemeTick] = createSignal(0);
 darkMq?.addEventListener("change", () => theme() === "auto" && applyTheme());
 export const setTheme = (t: string) => { setThemeRaw(t); applyTheme(); const o = { ...opts(), theme: t }; setOpts(o); invoke("set_options", { opts: o }).catch(() => {}); };
+/** 3D frames (0.7.5): draw each member as its section swept along it (else as a line). */
+export const [sectionsOn, setSectionsOn] = createSignal(true);
 export const [opts, setOpts] = createSignal<Options>({ autosave: 5, beta: false, theme: "auto", openLast: false, units: "SI", snap: true, grid: true, rulers: true, contours: "rainbow", paper: "A4", landscape: true, company: "" });
 
 export type View = "model" | "mesh" | "results" | "report";

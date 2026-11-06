@@ -1,6 +1,7 @@
 // Title bar, quick access toolbar, Tell Me and the ribbon (Home · Geometry · Mesh · Loads · Solve ·
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
+import { sectionsOn, setSectionsOn } from "./store";
 import { memberTruss, setMemberTruss } from "./cad";
 import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
@@ -462,6 +463,7 @@ export const Ribbon = () => {
           <label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Grid</label>
           <label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label>
           <label class="chk"><input type="checkbox" checked={opts().rulers} onChange={e => setOpts({ ...opts(), rulers: e.currentTarget.checked })} />Rulers</label>
+          <Show when={m()?.analysis === "space"}><label class="chk" title="Draw each member as its section (I, channel, box, tube…) swept along it, turned as the solver turns it"><input type="checkbox" checked={sectionsOn()} onChange={e => setSectionsOn(e.currentTarget.checked)} />Section shapes</label></Show>
         </S></G>
       </Show>
       <Show when={tab() === "format"}>

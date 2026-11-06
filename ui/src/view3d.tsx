@@ -2,6 +2,8 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
+import { sectionsOn } from "./store";
+import type { SectionShape } from "./api";
 import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack, pick3 } from "./cad";
 import { Timeline, bodyMenu } from "./history";
 import { showMesh, geoMesh } from "./study";
@@ -189,6 +191,21 @@ export const View3D = () => {
     }
   };
 
+  /** A section's outline (m), (y, z) in its local axes: y the depth, z the width (0.7.5). */
+  const sectionRing = (s: SectionShape): [number, number][] => {
+    const circ = (r: number, n = 20) => Array.from({ length: n }, (_, i) => [r * Math.cos(2 * Math.PI * i / n), r * Math.sin(2 * Math.PI * i / n)] as [number, number]);
+    switch (s.kind) {
+      case "rect": return [[-s.h / 2, -s.b / 2], [s.h / 2, -s.b / 2], [s.h / 2, s.b / 2], [-s.h / 2, s.b / 2]];
+      case "box": return [[-s.h / 2, -s.b / 2], [s.h / 2, -s.b / 2], [s.h / 2, s.b / 2], [-s.h / 2, s.b / 2]];
+      case "circle": return circ(s.d / 2);
+      case "tube": return circ(s.d / 2);
+      case "i": { const [h, b, tw, tf] = [s.h / 2, s.b / 2, s.tw / 2, s.tf]; return [[-h, -b], [-h, b], [-h + tf, b], [-h + tf, tw], [h - tf, tw], [h - tf, b], [h, b], [h, -b], [h - tf, -b], [h - tf, -tw], [-h + tf, -tw], [-h + tf, -b]]; }
+      case "channel": { const [h, b, tw, tf] = [s.h / 2, s.b, s.tw, s.tf]; return [[-h, 0], [-h, b], [-h + tf, b], [-h + tf, tw], [h - tf, tw], [h - tf, b], [h, b], [h, 0]]; }
+      case "angle": { const [h, b, t] = [s.h, s.b, s.t]; return [[0, 0], [0, b], [t, b], [t, t], [h, t], [h, 0]]; }
+      case "custom": { const d = Math.sqrt(Math.max(s.a, 1e-8)) / 2; return [[-d, -d], [d, -d], [d, d], [-d, d]]; }
+      default: return [];
+    }
+  };
   const clear = () => {
     lineMats.length = 0;
     world.traverse(o => { const x = o as any; x.geometry?.dispose?.(); (Array.isArray(x.material) ? x.material : [x.material]).forEach((mt: any) => mt?.dispose?.()); });
@@ -456,6 +473,30 @@ export const View3D = () => {
     if (plain.length) fat(plain, null, resOn ? faint : ink, resOn ? 1.5 : 3);
     if (bars.length) fat(bars, null, resOn ? faint : ink, resOn ? 1.2 : 2, true);
     if (chosen.length) fat(chosen, null, accent, 4);
+    // 0.7.5: each member drawn as its section swept along it, in the solver's local axes (x along
+    // it; y, the section's depth, square to it and to global z, or global y for a member along
+    // z; the roll turns y and z about x): the frame looks as it will be built.
+    if (sectionsOn() && !resOn) {
+      const pos: number[] = [], idx: number[] = [];
+      const cr = (a: P3, b: P3): P3 => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+      const un = (a: P3): P3 => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+      for (const b of m.members) {
+        const a = P.get(b.a), c = P.get(b.b), sec = m.sections.find(x => x.id === b.section); if (!a || !c || !sec) continue;
+        const ring = sectionRing(sec.shape); if (ring.length < 3) continue;
+        const ex = un([c[0] - a[0], c[1] - a[1], c[2] - a[2]]), zx = cr([0, 0, 1], ex);
+        const ey0 = Math.hypot(...zx) < 1e-9 ? [0, 1, 0] as P3 : un(zx), ez0 = cr(ex, ey0), r = b.roll ?? 0;
+        const ey: P3 = [0, 1, 2].map(k => Math.cos(r) * ey0[k] + Math.sin(r) * ez0[k]) as P3, ez = cr(ex, ey);
+        const base = pos.length / 3;
+        for (const end of [a, c]) for (const [y, z] of ring) pos.push(end[0] + ey[0] * y + ez[0] * z, end[1] + ey[1] * y + ez[1] * z, end[2] + ey[2] * y + ez[2] * z);
+        const n = ring.length;
+        for (let i = 0; i < n; i++) { const j = (i + 1) % n; idx.push(base + i, base + j, base + n + j, base + i, base + n + j, base + n + i); }
+      }
+      if (idx.length) {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(new Float32Array(pos), 3)); g.setIndex(idx); g.computeVertexNormals();
+        world.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: new THREE.Color(css("--solid")), roughness: 0.75, side: THREE.DoubleSide, transparent: true, opacity: 0.9 })));
+      }
+    }
     // The deflected shape, coloured by the chosen result.
     if (showRes && r && !mode3()) {
       const pts: number[] = [], cs: number[] = [];

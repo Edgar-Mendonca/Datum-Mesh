@@ -423,6 +423,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.sketchbar button:has-text("Finish Sketch")'); await p.waitForTimeout(250);
   await p.click('.tree .step:nth-of-type(1) > .sthead');
   check("Geometry shows Repeat for 3D frames", (await p.$$('.ribbon button[title^="Copy the selected members along the depth"]')).length === 1);
+  await p.click('.tabs > button:text-is("View")'); await p.waitForTimeout(100);
+  check("a 3D frame is drawn with its section shapes, a View choice (0.7.5)", (await p.$$('.ribbon label.chk:has-text("Section shapes") input:checked')).length === 1);
+  await p.click('.tree .step:nth-of-type(1) > .sthead');
   await p.click('.ribbon button[title^="Copy the selected members along the depth"]'); await p.waitForTimeout(150);
   await p.click('.dlg button:text-is("Repeat")'); await p.waitForTimeout(150);
   const rp = await lastOp();
