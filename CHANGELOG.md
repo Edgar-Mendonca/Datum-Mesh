@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.7.3 — 2026-11-07
+
+The solids you model can now be analysed: meshed, held, loaded and solved.
+
+**Analysis of the modelled solids**
+- Go to Supports & Loads (or Mesh, or press Solve) and the solids are meshed by themselves into 10-node tetrahedra by Gmsh, which is now installed with Datum Mesh. The bar over the view says how many elements and nodes.
+- Click a face to hold it (Fixed, Pinned, Roller, Symmetry, Held directions) or to load it (Force, Pressure, Face force). A force on a face is shared over the face.
+- Faces are named after the step that made them: "Body1: Extrude1 top", "Extrude1 side 3". Supports and loads stay on their faces when you change the design: it is meshed again before the next solve.
+- Results as for any solid: von Mises, principal stress, displacement and safety factor in colour on the deformed shape, the cut plane, the probe, the player and the equilibrium check.
+- Step 1 shows the solids as modelled; the later steps show the mesh. Mesh › Element Size sets the size; Mesh › Show Elements draws them.
+
+**Fixes**
+- The File page's Roadmap icon is the same colour as the others.
+
+**How it is built**
+- Gmsh (GPL) is installed beside Datum Mesh in its own folder and run as a separate program; Datum Mesh writes the solids out for it and reads back the mesh it makes. Checked: a steel cantilever modelled, meshed and solved agrees with beam theory to within 4 %.
+
+**Not yet**
+- Natural frequencies, buckling, heat, yielding and large deformation of the modelled solids come in 0.7.4, with the rebuilt examples. Finer mesh near chosen faces comes with the interactions in 0.7.7.
+
 ## 0.7.2 — 2026-11-06
 
 Modelling that feels right: a history you can edit, sketching on any plane with the view turning to it, a grid that follows the zoom, and no leftovers of the old section view.
