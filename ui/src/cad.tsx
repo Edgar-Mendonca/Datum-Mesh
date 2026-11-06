@@ -3,8 +3,8 @@
 // returned (the scene), the drawing tools with their ways of drawing, and the sketch canvas: a
 // sheet over the 3D view, square to the sketch's plane, where clicks place the points.
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
-import { invoke } from "./api";
-import { toast, setTab } from "./store";
+import { invoke, Out } from "./api";
+import { toast, setTab, model, setOut } from "./store";
 import { fmt } from "./units";
 
 export type CadBody = { name: string; pos: number[]; nrm: number[]; tris: number[]; face: number[]; edges: number[][]; closed: boolean };
@@ -66,12 +66,35 @@ const [draft, setDraft] = createSignal<P2[]>([]);
 export const pickTool = (t: string | null) => { setCadTool(t); setDraft([]); };
 
 /** Starts a sketch on one of the origin planes (the floor XY, front XZ, side YZ). */
-export const newSketch = async (plane: "XY" | "XZ" | "YZ") => { if (await cadRun("sketch.create", { plane })) { setTab("geometry"); pickTool(ways().Line); } };
+/** The three planes at the origin, as they are looked at (0.7.5): the floor from above, the front
+ * from the front and the side from the right, each with Z (the height) up the screen. (The
+ * engine's own XZ plane has its y axis down, so what was drawn upward went below the floor.) */
+const PLANES = { XY: "XY", XZ: { origin: [0, 0, 0], x_dir: [1, 0, 0], y_dir: [0, 0, 1] }, YZ: { origin: [0, 0, 0], x_dir: [0, 1, 0], y_dir: [0, 0, 1] } } as const;
+export const newSketch = async (plane: "XY" | "XZ" | "YZ") => {
+  if (!(await cadRun("sketch.create", { plane: PLANES[plane] }))) return;
+  setTab("geometry"); pickTool(ways().Line);
+  // A 3D frame is metres across: the sheet starts showing about 10 m (a part: about 200 mm).
+  if (model()?.analysis === "space") setSheetView({ s: 0.08, cx: 3000, cy: plane === "XY" ? 2000 : 2500 });
+};
+/** 3D frames drawn with the sketch tools (0.7.5): whether lines become truss bars (else beams). */
+export const [memberTruss, setMemberTruss] = createSignal(false);
 export const finishSketch = async () => {
   pickTool(null);
   const sk = activeSketch();
   if (!(await cadRun("sketch.finish"))) return;
   setTurnBack(turnBack() + 1);
+  // A 3D frame: the sketch's lines become members, joined where they meet (0.7.5).
+  if (model()?.analysis === "space") {
+    try {
+      const o = await invoke<Out>("cad_members", { truss: memberTruss() });
+      setOut(o); await cadLoad();
+      // Frame the frame now that it is there (the turn back started before it was made).
+      setTurnBack(turnBack() + 1);
+      const n = o.created.filter(id => o.m.members.some(b => b.id === id)).length;
+      toast(`${n} ${memberTruss() ? (n === 1 ? "truss bar" : "truss bars") : (n === 1 ? "beam" : "beams")} made from the sketch, joined where they meet: give them supports and loads, then solve.`, true);
+    } catch (e) { toast(String(e)); }
+    return;
+  }
   // A closed shape: Extrude opens at once, with the solid made and its size to change (0.7.2).
   const done = cad()?.sketches.find(x => x.id === sk?.id);
   if (done && done.profiles > 0 && !(cad()?.bodies.length)) setTimeout(() => import("./extrude").then(k => k.openExtrude()), 450);

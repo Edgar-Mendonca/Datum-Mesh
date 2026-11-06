@@ -47,9 +47,11 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
       core: {
         invoke: async (c, a) => {
           window.__calls.push([c, a]);
+          if (c === "new_model" || c === "open") window.__cad = null;
           if (c === "cad_scene") return window.__cad ?? f.cad.empty;
           if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
           if (c === "cad_auto_size") return 5;
+          if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
           if (c === "cad_query") return a.id === "timeline.inspect" ? f.cad.inspect_extrude : a.id === "sketch.inspect" ? { curves: [], points: [] } : a.id === "parameters.list" ? [] : {};
           if (c === "cad_run") { const id = a.id; const k = id === "sketch.create" ? "sketch" : id === "sketch.finish" ? "finished" : id === "sketch.cancel" ? "empty" : id.startsWith("sketch.") ? "drawn" : id === "solid.extrude" ? "extruded" : id === "solid.revolve" ? "revolved" : null; if (k) window.__cad = f.cad[k]; return window.__cad ?? f.cad.empty; }
           if (c === "state") return window.__cur;
@@ -387,9 +389,16 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("a 3D frame opens in the 3D view, with no plane bar (0.6.2: sketching replaces it)", (await p.$$(".view3d canvas")).length === 1 && (await p.$$(".planebar .seg")).length === 0);
   await p.click('.tabs > button:text-is("Home")');
   check("Home shows 3D Frame chosen", await p.$eval('.ribbon button[title^="3D frames and trusses"]', el => el.classList.contains("on")));
-  // 0.6.2: New Sketch, pick the Front plane: the sketch canvas lies over the 3D view, square to it.
+  // 0.7.5: New Sketch draws the frame with the modelling sketch tools; Finish Sketch makes members.
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(250);
-  check("New Sketch asks for a plane, with the squares at the origin and a bar", (await p.$$(".view3d .pickbar")).length === 1);
+  check("a 3D frame's New Sketch asks for a plane like a part's (0.7.5)", (await p.$$(".view3d .pickplane")).length === 1);
+  await p.click('.view3d .pickplane button:has-text("Front (XZ)")'); await p.waitForTimeout(300);
+  check("the frame sketch opens with the modelling sketch tools", (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
+  await p.click('.ribbon button[title^="Keep the sketch"]'); await p.waitForTimeout(400);
+  check("Finish Sketch on a 3D frame makes members of its lines (beams by default)", JSON.stringify(await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_members").map(c => c[1]).slice(-1)[0])) === JSON.stringify({ truss: false }));
+  // 0.6.2: Beam (one by one), pick the Front plane: the sketch canvas lies over the 3D view, square to it.
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Draw beams"]'); await p.waitForTimeout(250);
+  check("Beam asks for a plane, with the squares at the origin and a bar", (await p.$$(".view3d .pickbar")).length === 1);
   await p.click('.view3d .pickbar .seg button:text-is("Front")'); await p.waitForTimeout(400);
   check("picking the Front plane opens the sketch: the 3D view behind, the sketch canvas over it, a Sketch tab and a bar", (await p.$$(".sketchstage .view3d")).length === 1 && (await p.$$(".sketchover .canvas")).length === 1 && (await p.$$('.tabs .sktab.on')).length === 1 && (await p.textContent(".sketchbar")).includes("Front plane"));
   const onFront = pm.members.filter(b => z0.includes(b.a) && z0.includes(b.b)).length;
@@ -404,7 +413,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.sketchbar button:has-text("Finish Sketch")'); await p.waitForTimeout(250);
   check("Finish Sketch goes back to the 3D view", (await p.$$(".sketchstage")).length === 0 && (await p.$$(".view3d canvas")).length === 1);
   // A beam drawn on the Side plane is sent in 3D.
-  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(200);
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Draw beams"]'); await p.waitForTimeout(200);
   await p.click('.view3d .pickbar .seg button:text-is("Side")'); await p.waitForTimeout(400);
   check("a frame sketch starts with the Beam tool", await p.$eval('.ribbon button[title^="Draw beams"]', el => el.classList.contains("on")));
   const sb = await canvasBox();
@@ -809,7 +818,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await open("slab"); await p.waitForTimeout(400);
   const slm = fix.slab.m, slabId = slm.shapes[0].id;
   check("a plate is listed in the tree with its thickness", (await p.textContent(".tree")).includes("Plates") && (await p.textContent(".tree")).includes("200 mm thick"));
-  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(200);
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Pick a plane and draw members and plates"]'); await p.waitForTimeout(200);
   await p.click('.view3d .pickbar .seg button:text-is("Top")'); await p.waitForTimeout(400);
   await p.selectOption(".sketchbar select", "3"); await p.waitForTimeout(250);
   check("a sketch on the Top plane at the slab's height shows the slab", (await p.$$(".sketchover .dsvg .shape")).length === 1);
@@ -1021,14 +1030,14 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click(".view3d .vcube .vhome"); await p.waitForTimeout(200);
   const kHome = await p.$$eval(".view3d .axkey3 line", ls => ls.map(l => [+l.getAttribute("x2"), +l.getAttribute("y2")]));
   check("Home goes back to the corner view, Z up the screen", kHome[2][1] < 12 && Math.abs(kHome[2][0] - 26) < 2, JSON.stringify(kHome));
-  check("an empty 3D frame offers to draw a beam in the 3D view", (await p.$$('.view3d .empty button:has-text("Draw a beam")')).length === 1);
-  await p.click('.view3d .empty button:has-text("Draw a beam")'); await p.waitForTimeout(200);
+  check("an empty 3D frame offers New Sketch, which draws the frame with the sketch tools (0.7.5)", (await p.$$('.view3d .empty button:has-text("New Sketch")')).length === 1);
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Draw beams"]'); await p.waitForTimeout(200);
   check("drawing in 3D first asks for a plane (0.6.2: the pick bar)", (await p.$$(".view3d .pickbar")).length === 1 && (await p.textContent(".view3d .pickbar")).includes("Pick a plane"));
   let q3 = await at3d([1.6, 0, -1.8]); await p.mouse.click(q3[0], q3[1]); await p.waitForTimeout(400);
   const keyNow = await p.$$eval(".view3d .axkey3 line", ls => ls.map(l => [l.getAttribute("x2"), l.getAttribute("y2")]));
   check("clicking the floor square at the origin sketches on the Top plane, looking down on it", (await p.textContent(".sketchbar")).includes("Top plane") && Math.abs(+keyNow[2][0] - 26) < 1 && Math.abs(+keyNow[2][1] - 26) < 1, JSON.stringify(keyNow));
   await p.click('.sketchbar button:has-text("Finish Sketch")'); await p.waitForTimeout(250);
-  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(200);
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Pick a plane and draw members and plates"]'); await p.waitForTimeout(200);
   await p.click('.view3d .pickbar .seg button:text-is("Front")'); await p.waitForTimeout(400);
   check("the bar picks the Front plane too, showing its offset as Y", (await p.textContent(".sketchbar")).includes("Front plane") && (await p.textContent(".sketchbar")).includes("Y ="));
   const cu = await p.$eval(".sketchbar .pt2", el => el.title);

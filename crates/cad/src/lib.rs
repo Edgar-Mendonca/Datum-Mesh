@@ -183,6 +183,36 @@ impl Cad {
         Ok(ms)
     }
 
+    /// Frames drawn with the sketch tools (0.7.5): every straight piece of the sketches' curves
+    /// (lines as they are, arcs and circles in short straight pieces; construction lines left
+    /// out), each end in the model's axes (m, Y up), and the sketches they came from.
+    pub fn member_lines(&self) -> Result<(Vec<([f64; 3], [f64; 3])>, Vec<u64>), String> {
+        let sc = self.scene()?;
+        let mut out = vec![];
+        let mut used = vec![];
+        for sk in sc.sketches.iter().filter(|s| Some(s.id) != sc.active) {
+            let at = |p: [f64; 2]| {
+                let q: [f64; 3] = std::array::from_fn(|k| sk.origin[k] + p[0] * sk.x[k] + p[1] * sk.y[k]);
+                [q[0] * 1e-3, q[2] * 1e-3, -q[1] * 1e-3]
+            };
+            let before = out.len();
+            for c in sk.curves.iter().filter(|c| !c.construction) {
+                // A line is one member; a curve is cut into pieces about 10° each.
+                let pts: Vec<[f64; 2]> = if c.kind == "line" { vec![c.pts[0], c.pts[c.pts.len() - 1]] } else { c.pts.iter().step_by((c.pts.len() / 12).max(1)).copied().chain(c.pts.last().copied()).collect() };
+                for w in pts.windows(2) {
+                    let (a, b) = (at(w[0]), at(w[1]));
+                    if (0..3).map(|k| (a[k] - b[k]).powi(2)).sum::<f64>() > 1e-12 {
+                        out.push((a, b));
+                    }
+                }
+            }
+            if out.len() > before {
+                used.push(sk.id);
+            }
+        }
+        Ok((out, used))
+    }
+
     /// The element size (mm) used when none is given: about a twentieth of the largest extent.
     pub fn auto_size(&self) -> f64 {
         let Ok(st) = self.session.world_state() else { return 5.0 };
@@ -522,6 +552,22 @@ mod tests {
                 _ => panic!("{}: not a solid's results", e.id),
             }
         }
+    }
+
+    /// 0.7.5: a frame drawn with the sketch tools: a portal on the front plane (XZ) gives three
+    /// members, in the model's axes (Y up): the posts upright, the beam level at 3 m.
+    #[test]
+    fn sketch_lines_become_members() {
+        let mut c = Cad::new();
+        run(&mut c, "sketch.create", json!({"plane": "XZ"}));
+        run(&mut c, "sketch.line", json!({"points": [[0, 0], [0, -3000], [4000, -3000], [4000, 0]]}));
+        run(&mut c, "sketch.finish", json!({}));
+        let (lines, used) = c.member_lines().unwrap();
+        assert_eq!(lines.len(), 3, "{lines:?}");
+        assert_eq!(used.len(), 1);
+        let ys: Vec<f64> = lines.iter().flat_map(|(a, b)| [a[1], b[1]]).collect();
+        assert!(ys.iter().any(|y| (y.abs() - 3.0).abs() < 1e-9), "a member end at 3 m height: {lines:?}");
+        assert!(lines.iter().all(|(a, b)| (a[2]).abs() < 1e-9 && (b[2]).abs() < 1e-9), "on the front plane (z = 0): {lines:?}");
     }
 
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).

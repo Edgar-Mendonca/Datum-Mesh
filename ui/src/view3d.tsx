@@ -2,7 +2,7 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
-import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack } from "./cad";
+import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack, pick3 } from "./cad";
 import { Timeline, bodyMenu } from "./history";
 import { showMesh, geoMesh } from "./study";
 import { ExtrudePanel } from "./extrude";
@@ -442,7 +442,7 @@ export const View3D = () => {
     const SL = stageL(m);
     if (opts().grid) floor(SL);
     axes(SL);
-    if (picking() || (empty && !sketch())) originPlanes(SL);
+    if (picking() || planePick() || (empty && !sketch() && !activeSketch())) originPlanes(SL);
     const r = spaceRes(), f = r ? deform3(m, r) : 0, q = q3(), rg = range3(), cols = palette(opts().contours).map(c => new THREE.Color(c));
     const showRes = !!r && r.members.length === m.members.length;
     // Members: as drawn (faint when the deflected shape is on top), selected ones in the accent.
@@ -729,7 +729,8 @@ export const View3D = () => {
       toast(model()?.parts?.length ? "Pick a plane to sketch on: a square at the origin, or a flat face of a part." : "Pick a plane to sketch on: click one of the three squares at the origin.");
       return;
     }
-    if (isSolidA(model()?.analysis) && !activeSketch() && !cad3Tool() && !(model()?.parts?.length) && (planePick() || !cad()?.bodies.length)) {
+    // 3D frames drawn with the sketch tools (0.7.5) pick their plane the same way.
+    if ((model()?.analysis === "space" && planePick() && !activeSketch()) || (isSolidA(model()?.analysis) && !activeSketch() && !cad3Tool() && !(model()?.parts?.length) && (planePick() || !cad()?.bodies.length))) {
       const x = e.clientX - rc.left, y = e.clientY - rc.top, o = pickOrigin(x, y);
       // The engine's planes: XY the floor (the view's x–z), XZ the front (x–y), YZ the side (z–y).
       if (o) { setPlanePick(false); newSketch(({ xz: "XY", xy: "XZ", zy: "YZ" } as const)[o]); return; }
@@ -951,7 +952,7 @@ export const View3D = () => {
       <Show when={planePick()}><div class="pickplane" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}><b>New Sketch</b><span>Click a plane at the origin or a flat face of a solid, or</span>
         <For each={[["XY", "Floor (XY)"], ["XZ", "Front (XZ)"], ["YZ", "Side (YZ)"]] as const}>{([k, l]) => <button class="btn sm" onClick={() => { setPlanePick(false); newSketch(k); }}>{l}</button>}</For>
         <button class="btn sm" onClick={() => setPlanePick(false)}>Cancel</button></div></Show>
-      <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>Start a sketch: pick one of the three squares at the origin and the view turns square to it. Draw beams with clicks (each goes on from the last; nearly level or upright snaps level or upright) or typed points; move the plane with its offset; Finish Sketch, then sketch on the next plane. The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
+      <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch() && !activeSketch() && !planePick()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>New Sketch, then click one of the three planes at the origin: the view turns to it. Draw the frame with lines (and arcs), sized with dimensions as for a part; Finish Sketch makes them beams (or truss bars), joined where they meet. Sketch on the next plane for the next frame. Or draw members one by one with Beam and Truss Bar.</span><button class="btn pri" onClick={() => { pick3(null); setPlanePick(true); }}>New Sketch</button></div></Show></Show>
       <SweepPanel />
       <Show when={picking()}><div class="draw3 pickbar" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
         <b>New sketch</b><span class="muted">{model()?.parts?.length ? "Pick a plane: a square at the origin, a flat face of a part, or" : "Pick a plane: click a square at the origin, or"}</span>

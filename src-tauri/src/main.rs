@@ -159,6 +159,30 @@ async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out>
     Ok(o)
 }
 
+/// A 3D frame drawn with the sketch tools (0.7.5): every straight piece of the finished sketches
+/// becomes a member (`truss`: truss bars, else beams), joined where their ends meet, as one step
+/// Undo takes back; the sketches are then taken out of the design (the members are the frame).
+#[tauri::command]
+fn cad_members(st: State<CadSt>, app: State<St>, truss: bool) -> R<Out> {
+    let mut c = st.lock();
+    let (lines, used) = c.member_lines()?;
+    if lines.is_empty() {
+        return Err("The sketch has no lines to make members of: draw lines (construction lines are left out).".into());
+    }
+    let kind = if truss { datum_core::model::MemberKind::Truss } else { datum_core::model::MemberKind::Beam };
+    let ops = lines.iter().map(|(a, b)| datum_core::doc::Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind: kind.clone(), section: None, material: None, z: [a[2], b[2]] }).collect();
+    let mut a = app.lock();
+    let created = a.doc.apply(datum_core::doc::Op::Batch(ops))?;
+    // The sketches are the members now (the frame is edited as members from here).
+    let ids: Vec<u64> = c.scene()?.features.iter().filter(|f| used.contains(&f.id)).map(|f| f.id).collect();
+    for id in ids {
+        c.run("timeline.delete", &serde_json::json!({ "feature": id }))?;
+    }
+    let mut o = out(&a);
+    o.created = created;
+    Ok(o)
+}
+
 /// The element size (mm) the mesh uses when none is given.
 #[tauri::command]
 fn cad_auto_size(st: State<CadSt>) -> f64 {
@@ -706,7 +730,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            cad_run, cad_scene, cad_mesh, cad_auto_size, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

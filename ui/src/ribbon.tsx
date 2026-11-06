@@ -1,6 +1,7 @@
 // Title bar, quick access toolbar, Tell Me and the ribbon (Home · Geometry · Mesh · Loads · Solve ·
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
+import { memberTruss, setMemberTruss } from "./cad";
 import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { holeD, setHoleD, edgeSize, setEdgeSize, sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, setView, frameRes, spaceRes } from "./store";
@@ -381,11 +382,15 @@ export const Ribbon = () => {
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G></Show>
           <Show when={!activeSketch()}><G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /><B big i="solid" l="Mesh" dd={(e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); openMenu({ x: r.left, y: r.bottom + 2 }, [["Coordinates in millimetres", 1e-3], ["Coordinates in metres", 1], ["Coordinates in inches", 0.0254]].map(([l, u]) => ({ label: `${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) }))); }} title="A part of any shape: a tetrahedral mesh from a mesher (Gmsh .msh, CalculiX-format .inp), as a new 3D solid" /></G></Show>
         </>}>
-          <Show when={sp()}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and draw members on it" /></G></Show>
+          <Show when={sp() && activeSketch()}><CadGroups /></Show>
+          <Show when={sp() && !activeSketch()}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => { pick3(null); setPlanePick(true); }} title="Draw the frame with the sketch tools: click a plane, draw lines (and arcs); Finish Sketch makes them members joined where they meet" />
+            <S><B i="beam" l="Lines become Beams" on={!memberTruss()} run={() => setMemberTruss(false)} /><B i="truss" l="Lines become Truss Bars" on={memberTruss()} run={() => setMemberTruss(true)} /><B i="poly" l="Members & Plates" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and draw members and plates on it one by one (the plane sketch of 0.6.2)" /></S></G></Show>
+          <Show when={!(sp() && activeSketch())}>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
           <Show when={sp() && onPlane()}><FramePlates /></Show>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
+          </Show>
         </Show>
         <Show when={!activeSketch()}><G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G></Show>
       </Show>
