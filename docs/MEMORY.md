@@ -344,8 +344,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 | 0.7.2 | Modelling feel (the user's review of 0.7.1): feature tree with right-click Edit/Edit Sketch/Rename/Suppress/Roll Back/Delete and a timeline; pick any plane, the camera turning to it and back to iso, sketching in 3D, live extrude preview; big-and-small grid; no 3D/Section switch for 3D solids, Inspector showing the selection; no browser menu anywhere (the 3D mesh view and cut plane moved to 0.7.3, with meshing of the new solids) | ✅ |
 | 0.7.3 | Analysis on the modelled solids: Gmsh meshing on demand, supports and loads on clicked faces named after their feature, solve and results; Roadmap icon colour | ✅ |
 | 0.7.4 | Every example's animation checked (spectrum results not played); heat on the modelled solids (heat sink example); 3D frames drawn with the sketch tools; front and side planes the right way up. (Crushing, modelled examples and the 3D/Section switch came early, in 0.7.3) | ✅ |
-| 0.7.5 | Frames and trusses the new way: grid lines and levels, members drawn in 3D or from sketch lines, sections drawn as real shapes, orientation, releases, member loads, select-and-assign, load cases; plates on the same model | ⬜ |
-| 0.7.6 | The modelling gaps: the engine's spline, ellipse, project, text, sweep, loft, combine, draft, split and primitives on the ribbon; drag arrows, box select, measure, section view; STEP and STL | ⬜ |
+| 0.7.5 | Sections drawn as real shapes along 3D members (orientation visible); primitives (box, cylinder, cone, sphere) and Combine; rounded rectangle, ellipse and spline in the sketch. (Members from sketch lines came in 0.7.4; releases, member loads and load cases were already there) | ✅ |
+| 0.7.6 | Grid lines and levels; plates from sketches; sweep, loft, draft, split; measure, section view; STEP and STL | ⬜ |
 | 0.7.7 | Interactions and output: solids tied, coupling to a reference point, remote force and moment, bolt pretension; finer mesh near chosen faces, mesh quality; graphs along a path or over time; the report on the modelled solids | ⬜ |
 | 0.8 | Contact (frictionless, then friction): the folds of a crushed tube | ⬜ |
 | 0.9 | Explicit dynamics: impact | ⬜ |
@@ -480,6 +480,12 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 - **0.7.3 continued.** Built crushing (above), benchmark 34, the four modelled examples (bracket, shaft, tube crush, strip frequencies) with test `modelled_examples_build_mesh_and_solve`, the ignored long test `tube_crush_collapses` (peak 57.34 kN against the squash load 57.30 kN; collapse found; stalls near 6.9 mm at about 47 % plastic strain, where folds press on each other: contact, 0.8), Edit Section, help topic `crushing`. Disk filled again (the linker crashed with a bus error): stale test binaries and the release folder removed.
 
 - **0.7.4 built (2026-11-07).** Test `every_example_plays` (found quake and building: spectrum results played as a load growing; now not playable); heat sink example (`Pick::Rest`) with its heat balance in the examples test; frames drawn with the sketch tools (`member_lines`, `cad_members`, test `sketch_lines_become_members`; ribbon New Sketch for 3D frames, Lines become Beams / Truss Bars, Members & Plates for the old plane sketch); planes with explicit axes. Real app: a 6 × 4 m portal sketched on the front plane became three beams standing on the floor; the heat sink solved (80 °C base, fins to 77 °C, heat balance). Found there: the front plane looked from the back and drew below the floor; the message counted nodes as beams; the view framed before the members existed.
+
+- **0.7.5 built (2026-11-07).** 0.7.4 released (setup 52.2 MB, CI green). Sections swept along 3D members (`sectionRing` in view3d, View › Section shapes, `sectionsOn`); primitives and Combine (`ui/src/primitives.tsx`, engine commands `solid.box/cylinder/cone/sphere/combine`), rounded rectangle, ellipse, spline (`cad.tsx`), test `primitives_combine_and_more_shapes`. Real app: the steel platform drawn with its sections; a 40 × 30 × 20 box, a cylinder at (20, 15, 0) and Combine › Cut left a box with a round pocket (7 faces). Found there: a new primitive was not framed (the view stayed at the empty grid's scale); the view now frames after each one.
+
+## 5. Known limits (0.7.5)
+
+- Primitives are placed by numbers, not by dragging; Combine takes solids by name. Ellipses and splines go to the mesher as the engine exports them (checked for a box, cylinder, cut and sphere, not every shape).
 
 ## 5. Known limits (0.7.4)
 

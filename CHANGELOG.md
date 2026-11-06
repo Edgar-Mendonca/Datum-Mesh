@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.5 — 2026-11-07
+
+3D frames drawn as they will be built, and solids made in one go.
+
+**Frames drawn with their sections**
+- Each member of a 3D frame is drawn as its section (I, channel, angle, box, tube, rectangle, circle) swept along it, turned as the solver turns it, so you can see which way up each member is. View › Section shapes turns it off.
+
+**Primitives and Combine**
+- Box, Cylinder, Cone and Sphere (Geometry › Primitives) are made in one go from a point and their sizes, and land in the history like any feature.
+- Combine joins solids into one, cuts some out of another, or keeps only what they share.
+
+**More sketch shapes**
+- A rectangle with rounded corners (the radius beside the button), an ellipse (centre, end of the long axis, a point across) and a spline through the points you click (double-click or Enter on the last one).
+
 ## 0.7.4 — 2026-11-07
 
 Frames drawn with the sketch tools, every example's animation checked, and heat on the modelled solids.
