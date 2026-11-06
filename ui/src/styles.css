@@ -1074,3 +1074,17 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .cadsheet .mark.dim text { fill: var(--text); font-size: 12px; text-anchor: middle; }
 .dimbox { position: absolute; display: flex; gap: 6px; align-items: center; padding: 5px 7px; background: var(--panel); border: 1px solid var(--blue); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.12); z-index: 2; }
 .dimbox input { width: 120px; }
+
+/* 0.7.2: the history: dimmed when suppressed or rolled back; the timeline under the 3D view. */
+.tree .ti.dim span, .tree .ti.dim .tic { opacity: .45; }
+.timeline { position: absolute; left: 50%; transform: translateX(-50%); bottom: 10px; display: flex; align-items: center; gap: 4px; padding: 4px 8px; max-width: calc(100% - 180px);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 1px 6px rgba(0,0,0,.08); z-index: 4; }
+.timeline > b { font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin-right: 4px; }
+.timeline > button { width: 24px; height: 24px; color: var(--text2); border-radius: 4px; }
+.timeline > button:hover { background: var(--sel); }
+.tlchips { display: flex; align-items: center; gap: 2px; overflow-x: auto; margin-left: 6px; }
+.tlchip { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid transparent; border-radius: 5px; }
+.tlchip:hover { background: var(--sel); }
+.tlchip.on { border-color: var(--blue); background: var(--sel); }
+.tlchip.off .tic, .tlchip.back .tic { opacity: .35; }
+.tlmark { width: 3px; height: 26px; border-radius: 2px; background: var(--blue); margin: 0 2px; }

@@ -1,4 +1,5 @@
 // Datum Mesh window: layout, sidebar, status bar, keyboard shortcuts, startup and recovery.
+import { historyKey } from "./history";
 import { cadLoad } from "./cad";
 import { render } from "solid-js/web";
 import { For, Show, Switch, Match, onMount, createEffect, on, lazy, Suspense } from "solid-js";
@@ -59,6 +60,9 @@ const App = () => {
   createEffect(on(() => opts().autosave, every => { clearInterval(timer); if (every > 0) timer = window.setInterval(() => invoke("autosave").catch(() => {}), every * 60000); }));
   // Opening the Mesh view of a part that has no mesh yet meshes it.
   createEffect(on(view, v => { const m = model(); if (v === "mesh" && m && !isFrame(m.analysis) && !meshed() && !partRes()) C.mesh(); }));
+  // 0.7.2: the browser's own menu (Back, Refresh, Print…) never shows; text boxes keep theirs.
+  document.addEventListener("contextmenu", e => { if (!(e.target as HTMLElement)?.closest?.("input, textarea")) e.preventDefault(); });
+  document.addEventListener("keydown", e => { if (historyKey(e)) e.preventDefault(); });
   onMount(async () => {
     try {
       const o = await invoke<Options>("options"); setOpts(o); setThemeRaw(o.theme || "auto"); applyTheme();

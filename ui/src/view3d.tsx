@@ -3,6 +3,7 @@
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
 import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit } from "./cad";
+import { Timeline, bodyMenu } from "./history";
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -839,8 +840,9 @@ export const View3D = () => {
   createEffect(() => { const m = model(); const key = m ? `${m.name}|${m.nodes.length === 0}|${m.shapes.length === 0}` : ""; if (key !== lastName) { const was = lastName; lastName = key; if (!((picking() || sketch()) && was.split("|")[0] === key.split("|")[0])) queueMicrotask(() => fit()); } });
 
   return (
-    <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => e.preventDefault()} tabIndex={0}
+    <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => { e.preventDefault(); if (!isSolidA(model()?.analysis)) return; const rc = host.getBoundingClientRect(), h = cadHit(e.clientX - rc.left, e.clientY - rc.top); if (h.face) bodyMenu(e, h.face.body); }} tabIndex={0}
       onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Escape") { if (sketchPick()) setSketchPick(false); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
+      <Show when={isSolidA(model()?.analysis) && !activeSketch()}><Timeline /></Show>
       <Show when={activeSketch()}><div class="cadover" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onPointerMove={e => e.stopPropagation()}><SketchCanvas /></div></Show>
       <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length && !cad()?.sketches.length && !cad()?.bodies.length}><div class="empty corner"><b>Build a part</b><span>Start with Geometry › New Sketch on a plane, draw a closed shape (shapes drawn inside it become holes), then Finish Sketch and Extrude or Revolve it.</span><button class="btn pri" onClick={() => newSketch("XY")}>New sketch on the floor</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>Start a sketch: pick one of the three squares at the origin and the view turns square to it. Draw beams with clicks (each goes on from the last; nearly level or upright snaps level or upright) or typed points; move the plane with its offset; Finish Sketch, then sketch on the next plane. The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>

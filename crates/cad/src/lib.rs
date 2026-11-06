@@ -81,11 +81,25 @@ pub struct Sketch {
     pub status: String,
 }
 
+/// A feature of the design's history, in order: what the tree and the timeline list.
+#[derive(Serialize)]
+pub struct FeatureItem {
+    pub id: u64,
+    pub name: String,
+    /// Sketch, Extrude, Revolve, Hole, Fillet, Chamfer, Shell, Pattern… (the engine's type).
+    pub kind: String,
+    pub suppressed: bool,
+}
+
 /// What the window draws and lists.
 #[derive(Serialize)]
 pub struct Scene {
     pub bodies: Vec<Body>,
     pub sketches: Vec<Sketch>,
+    /// The history, in order.
+    pub features: Vec<FeatureItem>,
+    /// How many features are active (the timeline's marker); none: all of them.
+    pub marker: Option<usize>,
     /// The sketch being edited, if any.
     pub active: Option<u64>,
     pub undo: bool,
@@ -163,7 +177,13 @@ impl Cad {
                 }
             })
             .collect();
-        Ok(Scene { bodies, sketches, active: self.session.active_sketch, undo: !self.session.undo.is_empty(), redo: !self.session.redo.is_empty() })
+        let doc = &self.session.doc;
+        let features = doc
+            .features
+            .iter()
+            .map(|f| FeatureItem { id: f.id, name: f.name.clone(), kind: f.kind.type_name().trim_end_matches("Feature").to_string(), suppressed: f.suppressed })
+            .collect();
+        Ok(Scene { bodies, sketches, features, marker: doc.marker, active: self.session.active_sketch, undo: !self.session.undo.is_empty(), redo: !self.session.redo.is_empty() })
     }
 }
 
@@ -235,6 +255,55 @@ mod tests {
 
     fn run(c: &mut Cad, id: &str, p: Value) -> Value {
         c.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"))
+    }
+
+    /// The history as the tree lists it, and every action of its right-click menu with the inputs
+    /// the window sends: inspect (the inputs Edit Feature shows), change an input, rename,
+    /// suppress, roll back, delete, edit a sketch, rename and delete a solid.
+    #[test]
+    fn history_menu() {
+        let mut c = Cad::new();
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [40, 20]}));
+        run(&mut c, "sketch.finish", json!({}));
+        run(&mut c, "solid.extrude", json!({"distance": 10.0}));
+        run(&mut c, "solid.fillet", json!({"edges": [[20.0, 0.0, 10.0]], "radius": 2}));
+        let sc = c.scene().unwrap();
+        let kinds: Vec<&str> = sc.features.iter().map(|f| f.kind.as_str()).collect();
+        assert_eq!(kinds, ["Sketch", "Extrude", "Fillet"], "{kinds:?}");
+        assert!(sc.marker.is_none());
+        let (sk, ex, fi) = (sc.features[0].id, sc.features[1].id, sc.features[2].id);
+        let ins = run(&mut c, "timeline.inspect", json!({"feature": ex}));
+        assert!(ins.get("definition").is_some() || ins.get("inputs").is_some(), "inspect says what Edit can change: {ins}");
+        let top = |c: &Cad| c.scene().unwrap().bodies[0].pos.chunks(3).map(|p| p[2]).fold(f32::MIN, f32::max);
+        // Edit Feature: the extrusion's distance 10 → 25.
+        let def = ins.get("definition").cloned().unwrap_or_default();
+        let key = ["distance", "depth", "extent"].into_iter().find(|k| def.get(*k).is_some()).unwrap_or("distance");
+        run(&mut c, "timeline.edit", json!({"feature": ex, "set": {key: 25.0}}));
+        assert!((top(&c) - 25.0).abs() < 1e-3, "edited to 25: top at {}", top(&c));
+        run(&mut c, "timeline.rename", json!({"feature": ex, "name": "Base"}));
+        assert_eq!(c.scene().unwrap().features[1].name, "Base");
+        let faces = |c: &Cad| c.scene().unwrap().bodies.iter().map(|b| b.face.iter().max().map_or(0, |m| m + 1)).sum::<u32>();
+        assert_eq!(faces(&c), 7);
+        run(&mut c, "timeline.suppress", json!({"feature": fi}));
+        assert!(c.scene().unwrap().features[2].suppressed && faces(&c) == 6, "suppressed: the fillet's face goes");
+        run(&mut c, "timeline.suppress", json!({"feature": fi}));
+        assert_eq!(faces(&c), 7, "unsuppressed again");
+        run(&mut c, "timeline.rollback", json!({"position": 1}));
+        let r = c.scene().unwrap();
+        assert!(r.marker == Some(1) && r.bodies.is_empty(), "rolled back to the sketch: no solid yet");
+        run(&mut c, "timeline.rollback", json!({"position": "end"}));
+        assert_eq!(c.scene().unwrap().bodies.len(), 1);
+        run(&mut c, "sketch.edit", json!({"sketch": sk}));
+        assert_eq!(c.scene().unwrap().active, Some(sk), "Edit Sketch opens it");
+        run(&mut c, "sketch.finish", json!({}));
+        let body = c.scene().unwrap().bodies[0].name.clone();
+        run(&mut c, "body.rename", json!({"body": body, "name": "Plate"}));
+        assert_eq!(c.scene().unwrap().bodies[0].name, "Plate");
+        run(&mut c, "timeline.delete", json!({"feature": fi}));
+        assert_eq!(c.scene().unwrap().features.len(), 2);
+        run(&mut c, "solid.remove", json!({"bodies": ["Plate"]}));
+        assert!(c.scene().unwrap().bodies.is_empty());
     }
 
     /// A design written to JSON and read back draws the same solid.

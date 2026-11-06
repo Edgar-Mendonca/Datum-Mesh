@@ -1,6 +1,7 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
 import { cad } from "./cad";
+import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
@@ -127,11 +128,14 @@ export const Tree = () => {
         <Show when={m()}>{mm => <>
           <div class="troot" title="Model › Name in the Inspector (nothing selected)" onClick={() => setSel([])}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
           <Step n={1} t="Geometry" done={drawn() || !!mm().volume || (mm().parts?.length ?? 0) > 0 || (isSolidA(mm().analysis) && !!cad()?.bodies.length)} why={frame() ? "Draw the members" : "New Sketch, then Extrude"}>
-          <Show when={isSolidA(mm().analysis) && (cad()?.sketches.length || cad()?.bodies.length)}>
-            <Branch t="Sketches" icon="poly" n={cad()!.sketches.length} help="sketchplane">
-              <For each={cad()!.sketches}>{x => <Row2 icon="poly" label={x.name} sub={`${x.curves.length} ${x.curves.length === 1 ? "curve" : "curves"}${x.id === cad()!.active ? " · open" : ""}`} on={x.id === cad()!.active} />}</For></Branch>
+          <Show when={isSolidA(mm().analysis) && (cad()?.features.length || cad()?.bodies.length)}>
+            <Branch t="History" icon="list" n={cad()!.features.length} help="modelling">
+              <For each={cad()!.features}>{(f, i) => <button class="ti" classList={{ on: selFeature() === f.id || f.id === cad()!.active, dim: f.suppressed || rolledBack(i()) }}
+                title={`${f.kind}${f.suppressed ? ", suppressed" : ""}${rolledBack(i()) ? ", rolled back" : ""}: double-click to edit, right-click for more`}
+                onClick={() => setSelFeature(f.id)} onDblClick={() => editFeature(f)} onContextMenu={e => featureMenu(e, f, i())}>
+                <Ic n={kindIcon(f.kind)} /><span>{f.name}</span><small>{f.id === cad()!.active ? "open" : f.suppressed ? "suppressed" : f.kind === "Sketch" ? `${cad()!.sketches.find(x => x.id === f.id)?.curves.length ?? 0} curves` : f.kind}</small></button>}</For></Branch>
             <Branch t="Solids" icon="solid" n={cad()!.bodies.length} mark={{ ok: cad()!.bodies.every(b => b.closed), why: "A body is not closed: it cannot be meshed as a solid" }}>
-              <For each={cad()!.bodies}>{b => <Row2 icon="solid" label={b.name} sub={`${new Set(b.face).size} faces${b.closed ? "" : " · open"}`} />}</For></Branch>
+              <For each={cad()!.bodies}>{b => <button class="ti" title="Right-click for more" onContextMenu={e => bodyMenu(e, b.name)}><Ic n="solid" /><span>{b.name}</span><small>{`${new Set(b.face).size} faces${b.closed ? "" : " · open"}`}</small></button>}</For></Branch>
           </Show>
           <Show when={!mm().volume} fallback={<Branch t="Imported mesh" icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }}>
             <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>

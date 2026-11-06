@@ -12,7 +12,7 @@ export type CadCurve = { id: string; pts: [number, number][]; construction: bool
 export type CadPoint = { id: string; at: [number, number]; fixed: boolean };
 export type CadMark = { id: string; name: string; value: number | null; at: [number, number] };
 export type CadSketch = { id: number; name: string; origin: number[]; x: number[]; y: number[]; curves: CadCurve[]; points: CadPoint[]; marks: CadMark[]; profiles: number; status: string };
-export type CadScene = { bodies: CadBody[]; sketches: CadSketch[]; active: number | null; undo: boolean; redo: boolean };
+export type CadScene = { bodies: CadBody[]; sketches: CadSketch[]; features: { id: number; name: string; kind: string; suppressed: boolean }[]; marker: number | null; active: number | null; undo: boolean; redo: boolean };
 
 export const [cad, setCad] = createSignal<CadScene | null>(null);
 /** Runs one engine command; the scene comes back. False (and a message) when it is refused. */
