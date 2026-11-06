@@ -9,14 +9,15 @@ import * as D from "./dialogs";
 import * as K from "./sketch";
 import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
 import { stepsDialog, pathDialog, partPathDialog, isNonlinear, dynDialog, dynOf } from "./steps";
-import { Icon } from "./ui";
+import { Icon, Dialog } from "./ui";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
 import { q3, setQ3, Q3 } from "./space3";
 import { setPlane, onPlane, plateT, setPlateT } from "./plane3";
 import { parseNum } from "./api";
 import { toU, fromU, unit } from "./units";
-import { cad, cadRun, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, newSketch, finishSketch, cancelSketch, extrude, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
+import { cad3Tool, pick3, TOOLS3, holeD3, setHoleD3, holeDepth, setHoleDepth, fillet3R, setFillet3R, chamfer3D, setChamfer3D, shellT, setShellT, pressD, setPressD, bodyNames } from "./cad";
+import { cad, cadRun, cadQuery, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, EDITS, CONSTRAINTS, pickEdit, consMode, setConsMode, toggleConstruction, deleteSelected, rectPattern, sel as cadSel, filletR, setFilletR, chamferD, setChamferD, offsetD, setOffsetD, patN, setPatN, patA, setPatA, rowN, setRowN, rowS, setRowS, colN, setColN, colS, setColS, newSketch, finishSketch, cancelSketch, extrude, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
 
@@ -64,6 +65,126 @@ const MmNum = (p: { l: string; title: string; v: () => number; set: (v: number) 
   <label class="ribnum" title={p.title}>{p.l}<input class="mono" value={p.v()} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null && v > 0 && (!p.int || (Number.isInteger(v) && v >= 3))) p.set(v); else e.currentTarget.value = String(p.v()); }} /><span class="unit">{p.u ?? "mm"}</span></label>
 );
 
+/** The constraint the Constrain button applies (the last one picked from its ▾). */
+const [conWay, setConWay] = createSignal("coincident");
+type Field = [string, string, boolean, () => number, (v: number) => void];
+/** The sizes the tool in use takes, shown under Sizes (and only those). */
+const sizeFields = (): Field[] => {
+  const t = cadTool() ?? "";
+  if (t.startsWith("poly")) return [["Sides", "", true, sides, setSides]];
+  if (t.startsWith("slot")) return [["Slot width", "mm", false, slotW, setSlotW]];
+  if (t === "fillet") return [["Radius", "mm", false, filletR, setFilletR]];
+  if (t === "chamfer") return [["Distance", "mm", false, chamferD, setChamferD]];
+  if (t === "offset") return [["Distance", "mm", false, offsetD, setOffsetD]];
+  if (t === "cpattern") return [["Copies", "", true, patN, setPatN], ["Angle", "°", false, patA, v => setPatA(Math.min(360, v))]];
+  if (!t || t === "select") return [["Rows", "", true, rowN, setRowN], ["Row spacing", "mm", false, rowS, setRowS], ["Columns", "", true, colN, (v: number) => setColN(Math.max(1, v))], ["Column spacing", "mm", false, colS, setColS]].slice(0, cadSel().length ? 4 : 0) as Field[];
+  return [];
+};
+/** The sizes of the 3D tool in use (or of Extrude and Revolve when none is). */
+const size3 = (): Field[] => {
+  const t = cad3Tool();
+  if (t === "hole3") return [["Ø", "mm", false, holeD3, setHoleD3], ["Depth (0: through)", "mm", false, holeDepth, v => setHoleDepth(Math.max(0, v))]];
+  if (t === "fillet3") return [["Radius", "mm", false, fillet3R, setFillet3R]];
+  if (t === "chamfer3") return [["Distance", "mm", false, chamfer3D, setChamfer3D]];
+  if (t === "shell3") return [["Wall", "mm", false, shellT, setShellT]];
+  if (t === "press3") return [["Distance", "mm", false, pressD, setPressD]];
+  if (t) return [];
+  return [["Extrude", "mm", false, extrudeD, setExtrudeD], ["Revolve", "°", false, revolveA, v => setRevolveA(Math.min(360, v))]];
+};
+/** Ticks for the solids an Arrange tool works on (all of them to start with). */
+const BodyTicks = (p: { on: () => string[]; set: (v: string[]) => void }) => (
+  <div class="row wrap"><For each={bodyNames()}>{n => <label class="chk"><input type="checkbox" checked={p.on().includes(n)} onChange={e => p.set(e.currentTarget.checked ? [...p.on(), n] : p.on().filter(x => x !== n))} />{n}</label>}</For></div>
+);
+const NumIn = (p: { l: string; v: () => number; set: (v: number) => void; u?: string }) => (
+  <label class="fld">{p.l}<input class="mono" value={p.v()} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null) p.set(v); else e.currentTarget.value = String(p.v()); }} /><span class="unit">{p.u ?? "mm"}</span></label>
+);
+const needBodies = () => { if (!bodyNames().length) { toast("Make a solid first: New Sketch, a closed shape, then Extrude."); return false; } return true; };
+/** Arrange › Move / Copy. */
+const moveDialog = () => {
+  if (!needBodies()) return;
+  const [bs, setBs] = createSignal(bodyNames()), [x, setX] = createSignal(0), [y, setY] = createSignal(0), [z, setZ] = createSignal(0), [a, setA] = createSignal(0), [copy, setCopy] = createSignal(false);
+  openDialog(() => <Dialog title="Move / Copy solids" help="modelling">
+    <BodyTicks on={bs} set={setBs} />
+    <div class="row"><NumIn l="X" v={x} set={setX} /><NumIn l="Y" v={y} set={setY} /><NumIn l="Z" v={z} set={setZ} /><NumIn l="Turn about Z" u="°" v={a} set={setA} /></div>
+    <label class="chk"><input type="checkbox" checked={copy()} onChange={e => setCopy(e.currentTarget.checked)} />Make a copy (keep the originals where they are)</label>
+    <div class="row end"><button class="btn pri" onClick={async () => { if (await cadRun("solid.move", { bodies: bs(), translate: [x(), y(), z()], ...(a() ? { axis: [0, 0, 1], angle: a() } : {}), copy: copy() })) closeDialog(); }}>OK</button></div>
+  </Dialog>);
+};
+/** Arrange › Mirror. */
+const mirrorDialog = () => {
+  if (!needBodies()) return;
+  const [bs, setBs] = createSignal(bodyNames()), [pl, setPl] = createSignal<"YZ" | "XZ" | "XY">("YZ"), [join, setJoin] = createSignal(false);
+  openDialog(() => <Dialog title="Mirror solids" help="modelling">
+    <BodyTicks on={bs} set={setBs} />
+    <div class="row"><span>In the plane</span><For each={[["YZ", "Y–Z (across X)"], ["XZ", "X–Z (across Y)"], ["XY", "X–Y (across Z)"]] as const}>{([k, l]) => <label class="chk"><input type="radio" name="mpl" checked={pl() === k} onChange={() => setPl(k)} />{l}</label>}</For></div>
+    <label class="chk"><input type="checkbox" checked={join()} onChange={e => setJoin(e.currentTarget.checked)} />Join the copy to the original</label>
+    <div class="row end"><button class="btn pri" onClick={async () => { if (await cadRun("solid.mirror", { bodies: bs(), plane: pl(), combine: join() })) closeDialog(); }}>OK</button></div>
+  </Dialog>);
+};
+/** Arrange › Pattern: rows and columns, or copies round an axis. */
+const patternDialog = () => {
+  if (!needBodies()) return;
+  const [bs, setBs] = createSignal(bodyNames()), [kind, setKind] = createSignal<"rect" | "circ">("rect");
+  const [n1, setN1] = createSignal(3), [s1, setS1] = createSignal(50), [n2, setN2] = createSignal(1), [s2, setS2] = createSignal(50), [n, setN] = createSignal(6), [ax, setAx] = createSignal<"X" | "Y" | "Z">("Z"), [ang, setAng] = createSignal(360);
+  openDialog(() => <Dialog title="Pattern of solids" help="modelling">
+    <BodyTicks on={bs} set={setBs} />
+    <div class="row"><label class="chk"><input type="radio" name="pk" checked={kind() === "rect"} onChange={() => setKind("rect")} />Rows and columns</label><label class="chk"><input type="radio" name="pk" checked={kind() === "circ"} onChange={() => setKind("circ")} />Round an axis</label></div>
+    <Show when={kind() === "rect"} fallback={<div class="row"><NumIn l="Copies (with the original)" u="" v={n} set={setN} /><NumIn l="Over" u="°" v={ang} set={setAng} /><span>about</span><For each={["X", "Y", "Z"] as const}>{k => <label class="chk"><input type="radio" name="pax" checked={ax() === k} onChange={() => setAx(k)} />{k}</label>}</For></div>}>
+      <div class="row"><NumIn l="Along X: count" u="" v={n1} set={setN1} /><NumIn l="spacing" v={s1} set={setS1} /></div>
+      <div class="row"><NumIn l="Along Y: count" u="" v={n2} set={setN2} /><NumIn l="spacing" v={s2} set={setS2} /></div></Show>
+    <div class="row end"><button class="btn pri" onClick={async () => {
+      const ok = kind() === "rect" ? await cadRun("solid.pattern.rectangular", { bodies: bs(), dir1: [1, 0, 0], count1: n1(), spacing1: s1(), ...(n2() > 1 ? { dir2: [0, 1, 0], count2: n2(), spacing2: s2() } : {}) })
+        : await cadRun("solid.pattern.circular", { bodies: bs(), axis: ax(), count: n(), angle: ang() });
+      if (ok) closeDialog(); }}>OK</button></div>
+  </Dialog>);
+};
+/** Construct › Offset Plane, then a sketch on it. */
+const offsetPlaneDialog = () => {
+  const [base, setBase] = createSignal<"XY" | "XZ" | "YZ">("XY"), [off, setOff] = createSignal(20);
+  openDialog(() => <Dialog title="Offset plane" help="sketchplane">
+    <div class="row"><span>Parallel to</span><For each={[["XY", "the floor (XY)"], ["XZ", "the front (XZ)"], ["YZ", "the side (YZ)"]] as const}>{([k, l]) => <label class="chk"><input type="radio" name="opb" checked={base() === k} onChange={() => setBase(k)} />{l}</label>}</For></div>
+    <div class="row"><NumIn l="Set off by" v={off} set={setOff} /></div>
+    <div class="row end"><button class="btn pri" onClick={async () => {
+      const r = await cadQuery<any>("construct.plane.offset", { base: base(), offset: off() }); if (!r) return;
+      const name = r.name ?? r.plane ?? r.created?.[0] ?? r.id;
+      closeDialog(); pick3(null);
+      if (await cadRun("sketch.create", { plane: name })) pickTool(ways().Line);
+    }}>Sketch on it</button></div>
+  </Dialog>);
+};
+
+/** Inspect › Sketch Report: what the engine says of the open sketch. */
+const sketchReport = async () => {
+  const r = await cadQuery<any>("sketch.inspect"); if (!r) return;
+  const sk = activeSketch();
+  openDialog(() => <Dialog title={`Sketch report: ${sk?.name ?? ""}`} help="sketchplane">
+    <table class="kv"><tbody>
+      <tr><td>State</td><td>{sk?.status.replace("Solved, ", "").replace("Solved", "fully defined")}</td></tr>
+      <tr><td>Curves</td><td>{(r.curves ?? []).length} ({(r.curves ?? []).filter((c: any) => c.fully_constrained).length} fully defined)</td></tr>
+      <tr><td>Points</td><td>{(r.points ?? []).length}</td></tr>
+      <tr><td>Closed regions</td><td>{sk?.profiles ?? 0}</td></tr>
+      <tr><td>Dimensions</td><td>{(sk?.marks ?? []).filter(m => m.value !== null).map(m => `${m.name} ${+m.value!.toPrecision(5)}`).join(", ") || "none"}</td></tr>
+      <tr><td>Constraints</td><td>{(sk?.marks ?? []).filter(m => m.value === null).map(m => m.name).join(", ") || "none"}</td></tr>
+    </tbody></table>
+    <p class="muted">Blue curves are still free to move; black ones are fixed by dimensions and constraints.</p>
+  </Dialog>);
+};
+/** Configure › Parameters: named sizes for dimensions and features. */
+const parametersDialog = async () => {
+  const [list, setList] = createSignal<any[]>([]);
+  const load = async () => { const r = await cadQuery<any>("parameters.list"); setList(Array.isArray(r) ? r : (r?.parameters ?? [])); };
+  await load();
+  const [name, setName] = createSignal(""), [expr, setExpr] = createSignal("");
+  openDialog(() => <Dialog title="Parameters" help="sketchplane">
+    <table class="kv"><thead><tr><th>Name</th><th>Expression</th><th>Value</th></tr></thead><tbody>
+      <For each={list()}>{x => <tr><td class="mono">{x.name}</td><td><input class="mono" value={x.expression ?? x.expr ?? ""} onChange={async e => { if (await cadRun("parameters.change", { name: x.name, expression: e.currentTarget.value })) load(); }} /></td><td class="mono">{x.value ?? ""}</td></tr>}</For>
+      <Show when={!list().length}><tr><td colspan={3} class="muted">No parameters yet: add one below, then type its name in a dimension (W / 2).</td></tr></Show>
+    </tbody></table>
+    <div class="row"><input class="mono" placeholder="name (W)" value={name()} onInput={e => setName(e.currentTarget.value)} /><input class="mono" placeholder="expression (40 mm)" value={expr()} onInput={e => setExpr(e.currentTarget.value)} />
+      <button class="btn pri sm" onClick={async () => { if (name() && expr() && await cadRun("parameters.add", { name: name(), expression: expr() })) { setName(""); setExpr(""); load(); } }}>Add</button></div>
+  </Dialog>);
+};
+
 /** 0.7.1: the geometry engine's tools on the Geometry ribbon of a 3D solid. In a sketch: the
  * shapes, each with its ways of drawing under ▾ (the way last used stays on the button), their
  * sizes, Finish and Cancel. Outside one: New Sketch on a plane, Extrude, Revolve, Undo, Redo. */
@@ -76,19 +197,38 @@ const CadGroups = () => {
   };
   return <>
     <Show when={inSk()} fallback={<>
-      <G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" title="Start a sketch on a plane: the floor (XY), the front (XZ) or the side (YZ)" dd={e => openMenu(e, ([["On the floor (XY)", "XY"], ["On the front (XZ)", "XZ"], ["On the side (YZ)", "YZ"]] as const).map(([l, pl]) => ({ label: l, run: () => newSketch(pl) })))} /></G>
-      <G l="Extrude"><B big i="solid" l="Extrude" run={() => extrude()} title="Extrude the last sketch's closed regions into a solid" />
-        <S><MmNum l="Distance" title="How far the sketch is extruded" v={extrudeD} set={setExtrudeD} />
-          <B i="up" l={({ positive: "Out of the sketch", negative: "Into it", symmetric: "Both ways evenly" } as const)[extrudeDir()]} dd={e => openMenu(e, ([["Out of the sketch", "positive"], ["Into it", "negative"], ["Both ways evenly", "symmetric"]] as const).map(([l, k]) => ({ label: l, on: extrudeDir() === k, run: () => setExtrudeDir(k) })))} /></S></G>
-      <G l="Revolve"><B big i="axi" l="Revolve" run={() => revolve()} title="Turn the last sketch's closed regions about one of its axes into a solid" />
-        <S><MmNum l="Angle" u="°" title="How far it turns (360° for a whole turn)" v={revolveA} set={v => setRevolveA(Math.min(360, v))} />
-          <B i="axi" l={`About the sketch's ${revolveAxis()} axis`} dd={e => openMenu(e, (["x", "y"] as const).map(k => ({ label: `About the sketch's ${k} axis`, on: revolveAxis() === k, run: () => setRevolveAxis(k) })))} /></S></G>
-      <G l="Edit"><S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="redo" l="Redo" off={!cad()?.redo} run={() => cadRun("edit.redo")} /></S></G>
+      <G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" title="Start a sketch: on the floor (XY), the front (XZ), the side (YZ), on a flat face of a solid, or on a plane set off from one of them"
+        dd={e => openMenu(e, [...([["On the floor (XY)", "XY"], ["On the front (XZ)", "XZ"], ["On the side (YZ)", "YZ"]] as const).map(([l, pl]) => ({ label: l, run: () => { pick3(null); newSketch(pl); } })),
+          { label: "On a face of a solid…", run: () => pick3("sketchface") }, { label: "On an offset plane…", run: offsetPlaneDialog }])} /></G>
+      <G l="Create"><B big i="solid" l="Extrude" run={() => { pick3(null); extrude(); }} title="Extrude the last sketch's closed regions into a solid (distance and direction under Sizes)" />
+        <B big i="axi" l="Revolve" run={() => { pick3(null); revolve(); }} title="Turn the last sketch's closed regions about one of its axes into a solid" />
+        <B big i={TOOLS3.hole3.icon} l="Hole" on={cad3Tool() === "hole3"} run={() => pick3("hole3")} title={TOOLS3.hole3.hint} /></G>
+      <G l="Modify"><For each={["fillet3", "chamfer3", "shell3", "press3"]}>{k => <B big i={TOOLS3[k].icon} l={TOOLS3[k].label} on={cad3Tool() === k} run={() => pick3(k)} title={TOOLS3[k].hint} />}</For></G>
+      <G l="Arrange"><B big i="copy" l="Move / Copy" run={moveDialog} title="Move, turn or copy solids" />
+        <B big i="symmetry" l="Mirror" run={mirrorDialog} title="Mirror solids in a plane, as a copy (or joined)" />
+        <B big i="pattern" l="Pattern" run={patternDialog} title="Copies of solids in rows and columns, or round an axis" /></G>
+      <G l="Sizes"><S><For each={size3()}>{f => <MmNum l={f[0]} u={f[1]} int={f[2]} title={f[0]} v={f[3]} set={f[4]} />}</For>
+        <Show when={!cad3Tool()}><B i="up" l={({ positive: "Out of the sketch", negative: "Into it", symmetric: "Both ways evenly" } as const)[extrudeDir()]} dd={e => openMenu(e, ([["Out of the sketch", "positive"], ["Into it", "negative"], ["Both ways evenly", "symmetric"]] as const).map(([l, k]) => ({ label: l, on: extrudeDir() === k, run: () => setExtrudeDir(k) })))} />
+          <B i="axi" l={`Revolve about the sketch's ${revolveAxis()} axis`} dd={e => openMenu(e, (["x", "y"] as const).map(k => ({ label: `Revolve about the sketch's ${k} axis`, on: revolveAxis() === k, run: () => setRevolveAxis(k) })))} /></Show></S></G>
+      <G l="Configure"><B big i="fx" l="Parameters" run={parametersDialog} title="Named sizes (W = 40) that dimensions and features can use" /></G>
+      <G l="Construct"><B big i="grid" l="Offset Plane" run={offsetPlaneDialog} title="A plane parallel to the floor, front or side, set off by a distance: sketch on it" /></G>
+      <G l="Edit"><S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="redo" l="Redo" off={!cad()?.redo} run={() => cadRun("edit.redo")} /><B i="select" l="Select" on={!cad3Tool()} run={() => pick3(null)} /></S></G>
     </>}>
-      <G l="Draw"><For each={FAMILIES}>{fam}</For></G>
-      <G l="Sizes"><S><MmNum l="Sides" u="" int title="How many sides a polygon has (3 or more)" v={sides} set={setSides} /><MmNum l="Slot width" title="The width of a slot" v={slotW} set={setSlotW} /></S></G>
-      <G l="Sketch"><B big i="check" l="Finish Sketch" run={() => finishSketch()} title="Keep the sketch and leave it (then Extrude or Revolve)" /><B big i="clear" l="Cancel" run={() => cancelSketch()} title="Leave the sketch without keeping it" />
-        <S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="select" l="Select" on={!cadTool()} run={() => pickTool(null)} /></S></G>
+      <G l="Create"><For each={FAMILIES}>{fam}</For>
+        <S><B i="dist" l="Construction" on={consMode()} run={() => setConsMode(!consMode())} title="Draw the next shapes as construction (dashed): guides that dimensions and constraints can use, not part of the solid" /></S></G>
+      <G l="Modify"><For each={["trim", "extend", "offset", "fillet", "chamfer"]}>{k => <B big i={EDITS[k].icon} l={EDITS[k].label} on={cadTool() === k} run={() => pickEdit(k)} title={EDITS[k].hint.join(", then ")} />}</For></G>
+      <G l="Pattern"><B big i="symmetry" l="Mirror" on={cadTool() === "mirror"} run={() => pickEdit("mirror")} title="Mirror the selected curves in a line" />
+        <B big i="cpattern" l="Circular" on={cadTool() === "cpattern"} run={() => pickEdit("cpattern")} title="Copy the selected curves around a centre" />
+        <B big i="pattern" l="Rectangular" run={() => { pickEdit(null); rectPattern(); }} title="Copy the selected curves in rows (and columns), by the counts and spacings under Sizes" /></G>
+      <G l="Constrain"><B big i="dist" l="Dimension" on={cadTool() === "dimension"} run={() => pickEdit("dimension")} title="Size a line, circle or arc (or the distance or angle between two items): type the value" />
+        <B big i="pin" l={EDITS[conWay()].label} on={CONSTRAINTS.includes(cadTool() ?? "")} run={() => pickEdit(conWay())} title={`${EDITS[conWay()].label}: ${EDITS[conWay()].hint.join(", then ")} (▾ for the others)`}
+          dd={e => openMenu(e, CONSTRAINTS.map(k => ({ label: EDITS[k].label, on: k === conWay(), run: () => { setConWay(k); pickEdit(k); } })))} />
+        <S><B i="tag" l="Construction" run={toggleConstruction} title="Turn the selected curves into construction, or back" /><B i="del" l="Delete" run={deleteSelected} title="Delete the selected curves (Delete key)" /></S></G>
+      <Show when={sizeFields().length}><G l="Sizes"><S><For each={sizeFields()}>{f => <MmNum l={f[0]} u={f[1]} int={f[2]} title={f[0]} v={f[3]} set={f[4]} />}</For></S></G></Show>
+      <G l="Inspect"><B big i="info" l="Sketch Report" run={sketchReport} title="What is still free in the sketch, its dimensions and constraints, loose ends" /></G>
+      <G l="Configure"><B big i="fx" l="Parameters" run={parametersDialog} title="Named sizes (W = 40) that dimensions and features can use" /></G>
+      <G l="Exit"><B big i="check" l="Finish Sketch" run={() => finishSketch()} title="Keep the sketch and leave it (then Extrude or Revolve)" /><B big i="clear" l="Cancel" run={() => cancelSketch()} title="Leave the sketch without keeping it" />
+        <S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="select" l="Select" on={!cadTool() || cadTool() === "select"} run={() => pickEdit("select")} /></S></G>
     </Show>
   </>;
 };

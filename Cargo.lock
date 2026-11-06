@@ -762,6 +762,7 @@ dependencies = [
  "serde_json",
  "solidcraft-doc",
  "solidcraft-engine",
+ "solidcraft-sketch",
 ]
 
 [[package]]

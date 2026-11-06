@@ -9,5 +9,6 @@ publish = false
 [dependencies]
 solidcraft-engine = { path = "../../app/crates/engine" }
 solidcraft-doc = { path = "../../app/crates/doc" }
+solidcraft-sketch = { path = "../../app/crates/sketch" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -112,6 +112,12 @@ fn cad_scene(st: State<CadSt>) -> R<datum_cad::Scene> {
     st.lock().scene()
 }
 
+/// One geometry-engine command's own reply (a sketch's report, the parameters list…).
+#[tauri::command]
+fn cad_query(st: State<CadSt>, id: String, params: serde_json::Value) -> R<serde_json::Value> {
+    st.lock().run(&id, &params)
+}
+
 /// A new, empty design for the geometry engine.
 #[tauri::command]
 fn cad_new(st: State<CadSt>) -> R<datum_cad::Scene> {
@@ -587,7 +593,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            cad_run, cad_scene, cad_new, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

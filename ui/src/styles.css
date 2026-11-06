@@ -1064,3 +1064,13 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .cadsheet .hpt { fill: none; stroke: var(--blue); stroke-width: 1.5; }
 .cadhint { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 14px; align-items: center; padding: 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 .cadhint b { color: var(--blue); }
+/* 0.7.1: editing a sketch — free curves blue (fixed ones in ink), picked ones in the accent,
+   dimensions and constraint marks, the box a dimension's size is typed in. */
+.cadsheet .cv.free { stroke: #2F6FD0; }
+.cadsheet .cv.on { stroke: var(--blue); stroke-width: 3; }
+.cadsheet .spt { fill: var(--panel); stroke: var(--text2); stroke-width: 1.2; }
+.cadsheet .spt.on { fill: var(--blue); stroke: var(--blue); }
+.cadsheet .mark text { font: 600 11px var(--mono); fill: var(--muted); paint-order: stroke; stroke: var(--bg2); stroke-width: 3px; text-anchor: start; }
+.cadsheet .mark.dim text { fill: var(--text); font-size: 12px; text-anchor: middle; }
+.dimbox { position: absolute; display: flex; gap: 6px; align-items: center; padding: 5px 7px; background: var(--panel); border: 1px solid var(--blue); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.12); z-index: 2; }
+.dimbox input { width: 120px; }

@@ -35,6 +35,33 @@ pub struct SketchCurve {
     pub id: String,
     pub pts: Vec<[f64; 2]>,
     pub construction: bool,
+    /// line, circle, arc, ellipse, spline or conic.
+    pub kind: &'static str,
+    /// Its points' ids: a line's and an arc's ends ("start", "end"), a circle's or arc's centre.
+    pub start: Option<String>,
+    pub end: Option<String>,
+    pub center: Option<String>,
+    /// Fully fixed by its dimensions and constraints.
+    pub fixed: bool,
+}
+
+/// A point of a sketch (an end or a centre): what a click on the sheet snaps to and picks.
+#[derive(Serialize)]
+pub struct SketchPoint {
+    pub id: String,
+    pub at: [f64; 2],
+    pub fixed: bool,
+}
+
+/// A dimension or constraint, placed by what it ties: a label for the sheet.
+#[derive(Serialize)]
+pub struct SketchMark {
+    pub id: String,
+    /// The engine's name for it (Distance, Radius, Parallel, Tangent…).
+    pub name: String,
+    /// A dimension's value: mm, or degrees for an angle; none for a constraint.
+    pub value: Option<f64>,
+    pub at: [f64; 2],
 }
 
 /// A sketch: its plane (origin and in-plane axes, world mm) and its curves.
@@ -46,6 +73,8 @@ pub struct Sketch {
     pub x: [f64; 3],
     pub y: [f64; 3],
     pub curves: Vec<SketchCurve>,
+    pub points: Vec<SketchPoint>,
+    pub marks: Vec<SketchMark>,
     /// Closed regions the sketch makes (what Extrude and Revolve can use).
     pub profiles: usize,
     /// Whether the sketch is fully defined, says what is still free, or that it failed.
@@ -110,13 +139,9 @@ impl Cad {
                     origin: [pl.origin.x, pl.origin.y, pl.origin.z],
                     x: [pl.x.x, pl.x.y, pl.x.z],
                     y: [pl.y.x, pl.y.y, pl.y.z],
-                    curves: (0..s.sketch.curves.len())
-                        .map(|i| SketchCurve {
-                            id: s.sketch.curves[i].id.clone(),
-                            pts: s.sketch.polyline(i).iter().map(|p| [p.x, p.y]).collect(),
-                            construction: s.sketch.curves[i].construction,
-                        })
-                        .collect(),
+                    curves: (0..s.sketch.curves.len()).map(|i| curve(&s.sketch, &s.report, i)).collect(),
+                    points: s.sketch.points.iter().enumerate().map(|(i, p)| SketchPoint { id: p.id.clone(), at: [p.pos.x, p.pos.y], fixed: s.report.point_determined.get(i).copied().unwrap_or(false) }).collect(),
+                    marks: s.sketch.constraints.iter().filter_map(|c| mark(&s.sketch, c)).collect(),
                     profiles: s.profiles.len(),
                     status: if s.report.dof == 0 { format!("{:?}", s.report.status) } else { format!("{:?}, {} free", s.report.status, s.report.dof) },
                 }
@@ -126,6 +151,67 @@ impl Cad {
     }
 }
 
+/// A curve as the sheet draws and picks it.
+fn curve(sk: &solidcraft_sketch::Sketch, rep: &solidcraft_sketch::SolveReport, i: usize) -> SketchCurve {
+    use solidcraft_sketch::CurveKind as K;
+    let c = &sk.curves[i];
+    let id = |k: usize| sk.points.get(k).map(|p| p.id.clone());
+    let (kind, start, end, center) = match &c.kind {
+        K::Line { a, b } => ("line", id(*a), id(*b), None),
+        K::Circle { c, .. } => ("circle", None, None, id(*c)),
+        K::Arc { c, a, b } => ("arc", id(*a), id(*b), id(*c)),
+        K::Ellipse { c, .. } => ("ellipse", None, None, id(*c)),
+        K::Spline { .. } => ("spline", None, None, None),
+        K::Conic { a, b, .. } => ("conic", id(*a), id(*b), None),
+    };
+    SketchCurve {
+        id: c.id.clone(),
+        pts: sk.polyline(i).iter().map(|p| [p.x, p.y]).collect(),
+        construction: c.construction,
+        kind,
+        start,
+        end,
+        center,
+        fixed: rep.curve_determined.get(i).copied().unwrap_or(false),
+    }
+}
+
+/// Where a dimension or constraint is labelled: amid the points (`p`, `q`) and curves (`l`, `c`,
+/// `a`, `b`) it ties, as the engine's own record of it names them; its value for a dimension.
+fn mark(sk: &solidcraft_sketch::Sketch, c: &solidcraft_sketch::Constraint) -> Option<SketchMark> {
+    let v = serde_json::to_value(&c.kind).ok()?;
+    let o = v.as_object()?;
+    let name = c.kind.name().to_string();
+    if name.starts_with("Pattern") {
+        return None;
+    }
+    let mut at: Vec<[f64; 2]> = Vec::new();
+    for (k, x) in o {
+        let Some(i) = x.as_u64().map(|i| i as usize) else { continue };
+        match k.as_str() {
+            "p" | "q" => {
+                if let Some(p) = sk.points.get(i) {
+                    at.push([p.pos.x, p.pos.y]);
+                }
+            }
+            "l" | "c" | "a" | "b" => {
+                let pl = sk.polyline(i);
+                if let Some(m) = pl.get(pl.len() / 2) {
+                    at.push([m.x, m.y]);
+                }
+            }
+            _ => {}
+        }
+    }
+    if at.is_empty() {
+        return None;
+    }
+    let n = at.len() as f64;
+    let mid = [at.iter().map(|p| p[0]).sum::<f64>() / n, at.iter().map(|p| p[1]).sum::<f64>() / n];
+    let value = o.get("value").and_then(Value::as_f64).map(|x| if name.contains("Angle") || name.contains("Sweep") { x.to_degrees() } else { x });
+    Some(SketchMark { id: c.id.clone(), name, value, at: mid })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,6 +219,108 @@ mod tests {
 
     fn run(c: &mut Cad, id: &str, p: Value) -> Value {
         c.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"))
+    }
+
+    /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).
+    #[test]
+    fn each_3d_tool() {
+        let block = |c: &mut Cad| {
+            run(c, "sketch.create", json!({"plane": "XY"}));
+            run(c, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [40, 20]}));
+            run(c, "sketch.finish", json!({}));
+            run(c, "solid.extrude", json!({"distance": 10.0, "direction": "positive"}));
+        };
+        let faces = |c: &Cad| c.scene().unwrap().bodies.iter().map(|b| b.face.iter().max().map_or(0, |m| m + 1)).sum::<u32>();
+        let mut c = Cad::new();
+        block(&mut c);
+        assert_eq!(faces(&c), 6);
+        run(&mut c, "solid.hole", json!({"position": [20.0, 10.0, 10.0], "diameter": 6}));
+        assert_eq!(faces(&c), 7, "a hole through adds its wall");
+        run(&mut c, "solid.fillet", json!({"edges": [[20.0, 0.0, 10.0]], "radius": 2}));
+        run(&mut c, "solid.chamfer", json!({"edges": [[20.0, 20.0, 10.0]], "distance": 1.5}));
+        assert_eq!(faces(&c), 9, "a fillet and a chamfer each add a face");
+        run(&mut c, "solid.press_pull", json!({"face": [0.0, 10.0, 5.0], "distance": 5}));
+        let xmin = c.scene().unwrap().bodies[0].pos.chunks(3).map(|p| p[0]).fold(f32::MAX, f32::min);
+        assert!((xmin + 5.0).abs() < 1e-3, "press pull moved the end face out by 5: {xmin}");
+        // Sketch on the top face, a circle, extrude a boss from it.
+        run(&mut c, "sketch.create", json!({"plane": {"face": [5.0, 15.0, 10.0], "body": "Body1"}}));
+        let sk = c.scene().unwrap().sketches.last().unwrap().origin;
+        assert!((sk[2] - 10.0).abs() < 1e-6, "the sketch lies on the top face: {sk:?}");
+        run(&mut c, "sketch.finish", json!({}));
+        let mut s = Cad::new();
+        block(&mut s);
+        run(&mut s, "solid.shell", json!({"faces": [[20.0, 10.0, 10.0]], "thickness": 2, "body": "Body1"}));
+        assert!(faces(&s) > 6, "a shell opens the top and adds inner walls");
+        let mut a = Cad::new();
+        block(&mut a);
+        run(&mut a, "solid.move", json!({"bodies": ["Body1"], "translate": [0, 30, 0], "copy": true}));
+        assert_eq!(a.scene().unwrap().bodies.len(), 2, "a copy");
+        run(&mut a, "solid.mirror", json!({"bodies": ["Body1"], "plane": "YZ", "combine": false}));
+        assert_eq!(a.scene().unwrap().bodies.len(), 3, "a mirror copy");
+        run(&mut a, "solid.pattern.rectangular", json!({"bodies": ["Body1"], "dir1": [1, 0, 0], "count1": 3, "spacing1": 60}));
+        assert_eq!(a.scene().unwrap().bodies.len(), 5, "two more in a row");
+        let mut r = Cad::new();
+        block(&mut r);
+        run(&mut r, "solid.pattern.circular", json!({"bodies": ["Body1"], "axis": "Z", "count": 4, "angle": 360}));
+        assert_eq!(r.scene().unwrap().bodies.len(), 4, "four round the Z axis");
+        let reply = run(&mut r, "construct.plane.offset", json!({"base": "XY", "offset": 30}));
+        let name = reply.get("name").or(reply.get("plane")).or(reply.get("id")).cloned().unwrap_or(Value::Null);
+        assert!(!name.is_null(), "the plane's name comes back: {reply}");
+        run(&mut r, "sketch.create", json!({"plane": name}));
+        let o = r.scene().unwrap().sketches.last().unwrap().origin;
+        assert!((o[2] - 30.0).abs() < 1e-6, "the sketch lies on the offset plane: {o:?}");
+    }
+
+    /// Every editing tool, with the inputs the window sends, is accepted and changes the sketch.
+    #[test]
+    fn each_edit_tool() {
+        let mut c = Cad::new();
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [60, 40]}));
+        let sk = |c: &Cad| c.scene().unwrap().sketches.into_iter().next().unwrap();
+        let s = sk(&c);
+        let lines: Vec<String> = s.curves.iter().filter(|k| k.kind == "line").map(|k| k.id.clone()).collect();
+        assert_eq!(lines.len(), 4, "a rectangle is four lines");
+        let (l0, l1, l2) = (lines[0].clone(), lines[1].clone(), lines[2].clone());
+        // Dimension: a line's length, typed.
+        run(&mut c, "sketch.dimension", json!({"entities": [l0], "value": 80}));
+        let s = sk(&c);
+        assert!(s.marks.iter().any(|m| m.value.is_some_and(|v| (v - 80.0).abs() < 1e-6)), "the dimension is listed with its value");
+        // Fillet between two sides, then a chamfer on the opposite corner.
+        run(&mut c, "sketch.fillet", json!({"a": l0, "b": l1, "radius": 5}));
+        assert!(sk(&c).curves.iter().any(|k| k.kind == "arc"), "a fillet adds an arc");
+        run(&mut c, "sketch.chamfer.equal_distance", json!({"a": lines[2], "b": lines[3], "distance": 4}));
+        // Constraints between curves.
+        let circ = |c: &mut Cad, x: f64| { run(c, "sketch.circle.center", json!({"center": [x, 20], "radius": 5})); sk(c).curves.last().unwrap().id.clone() };
+        let c1 = circ(&mut c, 20.0);
+        let c2 = circ(&mut c, 45.0);
+        run(&mut c, "sketch.constraint.equal", json!({"a": c1, "b": c2}));
+        run(&mut c, "sketch.constraint.fix", json!({"entity": c1}));
+        let before = sk(&c).curves.len();
+        // Offset a side outwards; mirror a circle in a line; copy it round; in rows; construction; delete.
+        run(&mut c, "sketch.offset", json!({"curves": [l2], "distance": 5, "side": [30, 60]}));
+        assert!(sk(&c).curves.len() > before, "an offset adds curves");
+        let n = sk(&c).curves.len();
+        run(&mut c, "sketch.line", json!({"points": [[0, -20], [80, -20]]}));
+        let ml = sk(&c).curves.last().unwrap().id.clone();
+        run(&mut c, "sketch.mirror", json!({"entities": [c2.clone()], "line": ml}));
+        run(&mut c, "sketch.pattern.circular", json!({"entities": [c2.clone()], "center": [40, 20], "count": 4, "angle": 360}));
+        run(&mut c, "sketch.pattern.rectangular", json!({"entities": [c1.clone()], "count": 3, "spacing": 12}));
+        assert!(sk(&c).curves.len() >= n + 1 + 1 + 3 + 2, "mirror and patterns add copies");
+        run(&mut c, "sketch.construction", json!({"curves": [ml.clone()]}));
+        assert!(sk(&c).curves.iter().any(|k| k.id == ml && k.construction));
+        run(&mut c, "sketch.line", json!({"points": [[-30, 0], [-10, 0]]}));
+        let tl = sk(&c).curves.last().unwrap().id.clone();
+        run(&mut c, "sketch.extend", json!({"curve": tl, "at": [-11, 0]}));
+        run(&mut c, "sketch.line", json!({"points": [[-20, -10], [-20, 10]]}));
+        let cross = sk(&c).curves.last().unwrap().id.clone();
+        run(&mut c, "sketch.trim", json!({"curve": cross, "at": [-20, 8]}));
+        let m = sk(&c).curves.len();
+        run(&mut c, "sketch.delete", json!({"entities": [tl]}));
+        assert!(sk(&c).curves.len() < m);
+        run(&mut c, "sketch.constraint.horizontal_vertical", json!({"line": cross}));
+        assert!(!sk(&c).status.is_empty());
+        run(&mut c, "sketch.finish", json!({}));
     }
 
     /// Every way of drawing the ribbon offers makes curves in the sketch; a closed profile

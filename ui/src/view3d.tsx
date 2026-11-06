@@ -2,7 +2,7 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
-import { cad, activeSketch, SketchCanvas, newSketch } from "./cad";
+import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit } from "./cad";
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -198,9 +198,11 @@ export const View3D = () => {
       g.setIndex(b.tris);
       const o = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: sky, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
       o.userData.cadBody = b.name; world.add(o);
+      o.userData.cadFace = b.face;
       const seg: number[] = [];
       for (const e of b.edges) for (let i = 0; i + 5 < e.length; i += 3) seg.push(e[i], e[i + 1], e[i + 2], e[i + 3], e[i + 4], e[i + 5]);
       lines(seg, ink);
+      world.children[world.children.length - 1].userData.cadEdges = b.name;
     }
     for (const s of c.sketches) {
       if (s.id === c.active) continue;
@@ -634,6 +636,7 @@ export const View3D = () => {
       toast(model()?.parts?.length ? "Pick a plane to sketch on: a square at the origin, or a flat face of a part." : "Pick a plane to sketch on: click one of the three squares at the origin.");
       return;
     }
+    if (isSolidA(model()?.analysis) && cad3Tool()) { await cad3Click(cadHit(e.clientX - rc.left, e.clientY - rc.top)); return; }
     if (isSolidA(model()?.analysis)) {
       // The 3D modelling tools (0.6.3) act on the part clicked.
       if (["hole3", "fillet3", "chamfer3"].includes(t)) {
@@ -672,6 +675,29 @@ export const View3D = () => {
       return;
     }
     setPlane("xy");
+  };
+  /** 0.7.1: what of the geometry engine's solids is under the pointer: the face hit (its body,
+   * number and the point, in the engine's mm with Z up) and the nearest edge within 8 px. */
+  const cadHit = (x: number, y: number): CadHit => {
+    const [w, h] = size(), ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(x / w * 2 - 1, 1 - y / h * 2), camera);
+    const mm = (v: THREE.Vector3): [number, number, number] => [v.x * 1e3, -v.z * 1e3, v.y * 1e3];
+    const hit = ray.intersectObjects(world.children.filter(o => o.userData.cadBody), false)[0];
+    const face = hit && hit.faceIndex != null ? { body: hit.object.userData.cadBody as string, index: (hit.object.userData.cadFace as number[])[hit.faceIndex] ?? -1, at: mm(hit.point) } : null;
+    let edge: CadHit["edge"] = null, best = 8;
+    const scr = (v: THREE.Vector3) => { const q = v.clone().project(camera); return [(q.x + 1) / 2 * w, (1 - q.y) / 2 * h, q.z]; };
+    for (const o of world.children.filter(o => o.userData.cadEdges)) {
+      const a = ((o as THREE.LineSegments).geometry.getAttribute("position") as THREE.BufferAttribute).array as Float32Array;
+      for (let i = 0; i + 5 < a.length; i += 6) {
+        const A = new THREE.Vector3(a[i], a[i + 1], a[i + 2]), B = new THREE.Vector3(a[i + 3], a[i + 4], a[i + 5]), sa = scr(A), sb = scr(B);
+        const dx = sb[0] - sa[0], dy = sb[1] - sa[1], L = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((x - sa[0]) * dx + (y - sa[1]) * dy) / L));
+        const dd = Math.hypot(sa[0] + t * dx - x, sa[1] + t * dy - y);
+        // An edge behind the face hit is hidden: it must be about as near as that face.
+        const P = A.clone().lerp(B, t);
+        if (dd < best && (!hit || P.distanceTo(camera.position) <= hit.distance * 1.02 + 1e-4)) { best = dd; edge = { body: o.userData.cadEdges, at: mm(P) }; }
+      }
+    }
+    return { face, edge };
   };
   /** The part under the pointer in an assembly (0.6.3): the part, its face, the point and the
    * face's normal towards the viewer. */
