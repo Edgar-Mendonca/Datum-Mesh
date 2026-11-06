@@ -107,7 +107,8 @@ export const PlaneBar = () => {
     </Show>
     <Show when={solid() && !model()?.volume && !model()?.parts?.length && model()?.shapes.length}>
       <div class="planebar">
-        <span class="seg"><button classList={{ on: plane() === "3d" }} title="The solid in 3D: turn it with the left button, pan with the right, zoom with the wheel" onClick={() => { setPlane("3d"); }}>3D</button><button classList={{ on: plane() !== "3d" }} title="The part's section (x-y), drawn and edited as a plane part; it is extruded along z by the thickness" onClick={() => setPlane("xy")}>Section</button></span>
+        <Show when={plane() === "3d"} fallback={<><b>Editing the section</b><span class="muted">it is extruded or turned into the solid when you finish</span><button class="btn sm pri" onClick={() => setPlane("3d")} title="Back to the solid in 3D">Finish Editing</button></>}>
+          <button class="btn sm" onClick={() => setPlane("xy")} title="Change the outline this solid is extruded or turned from (as Edit Sketch does)">Edit Section</button></Show>
         <span class="muted">{model()?.revolve ? `revolved ${num(model()!.revolve! * 180 / Math.PI, 4)}° about the y axis` : `extruded ${fmt("len", model()?.thickness ?? 0)} along z`}</span>
         <Show when={placing()}><span class="grow" /><span class="muted">Click a face in 3D, or put it on</span><Show when={!full()}><button class="btn sm" onClick={() => onEnd(false)} title={model()?.revolve ? "The cut face where the turn starts" : "The face at z = 0"}>the back face</button><button class="btn sm" onClick={() => onEnd(true)} title={model()?.revolve ? "The cut face where the turn ends" : "The face at z = thickness"}>the front face</button></Show><span class="muted">or an edge in Section</span></Show>
       </div>

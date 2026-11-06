@@ -159,7 +159,7 @@ export const partPathDialog = () => openDialog(() => {
     const sx = (v: number) => P + v / x1 * (W - 2 * P), sy = (v: number) => H - P - v / y1 * (H - 2 * P);
     return { d: xs.map((v, i) => `${i ? "L" : "M"}${sx(v).toFixed(1)} ${sy(ys[i]).toFixed(1)}`).join(""), sx, sy, x1, y1, xs, ys };
   };
-  return <Dialog title="Load–deflection curve" wide help="plasticity">
+  return <Dialog title="Load–deflection curve" wide help={(results() as any)?.path?.force?.length ? "crushing" : "plasticity"}>
     <Show when={p()} fallback={<p class="muted">No curve: add an elastic-plastic step (Solve › Steps) and solve.</p>}>{x => <>
       <p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. {(results() as any)?.large ? "Large deformation (neo-Hookean)" : x().first_yield !== null ? <>It first yields at <b>{num(x().first_yield! * 100, 3)} %</b> of the load</> : "Nothing yields"}{x().reached ? "; it carries the whole load." : <>; it <b>collapses</b> at about {num(x().load[x().load.length - 1] * 100, 3)} % of it.</>}</p>
       <Show when={plot()}>{q => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against the largest movement">

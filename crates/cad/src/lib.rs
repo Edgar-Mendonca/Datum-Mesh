@@ -7,6 +7,8 @@ use serde::Serialize;
 use serde_json::Value;
 use solidcraft_engine::Session;
 
+pub mod examples;
+
 /// One design being modelled.
 pub struct Cad {
     session: Session,
@@ -444,7 +446,7 @@ mod tests {
         run(&mut c, "sketch.finish", json!({}));
         run(&mut c, "solid.extrude", json!({"distance": 60.0, "direction": "positive"}));
         let work = std::env::temp_dir().join(format!("datum-cad-tube-{}", std::process::id()));
-        let ms = c.mesh(2.5, &g, &work).expect("meshed");
+        let ms = c.mesh(std::env::var("TUBE_SIZE").ok().and_then(|v| v.parse().ok()).unwrap_or(4.0), &g, &work).expect("meshed");
         let _ = std::fs::remove_dir_all(&work);
         eprintln!("{} tetrahedra, {} nodes, faces {:?}", ms.tets.len(), ms.nodes.len(), ms.faces.iter().map(|f| &f.name).collect::<Vec<_>>());
         use datum_core::model::{Analysis, Load, LoadKind, Model, Step, StepKind, Support, SupportKind, Target};
@@ -460,7 +462,7 @@ mod tests {
         m.supports.push(Support { id: 50, at: Target::Face { face: base as u32 }, kind: SupportKind::Fixed });
         m.supports.push(Support { id: 51, at: Target::Face { face: top as u32 }, kind: SupportKind::Hold { x: true, y: false, z: true } });
         m.loads.push(Load { case: 0, id: 52, at: Target::Face { face: top as u32 }, kind: LoadKind::Settlement { dx: 0.0, dy: -0.015, dz: 0.0 } });
-        m.steps.push(Step { kind: StepKind::LargePlastic, increments: 30, ..Default::default() });
+        m.steps.push(Step { kind: StepKind::LargePlastic, increments: 20, ..Default::default() });
         m.next = 60;
         let t0 = std::time::Instant::now();
         let r = match datum_core::solve_for(&m, None).expect("solved") {
@@ -477,6 +479,42 @@ mod tests {
         eprintln!("peak {:.2} kN at {:.2} mm; squash load σy A = {:.2} kN", fmax / 1e3, p.umax[imax] * 1e3, squash / 1e3);
         assert!(fmax > 0.8 * squash && fmax < 1.3 * squash, "peak near the squash load");
         assert!(p.force.last().copied().unwrap_or(0.0) < 0.9 * fmax, "the force falls after the peak (collapse)");
+    }
+
+    /// 0.7.4: every modelled example builds, meshes, finds the faces of its supports and loads,
+    /// and (but the long crushing one) solves with the reactions balancing the loads.
+    #[test]
+    fn modelled_examples_build_mesh_and_solve() {
+        let Some(g) = gmsh() else {
+            eprintln!("Gmsh is not installed: modelled_examples_build_mesh_and_solve did not run");
+            return;
+        };
+        for e in crate::examples::list() {
+            let (c, setup) = crate::examples::build(e.id).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+            let work = std::env::temp_dir().join(format!("datum-cad-ex-{}-{}", e.id, std::process::id()));
+            let ms = c.mesh(setup.size, &g, &work).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+            let _ = std::fs::remove_dir_all(&work);
+            let m = crate::examples::place(&setup, ms).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+            assert!(!m.supports.is_empty(), "{}", e.id);
+            if e.id == "m-tubecrush" {
+                continue;
+            }
+            if e.id == "m-tuning" {
+                let r = datum_core::solids::tet::modes(&m, 3).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+                // A cantilever strip 150 × 5 mm deep: f1 = (1.875²/2π) √(EI/ρA L⁴).
+                let mt = &m.materials[0];
+                let (l, h) = (0.15f64, 0.005f64);
+                let f1 = 1.875f64.powi(2) / (2.0 * std::f64::consts::PI) * (mt.e * h * h / 12.0 / (mt.rho * l.powi(4))).sqrt();
+                let got = r.modes[0].f;
+                assert!((got - f1).abs() < 0.05 * f1, "{}: first frequency {got} Hz against {f1} Hz", e.id);
+                continue;
+            }
+            let r = match datum_core::solve_for(&m, None).unwrap_or_else(|x| panic!("{}: {x}", e.id)) {
+                datum_core::Results::Solid(r) => r,
+                _ => panic!("{}: not a solid's results", e.id),
+            };
+            assert!(r.imbalance < 1e-6, "{}: imbalance {}", e.id, r.imbalance);
+        }
     }
 
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).

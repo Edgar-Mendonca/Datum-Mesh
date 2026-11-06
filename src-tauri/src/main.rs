@@ -242,12 +242,30 @@ fn history(st: State<St>, redo: bool) -> Out {
 
 #[tauri::command]
 fn examples_list() -> Vec<examples::Example> {
-    examples::list()
+    // The modelled examples (0.7.4) under the same headings, before each heading's older ones.
+    let mut v: Vec<examples::Example> = datum_cad::examples::list().into_iter().map(|e| examples::Example { id: e.id, name: e.name, what: e.what, analysis: Analysis::Solid, group: e.group }).collect();
+    v.extend(examples::list());
+    let order = |g: &str| examples::GROUPS.iter().position(|x| *x == g).unwrap_or(usize::MAX);
+    v.sort_by_key(|e| if e.group == "Blank" { 0 } else { 1 + order(e.group) });
+    v
 }
 
 /// A new model: a worked example by id, or a blank one of a kind (frame, stress, strain, heat).
 #[tauri::command]
 fn new_model(st: State<St>, cad: State<CadSt>, example: Option<String>, analysis: Option<Analysis>) -> R<Out> {
+    // A modelled example (0.7.4): its design, meshed by Gmsh, with its supports, loads and steps.
+    if let Some(id) = example.as_deref().filter(|id| id.starts_with("m-")) {
+        let (c, setup) = datum_cad::examples::build(id)?;
+        let work = std::env::temp_dir().join(format!("datum-mesh-{}", std::process::id()));
+        let ms = c.mesh(setup.size, &gmsh_path(), &work)?;
+        let _ = std::fs::remove_dir_all(&work);
+        let m = datum_cad::examples::place(&setup, ms)?;
+        *cad.lock() = c;
+        let mut a = st.lock();
+        let m = fresh(&a, m);
+        a.doc = Doc::new(m);
+        return Ok(out(&a));
+    }
     *cad.lock() = datum_cad::Cad::new();
     let mut a = st.lock();
     let m = match example.as_deref() {

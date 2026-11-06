@@ -446,18 +446,18 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click(".legend button:has-text('Back to the static results')"); await p.waitForTimeout(100);
   // 3D solids (0.3.0): the L-bracket extruded, its faces, the solve, the Results page.
   await open("bracket3d");
-  check("a 3D solid opens in the 3D view with 3D and Section", (await p.$$(".view3d canvas")).length === 1 && (await p.$$eval(".planebar .seg button", bs => bs.map(b => b.textContent))).join() === "3D,Section");
+  check("a 3D solid opens in the 3D view, with Edit Section instead of a 3D/Section switch (0.7.4, the user)", (await p.$$(".view3d canvas")).length === 1 && (await p.$$(".planebar .seg button")).length === 0 && (await p.$$('.planebar button:text-is("Edit Section")')).length === 1);
   await p.click('.tabs > button:text-is("Home")');
   check("Home shows 3D Solid chosen", await p.$eval('.ribbon button[title^="3D solids: the part"]', el => el.classList.contains("on")));
   check("the Inspector has the thickness of the extrusion and the layers", (await p.textContent(".insp")).includes("Thickness (extruded along z)") && (await p.textContent(".insp")).includes("Layers through the thickness"));
-  await p.click('.planebar .seg button:text-is("Section")'); await p.waitForTimeout(250);
+  await p.click('.planebar button:text-is("Edit Section")'); await p.waitForTimeout(250);
   check("Section shows the part's outline to edit", (await p.$$(".dsvg .shape")).length === fix.bracket3d.m.shapes.length);
   await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.click('.ribbon button:has-text("Fixed")'); await p.waitForTimeout(100);
   await p.click('.planebar button:has-text("the back face")'); await p.waitForTimeout(150);
   const bf = await lastOp();
   check("a support goes on the back face with a button", !!bf?.Add?.item?.Support && bf.Add.item.Support.at.on === "end" && bf.Add.item.Support.at.front === false, JSON.stringify(bf));
   await p.keyboard.press("Escape");
-  await p.click('.planebar .seg button:text-is("3D")'); await p.waitForTimeout(250);
+  await p.click('.planebar button:text-is("Finish Editing")'); await p.waitForTimeout(250);
   await p.evaluate(() => { window.__solveKey = "bracket3d_results"; });
   await p.keyboard.press("F5"); await p.waitForTimeout(500);
   await p.evaluate(() => { window.__solveKey = null; });

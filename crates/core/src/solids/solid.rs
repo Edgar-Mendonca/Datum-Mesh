@@ -2171,12 +2171,18 @@ pub(super) fn plastic_large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool],
                     path.first_yield = Some(lam);
                 }
                 snaps.push(crate::engine::frames::Snap { at: lam, u: u.iter().map(|&x| x as f32).collect(), v: st.iter().map(|s| crate::engine::frames::vm(s) as f32).collect() });
+                if std::env::var_os("DATUM_TRACE").is_some() {
+                    eprintln!("increment to {:.4}: {it} iterations, force {:.4e}, plastic strain {:.3e}", lam, force.last().copied().unwrap_or(0.0), pmax);
+                }
                 if it < 8 {
                     step = (step * 1.5).min(first);
                 }
             }
             None => {
                 step /= 2.0;
+                if std::env::var_os("DATUM_TRACE").is_some() {
+                    eprintln!("increment to {:.4} would not settle; step halved to {:.2e}", target, step);
+                }
                 if step < first * 1e-3 {
                     warnings.push(format!("The solid would not settle beyond about {:.1} % of the {}: it may have collapsed or be squeezed inside out there. The results shown are at the last state it reached.", lam * 100.0, if moved { "movement" } else { "load" }));
                     break;
