@@ -10,6 +10,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 datum-core = { path = "../crates/core" }
+datum-cad = { path = "../crates/cad" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }

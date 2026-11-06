@@ -2,6 +2,7 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
+import { cad } from "./cad";
 import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -180,6 +181,34 @@ export const View3D = () => {
   let solidF = 0;
   /** A 3D solid: the extruded part with its supported and loaded faces outlined; once solved,
    * the surface coloured by the chosen result on the deformed shape. */
+  /** 0.7.1: the geometry engine's solids and finished sketches. The engine models in millimetres
+   * with Z up; the view keeps the engine's metres with y up: (X, Y, Z) mm → (X, Z, −Y) m. */
+  const addCad = () => {
+    const c = cad(); if (!c) return;
+    const sky = new THREE.Color(css("--sky")), ink = new THREE.Color(css("--text")), faint = new THREE.Color(css("--blue2"));
+    const put = (a: Float32Array, i: number, x: number, y: number, z: number) => { a[i] = x * 1e-3; a[i + 1] = z * 1e-3; a[i + 2] = -y * 1e-3; };
+    const lines = (pts: number[], col: THREE.Color) => { const a = new Float32Array(pts.length); for (let i = 0; i < pts.length; i += 3) put(a, i, pts[i], pts[i + 1], pts[i + 2]); const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(a, 3)); world.add(new THREE.LineSegments(g, new THREE.LineBasicMaterial({ color: col }))); };
+    for (const b of c.bodies) {
+      const pos = new Float32Array(b.pos.length), nrm = new Float32Array(b.nrm.length);
+      for (let i = 0; i < b.pos.length; i += 3) put(pos, i, b.pos[i], b.pos[i + 1], b.pos[i + 2]);
+      for (let i = 0; i < b.nrm.length; i += 3) { nrm[i] = b.nrm[i]; nrm[i + 1] = b.nrm[i + 2]; nrm[i + 2] = -b.nrm[i + 1]; }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+      if (nrm.length === pos.length) g.setAttribute("normal", new THREE.BufferAttribute(nrm, 3)); else g.computeVertexNormals();
+      g.setIndex(b.tris);
+      const o = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: sky, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1 }));
+      o.userData.cadBody = b.name; world.add(o);
+      const seg: number[] = [];
+      for (const e of b.edges) for (let i = 0; i + 5 < e.length; i += 3) seg.push(e[i], e[i + 1], e[i + 2], e[i + 3], e[i + 4], e[i + 5]);
+      lines(seg, ink);
+    }
+    for (const s of c.sketches) {
+      if (s.id === c.active) continue;
+      const seg: number[] = [], at = (p: [number, number]) => [0, 1, 2].map(k => s.origin[k] + p[0] * s.x[k] + p[1] * s.y[k]);
+      for (const cv of s.curves) for (let i = 0; i + 1 < cv.pts.length; i++) seg.push(...at(cv.pts[i]), ...at(cv.pts[i + 1]));
+      lines(seg, faint);
+    }
+  };
   const buildSolid = (m: Model) => {
     const ink = css("--text"), green = css("--green"), load = css("--blue2"), accent = css("--blue");
     scene.background = new THREE.Color(css("--bg2"));
@@ -366,7 +395,7 @@ export const View3D = () => {
     themeTick();
     const m = model(); if (!m) return;
     clear();
-    if (isSolidA(m.analysis)) return buildSolid(m);
+    if (isSolidA(m.analysis)) { buildSolid(m); addCad(); return; }
     // An empty frame (0.6.0): the floor covers the 6 × 4 × 4 m space the view first looks at.
     const empty = !m.nodes.length && !m.shapes.length;
     const P = at3(m), span = empty ? 6 : span3(m), selSet = new Set(sel());

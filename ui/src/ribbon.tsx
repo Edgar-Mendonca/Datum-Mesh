@@ -16,6 +16,7 @@ import { q3, setQ3, Q3 } from "./space3";
 import { setPlane, onPlane, plateT, setPlateT } from "./plane3";
 import { parseNum } from "./api";
 import { toU, fromU, unit } from "./units";
+import { cad, cadRun, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, newSketch, finishSketch, cancelSketch, extrude, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
 
@@ -57,6 +58,40 @@ const sizeMenu = (e: MouseEvent) => {
 const toastAuto = () => C.mesh().then(() => C.toastSize());
 /** A canvas tool: highlighted while it is picked. */
 const T = (p: { i: string; l: string; t: string; big?: boolean; title?: string }) => <B i={p.i} l={p.l} big={p.big} on={tool() === p.t} title={p.title ?? p.l} run={() => C.tool(p.t)} />;
+
+/** A whole number or a length typed on the ribbon, in the sketch's millimetres. */
+const MmNum = (p: { l: string; title: string; v: () => number; set: (v: number) => void; u?: string; int?: boolean }) => (
+  <label class="ribnum" title={p.title}>{p.l}<input class="mono" value={p.v()} onChange={e => { const v = parseNum(e.currentTarget.value); if (v !== null && v > 0 && (!p.int || (Number.isInteger(v) && v >= 3))) p.set(v); else e.currentTarget.value = String(p.v()); }} /><span class="unit">{p.u ?? "mm"}</span></label>
+);
+
+/** 0.7.1: the geometry engine's tools on the Geometry ribbon of a 3D solid. In a sketch: the
+ * shapes, each with its ways of drawing under ▾ (the way last used stays on the button), their
+ * sizes, Finish and Cancel. Outside one: New Sketch on a plane, Extrude, Revolve, Undo, Redo. */
+const CadGroups = () => {
+  const inSk = () => !!activeSketch();
+  const fam = (f: [string, string, string[]]) => {
+    const [name, icon, list] = f, cur = () => ways()[name] ?? list[0];
+    return <B big i={icon} l={name} on={list.includes(cadTool() ?? "")} title={`${TOOLS[cur()].label}${list.length > 1 ? " (▾ for the other ways)" : ""}`} run={() => pickTool(cur())}
+      dd={list.length > 1 ? (e: MouseEvent) => openMenu(e, list.map(k => ({ label: TOOLS[k].label, on: k === cur(), run: () => { setWays({ ...ways(), [name]: k }); pickTool(k); } }))) : undefined} />;
+  };
+  return <>
+    <Show when={inSk()} fallback={<>
+      <G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" title="Start a sketch on a plane: the floor (XY), the front (XZ) or the side (YZ)" dd={e => openMenu(e, ([["On the floor (XY)", "XY"], ["On the front (XZ)", "XZ"], ["On the side (YZ)", "YZ"]] as const).map(([l, pl]) => ({ label: l, run: () => newSketch(pl) })))} /></G>
+      <G l="Extrude"><B big i="solid" l="Extrude" run={() => extrude()} title="Extrude the last sketch's closed regions into a solid" />
+        <S><MmNum l="Distance" title="How far the sketch is extruded" v={extrudeD} set={setExtrudeD} />
+          <B i="up" l={({ positive: "Out of the sketch", negative: "Into it", symmetric: "Both ways evenly" } as const)[extrudeDir()]} dd={e => openMenu(e, ([["Out of the sketch", "positive"], ["Into it", "negative"], ["Both ways evenly", "symmetric"]] as const).map(([l, k]) => ({ label: l, on: extrudeDir() === k, run: () => setExtrudeDir(k) })))} /></S></G>
+      <G l="Revolve"><B big i="axi" l="Revolve" run={() => revolve()} title="Turn the last sketch's closed regions about one of its axes into a solid" />
+        <S><MmNum l="Angle" u="°" title="How far it turns (360° for a whole turn)" v={revolveA} set={v => setRevolveA(Math.min(360, v))} />
+          <B i="axi" l={`About the sketch's ${revolveAxis()} axis`} dd={e => openMenu(e, (["x", "y"] as const).map(k => ({ label: `About the sketch's ${k} axis`, on: revolveAxis() === k, run: () => setRevolveAxis(k) })))} /></S></G>
+      <G l="Edit"><S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="redo" l="Redo" off={!cad()?.redo} run={() => cadRun("edit.redo")} /></S></G>
+    </>}>
+      <G l="Draw"><For each={FAMILIES}>{fam}</For></G>
+      <G l="Sizes"><S><MmNum l="Sides" u="" int title="How many sides a polygon has (3 or more)" v={sides} set={setSides} /><MmNum l="Slot width" title="The width of a slot" v={slotW} set={setSlotW} /></S></G>
+      <G l="Sketch"><B big i="check" l="Finish Sketch" run={() => finishSketch()} title="Keep the sketch and leave it (then Extrude or Revolve)" /><B big i="clear" l="Cancel" run={() => cancelSketch()} title="Leave the sketch without keeping it" />
+        <S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="select" l="Select" on={!cadTool()} run={() => pickTool(null)} /></S></G>
+    </Show>
+  </>;
+};
 
 /** Tell Me / command search (Ctrl+K). */
 export const palette = () => openDialog(() => {
@@ -190,7 +225,8 @@ export const Ribbon = () => {
       </>}</Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
-          <Show when={isSolidA(m()?.analysis)}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and sketch a new part on it; then extrude or revolve it" /></G></Show>
+          <Show when={isSolidA(m()?.analysis)}><CadGroups /></Show>
+          <Show when={isSolidA(m()?.analysis) && !!m()?.parts?.length}><G l="Parts sketch" h="sketchplane"><B big i="new" l="New Part" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and sketch a new part on it; then extrude or revolve it" /></G></Show>
           <Show when={isSolidA(m()?.analysis) && m()?.parts?.length}>
             <G l="Features" h="modelling"><B big i="solid" l="Extrude" run={() => Mo().then(k => k.editSweep())} title="Extrude or revolve the selected part, with a preview: how far, and which way" />
               <S><T i="hcircle" l="Hole" t="hole3" title="Click a part's front or back face: a round hole right through it" /><T i="fillet" l="Fillet" t="fillet3" title="Click a part near an edge along its depth: the edge is rounded" /><T i="chamfer" l="Chamfer" t="chamfer3" title="Click a part near an edge along its depth: the edge is bevelled" /></S>

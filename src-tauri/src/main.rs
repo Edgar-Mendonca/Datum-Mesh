@@ -87,6 +87,39 @@ fn fresh(a: &App, mut m: Model) -> Model {
     m
 }
 
+// ---------------------------------------------------------------- the geometry engine (0.7.1)
+
+/// The design modelled with the geometry engine (sketches and solids), beside the analysis model.
+struct CadSt(Mutex<datum_cad::Cad>);
+
+impl CadSt {
+    fn lock(&self) -> std::sync::MutexGuard<'_, datum_cad::Cad> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// Runs one geometry-engine command (a sketch tool, a feature, undo…) and returns the scene.
+#[tauri::command]
+fn cad_run(st: State<CadSt>, id: String, params: serde_json::Value) -> R<datum_cad::Scene> {
+    let mut c = st.lock();
+    c.run(&id, &params)?;
+    c.scene()
+}
+
+/// The geometry engine's scene as it is.
+#[tauri::command]
+fn cad_scene(st: State<CadSt>) -> R<datum_cad::Scene> {
+    st.lock().scene()
+}
+
+/// A new, empty design for the geometry engine.
+#[tauri::command]
+fn cad_new(st: State<CadSt>) -> R<datum_cad::Scene> {
+    let mut c = st.lock();
+    *c = datum_cad::Cad::new();
+    c.scene()
+}
+
 // ---------------------------------------------------------------- the model
 
 #[tauri::command]
@@ -540,6 +573,7 @@ fn main() {
             let a = App { doc: Doc::new(Model::new(Analysis::Frame)), opts };
             let m = fresh(&a, Model::new(Analysis::Frame));
             app.manage(St(Mutex::new(App { doc: Doc::new(m), ..a })));
+            app.manage(CadSt(Mutex::new(datum_cad::Cad::new())));
             Ok(())
         })
         .on_window_event(|w, e| {
@@ -553,7 +587,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_new, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

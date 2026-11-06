@@ -1048,3 +1048,19 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .step.here { background: color-mix(in srgb, var(--blue) 6%, transparent); box-shadow: inset 3px 0 0 var(--blue); }
 .step.here .stn { background: var(--blue); border-color: var(--blue); color: var(--bg2); }
 .stbody { padding: 0 0 4px 12px; }
+
+/* 0.7.1: the geometry engine's sketch sheet over the 3D view. */
+.cadover { position: absolute; inset: 0; z-index: 5; display: flex; }
+.cadsheet { position: relative; flex: 1; display: flex; background: color-mix(in srgb, var(--bg2) 94%, transparent); }
+.cadsheet svg { flex: 1; cursor: crosshair; user-select: none; }
+.cadsheet .gmin { stroke: var(--line); stroke-width: .5; opacity: .6; }
+.cadsheet .gmaj { stroke: var(--line3, var(--line)); stroke-width: .8; }
+.cadsheet .axx { stroke: var(--crit); stroke-width: 1; opacity: .7; }
+.cadsheet .axy { stroke: var(--green); stroke-width: 1; opacity: .7; }
+.cadsheet .cv { fill: none; stroke: var(--text); stroke-width: 1.8; stroke-linejoin: round; }
+.cadsheet .cv.cons { stroke: var(--muted); stroke-dasharray: 5 4; stroke-width: 1; }
+.cadsheet .band { fill: none; stroke: var(--blue); stroke-width: 1.5; stroke-dasharray: 6 4; }
+.cadsheet .dpt { fill: var(--blue); }
+.cadsheet .hpt { fill: none; stroke: var(--blue); stroke-width: 1.5; }
+.cadhint { position: absolute; left: 12px; bottom: 10px; display: flex; gap: 14px; align-items: center; padding: 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.cadhint b { color: var(--blue); }

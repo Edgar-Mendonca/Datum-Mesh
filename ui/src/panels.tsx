@@ -1,5 +1,6 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
+import { cad } from "./cad";
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
@@ -125,7 +126,13 @@ export const Tree = () => {
       <div class="tbody">
         <Show when={m()}>{mm => <>
           <div class="troot" title="Model › Name in the Inspector (nothing selected)" onClick={() => setSel([])}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
-          <Step n={1} t="Geometry" done={drawn() || !!mm().volume || (mm().parts?.length ?? 0) > 0} why={frame() ? "Draw the members" : "Draw or import the part"}>
+          <Step n={1} t="Geometry" done={drawn() || !!mm().volume || (mm().parts?.length ?? 0) > 0 || (isSolidA(mm().analysis) && !!cad()?.bodies.length)} why={frame() ? "Draw the members" : "New Sketch, then Extrude"}>
+          <Show when={isSolidA(mm().analysis) && (cad()?.sketches.length || cad()?.bodies.length)}>
+            <Branch t="Sketches" icon="poly" n={cad()!.sketches.length} help="sketchplane">
+              <For each={cad()!.sketches}>{x => <Row2 icon="poly" label={x.name} sub={`${x.curves.length} ${x.curves.length === 1 ? "curve" : "curves"}${x.id === cad()!.active ? " · open" : ""}`} on={x.id === cad()!.active} />}</For></Branch>
+            <Branch t="Solids" icon="solid" n={cad()!.bodies.length} mark={{ ok: cad()!.bodies.every(b => b.closed), why: "A body is not closed: it cannot be meshed as a solid" }}>
+              <For each={cad()!.bodies}>{b => <Row2 icon="solid" label={b.name} sub={`${new Set(b.face).size} faces${b.closed ? "" : " · open"}`} />}</For></Branch>
+          </Show>
           <Show when={!mm().volume} fallback={<Branch t="Imported mesh" icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }}>
             <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>
           <Show when={frame() || !(isSolidA(mm().analysis) && (mm().parts?.length || !parts().length))} fallback={
