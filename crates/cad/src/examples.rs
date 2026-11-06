@@ -65,8 +65,7 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
     let mut m = Model::new(Analysis::Solid);
     m.name = list().into_iter().find(|e| e.id == id).ok_or("That example does not exist.")?.name.to_string();
     let mut places = vec![];
-    let size;
-    match id {
+    let size = match id {
         "m-bracket" => {
             // 80 × 50 plate, 10 thick, a 16 mm hole near the free end.
             run(&mut c, "sketch.create", json!({"plane": "XY"}))?;
@@ -78,7 +77,7 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
             // Held at x = 0; 2 kN down (the model's −y) spread over the end face at x = 80 mm.
             places.push((Pick::Plane(0, 0.0), Put::Support(SupportKind::Fixed)));
             places.push((Pick::Plane(0, 0.08), Put::Load(LoadKind::Traction { fx: 0.0, fy: -2000.0, fz: 0.0, total: true })));
-            size = 4.0;
+            4.0
         }
         "m-shaft" => {
             // Half-section in the XZ plane, revolved about Z: Ø40 for 60 mm, then Ø25 for 60 mm.
@@ -90,7 +89,7 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
             // The design's Z is the model's y: held at the wide end (y = 0), bent at the narrow end.
             places.push((Pick::Plane(1, 0.0), Put::Support(SupportKind::Fixed)));
             places.push((Pick::Plane(1, 0.12), Put::Load(LoadKind::Traction { fx: 1000.0, fy: 0.0, fz: 0.0, total: true })));
-            size = 4.0;
+            4.0
         }
         "m-tubecrush" => {
             // Radius 20 mm, wall 2 mm, 60 mm tall.
@@ -107,7 +106,7 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
             // other, which needs contact (0.8).
             places.push((Pick::Plane(1, 0.06), Put::Load(LoadKind::Settlement { dx: 0.0, dy: -0.006, dz: 0.0 })));
             m.steps.push(Step { id: 90, name: "Crush 6 mm".into(), kind: StepKind::LargePlastic, increments: 24, ..Default::default() });
-            size = 4.0;
+            4.0
         }
         "m-tuning" => {
             // A steel strip 150 × 20 × 5 mm, held at x = 0.
@@ -117,10 +116,10 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
             run(&mut c, "solid.extrude", json!({"distance": 5.0, "direction": "positive"}))?;
             material(&mut m, "steel-1020", 0.0)?;
             places.push((Pick::Plane(0, 0.0), Put::Support(SupportKind::Fixed)));
-            size = 3.0;
+            3.0
         }
         _ => return Err("That example does not exist.".into()),
-    }
+    };
     Ok((c, Setup { model: m, places, size }))
 }
 
