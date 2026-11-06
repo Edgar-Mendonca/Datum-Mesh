@@ -4,7 +4,7 @@
 // sheet over the 3D view, square to the sketch's plane, where clicks place the points.
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { invoke } from "./api";
-import { toast } from "./store";
+import { toast, setTab } from "./store";
 import { fmt } from "./units";
 
 export type CadBody = { name: string; pos: number[]; nrm: number[]; tris: number[]; face: number[]; edges: number[][]; closed: boolean };
@@ -64,7 +64,7 @@ const [draft, setDraft] = createSignal<P2[]>([]);
 export const pickTool = (t: string | null) => { setCadTool(t); setDraft([]); };
 
 /** Starts a sketch on one of the origin planes (the floor XY, front XZ, side YZ). */
-export const newSketch = async (plane: "XY" | "XZ" | "YZ") => { if (await cadRun("sketch.create", { plane })) pickTool(ways().Line); };
+export const newSketch = async (plane: "XY" | "XZ" | "YZ") => { if (await cadRun("sketch.create", { plane })) { setTab("geometry"); pickTool(ways().Line); } };
 export const finishSketch = async () => { pickTool(null); await cadRun("sketch.finish"); };
 export const cancelSketch = async () => { pickTool(null); await cadRun("sketch.cancel"); };
 
@@ -332,7 +332,7 @@ export const cad3Click = async (h: CadHit) => {
   const T = TOOLS3[t];
   if ((T.needs === "face" && !h.face) || (T.needs === "edge" && !h.edge)) return toast(T.hint);
   const c = T.run(h); if (!c) return;
-  if (await cadRun(c[0], c[1]) && t === "sketchface") { setCad3Tool(null); pickTool(ways().Line); }
+  if (await cadRun(c[0], c[1]) && t === "sketchface") { setCad3Tool(null); setTab("geometry"); pickTool(ways().Line); }
 };
 /** The solids' names: what Move, Mirror and Pattern act on. */
 export const bodyNames = () => (cad()?.bodies ?? []).map(b => b.name);

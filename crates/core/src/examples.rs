@@ -38,7 +38,7 @@ pub fn list() -> Vec<Example> {
         e("blank-frame", "Blank frame", "Nodes and members: beams and trusses in 2D.", Analysis::Frame),
         e("blank-stress", "Blank part", "Plane stress: a thin plate loaded in its plane.", Analysis::Stress),
         e("blank-space", "Blank 3D frame", "Nodes and members in 3D: beams that bend both ways and twist, and truss bars.", Analysis::Space),
-        e("blank-solid", "Blank 3D solid", "Draw a part's outline; it is extruded by its thickness into a 3D solid.", Analysis::Solid),
+        e("blank-solid", "Blank 3D solid", "Sketch on a plane, then extrude, revolve, drill, round and pattern it into a 3D solid.", Analysis::Solid),
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("braced", "Braced frame", "A two-storey steel frame: HEB columns, IPE beams pinned at their ends, one braced bay, and dead, imposed and wind load cases with combinations.", Analysis::Frame),

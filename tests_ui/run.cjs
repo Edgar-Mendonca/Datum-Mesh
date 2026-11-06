@@ -955,15 +955,15 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const tn = (await ops0())?.PlaceParts;
   check("Turn or Pattern about Z turns about the engine's y axis", tn && tn.how.kind === "turn" && tn.how.axis[1] === 1 && tn.how.axis[0] === 0 && Math.abs(tn.how.angle - Math.PI / 2) < 1e-12 && tn.copies === 3, JSON.stringify(tn));
   // Mirror in the Y-Z plane, as a copy.
-  await p.click('.ribbon button:has-text("Mirror")'); await p.waitForTimeout(150); await p.click(".dlg footer .btn.pri"); await p.waitForTimeout(150);
+  await p.click('.ribbon button[title="Mirror the selected parts in a plane"]'); await p.waitForTimeout(150); await p.click(".dlg footer .btn.pri"); await p.waitForTimeout(150);
   const mr = (await ops0())?.PlaceParts;
   check("Mirror in the Y-Z plane sends a mirror with normal X, one copy", mr && mr.how.kind === "mirror" && mr.how.normal[0] === 1 && mr.copies === 1, JSON.stringify(mr));
   // Hole and Fillet: the tool, then a click on the part.
-  await p.click('.ribbon button:has-text("Hole")'); await p.waitForTimeout(80);
+  await p.click('.ribbon button[title^="Click a part\'s front or back face"]'); await p.waitForTimeout(80);
   await p.mouse.click(onTop[0], onTop[1]); await p.waitForTimeout(200);
   const hle = (await ops0())?.Hole;
   check("Hole, clicked on the top plate's upper face, sends a hole there", hle && hle.part === topId && Math.abs(hle.at[1] - 0.11) < 1e-6 && Math.abs(hle.d - 0.01) < 1e-12, JSON.stringify(await ops0()));
-  await p.click('.ribbon button:has-text("Fillet")'); await p.waitForTimeout(80);
+  await p.click('.ribbon button[title^="Click a part near an edge along its depth: the edge is rounded"]'); await p.waitForTimeout(80);
   const nearEdge = await atp([0.039, 0.105, 0.039]); await p.mouse.click(nearEdge[0], nearEdge[1]); await p.waitForTimeout(200);
   const fe = (await ops0())?.PartEdge;
   check("Fillet, clicked near an edge, sends the point and the size to round", fe && fe.round === true && Math.abs(fe.size - 0.002) < 1e-12 && fe.part === topId, JSON.stringify(await ops0()));
@@ -1204,14 +1204,19 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("print preview draws the model", true);
   // 0.7.1: sketch and 3D tools by the geometry engine, in the Datum window.
   await open("blank-solid");
+  // The start card's New Sketch shows the drawing tools, whatever tab was on (0.7.1 bug: Home stayed, and a click meant for Rectangle changed the analysis).
+  await p.click('.tabs > button:text-is("Home")');
+  await p.click('.view3d .empty button:has-text("New sketch on the floor")'); await p.waitForTimeout(300);
+  check("the start card's New Sketch opens the sketch with the drawing tools on the ribbon (0.7.1 bug)", (await p.textContent(".tabs .steptools")) === "Geometry" && (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
+  await p.click('.ribbon button[title^="Leave the sketch without keeping it"]'); await p.waitForTimeout(300);
   await p.click('.tree .step:nth-of-type(1) > .sthead');
-  check("a blank 3D solid offers New Sketch, Extrude and Revolve on the Geometry ribbon", (await p.$$('.ribbon button[title^="Start a sketch on a plane"]')).length === 1 && (await p.$$('.ribbon button[title^="Extrude the last sketch"]')).length === 1 && (await p.$$('.ribbon button[title^="Turn the last sketch"]')).length === 1);
-  await p.click('.ribbon button[title^="Start a sketch on a plane"]'); await p.waitForTimeout(100);
+  check("a blank 3D solid offers New Sketch, Extrude and Revolve on the Geometry ribbon", (await p.$$('.ribbon button[title^="Start a sketch: on the floor"]')).length === 1 && (await p.$$('.ribbon button[title^="Extrude the last sketch"]')).length === 1 && (await p.$$('.ribbon button[title^="Turn the last sketch"]')).length === 1);
+  await p.click('.ribbon button[title^="Start a sketch: on the floor"]'); await p.waitForTimeout(100);
   await p.click('.menu button:has-text("On the floor")'); await p.waitForTimeout(300);
   const cadCall = async () => p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1]).slice(-1)[0]);
   check("New Sketch › On the floor starts a sketch on XY and opens the sheet", JSON.stringify(await cadCall()) === JSON.stringify({ id: "sketch.create", params: { plane: "XY" } }) && !!(await p.$(".cadsheet svg")));
   check("the sheet fills the 3D view, not the window (0.7.1 bug)", await p.$eval(".cadsheet svg", el => { const r = el.getBoundingClientRect(), v = document.querySelector(".view3d").getBoundingClientRect(); return r.height > 300 && Math.abs(r.top - v.top) < 2 && Math.abs(r.width - v.width) < 2; }));
-  const shapes = await p.$$eval('.ribbon .grp:has(.cap:text-is("Draw")) .rbw span', els => els.map(e => e.textContent));
+  const shapes = await p.$$eval('.ribbon .grp:has(.cap:text-is("Create")) .rbw span', els => els.map(e => e.textContent));
   check("in a sketch the ribbon offers the six shapes", ["Line", "Arc", "Circle", "Rectangle", "Polygon", "Slot"].every(x => shapes.includes(x)), JSON.stringify(shapes));
   await p.click('.ribbon .rbw:has(.rb.bot span:text-is("Circle")) .rb.bot'); await p.waitForTimeout(100);
   check("Circle ▾ lists its three ways", JSON.stringify(await p.$$eval(".menu button", els => els.map(e => e.textContent.replace("✓", "").trim()))) === JSON.stringify(["Circle · centre and radius", "Circle · 2 points", "Circle · 3 points"]), JSON.stringify(await p.$$eval(".menu button", els => els.map(e => e.textContent))));
