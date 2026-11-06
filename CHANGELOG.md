@@ -11,14 +11,25 @@ The solids you model can now be analysed: meshed, held, loaded and solved.
 - Results as for any solid: von Mises, principal stress, displacement and safety factor in colour on the deformed shape, the cut plane, the probe, the player and the equilibrium check.
 - Step 1 shows the solids as modelled; the later steps show the mesh. Mesh › Element Size sets the size; Mesh › Show Elements draws them.
 
+**Crushing and collapse** (brought forward from 0.7.4)
+- A new step, Crushing and collapse: yielding with large movements, so a part can be followed past its peak load as it folds. Supports & Loads › Move a Face pushes a face by a set amount, like a crusher's platen; Results › Load–Deflection then draws the force on it against its movement.
+- New example, Tube crushed until it collapses: an aluminium tube pushed down 6 mm. The force peaks at its squash load σy A (57.3 kN) and falls as the wall folds.
+
+**Examples modelled with the new tools**
+- A bracket with a hole, a stepped shaft (revolved), the crushed tube, and a steel strip's natural frequencies. Each opens with its history, mesh, supports, loads and steps, ready to solve.
+
+**No more 3D / Section switch**
+- The view is always 3D. Solids made the older way (a section extruded or turned) have Edit Section to change their outline, and Finish Editing to come back.
+
 **Fixes**
 - The File page's Roadmap icon is the same colour as the others.
 
 **How it is built**
 - Gmsh (GPL) is installed beside Datum Mesh in its own folder and run as a separate program; Datum Mesh writes the solids out for it and reads back the mesh it makes. Checked: a steel cantilever modelled, meshed and solved agrees with beam theory to within 4 %.
+- Crushing: total Lagrangian with small strains and large rotations (Bathe, *Finite Element Procedures* §6.6), von Mises yielding with the consistent tangent (Simo and Hughes). New benchmark 34: a cantilever bent far against the elastica (within 1 %), and a bar pulled past yield by its end face against the exact force (within 0.01 %).
 
 **Not yet**
-- Natural frequencies, buckling, heat, yielding and large deformation of the modelled solids come in 0.7.4, with the rebuilt examples. Finer mesh near chosen faces comes with the interactions in 0.7.7.
+- Folds pressing on each other need contact (0.8): the tube is crushed 6 mm, not flat. Natural frequencies and heat work on the modelled solids (the strip example); buckling of solids and more examples come in 0.7.4. Finer mesh near chosen faces comes with the interactions in 0.7.7.
 
 ## 0.7.2 — 2026-11-06
 

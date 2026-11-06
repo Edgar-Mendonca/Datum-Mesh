@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "Crushing and collapse: a tube pushed by a platen until its wall folds, the force peaking at the squash load and falling after it; examples modelled with the new tools",
     "The solids you model are analysed: meshed by themselves into ten-node tetrahedra by Gmsh, held and loaded on the faces you click, solved by our own engine and checked for equilibrium",
     "A history of every feature, in the tree and in a timeline: right-click to edit, rename, suppress, roll back or delete; sketch on any plane or face with the view turning to it; extrude with the solid changing as you type; a grid of big and small squares that follows the zoom",
     "Numbered steps and full sketching and 3D modelling in the Datum window: each shape with its ways of drawing, trim, offset, fillet, patterns, dimensions and constraints; extrude, revolve, hole, fillet, chamfer, shell, press pull, move, mirror and pattern",
@@ -90,13 +91,12 @@
   "roadmap": [
     {
       "v": "0.7.4",
-      "title": "Every analysis on the modelled solids",
+      "title": "More analyses and examples on the modelled solids",
       "when": "Next",
       "items": [
-        "Natural frequencies, buckling, heat, yielding and large deformation",
-        "The examples rebuilt with the modelling tools, every animation tested",
-        "A tube crushed until it collapses; harder examples",
-        "The 3D / Section switch removed"
+        "Heat and thermal stress on the modelled solids",
+        "Every example's animation tested",
+        "Harder examples in mechanics, nonlinear, dynamics and structures"
       ]
     },
     {

@@ -1283,6 +1283,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the mesh's faces are named after the feature that made them", (await p.textContent(".tree")).includes("Body1: Extrude1 top") && !(await p.textContent(".tree")).includes("F2:"));
   check("the Mesh step counts the tetrahedra", (await p.textContent(".tree .step:nth-of-type(4)")).includes("10-node tetrahedra"));
   check("a modelled solid has no 3D/Section switch in the analysis steps either", !(await p.$('.planebar button:text-is("Section")')));
+  check("Supports & Loads on a solid offers Move a Face and Face Force (crushing, 0.7.3)", (await p.$$('.ribbon button:has-text("Move a Face")')).length === 1 && (await p.$$('.ribbon button:has-text("Face Force")')).length === 1);
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Extrude the last sketch"]'); await p.waitForTimeout(400);
   await p.click('.view3d .xpanel button:has-text("OK")'); await p.waitForTimeout(100);
   await p.keyboard.press("F5"); await p.waitForTimeout(500);

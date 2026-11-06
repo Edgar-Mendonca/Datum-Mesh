@@ -43,7 +43,7 @@ pub fn list() -> Vec<Modelled> {
     vec![
         Modelled { id: "m-bracket", name: "Bracket with a hole, modelled", what: "A plate bracket 80 × 50 × 10 mm with a bolt hole, modelled (sketch, extrude), held at one end and pushed 2 kN down at the other: the stress gathers at the root and round the hole.", group: "3D solids and assemblies" },
         Modelled { id: "m-shaft", name: "Stepped shaft, modelled", what: "A shaft with a shoulder, revolved from its half-section, held at one end and bent at the other: the stress gathers at the shoulder.", group: "3D solids and assemblies" },
-        Modelled { id: "m-tubecrush", name: "Tube crushed until it collapses", what: "An aluminium tube pushed down by a platen until its wall folds: yielding with large movements, the force against the movement, the peak and the fall after it.", group: "Nonlinear: large deflection, yielding, rubber" },
+        Modelled { id: "m-tubecrush", name: "Tube crushed until it collapses", what: "An aluminium tube (Ø40 × 2 mm, 60 mm tall) pushed down 6 mm by a platen: it yields, its wall folds, and the force peaks at the squash load σy A and then falls. Solving takes a few minutes.", group: "Nonlinear: large deflection, yielding, rubber" },
         Modelled { id: "m-tuning", name: "Plate ringing: natural frequencies", what: "A steel strip held at one end, modelled and meshed: its first natural frequencies and mode shapes, against beam theory for the first.", group: "Dynamics" },
     ]
 }
@@ -83,7 +83,7 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
         "m-shaft" => {
             // Half-section in the XZ plane, revolved about Z: Ø40 for 60 mm, then Ø25 for 60 mm.
             run(&mut c, "sketch.create", json!({"plane": "XZ"}))?;
-            run(&mut c, "sketch.line", json!({"points": [[0, 0], [20, 0], [20, 60], [12.5, 60], [12.5, 120], [0, 120], [0, 0]]}))?;
+            run(&mut c, "sketch.line", json!({"points": [[0, 0], [20, 0], [20, -60], [12.5, -60], [12.5, -120], [0, -120], [0, 0]]}))?;
             run(&mut c, "sketch.finish", json!({}))?;
             run(&mut c, "solid.revolve", json!({"axis": "y", "angle": 360}))?;
             material(&mut m, "steel-1020", 0.0)?;
@@ -102,9 +102,12 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
             material(&mut m, "al-6061-t6", 0.5e9)?;
             places.push((Pick::Plane(1, 0.0), Put::Support(SupportKind::Fixed)));
             places.push((Pick::Plane(1, 0.06), Put::Support(SupportKind::Hold { x: true, y: false, z: true })));
-            places.push((Pick::Plane(1, 0.06), Put::Load(LoadKind::Settlement { dx: 0.0, dy: -0.015, dz: 0.0 })));
-            m.steps.push(Step { name: "Crush 15 mm".into(), kind: StepKind::LargePlastic, increments: 30, ..Default::default() });
-            size = 2.5;
+            // Crushed 6 mm (a tenth of its length) in 24 increments: the peak at the squash load
+            // σy A, then the force falls as the wall folds. Further on, the folds press on each
+            // other, which needs contact (0.8).
+            places.push((Pick::Plane(1, 0.06), Put::Load(LoadKind::Settlement { dx: 0.0, dy: -0.006, dz: 0.0 })));
+            m.steps.push(Step { id: 90, name: "Crush 6 mm".into(), kind: StepKind::LargePlastic, increments: 24, ..Default::default() });
+            size = 4.0;
         }
         "m-tuning" => {
             // A steel strip 150 × 20 × 5 mm, held at x = 0.

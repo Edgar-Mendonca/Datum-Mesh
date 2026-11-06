@@ -161,7 +161,11 @@ export const partPathDialog = () => openDialog(() => {
   };
   return <Dialog title="Load–deflection curve" wide help={(results() as any)?.path?.force?.length ? "crushing" : "plasticity"}>
     <Show when={p()} fallback={<p class="muted">No curve: add an elastic-plastic step (Solve › Steps) and solve.</p>}>{x => <>
-      <p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. {(results() as any)?.large ? "Large deformation (neo-Hookean)" : x().first_yield !== null ? <>It first yields at <b>{num(x().first_yield! * 100, 3)} %</b> of the load</> : "Nothing yields"}{x().reached ? "; it carries the whole load." : <>; it <b>collapses</b> at about {num(x().load[x().load.length - 1] * 100, 3)} % of it.</>}</p>
+      <Show when={x().force?.length} fallback={<p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. {(results() as any)?.large ? "Large deformation (neo-Hookean)" : x().first_yield !== null ? <>It first yields at <b>{num(x().first_yield! * 100, 3)} %</b> of the load</> : "Nothing yields"}{x().reached ? "; it carries the whole load." : <>; it <b>collapses</b> at about {num(x().load[x().load.length - 1] * 100, 3)} % of it.</>}</p>}>{(() => {
+        // Crushing (0.7.3): the force on the moved face, its peak and where it ends.
+        const f = x().force!, i = f.reduce((b, v, k) => v > f[b] ? k : b, 0), last = f[f.length - 1];
+        return <p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. Yielding with large movements: the force peaks at <b>{num(toU("force", f[i]), 4)} {unit("force")}</b> at {num(toU("len", x().umax[i]), 3)} {unit("len")}{last < 0.95 * f[i] ? <> and falls to {num(toU("force", last), 4)} {unit("force")} at {num(toU("len", x().umax[x().umax.length - 1]), 3)} {unit("len")}: it has <b>collapsed</b></> : ""}{x().reached ? "." : <>; the solve stopped at {num(x().load[x().load.length - 1] * 100, 3)} % of the movement.</>}</p>;
+      })()}</Show>
       <Show when={plot()}>{q => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against the largest movement">
         <line class="ax" x1={P} y1={H - P} x2={W - P} y2={H - P} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
         <path class="line" d={q().d} fill="none" />
@@ -169,7 +173,8 @@ export const partPathDialog = () => openDialog(() => {
         <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">{x().force?.length ? "Movement of the moved face" : "Largest movement"} ({unit("len")})</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(q().x1, 3)}</text>
         <text x={P - 6} y={P - 10} class="lbl">{x().force?.length ? `Force it takes (${unit("force")})` : "Load factor"}</text><text x={P - 6} y={q().sy(q().y1) + 4} text-anchor="end" class="lbl">{num(q().y1, 3)}</text>
       </svg>}</Show>
-      <Show when={(results() as any)?.large} fallback={<p class="muted small">Hollow points: the part has yielded somewhere. As it yields it softens, and the curve bends over; at collapse it would run flat.</p>}><p class="muted small">A stiffening curve (bending up) is the solid carrying load by stretching, as rubber and slender parts do once they move far; a softening one (bending over) is heading for buckling or snap-through.</p></Show>
+      <Show when={x().force?.length}><p class="muted small">The peak is the collapse load: before it the part yields and stiffens less and less; after it, it folds and carries less while the platen keeps moving. Hollow points: the part has yielded somewhere.</p></Show>
+      <Show when={!x().force?.length && (results() as any)?.large} fallback={!x().force?.length && <p class="muted small">Hollow points: the part has yielded somewhere. As it yields it softens, and the curve bends over; at collapse it would run flat.</p>}><p class="muted small">A stiffening curve (bending up) is the solid carrying load by stretching, as rubber and slender parts do once they move far; a softening one (bending over) is heading for buckling or snap-through.</p></Show>
     </>}</Show>
   </Dialog>;
 });

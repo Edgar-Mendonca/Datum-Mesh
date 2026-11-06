@@ -494,7 +494,8 @@ mod tests {
             let work = std::env::temp_dir().join(format!("datum-cad-ex-{}-{}", e.id, std::process::id()));
             let ms = c.mesh(setup.size, &g, &work).unwrap_or_else(|x| panic!("{}: {x}", e.id));
             let _ = std::fs::remove_dir_all(&work);
-            let m = crate::examples::place(&setup, ms).unwrap_or_else(|x| panic!("{}: {x}", e.id));
+            let bb: Vec<(f64, f64)> = (0..3).map(|a| ms.nodes.iter().fold((f64::MAX, f64::MIN), |b, p| (b.0.min(p[a]), b.1.max(p[a])))).collect();
+            let m = crate::examples::place(&setup, ms).unwrap_or_else(|x| panic!("{}: {x} (the mesh spans {bb:?} m)", e.id));
             assert!(!m.supports.is_empty(), "{}", e.id);
             if e.id == "m-tubecrush" {
                 continue;

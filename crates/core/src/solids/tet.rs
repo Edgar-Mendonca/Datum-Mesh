@@ -826,7 +826,7 @@ fn build(m: &Model) -> Result<Built, String> {
     for q in 0..nn {
         applied.add(ms.nodes[q], [sys.f[3 * q], sys.f[3 * q + 1], sys.f[3 * q + 2]]);
     }
-    if applied.scale == 0.0 {
+    if applied.scale == 0.0 && !m.loads.iter().any(|l| matches!(l.kind, LoadKind::Settlement { .. })) {
         warnings.push("The model has no loads, so nothing moves. Add a pressure, a face force or gravity.".into());
     }
     // Supports on faces: held movements, or stiff springs along the normal of sloping faces.
