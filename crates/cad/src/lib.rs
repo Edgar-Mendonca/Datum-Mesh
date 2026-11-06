@@ -510,11 +510,17 @@ mod tests {
                 assert!((got - f1).abs() < 0.05 * f1, "{}: first frequency {got} Hz against {f1} Hz", e.id);
                 continue;
             }
-            let r = match datum_core::solve_for(&m, None).unwrap_or_else(|x| panic!("{}: {x}", e.id)) {
-                datum_core::Results::Solid(r) => r,
+            match datum_core::solve_for(&m, None).unwrap_or_else(|x| panic!("{}: {x}", e.id)) {
+                datum_core::Results::Solid(r) => assert!(r.imbalance < 1e-6, "{}: imbalance {}", e.id, r.imbalance),
+                datum_core::Results::SolidHeat(r) => {
+                    // Heat in through the base balances heat out to the air; every temperature
+                    // between the air's and the base's.
+                    assert!(r.imbalance < 1e-6, "{}: heat imbalance {}", e.id, r.imbalance);
+                    let t = r.field("t");
+                    assert!(t.min > 293.15 - 1e-6 && t.max < 353.15 + 1e-6 && t.min < 353.0, "{}: temperatures {} to {} K", e.id, t.min, t.max);
+                }
                 _ => panic!("{}: not a solid's results", e.id),
-            };
-            assert!(r.imbalance < 1e-6, "{}: imbalance {}", e.id, r.imbalance);
+            }
         }
     }
 

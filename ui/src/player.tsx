@@ -21,7 +21,9 @@ export const [loop, setLoop] = createSignal(true);
 
 const framesOf = (r: Results | null): Frames | null => { const f = (r as Any)?.frames as Frames | undefined; return f && f.at.length > 1 ? f : null; };
 /** Can this result be played? (Heat is not played: it does not move.) */
-export const playable = (r: Results | null) => !!r && r.kind !== "heat" && r.kind !== "solidheat";
+/** Can this result be played? Heat does not move; a response spectrum's peaks, combined from the
+ * modes, are not a motion (0.7.4: they played as if growing with a load): its modes are played. */
+export const playable = (r: Results | null) => !!r && r.kind !== "heat" && r.kind !== "solidheat" && (r as Any).dynamic?.kind !== "spectrum";
 
 /** A range fixed for a field's colours while playing, so the colours grow with the load. */
 const fixed = (v: number[], range: [number, number]) => { (v as Any).range = range; return v; };

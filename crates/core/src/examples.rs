@@ -659,6 +659,54 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    /// 0.7.4 (the user: "animations do not work in some examples"): every worked example solves,
+    /// and where its result plays through frames (a nonlinear step, a time history) each frame
+    /// moves exactly the points the window draws; a nonlinear one always has frames.
+    #[test]
+    fn every_example_plays() {
+        use crate::Results;
+        let mut bad = vec![];
+        for e in list().into_iter().filter(|e| e.group != "Blank") {
+            let m = get(e.id).expect("example");
+            // A response spectrum gives peak values combined from the modes, not a motion: it is
+            // not played (its modes are, in Results › Modes).
+            if m.steps.iter().any(|s| s.kind == crate::model::StepKind::Spectrum) {
+                continue;
+            }
+            let nonlinear = m.steps.iter().any(|s| s.kind != crate::model::StepKind::Linear);
+            let r = match crate::solve_for(&m, None) {
+                Ok(r) => r,
+                Err(x) => {
+                    bad.push(format!("{}: does not solve: {x}", e.id));
+                    continue;
+                }
+            };
+            let (frames, drawn) = match &r {
+                Results::Frame(r) => (r.frames.as_ref(), r.members.iter().map(|m| m.d.len()).sum()),
+                Results::Space(r) => (r.frames.as_ref(), r.members.iter().map(|m| m.d.len()).sum()),
+                Results::Plane(r) => (r.frames.as_ref(), r.disp.len()),
+                Results::Solid(r) => (r.frames.as_ref(), r.disp.len()),
+                Results::Heat(_) | Results::SolidHeat(_) => continue,
+            };
+            match frames {
+                None if nonlinear => bad.push(format!("{}: a nonlinear result with no frames to play", e.id)),
+                None => {}
+                Some(f) => {
+                    if f.at.len() < 2 {
+                        bad.push(format!("{}: {} frame(s)", e.id, f.at.len()));
+                    }
+                    if let Some(k) = f.disp.iter().position(|d| d.len() != drawn) {
+                        bad.push(format!("{}: frame {k} moves {} points, the window draws {drawn}", e.id, f.disp[k].len()));
+                    }
+                    if !f.v.is_empty() && f.v.iter().any(|v| v.len() != drawn) {
+                        bad.push(format!("{}: a frame's colours do not match the points drawn", e.id));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{}", bad.join("\n"));
+    }
+
     #[test]
     fn every_worked_example_has_a_heading_and_the_blanks_come_first() {
         let l = list();

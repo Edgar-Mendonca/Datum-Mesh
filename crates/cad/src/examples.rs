@@ -22,6 +22,8 @@ pub enum Pick {
     Plane(usize, f64),
     /// Every face whose nodes all lie at this distance from the Y axis.
     RadiusY(f64),
+    /// Every face no earlier pick took.
+    Rest,
 }
 
 /// What goes on the faces picked.
@@ -44,6 +46,7 @@ pub fn list() -> Vec<Modelled> {
         Modelled { id: "m-bracket", name: "Bracket with a hole, modelled", what: "A plate bracket 80 × 50 × 10 mm with a bolt hole, modelled (sketch, extrude), held at one end and pushed 2 kN down at the other: the stress gathers at the root and round the hole.", group: "3D solids and assemblies" },
         Modelled { id: "m-shaft", name: "Stepped shaft, modelled", what: "A shaft with a shoulder, revolved from its half-section, held at one end and bent at the other: the stress gathers at the shoulder.", group: "3D solids and assemblies" },
         Modelled { id: "m-tubecrush", name: "Tube crushed until it collapses", what: "An aluminium tube (Ø40 × 2 mm, 60 mm tall) pushed down 6 mm by a platen: it yields, its wall folds, and the force peaks at the squash load σy A and then falls. Solving takes a few minutes.", group: "Nonlinear: large deflection, yielding, rubber" },
+        Modelled { id: "m-heatsink", name: "Heat sink, modelled", what: "An aluminium heat sink with five fins, modelled from one sketch: its base held at 80 °C and air at 20 °C blowing over the rest (h = 25 W/m²K): the temperature falling along the fins and the heat it sheds.", group: "3D solids and assemblies" },
         Modelled { id: "m-tuning", name: "Plate ringing: natural frequencies", what: "A steel strip held at one end, modelled and meshed: its first natural frequencies and mode shapes, against beam theory for the first.", group: "Dynamics" },
     ]
 }
@@ -108,6 +111,25 @@ pub fn build(id: &str) -> Result<(Cad, Setup), String> {
             m.steps.push(Step { id: 90, name: "Crush 6 mm".into(), kind: StepKind::LargePlastic, increments: 24, ..Default::default() });
             4.0
         }
+        "m-heatsink" => {
+            // A base 60 × 6 mm with five fins 4 mm thick and 30 mm tall, 40 mm deep: one outline.
+            let mut pts = vec![[0.0, 0.0], [60.0, 0.0], [60.0, 6.0]];
+            for k in (0..5).rev() {
+                let x = 4.0 + 12.0 * k as f64;
+                pts.extend([[x + 4.0, 6.0], [x + 4.0, 36.0], [x, 36.0], [x, 6.0]]);
+            }
+            pts.extend([[0.0, 6.0], [0.0, 0.0]]);
+            run(&mut c, "sketch.create", json!({"plane": "XZ"}))?;
+            let flipped: Vec<[f64; 2]> = pts.iter().map(|p| [p[0], -p[1]]).collect();
+            run(&mut c, "sketch.line", json!({"points": flipped}))?;
+            run(&mut c, "sketch.finish", json!({}))?;
+            run(&mut c, "solid.extrude", json!({"distance": 40.0, "direction": "positive"}))?;
+            m.analysis = Analysis::SolidHeat;
+            material(&mut m, "al-6061-t6", 0.0)?;
+            places.push((Pick::Plane(1, 0.0), Put::Support(SupportKind::Temperature { t: 353.15 })));
+            places.push((Pick::Rest, Put::Load(LoadKind::Convection { h: 25.0, t_inf: 293.15 })));
+            3.0
+        }
         "m-tuning" => {
             // A steel strip 150 × 20 × 5 mm, held at x = 0.
             run(&mut c, "sketch.create", json!({"plane": "XY"}))?;
@@ -133,6 +155,7 @@ pub fn faces(ms: &TetMesh, pick: Pick) -> Vec<u32> {
         .filter(|(_, f)| match pick {
             Pick::Plane(a, v) => all(f, &|p| (p[a] - v).abs() < tol),
             Pick::RadiusY(r) => all(f, &|p| ((p[0] * p[0] + p[2] * p[2]).sqrt() - r).abs() < 1e-5),
+            Pick::Rest => true,
         })
         .map(|(i, _)| i as u32)
         .collect()
@@ -144,8 +167,13 @@ pub fn place(setup: &Setup, ms: TetMesh) -> Result<Model, String> {
     let mut v = ms;
     v.material = m.materials[0].id;
     let mut next = m.next.max(100);
+    let mut taken: Vec<u32> = vec![];
     for (pick, put) in &setup.places {
-        let on = faces(&v, *pick);
+        let mut on = faces(&v, *pick);
+        if matches!(pick, Pick::Rest) {
+            on.retain(|f| !taken.contains(f));
+        }
+        taken.extend(&on);
         if on.is_empty() {
             return Err("An example's support or load found no face to go on.".into());
         }
