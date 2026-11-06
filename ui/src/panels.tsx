@@ -131,7 +131,6 @@ export const Tree = () => {
           <Show when={isSolidA(mm().analysis) && (cad()?.features.length || cad()?.bodies.length)}>
             <Branch t="History" icon="list" n={cad()!.features.length} help="modelling">
               <For each={cad()!.features}>{(f, i) => <button class="ti" classList={{ on: selFeature() === f.id || f.id === cad()!.active, dim: f.suppressed || rolledBack(i()) }}
-                title={`${f.kind}${f.suppressed ? ", suppressed" : ""}${rolledBack(i()) ? ", rolled back" : ""}: double-click to edit, right-click for more`}
                 onClick={() => setSelFeature(f.id)} onDblClick={() => editFeature(f)} onContextMenu={e => featureMenu(e, f, i())}>
                 <Ic n={kindIcon(f.kind)} /><span>{f.name}</span><small>{f.id === cad()!.active ? "open" : f.suppressed ? "suppressed" : f.kind === "Sketch" ? `${cad()!.sketches.find(x => x.id === f.id)?.curves.length ?? 0} curves` : f.kind}</small></button>}</For></Branch>
             <Branch t="Solids" icon="solid" n={cad()!.bodies.length} mark={{ ok: cad()!.bodies.every(b => b.closed), why: "A body is not closed: it cannot be meshed as a solid" }}>

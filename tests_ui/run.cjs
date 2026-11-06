@@ -48,6 +48,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
         invoke: async (c, a) => {
           window.__calls.push([c, a]);
           if (c === "cad_scene") return window.__cad ?? f.cad.empty;
+          if (c === "cad_query") return a.id === "timeline.inspect" ? f.cad.inspect_extrude : a.id === "sketch.inspect" ? { curves: [], points: [] } : a.id === "parameters.list" ? [] : {};
           if (c === "cad_run") { const id = a.id; const k = id === "sketch.create" ? "sketch" : id === "sketch.finish" ? "finished" : id === "sketch.cancel" ? "empty" : id.startsWith("sketch.") ? "drawn" : id === "solid.extrude" ? "extruded" : id === "solid.revolve" ? "revolved" : null; if (k) window.__cad = f.cad[k]; return window.__cad ?? f.cad.empty; }
           if (c === "state") return window.__cur;
           if (c === "new_model" && window.__next) { window.__cur = window.__next; window.__next = null; return window.__cur; }
@@ -1235,6 +1236,27 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const ex = await cadCall();
   check("Extrude extrudes the last sketch by the distance typed", ex.id === "solid.extrude" && ex.params.distance === 20 && ex.params.direction === "positive" && ex.params.sketch === fix.cad.finished.sketches[0].id, JSON.stringify(ex));
   check("the tree lists the solid with its faces, and step 1 is done", (await p.textContent(".tree .step:nth-of-type(1)")).includes("17 faces") && await p.$eval(".tree .step:nth-of-type(1)", el => el.classList.contains("done")));
+
+  // 0.7.2: the history, its right-click menu, Edit Feature, the timeline; no browser menu.
+  check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti span', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
+  await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))', { button: "right" }); await p.waitForTimeout(150);
+  const fm = await p.$$eval(".menu button span", els => els.map(e => e.textContent));
+  check("right-clicking a feature offers Edit Feature, Edit Sketch, Rename, Suppress, Roll Back Here and Delete (0.7.2, the user)", ["Edit Feature", "Edit Sketch", "Rename", "Suppress", "Roll Back Here", "Delete"].every(x => fm.includes(x)), JSON.stringify(fm));
+  await p.click('.menu button:has-text("Suppress")'); await p.waitForTimeout(150);
+  check("Suppress sends the feature to the engine", JSON.stringify(await cadCall()) === JSON.stringify({ id: "timeline.suppress", params: { feature: fix.cad.extruded.features[1].id } }));
+  await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))', { button: "right" }); await p.waitForTimeout(150);
+  await p.click('.menu button:has-text("Edit Feature")'); await p.waitForTimeout(250);
+  check("Edit Feature shows the feature's sizes, as the engine names them", (await p.textContent(".dlg")).includes("Distance") && (await p.$eval(".dlg table input", el => el.value)) === "15");
+  await p.fill(".dlg table input", "30"); await p.click('.dlg button:has-text("OK")'); await p.waitForTimeout(200);
+  check("changing a size in Edit Feature changes its parameter", JSON.stringify(await cadCall()) === JSON.stringify({ id: "parameters.change", params: { name: "d1", expression: "30" } }));
+  check("the timeline under the 3D view lists the history", (await p.$$(".view3d .timeline .tlchip")).length === fix.cad.extruded.features.length);
+  await p.click(".view3d .timeline .tlchip >> nth=1", { button: "right" }); await p.waitForTimeout(150);
+  check("right-clicking a feature in the timeline opens the same menu", (await p.$$eval(".menu button span", els => els.map(e => e.textContent))).includes("Roll Back Here"));
+  await p.keyboard.press("Escape"); await p.mouse.click(5, 5); await p.waitForTimeout(100);
+  await p.click('.tree .tgrp:has(.tt:text-is("Solids")) .ti', { button: "right" }); await p.waitForTimeout(150);
+  check("right-clicking a solid offers Rename and Delete", ["Rename", "Delete"].every(x => fm.includes(x)) && (await p.$$eval(".menu button span", els => els.map(e => e.textContent))).includes("Rename"));
+  await p.mouse.click(5, 5); await p.waitForTimeout(100);
+  check("the browser's own menu never shows (0.7.2, the user)", await p.evaluate(() => { const ev = new MouseEvent("contextmenu", { bubbles: true, cancelable: true }); document.querySelector(".tree").dispatchEvent(ev); return ev.defaultPrevented; }));
   await open("portal");
 
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100);

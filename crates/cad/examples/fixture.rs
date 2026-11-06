@@ -19,6 +19,8 @@ fn main() {
     out.insert("finished".into(), serde_json::to_value(c.scene().expect("scene")).expect("json"));
     run(&mut c, "solid.extrude", json!({"distance": 15.0}));
     out.insert("extruded".into(), serde_json::to_value(c.scene().expect("scene")).expect("json"));
+    let ex = c.scene().expect("scene").features[1].id;
+    out.insert("inspect_extrude".into(), run(&mut c, "timeline.inspect", json!({"feature": ex})));
     let mut r = datum_cad::Cad::new();
     run(&mut r, "sketch.create", json!({"plane": "XZ"}));
     run(&mut r, "sketch.rectangle.two_point", json!({"p0": [30, 0], "p1": [45, 50]}));

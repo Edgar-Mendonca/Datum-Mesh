@@ -276,10 +276,10 @@ mod tests {
         let ins = run(&mut c, "timeline.inspect", json!({"feature": ex}));
         assert!(ins.get("definition").is_some() || ins.get("inputs").is_some(), "inspect says what Edit can change: {ins}");
         let top = |c: &Cad| c.scene().unwrap().bodies[0].pos.chunks(3).map(|p| p[2]).fold(f32::MIN, f32::max);
-        // Edit Feature: the extrusion's distance 10 → 25.
-        let def = ins.get("definition").cloned().unwrap_or_default();
-        let key = ["distance", "depth", "extent"].into_iter().find(|k| def.get(*k).is_some()).unwrap_or("distance");
-        run(&mut c, "timeline.edit", json!({"feature": ex, "set": {key: 25.0}}));
+        // Edit Feature: the extrusion's distance 10 → 25, through its named input (as the window does).
+        let input = &ins["inputs"][0];
+        assert_eq!(input["label"], "Distance", "{ins}");
+        run(&mut c, "parameters.change", json!({"name": input["param"], "expression": "25"}));
         assert!((top(&c) - 25.0).abs() < 1e-3, "edited to 25: top at {}", top(&c));
         run(&mut c, "timeline.rename", json!({"feature": ex, "name": "Base"}));
         assert_eq!(c.scene().unwrap().features[1].name, "Base");

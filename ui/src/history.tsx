@@ -28,7 +28,7 @@ export const editFeature = async (f: FeatureItem) => {
   const inputs: { label: string; param: string; expression: string; unit?: string }[] = r.inputs ?? [];
   const def = r.definition ?? {};
   // Plain values of the definition that are not already among the inputs: numbers, words, yes/no.
-  const plain = Object.entries(def).filter(([k, v]) => ["number", "string", "boolean"].includes(typeof v) && !inputs.some(i => i.param === k) && k !== "sketch" && k !== "kind" && k !== "type");
+  const plain = Object.entries(def).filter(([k, v]) => ["number", "string", "boolean"].includes(typeof v) && !inputs.some(i => i.param === k) && !["sketch", "kind", "type", "operation", "convention"].includes(k));
   openDialog(() => {
     const [vals, setVals] = createSignal<Record<string, string>>(Object.fromEntries([...inputs.map(i => [i.param, i.expression]), ...plain.map(([k, v]) => [k, String(v)])]));
     const apply = async () => {
