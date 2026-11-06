@@ -325,7 +325,9 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 | 0.6.4 | Animation of results: the player (linear growth, increments, time histories, modes), engine frames | ✅ |
 | 0.7.0 | Datum Mesh on the open CAD program: full sketching and 3D modelling, the Simulation stage bar, Gmsh meshing, linear stress of solids | ✅ |
 | 0.7.1 | The Datum window in numbered steps; full sketching and 3D modelling by the geometry engine behind it | ✅ |
-| 0.7.2 | Analysis on the new solids: supports and loads on picked faces, Gmsh meshing, every step type, results | 🔜 |
+| 0.7.2 | Modelling feel (the user's review of 0.7.1): feature tree with right-click Edit/Edit Sketch/Rename/Suppress/Roll Back/Delete and a timeline; pick any plane, the camera turning to it and back to iso, sketching in 3D, live extrude preview; big-and-small grid; no 3D/Section switch for 3D solids, 3D mesh view, cut plane, Inspector showing the selection; no browser menu anywhere | 🔜 |
+| 0.7.3 | 3D FEA laid out as Abaqus's modules on the six steps: materials per solid, supports and loads on picked faces/edges/points, mesh controls and 3D mesh, ordered analysis steps, results on the solid | ⬜ |
+| 0.7.4 | Every example's animation tested and fixed; tube crushing (yielding + large deformation past the peak, first fold; stacking folds with contact in 0.8); harder examples: mechanical parts, nonlinear, dynamics, structures | ⬜ |
 | 0.7.2 | Natural frequencies, buckling, heat, yielding and large deformation of solids; the results player | ⬜ |
 | 0.7.3 | Frames and trusses from sketch lines (sections, releases, load cases) | ⬜ |
 | 0.7.4 | Plane parts, the report, Help › Verification in the new program | ⬜ |
