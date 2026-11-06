@@ -104,6 +104,22 @@ impl Cad {
         Cad { session: Session::new(solidcraft_doc::Document::default()) }
     }
 
+    /// The design as it is kept in a .dmesh file (its `geometry`).
+    pub fn to_json(&self) -> Result<Value, String> {
+        serde_json::to_value(&*self.session.doc).map_err(|e| e.to_string())
+    }
+
+    /// A design read back from a .dmesh file's `geometry`.
+    pub fn from_json(v: Value) -> Result<Self, String> {
+        let doc: solidcraft_doc::Document = serde_json::from_value(v).map_err(|e| format!("The geometry in this file could not be read: {e}"))?;
+        Ok(Cad { session: Session::new(doc) })
+    }
+
+    /// Whether the design has anything in it (a file without geometry stays as it was).
+    pub fn is_empty(&self) -> bool {
+        self.scene().map(|s| s.sketches.is_empty() && s.bodies.is_empty()).unwrap_or(true)
+    }
+
     /// Runs one engine command; its reply, or the engine's message for a user.
     pub fn run(&mut self, id: &str, params: &Value) -> Result<Value, String> {
         self.session.execute(id, params).map_err(|e| e.to_string())
@@ -219,6 +235,23 @@ mod tests {
 
     fn run(c: &mut Cad, id: &str, p: Value) -> Value {
         c.run(id, &p).unwrap_or_else(|e| panic!("{id}: {e}"))
+    }
+
+    /// A design written to JSON and read back draws the same solid.
+    #[test]
+    fn kept_in_the_file() {
+        let mut c = Cad::new();
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.circle.center", json!({"center": [0, 0], "radius": 10}));
+        run(&mut c, "sketch.finish", json!({}));
+        run(&mut c, "solid.extrude", json!({"distance": 5.0}));
+        let v = c.to_json().unwrap();
+        let d = Cad::from_json(serde_json::from_str(&serde_json::to_string(&v).unwrap()).unwrap()).unwrap();
+        let (a, b) = (c.scene().unwrap(), d.scene().unwrap());
+        assert_eq!(a.bodies.len(), 1);
+        assert_eq!(a.bodies[0].tris.len(), b.bodies[0].tris.len());
+        assert_eq!(a.sketches.len(), b.sketches.len());
+        assert!(!d.is_empty() && Cad::new().is_empty());
     }
 
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).

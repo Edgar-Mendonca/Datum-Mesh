@@ -100,9 +100,11 @@ impl CadSt {
 
 /// Runs one geometry-engine command (a sketch tool, a feature, undo…) and returns the scene.
 #[tauri::command]
-fn cad_run(st: State<CadSt>, id: String, params: serde_json::Value) -> R<datum_cad::Scene> {
+fn cad_run(st: State<CadSt>, app: State<St>, id: String, params: serde_json::Value) -> R<datum_cad::Scene> {
     let mut c = st.lock();
     c.run(&id, &params)?;
+    // The geometry is part of the file: a change to it is a change to save.
+    app.lock().doc.mark_unsaved();
     c.scene()
 }
 
@@ -188,7 +190,8 @@ fn examples_list() -> Vec<examples::Example> {
 
 /// A new model: a worked example by id, or a blank one of a kind (frame, stress, strain, heat).
 #[tauri::command]
-fn new_model(st: State<St>, example: Option<String>, analysis: Option<Analysis>) -> R<Out> {
+fn new_model(st: State<St>, cad: State<CadSt>, example: Option<String>, analysis: Option<Analysis>) -> R<Out> {
+    *cad.lock() = datum_cad::Cad::new();
     let mut a = st.lock();
     let m = match example.as_deref() {
         Some(id) => examples::get(id).ok_or("That example does not exist.")?,
@@ -292,16 +295,48 @@ fn section_props(shape: SectionShape) -> R<sections::Props> {
 
 // ---------------------------------------------------------------- files
 
+/// The model as written to a .dmesh file, with the geometry engine's design (0.7.1) under
+/// `geometry` when it has anything in it.
+fn file_text(a: &App, cad: &datum_cad::Cad) -> String {
+    let text = model::to_json(&a.doc.m);
+    if cad.is_empty() {
+        return text;
+    }
+    match (serde_json::from_str::<serde_json::Value>(&text), cad.to_json()) {
+        (Ok(serde_json::Value::Object(mut o)), Ok(g)) => {
+            o.insert("geometry".into(), g);
+            serde_json::to_string_pretty(&serde_json::Value::Object(o)).unwrap_or(text)
+        }
+        _ => text,
+    }
+}
+
+/// A .dmesh file's text split into the model's and the geometry engine's design (none in files
+/// before 0.7.1, or one that cannot be read, said in the warnings).
+fn split_file(text: &str) -> (String, Option<datum_cad::Cad>, Vec<String>) {
+    let Ok(serde_json::Value::Object(mut o)) = serde_json::from_str::<serde_json::Value>(text) else { return (text.to_string(), None, vec![]) };
+    let Some(g) = o.remove("geometry") else { return (text.to_string(), None, vec![]) };
+    let rest = serde_json::to_string(&serde_json::Value::Object(o)).unwrap_or_default();
+    match datum_cad::Cad::from_json(g) {
+        Ok(c) => (rest, Some(c), vec![]),
+        Err(e) => (rest, None, vec![e]),
+    }
+}
+
+
 fn pick(app: &AppHandle, name: &str, exts: &[&str]) -> Option<PathBuf> {
     app.dialog().file().add_filter(name, exts).blocking_pick_file().and_then(|f| f.into_path().ok())
 }
 
 #[tauri::command]
-async fn open(app: AppHandle, st: State<'_, St>, path: Option<String>) -> R<Option<Out>> {
+async fn open(app: AppHandle, st: State<'_, St>, cad: State<'_, CadSt>, path: Option<String>) -> R<Option<Out>> {
     let Some(path) = path.map(PathBuf::from).or_else(|| pick(&app, "Datum Mesh model", &["dmesh"])) else { return Ok(None) };
     let text = std::fs::read_to_string(&path).map_err(|e| format!("Could not open {}: {e}", path.display()))?;
-    let (m, warnings) = model::from_json(&text)?;
+    let (text, geometry, lost) = split_file(&text);
+    let (m, mut warnings) = model::from_json(&text)?;
+    warnings.extend(lost);
     remember(&app, &path);
+    *cad.lock() = geometry.unwrap_or_default();
     let mut a = st.lock();
     a.doc = Doc::new(m);
     a.doc.path = Some(path.display().to_string());
@@ -311,7 +346,7 @@ async fn open(app: AppHandle, st: State<'_, St>, path: Option<String>) -> R<Opti
 }
 
 #[tauri::command]
-async fn save(app: AppHandle, st: State<'_, St>, as_new: bool) -> R<Option<Out>> {
+async fn save(app: AppHandle, st: State<'_, St>, cad: State<'_, CadSt>, as_new: bool) -> R<Option<Out>> {
     let (known, name) = {
         let a = st.lock();
         (a.doc.path.clone().filter(|_| !as_new), a.doc.m.name.clone())
@@ -324,7 +359,7 @@ async fn save(app: AppHandle, st: State<'_, St>, as_new: bool) -> R<Option<Out>>
         },
     };
     let mut a = st.lock();
-    write_safely(&path, model::to_json(&a.doc.m).as_bytes()).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
+    write_safely(&path, file_text(&a, &cad.lock()).as_bytes()).map_err(|e| format!("Could not save {}: {e}", path.display()))?;
     a.doc.path = Some(path.display().to_string());
     a.doc.mark_saved();
     remember(&app, &path);
@@ -425,11 +460,11 @@ fn clear_recovery(app: &AppHandle) {
 }
 
 #[tauri::command]
-fn autosave(app: AppHandle, st: State<St>) {
+fn autosave(app: AppHandle, st: State<St>, cad: State<CadSt>) {
     let a = st.lock();
     if let (true, Some((file, meta))) = (a.doc.dirty, recovery_files(&app)) {
         let info = Recovery { name: a.doc.m.name.clone(), path: a.doc.path.clone(), saved: chrono::Local::now().format("%d-%b-%y %H:%M").to_string() };
-        let _ = write_safely(&file, model::to_json(&a.doc.m).as_bytes());
+        let _ = write_safely(&file, file_text(&a, &cad.lock()).as_bytes());
         let _ = write_safely(&meta, serde_json::to_string(&info).unwrap_or_default().as_bytes());
     }
 }
@@ -442,7 +477,7 @@ fn recovery(app: AppHandle) -> Option<Recovery> {
 }
 
 #[tauri::command]
-fn recover(app: AppHandle, st: State<St>, keep: bool) -> R<Option<Out>> {
+fn recover(app: AppHandle, st: State<St>, cad: State<CadSt>, keep: bool) -> R<Option<Out>> {
     let info = recovery(app.clone());
     let files = recovery_files(&app);
     if !keep {
@@ -450,7 +485,10 @@ fn recover(app: AppHandle, st: State<St>, keep: bool) -> R<Option<Out>> {
         return Ok(None);
     }
     let (file, _) = files.ok_or("No recovered model was found.")?;
-    let (m, warnings) = model::from_json(&std::fs::read_to_string(file).map_err(|e| e.to_string())?)?;
+    let (text, geometry, lost) = split_file(&std::fs::read_to_string(file).map_err(|e| e.to_string())?);
+    let (m, mut warnings) = model::from_json(&text)?;
+    warnings.extend(lost);
+    *cad.lock() = geometry.unwrap_or_default();
     let mut a = st.lock();
     a.doc = Doc::new(m);
     a.doc.path = info.and_then(|i| i.path);

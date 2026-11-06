@@ -248,7 +248,7 @@ export const glossary = () => openDialog(() => {
 
 /** Recover unsaved work after a crash. */
 export const recoverDialog = (name: string, saved: string, done: () => void) => openDialog(() => (
-  <Dialog title="Recover unsaved work?" okText="Recover" cancel="Not now" ok={async () => { const r = await call<Out>("recover", { keep: true }); if (r) { setOut(r); done(); } }}
+  <Dialog title="Recover unsaved work?" okText="Recover" cancel="Not now" ok={async () => { const r = await call<Out>("recover", { keep: true }); if (r) { setOut(r); window.dispatchEvent(new Event("cad-reload")); done(); } }}
     extra={<button class="btn" onClick={() => { call("recover", { keep: false }); closeDialog(); }}>Discard</button>}>
     <p>Datum Mesh closed before “{name}” was saved. A copy from {saved} was kept.</p>
   </Dialog>

@@ -164,6 +164,8 @@ export const call = async <T = any>(cmd: string, args?: object): Promise<T | und
 export const loadOut = async (cmd: string, args?: object) => {
   const o = await call<Out | null>(cmd, args);
   if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setActiveRaw(null); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setModes(null); setModeOn(false); setModesStale(false); setOut(o); setBackstage(null); setView("model"); });
+  // A model opened or started afresh brings its own geometry (0.7.1): cad.tsx reloads it.
+  if (o) window.dispatchEvent(new Event("cad-reload"));
   return o;
 };
 
