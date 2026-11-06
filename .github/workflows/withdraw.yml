@@ -1,0 +1,21 @@
+name: Withdraw a release
+# Run by hand: deletes one release and its tag, so the in-app updater no longer offers it.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release tag to withdraw (for example v0.7.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  withdraw:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the release and its tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes
