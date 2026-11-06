@@ -9,6 +9,9 @@ use solidcraft_engine::Session;
 
 pub mod examples;
 
+/// A straight piece of a frame: its two ends (m, the model's axes).
+pub type Segment = ([f64; 3], [f64; 3]);
+
 /// One design being modelled.
 pub struct Cad {
     session: Session,
@@ -186,7 +189,7 @@ impl Cad {
     /// Frames drawn with the sketch tools (0.7.5): every straight piece of the sketches' curves
     /// (lines as they are, arcs and circles in short straight pieces; construction lines left
     /// out), each end in the model's axes (m, Y up), and the sketches they came from.
-    pub fn member_lines(&self) -> Result<(Vec<([f64; 3], [f64; 3])>, Vec<u64>), String> {
+    pub fn member_lines(&self) -> Result<(Vec<Segment>, Vec<u64>), String> {
         let sc = self.scene()?;
         let mut out = vec![];
         let mut used = vec![];

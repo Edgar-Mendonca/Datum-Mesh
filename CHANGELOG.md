@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.4 — 2026-11-07
+
+Frames drawn with the sketch tools, every example's animation checked, and heat on the modelled solids.
+
+**3D frames drawn with the sketch tools**
+- New Sketch on a 3D frame works as it does for a part: click a plane (the view turns to it), draw lines and arcs, size them with dimensions and constraints. Finish Sketch makes every line a beam (or a truss bar: Lines become Truss Bars), joined where they meet. Sketch on the next plane for the next frame.
+- The plane sketch of before (members and plates drawn one by one) is still there as Members & Plates.
+- The sketch starts at the scale of a building (about 10 m across).
+
+**Planes the right way up**
+- Sketching on the front or side plane now looks at it from the front (or the right) with Z up the screen: before, a shape drawn upward on the front plane ended up below the floor.
+
+**Animations**
+- Every example was solved and its animation checked against what the window draws (a new test runs them all). The two earthquake examples played their peak values as if they grew with a load: a response spectrum is not played now; its modes are (Results › Modes).
+
+**Heat on the modelled solids**
+- New example, Heat sink, modelled: five fins made from one sketch, the base at 80 °C and air at 20 °C on the rest. It solves with heat in balancing heat out.
+
 ## 0.7.3 — 2026-11-07
 
 The solids you model can now be analysed: meshed, held, loaded and solved.

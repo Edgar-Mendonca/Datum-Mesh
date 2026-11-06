@@ -170,7 +170,7 @@ fn cad_members(st: State<CadSt>, app: State<St>, truss: bool) -> R<Out> {
         return Err("The sketch has no lines to make members of: draw lines (construction lines are left out).".into());
     }
     let kind = if truss { datum_core::model::MemberKind::Truss } else { datum_core::model::MemberKind::Beam };
-    let ops = lines.iter().map(|(a, b)| datum_core::doc::Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind: kind.clone(), section: None, material: None, z: [a[2], b[2]] }).collect();
+    let ops = lines.iter().map(|(a, b)| datum_core::doc::Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind, section: None, material: None, z: [a[2], b[2]] }).collect();
     let mut a = app.lock();
     let created = a.doc.apply(datum_core::doc::Op::Batch(ops))?;
     // The sketches are the members now (the frame is edited as members from here).

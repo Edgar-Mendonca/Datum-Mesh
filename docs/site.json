@@ -7,7 +7,7 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
-    "From 0.7.3 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; and a history of every feature to edit, suppress, roll back or delete. The solids are then meshed by Gmsh (installed with it) and analysed by Datum Mesh's own engine, with supports and loads on the faces you click. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
+    "From 0.7.4 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; frames drawn with the same sketch tools, and a history of every feature to edit, suppress, roll back or delete. The solids are then meshed by Gmsh (installed with it) and analysed by Datum Mesh's own engine, with supports and loads on the faces you click. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
     "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load, in 2D and 3D; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both; 3D solids also follow large deformation, rubber included (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
   ],
@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "3D frames drawn with the sketch tools: click a plane, draw lines and arcs with dimensions, and Finish Sketch makes them beams or truss bars joined where they meet",
     "Crushing and collapse: a tube pushed by a platen until its wall folds, the force peaking at the squash load and falling after it; examples modelled with the new tools",
     "The solids you model are analysed: meshed by themselves into ten-node tetrahedra by Gmsh, held and loaded on the faces you click, solved by our own engine and checked for equilibrium",
     "A history of every feature, in the tree and in a timeline: right-click to edit, rename, suppress, roll back or delete; sketch on any plane or face with the view turning to it; extrude with the solid changing as you type; a grid of big and small squares that follows the zoom",
@@ -90,13 +91,13 @@
   ],
   "roadmap": [
     {
-      "v": "0.7.4",
-      "title": "More analyses and examples on the modelled solids",
+      "v": "0.7.5",
+      "title": "Frames and trusses the new way",
       "when": "Next",
       "items": [
-        "Heat and thermal stress on the modelled solids",
-        "Every example's animation tested",
-        "Harder examples in mechanics, nonlinear, dynamics and structures"
+        "Sections drawn as real shapes in 3D, which way up each member is",
+        "Grid lines and levels; member loads and releases picked in 3D",
+        "Plates drawn with the sketch tools"
       ]
     },
     {
