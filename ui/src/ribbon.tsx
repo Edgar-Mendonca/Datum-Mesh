@@ -16,8 +16,9 @@ import { q3, setQ3, Q3 } from "./space3";
 import { setPlane, onPlane, plateT, setPlateT } from "./plane3";
 import { parseNum } from "./api";
 import { toU, fromU, unit } from "./units";
+import { setPlanePick } from "./cad";
 import { cad3Tool, pick3, TOOLS3, holeD3, setHoleD3, holeDepth, setHoleDepth, fillet3R, setFillet3R, chamfer3D, setChamfer3D, shellT, setShellT, pressD, setPressD, bodyNames } from "./cad";
-import { cad, cadRun, cadQuery, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, EDITS, CONSTRAINTS, pickEdit, consMode, setConsMode, toggleConstruction, deleteSelected, rectPattern, sel as cadSel, filletR, setFilletR, chamferD, setChamferD, offsetD, setOffsetD, patN, setPatN, patA, setPatA, rowN, setRowN, rowS, setRowS, colN, setColN, colS, setColS, newSketch, finishSketch, cancelSketch, extrude, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
+import { cad, cadRun, cadQuery, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, EDITS, CONSTRAINTS, pickEdit, consMode, setConsMode, toggleConstruction, deleteSelected, rectPattern, sel as cadSel, filletR, setFilletR, chamferD, setChamferD, offsetD, setOffsetD, patN, setPatN, patA, setPatA, rowN, setRowN, rowS, setRowS, colN, setColN, colS, setColS, newSketch, finishSketch, cancelSketch, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
 
@@ -197,10 +198,10 @@ const CadGroups = () => {
   };
   return <>
     <Show when={inSk()} fallback={<>
-      <G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" title="Start a sketch: on the floor (XY), the front (XZ), the side (YZ), on a flat face of a solid, or on a plane set off from one of them"
+      <G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => { pick3(null); setPlanePick(true); }} title="Start a sketch: click a plane at the origin or a flat face of a solid (▾: a named plane, or a plane set off from one)"
         dd={e => openMenu(e, [...([["On the floor (XY)", "XY"], ["On the front (XZ)", "XZ"], ["On the side (YZ)", "YZ"]] as const).map(([l, pl]) => ({ label: l, run: () => { pick3(null); newSketch(pl); } })),
           { label: "On a face of a solid…", run: () => pick3("sketchface") }, { label: "On an offset plane…", run: offsetPlaneDialog }])} /></G>
-      <G l="Create"><B big i="solid" l="Extrude" run={() => { pick3(null); extrude(); }} title="Extrude the last sketch's closed regions into a solid (distance and direction under Sizes)" />
+      <G l="Create"><B big i="solid" l="Extrude" run={() => { pick3(null); import("./extrude").then(k => k.openExtrude()); }} title="Extrude the last sketch's closed regions into a solid (distance and direction under Sizes)" />
         <B big i="axi" l="Revolve" run={() => { pick3(null); revolve(); }} title="Turn the last sketch's closed regions about one of its axes into a solid" />
         <B big i={TOOLS3.hole3.icon} l="Hole" on={cad3Tool() === "hole3"} run={() => pick3("hole3")} title={TOOLS3.hole3.hint} /></G>
       <G l="Modify"><For each={["fillet3", "chamfer3", "shell3", "press3"]}>{k => <B big i={TOOLS3[k].icon} l={TOOLS3[k].label} on={cad3Tool() === k} run={() => pick3(k)} title={TOOLS3[k].hint} />}</For></G>
@@ -364,7 +365,7 @@ export const Ribbon = () => {
       </>}</Show>
       <Show when={tab() === "geometry"}>
         <Show when={frame()} fallback={<>
-          <Show when={isSolidA(m()?.analysis)}><CadGroups /></Show>
+          <Show when={isSolidA(m()?.analysis) && !m()?.parts?.length}><CadGroups /></Show>
           <Show when={isSolidA(m()?.analysis) && !!m()?.parts?.length}><G l="Parts sketch" h="sketchplane"><B big i="new" l="New Part" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and sketch a new part on it; then extrude or revolve it" /></G></Show>
           <Show when={isSolidA(m()?.analysis) && m()?.parts?.length}>
             <G l="Features" h="modelling"><B big i="solid" l="Extrude" run={() => Mo().then(k => k.editSweep())} title="Extrude or revolve the selected part, with a preview: how far, and which way" />

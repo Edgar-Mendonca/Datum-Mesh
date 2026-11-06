@@ -469,7 +469,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the 3D solid's Results page has the extremes, six sums and the reactions", sp3.includes("Largest and smallest values") && sp3.includes("Σ Fz") && sp3.includes("Σ Mx about the origin") && sp3.includes("Displacement in z"));
   await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
   await open("blank-solid");
-  check("a blank 3D solid opens in 3D and offers a new sketch (0.6.2)", (await p.textContent(".view3d")).includes("Build a part") && (await p.$$('.view3d .empty button:has-text("New sketch")')).length === 1);
+  check("a blank 3D solid opens in 3D and says to click a plane to sketch on (0.7.2)", (await p.textContent(".view3d")).includes("Build a part") && (await p.textContent(".view3d .empty")).includes("three planes"));
   // 0.3.5: DXF import and export.
   await open("lug"); await p.waitForTimeout(200);
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.waitForTimeout(100);
@@ -1206,13 +1206,17 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   // 0.7.1: sketch and 3D tools by the geometry engine, in the Datum window.
   await open("blank-solid");
   // The start card's New Sketch shows the drawing tools, whatever tab was on (0.7.1 bug: Home stayed, and a click meant for Rectangle changed the analysis).
+  await p.click('.tree .step:nth-of-type(1) > .sthead');
+  await p.click('.ribbon button[title^="Start a sketch: click a plane"]'); await p.waitForTimeout(150);
   await p.click('.tabs > button:text-is("Home")');
-  await p.click('.view3d .empty button:has-text("New sketch on the floor")'); await p.waitForTimeout(300);
-  check("the start card's New Sketch opens the sketch with the drawing tools on the ribbon (0.7.1 bug)", (await p.textContent(".tabs .steptools")) === "Geometry" && (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
+  check("New Sketch asks for a plane: the origin planes, or a named one (0.7.2, the user)", (await p.$$(".view3d .pickplane")).length === 1);
+  await p.click('.view3d .pickplane button:has-text("Floor (XY)")'); await p.waitForTimeout(300);
+  check("a plane picked starts the sketch on it", JSON.stringify(await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1]).slice(-1)[0])) === JSON.stringify({ id: "sketch.create", params: { plane: "XY" } }));
+  check("a sketch opens with the drawing tools on the ribbon, whatever tab was on (0.7.1 bug)", (await p.textContent(".tabs .steptools")) === "Geometry" && (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
   await p.click('.ribbon button[title^="Leave the sketch without keeping it"]'); await p.waitForTimeout(300);
   await p.click('.tree .step:nth-of-type(1) > .sthead');
-  check("a blank 3D solid offers New Sketch, Extrude and Revolve on the Geometry ribbon", (await p.$$('.ribbon button[title^="Start a sketch: on the floor"]')).length === 1 && (await p.$$('.ribbon button[title^="Extrude the last sketch"]')).length === 1 && (await p.$$('.ribbon button[title^="Turn the last sketch"]')).length === 1);
-  await p.click('.ribbon button[title^="Start a sketch: on the floor"]'); await p.waitForTimeout(100);
+  check("a blank 3D solid offers New Sketch, Extrude and Revolve on the Geometry ribbon", (await p.$$('.ribbon button[title^="Start a sketch: click a plane"]')).length === 1 && (await p.$$('.ribbon button[title^="Extrude the last sketch"]')).length === 1 && (await p.$$('.ribbon button[title^="Turn the last sketch"]')).length === 1);
+  await p.click('.ribbon button[title="New Sketch options"]'); await p.waitForTimeout(100);
   await p.click('.menu button:has-text("On the floor")'); await p.waitForTimeout(300);
   const cadCall = async () => p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1]).slice(-1)[0]);
   check("New Sketch › On the floor starts a sketch on XY and opens the sheet", JSON.stringify(await cadCall()) === JSON.stringify({ id: "sketch.create", params: { plane: "XY" } }) && !!(await p.$(".cadsheet svg")));
@@ -1231,10 +1235,17 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the circle button keeps the way last used", (await p.$eval('.ribbon .rbw:has(.rb.bot span:text-is("Circle")) .rb.top', el => el.title)).startsWith("Circle · 3 points"));
   check("the sketch's curves from the engine are drawn on the sheet", (await p.$$(".cadsheet .cv")).length === fix.cad.drawn.sketches[0].curves.filter(c => !c.construction).length + fix.cad.drawn.sketches[0].curves.filter(c => c.construction).length);
   await p.click('.ribbon button[title^="Keep the sketch"]'); await p.waitForTimeout(300);
-  check("Finish Sketch closes the sheet", (await cadCall()).id === "sketch.finish" && !(await p.$(".cadsheet")));
-  await p.click('.ribbon button[title^="Extrude the last sketch"]'); await p.waitForTimeout(400);
+  check("Finish Sketch closes the sheet", (await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1].id))).includes("sketch.finish") && !(await p.$(".cadsheet")));
+  await p.waitForTimeout(500);
   const ex = await cadCall();
-  check("Extrude extrudes the last sketch by the distance typed", ex.id === "solid.extrude" && ex.params.distance === 20 && ex.params.direction === "positive" && ex.params.sketch === fix.cad.finished.sketches[0].id, JSON.stringify(ex));
+  check("a closed shape finished goes straight on to Extrude: the solid is made from it (0.7.2, the user)", ex.id === "solid.extrude" && ex.params.distance === 20 && ex.params.direction === "positive" && ex.params.sketch === fix.cad.finished.sketches[0].id, JSON.stringify(ex));
+  check("the Extrude panel shows the feature's distance", (await p.$$(".view3d .xpanel")).length === 1 && (await p.$eval(".view3d .xpanel input", el => el.value)) === "15");
+  await p.click('.view3d .xpanel button[title="More"]'); await p.waitForTimeout(350);
+  check("+ on the Extrude panel changes the solid at once, through its distance", JSON.stringify(await cadCall()) === JSON.stringify({ id: "parameters.change", params: { name: "d1", expression: "16" } }));
+  await p.click('.view3d .xpanel button:has-text("Both ways")'); await p.waitForTimeout(200);
+  check("Both ways turns the extrusion symmetric", (await cadCall()).id === "timeline.edit" && (await cadCall()).params.set.extent.direction === "symmetric");
+  await p.click('.view3d .xpanel button:has-text("OK")'); await p.waitForTimeout(100);
+  check("OK keeps the solid and closes the panel", !(await p.$(".view3d .xpanel")));
   check("the tree lists the solid with its faces, and step 1 is done", (await p.textContent(".tree .step:nth-of-type(1)")).includes("17 faces") && await p.$eval(".tree .step:nth-of-type(1)", el => el.classList.contains("done")));
 
   // 0.7.2: the history, its right-click menu, Edit Feature, the timeline; no browser menu.

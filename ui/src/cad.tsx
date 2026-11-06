@@ -65,8 +65,17 @@ export const pickTool = (t: string | null) => { setCadTool(t); setDraft([]); };
 
 /** Starts a sketch on one of the origin planes (the floor XY, front XZ, side YZ). */
 export const newSketch = async (plane: "XY" | "XZ" | "YZ") => { if (await cadRun("sketch.create", { plane })) { setTab("geometry"); pickTool(ways().Line); } };
-export const finishSketch = async () => { pickTool(null); await cadRun("sketch.finish"); };
-export const cancelSketch = async () => { pickTool(null); await cadRun("sketch.cancel"); };
+export const finishSketch = async () => {
+  pickTool(null);
+  const sk = activeSketch();
+  if (!(await cadRun("sketch.finish"))) return;
+  setTurnBack(turnBack() + 1);
+  // A closed shape: Extrude opens at once, with the solid made and its size to change (0.7.2).
+  const done = cad()?.sketches.find(x => x.id === sk?.id);
+  if (done && done.profiles > 0 && !(cad()?.bodies.length)) setTimeout(() => import("./extrude").then(k => k.openExtrude()), 450);
+  else if (done && !done.curves.length) toast(`${done.name} is empty: draw a closed shape in it (Edit Sketch), or delete it.`);
+};
+export const cancelSketch = async () => { pickTool(null); if (await cadRun("sketch.cancel")) setTurnBack(turnBack() + 1); };
 
 // ---------------------------------------------------------------- editing a sketch
 
@@ -121,6 +130,15 @@ export const toggleConstruction = () => { const s = sel(); if (!s.length) return
 export const deleteSelected = () => { const s = sel(); if (!s.length) return; cadRun("sketch.delete", { entities: s }).then(ok => ok && setSel([])); };
 export const rectPattern = () => { const s = sel(); if (!s.length) return toast("Select the curves to copy first."); cadRun("sketch.pattern.rectangular", { entities: s, count: rowN(), spacing: rowS(), ...(colN() > 1 ? { count2: colN(), spacing2: colS() } : {}) }); };
 
+/** The sketch sheet's scale and pan (px per mm, centre in mm): the 3D view's flat camera follows
+ * it, so what is drawn on the sheet lies on the plane, over the model (0.7.2). */
+export const [sheetView, setSheetView] = createSignal({ s: 4, cx: 0, cy: 0 });
+/** Picking the plane to sketch on: the origin planes show, and a click on one (or on a flat face
+ * of a solid) starts the sketch there (0.7.2). */
+export const [planePick, setPlanePick] = createSignal(false);
+/** A Finish Sketch just happened: the 3D view turns back to its usual view (0.7.2). */
+export const [turnBack, setTurnBack] = createSignal(0);
+
 // ---------------------------------------------------------------- the sketch canvas
 
 /** The sheet square to the sketch's plane, over the 3D view: grid, the sketch's curves, the
@@ -129,7 +147,7 @@ export const rectPattern = () => { const s = sel(); if (!s.length) return toast(
 export const SketchCanvas = () => {
   let svg!: SVGSVGElement;
   const [box, setBox] = createSignal({ w: 800, h: 600 });
-  const [view, setView] = createSignal({ s: 4, cx: 0, cy: 0 }); // px per mm, centre in mm
+  const [view, setView] = [sheetView, setSheetView];
   const [hover, setHover] = createSignal<P2 | null>(null);
   const sk = () => activeSketch();
   const toPx = (p: P2): P2 => { const v = view(), b = box(); return [b.w / 2 + (p[0] - v.cx) * v.s, b.h / 2 - (p[1] - v.cy) * v.s]; };
@@ -327,8 +345,8 @@ export const TOOLS3: Record<string, { label: string; icon: string; hint: string;
   sketchface: { label: "Sketch on a face", icon: "new", hint: "Click a flat face of a solid to sketch on it", needs: "face", run: h => ["sketch.create", { plane: { face: h.face!.at, body: h.face!.body, index: h.face!.index } }] },
 };
 export const pick3 = (t: string | null) => { setCad3Tool(t); pickTool(null); };
-export const cad3Click = async (h: CadHit) => {
-  const t = cad3Tool(); if (!t) return;
+export const cad3Click = async (h: CadHit, tool?: string) => {
+  const t = tool ?? cad3Tool(); if (!t) return;
   const T = TOOLS3[t];
   if ((T.needs === "face" && !h.face) || (T.needs === "edge" && !h.edge)) return toast(T.hint);
   const c = T.run(h); if (!c) return;

@@ -1051,9 +1051,9 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 
 /* 0.7.1: the geometry engine's sketch sheet over the 3D view. */
 .cadover { position: absolute; inset: 0; z-index: 5; display: flex; }
-.cadsheet { position: relative; flex: 1; display: flex; background: var(--bg2); }
+.cadsheet { position: relative; flex: 1; display: flex; background: color-mix(in srgb, var(--bg2) 35%, transparent); }
 .cadsheet svg { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; user-select: none; }
-.cadsheet .gmin { stroke: var(--line); stroke-width: .5; opacity: .6; }
+.cadsheet .gmin { stroke: var(--line); stroke-width: .5; opacity: .45; }
 .cadsheet .gmaj { stroke: var(--line3, var(--line)); stroke-width: .8; }
 .cadsheet .axx { stroke: var(--crit); stroke-width: 1; opacity: .7; }
 .cadsheet .axy { stroke: var(--green); stroke-width: 1; opacity: .7; }
@@ -1088,3 +1088,17 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .tlchip.on { border-color: var(--blue); background: var(--sel); }
 .tlchip.off .tic, .tlchip.back .tic { opacity: .35; }
 .tlmark { width: 3px; height: 26px; border-radius: 2px; background: var(--blue); margin: 0 2px; }
+
+/* 0.7.2: picking the plane to sketch on. */
+.pickplane { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; padding: 6px 10px;
+  background: var(--panel); border: 1px solid var(--blue); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.1); z-index: 6; font-size: 13px; }
+/* 0.7.2: the Extrude panel over the 3D view. */
+.xpanel { position: absolute; top: 12px; left: 12px; width: 230px; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-top: 3px solid var(--blue); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.12); z-index: 6; font-size: 13px; }
+.xpanel header { display: flex; justify-content: space-between; align-items: baseline; }
+.xpanel label { display: flex; flex-direction: column; gap: 4px; color: var(--text2); }
+.xrow { display: flex; gap: 4px; align-items: center; }
+.xrow input { width: 80px; text-align: right; }
+.xpanel .seg { display: flex; }
+.xpanel .seg button { flex: 1; padding: 4px 0; border: 1px solid var(--line); }
+.xpanel .seg button.on { background: var(--blue); color: var(--bg2); border-color: var(--blue); }
+.xpanel footer { display: flex; gap: 6px; justify-content: flex-end; }

@@ -2,9 +2,10 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
-import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit } from "./cad";
+import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack } from "./cad";
 import { Timeline, bodyMenu } from "./history";
-import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { ExtrudePanel } from "./extrude";
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
@@ -222,7 +223,7 @@ export const View3D = () => {
     const L = stageL(m);
     if (opts().grid) floor(L);
     axes(L);
-    if (picking() || (!m.shapes.length && !m.volume && !m.parts?.length && !sketch() && !cad()?.sketches.length && !cad()?.bodies.length)) originPlanes(L);
+    if (picking() || planePick() || (!m.shapes.length && !m.volume && !m.parts?.length && !sketch() && !activeSketch() && !cad()?.bodies.length)) originPlanes(L);
     renderer.localClippingEnabled = false;
     /** A section point a fraction f of the way along the sweep, in 3D. */
     const sweep = (p: number[], f: number): P3 => rev ? [p[0] * Math.cos(rev * f), p[1], p[0] * Math.sin(rev * f)] : [p[0], p[1], t * f];
@@ -536,6 +537,8 @@ export const View3D = () => {
     }
     // An imported mesh (0.5.5): its outer surface.
     for (const p of (m.volume ?? m.assembly)?.surface.nodes ?? []) box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2]));
+    // The geometry engine's solids (0.7.2): mm with Z up.
+    if (isSolidA(m.analysis)) for (const b of cad()?.bodies ?? []) for (let i = 0; i < b.pos.length; i += 3) box.expandByPoint(new THREE.Vector3(b.pos[i] * 1e-3, b.pos[i + 2] * 1e-3, -b.pos[i + 1] * 1e-3));
     return box;
   };
   const fit = (keepDir = false, from?: P3) => {
@@ -558,7 +561,58 @@ export const View3D = () => {
   type WP = "xy" | "zy" | "xz";
   const picking = () => sketchPick() || (!sketch() && model()?.analysis === "space" && ["beam", "truss", "node"].includes(tool()));
   const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
-  const cam = (): THREE.Camera => (sketch()?.facing ? ortho : camera);
+  // 0.7.2: the engine's sketch is seen through the same flat camera once the turn to it is done.
+  const [cadFacing, setCadFacing] = createSignal(false);
+  const cam = (): THREE.Camera => (sketch()?.facing || cadFacing() ? ortho : camera);
+  /** The engine's sketch plane in the view's terms: origin, in-plane axes and normal (metres, y up). */
+  const cadFrame = () => {
+    const sk = activeSketch(); if (!sk) return null;
+    const v = (p: number[], k = 1) => new THREE.Vector3(p[0] * k, p[2] * k, -p[1] * k);
+    const O = v(sk.origin, 1e-3), U = v(sk.x).normalize(), V = v(sk.y).normalize();
+    return { O, U, V, N: U.clone().cross(V).normalize() };
+  };
+  /** Moves the usual camera smoothly to look from `pos` at `target` with `up`, then calls `done`. */
+  let tween = 0;
+  const glide = (pos: THREE.Vector3, target: THREE.Vector3, up: THREE.Vector3, done?: () => void, ms = 450) => {
+    const p0 = camera.position.clone(), t0 = (controls?.target ?? new THREE.Vector3()).clone(), u0 = camera.up.clone(), start = performance.now(), id = ++tween;
+    const step = () => {
+      if (id !== tween) return;
+      const k = Math.min(1, (performance.now() - start) / ms), e = k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
+      camera.position.lerpVectors(p0, pos, e); camera.up.lerpVectors(u0, up, e).normalize();
+      const t = t0.clone().lerp(target, e); camera.lookAt(t); controls?.target.copy(t);
+      camera.updateMatrixWorld(); draw();
+      if (k < 1) requestAnimationFrame(step); else { controls?.update(); done?.(); }
+    };
+    requestAnimationFrame(step);
+  };
+  // A sketch opens: the camera turns square to its plane, then the flat camera takes over.
+  createEffect(on(() => activeSketch()?.id, (id, was) => {
+    if (id == null || id === was) { if (id == null) setCadFacing(false); return; }
+    const f = cadFrame(); if (!f) return;
+    setCadFacing(false);
+    const d = Math.max(camera.position.distanceTo(controls?.target ?? f.O), 0.05);
+    glide(f.O.clone().addScaledVector(f.N, d), f.O.clone(), f.V.clone(), () => setCadFacing(true));
+  }));
+  // The flat camera follows the sketch sheet's scale and pan.
+  createEffect(() => {
+    if (!cadFacing()) return;
+    const f = cadFrame(), v = sheetView(), m = model(); if (!f || !m) return;
+    const [w, h] = size(), s = v.s * 1e3, L = stageL(m) * 20;
+    const c = f.O.clone().addScaledVector(f.U, v.cx * 1e-3).addScaledVector(f.V, v.cy * 1e-3);
+    ortho.left = -w / 2 / s; ortho.right = w / 2 / s; ortho.top = h / 2 / s; ortho.bottom = -h / 2 / s; ortho.near = 0; ortho.far = 2 * L;
+    ortho.position.copy(c).addScaledVector(f.N, L); ortho.up.copy(f.V); ortho.lookAt(c); ortho.updateProjectionMatrix(); ortho.updateMatrixWorld();
+    draw();
+  });
+  // Finish or Cancel: back to the usual view from the corner, framing the model, smoothly.
+  createEffect(on(turnBack, n => {
+    if (!n) return;
+    setCadFacing(false);
+    const m = model(); if (!m) return;
+    const box = boxOf(m), c = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+    const rad = box.isEmpty() ? stageL(m) * 0.1 : Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1e-3);
+    const dir = new THREE.Vector3(1, 0.75, 1.3).normalize();
+    glide(c.clone().addScaledVector(dir, rad / Math.sin(camera.fov * Math.PI / 360) * 1.15), c, new THREE.Vector3(0, 1, 0), undefined, 600);
+  }, { defer: true }));
   // Turning away from the sketch: the usual camera starts from the sketch's side, a little turned,
   // framing the whole model, so the sketch stays in sight.
   let wasFacing = false;
@@ -636,6 +690,14 @@ export const View3D = () => {
       if (ph) { import("./sketchmode").then(k => k.beginSketchOnFace(ph)); return; }
       toast(model()?.parts?.length ? "Pick a plane to sketch on: a square at the origin, or a flat face of a part." : "Pick a plane to sketch on: click one of the three squares at the origin.");
       return;
+    }
+    if (isSolidA(model()?.analysis) && !activeSketch() && !cad3Tool() && !(model()?.parts?.length) && (planePick() || !cad()?.bodies.length)) {
+      const x = e.clientX - rc.left, y = e.clientY - rc.top, o = pickOrigin(x, y);
+      // The engine's planes: XY the floor (the view's x–z), XZ the front (x–y), YZ the side (z–y).
+      if (o) { setPlanePick(false); newSketch(({ xz: "XY", xy: "XZ", zy: "YZ" } as const)[o]); return; }
+      const h = cadHit(x, y);
+      if (h.face && planePick()) { setPlanePick(false); await cad3Click(h, "sketchface"); return; }
+      if (planePick()) { toast("Click one of the three planes at the origin, or a flat face of a solid."); return; }
     }
     if (isSolidA(model()?.analysis) && cad3Tool()) { await cad3Click(cadHit(e.clientX - rc.left, e.clientY - rc.top)); return; }
     if (isSolidA(model()?.analysis)) {
@@ -843,8 +905,12 @@ export const View3D = () => {
     <div class="view3d canvas" ref={host} classList={{ [`t-${tool().split(":")[0]}`]: true }} onPointerDown={onDown} onPointerUp={onUp} onPointerMove={onMove} onPointerLeave={() => setProbe(null)} onContextMenu={e => { e.preventDefault(); if (!isSolidA(model()?.analysis)) return; const rc = host.getBoundingClientRect(), h = cadHit(e.clientX - rc.left, e.clientY - rc.top); if (h.face) bodyMenu(e, h.face.body); }} tabIndex={0}
       onKeyDown={e => { if ((e.target as HTMLElement).tagName === "INPUT") return; if (e.key === "Escape") { if (sketchPick()) setSketchPick(false); else if (tool() !== "select") setTool("select"); else setSel([]); } else if (e.key === "Delete") C.del(); else if (e.key === "f" || e.key === "F") fit(true); }}>
       <Show when={isSolidA(model()?.analysis) && !activeSketch()}><Timeline /></Show>
+      <Show when={isSolidA(model()?.analysis) && !activeSketch()}><ExtrudePanel /></Show>
       <Show when={activeSketch()}><div class="cadover" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()} onPointerMove={e => e.stopPropagation()}><SketchCanvas /></div></Show>
-      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length && !cad()?.sketches.length && !cad()?.bodies.length}><div class="empty corner"><b>Build a part</b><span>Start with Geometry › New Sketch on a plane, draw a closed shape (shapes drawn inside it become holes), then Finish Sketch and Extrude or Revolve it.</span><button class="btn pri" onClick={() => newSketch("XY")}>New sketch on the floor</button></div></Show>
+      <Show when={isSolidA(model()?.analysis) && !model()?.shapes.length && !model()?.volume && !model()?.parts?.length && !cad()?.sketches.length && !cad()?.bodies.length && !planePick()}><div class="empty corner"><b>Build a part</b><span>Click one of the three planes at the origin to sketch on it: the view turns to face it. Draw a closed shape (shapes inside it become holes), then Finish Sketch and set how far it is extruded.</span></div></Show>
+      <Show when={planePick()}><div class="pickplane" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}><b>New Sketch</b><span>Click a plane at the origin or a flat face of a solid, or</span>
+        <For each={[["XY", "Floor (XY)"], ["XZ", "Front (XZ)"], ["YZ", "Side (YZ)"]] as const}>{([k, l]) => <button class="btn sm" onClick={() => { setPlanePick(false); newSketch(k); }}>{l}</button>}</For>
+        <button class="btn sm" onClick={() => setPlanePick(false)}>Cancel</button></div></Show>
       <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>Start a sketch: pick one of the three squares at the origin and the view turns square to it. Draw beams with clicks (each goes on from the last; nearly level or upright snaps level or upright) or typed points; move the plane with its offset; Finish Sketch, then sketch on the next plane. The cube, top right, turns the view.</span><button class="btn pri" onClick={() => setTool("beam")}>Draw a beam</button></div></Show></Show>
       <SweepPanel />
       <Show when={picking()}><div class="draw3 pickbar" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
