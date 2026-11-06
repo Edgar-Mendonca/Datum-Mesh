@@ -94,11 +94,17 @@ export const TitleBar = (p: { update: string | null }) => (
     <nav class="tabs">
       <button class="file" onClick={() => setBackstage("home")}>File</button>
       <Show when={sketch()}><button class="sktab" classList={{ on: tab() === "sketch" }} onClick={() => setTab("sketch")}>Sketch</button></Show>
-      <For each={[["home", "Home"], ["geometry", "1 Geometry"], ["properties", "2 Properties"], ["loads", "3 Loads"], ["mesh", "4 Mesh"], ["solve", "5 Analysis"], ["results", "6 Results"], ["view", "View"], ["help", "Help"]]}>{([k, l]) => <button classList={{ on: tab() === k, step: /^\d/.test(l) }} onClick={() => setTab(k)}>{/^\d/.test(l) ? <><b>{l[0]}</b>{l.slice(2)}</> : l}</button>}</For>
+      <button classList={{ on: tab() === "home" }} onClick={() => setTab("home")}>Home</button>
+      {/* 0.7.1: the steps are chosen in the tree on the left; the ribbon shows the tools of the step chosen. */}
+      <Show when={STEP_NAMES[tab()]}><button class="on steptools" title="The tools of the step chosen in the tree on the left">{STEP_NAMES[tab()]}</button></Show>
+      <For each={[["view", "View"], ["help", "Help"]]}>{([k, l]) => <button classList={{ on: tab() === k }} onClick={() => setTab(k)}>{l}</button>}</For>
       <div class="ctxgrp" style={{ visibility: fmtKind() ? "visible" : "hidden" }}><small>{fmtKind() === "shape" ? "Shape Tools" : "Member Tools"}</small><button classList={{ on: tab() === "format" }} onClick={() => setTab("format")}>Format</button></div>
     </nav>
   </header>
 );
+
+/** The ribbon's label for each step's tools (the steps are in the tree). */
+const STEP_NAMES: Record<string, string> = { geometry: "Geometry", properties: "Properties", loads: "Supports & Loads", mesh: "Mesh", solve: "Analysis", results: "Results" };
 
 /** What the Format tab works on: the selected shapes or members. */
 const fmtKind = () => {

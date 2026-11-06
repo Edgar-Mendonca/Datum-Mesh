@@ -1036,9 +1036,8 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .player .ploop { display: flex; align-items: center; gap: 4px; color: var(--muted); }
 .playwrap { position: relative; height: 0; z-index: 7; }
 
-/* 0.7.1: numbered steps — the ribbon's step tabs and the tree's step headers. */
-.tabs button.step b { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-right: 6px; border-radius: 50%; font: 600 10px var(--mono); color: var(--text2); border: 1px solid var(--line); }
-.tabs button.step.on b { background: var(--blue); border-color: var(--blue); color: var(--bg2); }
+/* 0.7.1: numbered steps in the tree; the top bar names the step whose tools the ribbon shows. */
+.tabs .steptools { cursor: default; }
 .step { border-bottom: 1px solid var(--line); }
 .step:last-child { border-bottom: 0; }
 .sthead { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px 6px; text-align: left; font-weight: 600; color: var(--text); }
