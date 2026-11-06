@@ -323,7 +323,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 | 0.6.3 | Basic modelling: Extrude panel with preview, sketch on a face, Cut Through, Hole, Fillet, Chamfer, Cut, Move/Copy, Turn/Pattern, Mirror, volume and mass, benchmark 33 | ✅ |
 | 0.6.4 | Animation of results: the player (linear growth, increments, time histories, modes), engine frames | ✅ |
 | 0.7.0 | Datum Mesh on the open CAD program: full sketching and 3D modelling, the Simulation stage bar, Gmsh meshing, linear stress of solids | ✅ |
-| 0.7.1 | Analysis on real solids: more materials and units, loads on edges and points, gravity, bolt-hole and contact-free assemblies, held/loaded faces highlighted, probe | 🔜 |
+| 0.7.1 | The Datum window in numbered steps; full sketching and 3D modelling by the geometry engine behind it | ✅ |
+| 0.7.2 | Analysis on the new solids: supports and loads on picked faces, Gmsh meshing, every step type, results | 🔜 |
 | 0.7.2 | Natural frequencies, buckling, heat, yielding and large deformation of solids; the results player | ⬜ |
 | 0.7.3 | Frames and trusses from sketch lines (sections, releases, load cases) | ⬜ |
 | 0.7.4 | Plane parts, the report, Help › Verification in the new program | ⬜ |
@@ -449,6 +450,14 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
   - Checked in the real program over the control channel: the sample plate solved with 5,886 tetrahedra and an imbalance of 1.5e-12. The Simulation tab had been reset by `workspace::sync_context`; that is fixed.
   - The release took three runs. First, the Windows icon resources still named the old `solidcraft` binary. Second, the runner had no NSIS, so the workflow now installs it. The third run published the release. A full Windows build of the program takes about 40 minutes.
   - The results view had two drawing problems, both fixed. The solids drawn from GPU plans still showed under the results. The face under the mouse lit up as a hover, which looked like a grey top face.
+
+- **0.7.1 built (2026-11-06).** The user rejected 0.7.0 (SolidCraft's own program renamed) and asked for Datum's window with SolidCraft's features underneath, built the Datum way, with questions and screenshots along the way. Done: 0.7.0 withdrawn (`withdraw.yml`); release workflow back to the Tauri app; numbered steps in the tree only (the user: no step tabs on top); `crates/cad` (headless `solidcraft_engine::Session`, the scene with bodies, sketches, points, dimension and constraint marks; `to_json`/`from_json` for the file's `geometry`); shell `cad_run`/`cad_scene`/`cad_new`/`cad_query`; `ui/src/cad.tsx` (sketch sheet with snapping, picking, selection, rubber bands, dimension box; drawing tools with their ways; editing tools; 3D tools picked in the view); ribbon groups after the user's two screenshots (Create, Modify, Pattern, Constrain, Inspect, Exit; Sketch, Create, Modify, Arrange, Sizes, Configure, Construct, Edit). Engine tests: every way of drawing, every editing tool, every 3D tool and the file round trip, with the inputs the window sends (they caught the face-sketch input). Window checks on the real engine's scenes. Real app (Xvfb): new sketch, rectangle and circle, finish, extrude (7 faces), hole, fillet (9 faces); it caught New Sketch leaving the Home tab on (fixed, checked). Release profile: thin LTO in 16 pieces (the engine ran out of memory in one).
+
+## 5. Known limits (0.7.1)
+
+- The new solids are not analysed yet (0.7.2): supports, loads, mesh and solve still work on the 0.6 parts, frames and imported meshes.
+- Sketch: construction-line variants, splines, ellipses, project, text and the configuration table are in the engine but not on the ribbon. Model: sweep, loft, combine, draft, split and primitives likewise.
+- The Inspector still shows the 0.6 solid settings for a 3D solid; Fit does not yet include the new solids.
 
 ## 5. Known limits (0.7.0)
 

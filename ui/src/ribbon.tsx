@@ -225,8 +225,7 @@ const CadGroups = () => {
           dd={e => openMenu(e, CONSTRAINTS.map(k => ({ label: EDITS[k].label, on: k === conWay(), run: () => { setConWay(k); pickEdit(k); } })))} />
         <S><B i="tag" l="Construction" run={toggleConstruction} title="Turn the selected curves into construction, or back" /><B i="del" l="Delete" run={deleteSelected} title="Delete the selected curves (Delete key)" /></S></G>
       <Show when={sizeFields().length}><G l="Sizes"><S><For each={sizeFields()}>{f => <MmNum l={f[0]} u={f[1]} int={f[2]} title={f[0]} v={f[3]} set={f[4]} />}</For></S></G></Show>
-      <G l="Inspect"><B big i="info" l="Sketch Report" run={sketchReport} title="What is still free in the sketch, its dimensions and constraints, loose ends" /></G>
-      <G l="Configure"><B big i="fx" l="Parameters" run={parametersDialog} title="Named sizes (W = 40) that dimensions and features can use" /></G>
+      <G l="Inspect"><S><B i="info" l="Sketch Report" run={sketchReport} title="What is still free in the sketch, its dimensions and constraints, loose ends" /><B i="fx" l="Parameters" run={parametersDialog} title="Named sizes (W = 40) that dimensions and features can use" /></S></G>
       <G l="Exit"><B big i="check" l="Finish Sketch" run={() => finishSketch()} title="Keep the sketch and leave it (then Extrude or Revolve)" /><B big i="clear" l="Cancel" run={() => cancelSketch()} title="Leave the sketch without keeping it" />
         <S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="select" l="Select" on={!cadTool() || cadTool() === "select"} run={() => pickEdit("select")} /></S></G>
     </Show>
@@ -376,8 +375,9 @@ export const Ribbon = () => {
           </Show>
           <Show when={!(isSolidA(m()?.analysis) && (m()?.parts?.length || !m()?.shapes.length))}><SketchDraw /></Show>
 
+          <Show when={!isSolidA(m()?.analysis) || !!m()?.parts?.length || !!m()?.shapes.length}>
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G>
-          <G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /><B big i="solid" l="Mesh" dd={(e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); openMenu({ x: r.left, y: r.bottom + 2 }, [["Coordinates in millimetres", 1e-3], ["Coordinates in metres", 1], ["Coordinates in inches", 0.0254]].map(([l, u]) => ({ label: `${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) }))); }} title="A part of any shape: a tetrahedral mesh from a mesher (Gmsh .msh, CalculiX-format .inp), as a new 3D solid" /></G>
+          <G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /><B big i="solid" l="Mesh" dd={(e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); openMenu({ x: r.left, y: r.bottom + 2 }, [["Coordinates in millimetres", 1e-3], ["Coordinates in metres", 1], ["Coordinates in inches", 0.0254]].map(([l, u]) => ({ label: `${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) }))); }} title="A part of any shape: a tetrahedral mesh from a mesher (Gmsh .msh, CalculiX-format .inp), as a new 3D solid" /></G></Show>
         </>}>
           <Show when={sp()}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and draw members on it" /></G></Show>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
@@ -385,7 +385,7 @@ export const Ribbon = () => {
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
         </Show>
-        <G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G>
+        <Show when={!activeSketch()}><G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G></Show>
       </Show>
       <Show when={tab() === "mesh"}>
         <Show when={!frame()} fallback={<G l="Mesh" h="mesh"><div class="rnote">Frames and trusses are not meshed: each member is one exact element. Meshing is for parts.</div></G>}>
