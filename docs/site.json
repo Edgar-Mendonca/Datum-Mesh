@@ -97,26 +97,35 @@
   ],
   "roadmap": [
     {
-      "v": "0.10.0",
-      "title": "The whole map",
+      "v": "0.10.1",
+      "title": "Every module's screens",
       "when": "Next",
       "items": [
-        "Every feature of the finished program in its place, the ones still to come shown dimmed with the release that brings them",
-        "A cleaner, more professional window",
-        "The tube crush's first increment settling"
+        "Each module's screens wired to what exists: frames, 3D frames, plates, solids, assembly, materials, mesh, steps, results, report",
+        "Everything still to come present and greyed, its dialog shown",
+        "About 100 planned features in their place"
       ]
     },
     {
-      "v": "0.10–0.15",
+      "v": "0.10.2",
+      "title": "Tables and managers",
+      "when": "Soon",
+      "items": [
+        "Node and member tables, pasted from a sheet",
+        "Load cases and combinations, the step manager, the material manager with its curve",
+        "Interactions, mesh statistics, the job queue"
+      ]
+    },
+    {
+      "v": "0.11–0.15",
       "title": "Filling in the map",
       "when": "Later",
       "items": [
-        "Results tree, colour bands, display groups, export",
+        "Results tools: results tree, colour bands, display groups, export; the tube crush settling",
         "Johnson–Cook, damage, kinematic hardening, rubber models, fitting to test data",
         "Load curves, tie, coupling, connectors, bolt pretension",
         "Nonlinear buckling with imperfections, transient heat, crash",
-        "Hexahedra and mesh refinement by itself",
-        "Job queue and scripting in Python"
+        "Hexahedra and mesh refinement by itself; job queue and scripting in Python"
       ]
     },
     {
@@ -124,8 +133,9 @@
       "title": "Complete",
       "when": "Later",
       "items": [
-        "Design checks of members",
-        "Several models in one file"
+        "Design checks of members and plate reinforcement",
+        "Several models in one file",
+        "Every planned feature working"
       ]
     }
   ]

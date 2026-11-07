@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.10.0 — 2026-11-07
+
+A new look, and the whole program laid out: every module has its place in the window, and the features still to come are already there, dimmed, with the release that brings them.
+
+**The new look**
+- A new accent, Petrol, through the whole window, light and dark; loads stay red so they stand out from it.
+- A new mark: a tetrahedron, the element the solver uses, in the family tile. The Windows icons are made from it.
+
+**The window**
+- A ribbon tab for every module: Geometry, Materials, Loads & BCs (Temperatures & Heat for heat), Mesh (not for frames, which need none), Analysis, Results, View, Tools and Help.
+- A bar above the view with what you change most: the load case, what a click picks, how the model is drawn, fit and zoom, and the units. The "Planned features" switch is there too.
+- A narrow strip of the step's tools beside the tree.
+- The tree has Model and Results tabs; step 6 shows the results there. A filter box at the top leaves only the rows that match.
+- The bottom panel shows the Jobs and Python tabs that are coming, dimmed.
+
+**The whole map (planned features)**
+- About 60 planned features have their place: on their ribbon tab (under one "Coming" button), in their step of the tree, and in File › Roadmap by release.
+- Clicked, a planned feature opens the dialog it will have, every field shown and greyed, with the release that brings it; nothing in it can run.
+- View › Show planned features (or the switch above the view) hides them all; it is on to start with.
+
+**File**
+- Home: five blank models in a row (heat added), Examples and Roadmap as wide links, and recent models as rows.
+- Examples in folders by kind (frames, 3D frames, parts and heat, 3D solids and assemblies, nonlinear, dynamics, verification), with a search across them all.
+
+**Not in this release**
+- The tube-crush example's first increment still does not settle; it moves to 0.11.
+- Every module's own screens, greyed where not built yet, come in 0.10.1.
+
 ## 0.9.1 — 2026-11-07
 
 A window laid out for the work: the steps down the left, the whole middle for the model, a card that pops up when you pick something, and a terminal along the bottom that follows every solve.
