@@ -53,7 +53,7 @@ export const materials = (focus?: number) => openDialog(() => {
               <F l="Yield strength" q="stress" v={mm().fy} set={fy => put({ fy })} />
               <F l="Hardening (past yield)" q="stress" v={mm().hardening ?? 0} set={hardening => put({ hardening })} />
               <span /><p class="muted small">The slope of stress against plastic strain past yield; 0 for perfectly plastic. Used by nonlinear steps of parts and solids.</p>
-              <Show when={showPlanned()}><label>Hardening by</label><span class="soonc" title="A table of stress against plastic strain, kinematic hardening and power laws: planned for 0.12"><span class="seg"><span class="on">Straight line</span><span>Table</span><span>Kinematic</span></span></span></Show>
+              <Show when={showPlanned()}><label>Hardening by</label><span class="muted small" title="A table of stress against plastic strain, kinematic hardening and power laws: planned for 0.12">a straight line; a table and kinematic hardening come in 0.12</span></Show>
             </Show>
             <Show when={mtab() === "heat"}>
               <F l="Conductivity" q="cond" v={mm().k} set={k => put({ k })} />
@@ -70,7 +70,7 @@ export const materials = (focus?: number) => openDialog(() => {
 /** The stress against strain the solver uses (0.10.2): straight to yield (slope E), then on with the
  *  tangent E·H/(E+H) of linear hardening; elastic only when there is no yield strength. */
 const SsCurve = (p: { e: number; fy: number; h: number }) => {
-  const W = 260, H = 170, L = 40, B = 24;
+  const W = 270, H = 170, L = 64, B = 24;
   const ey = () => (p.fy > 0 ? p.fy / p.e : 0.002);
   const emax = () => Math.max(ey() * 10, p.fy > 0 ? 0.02 : 0.004);
   const smax = () => (p.fy > 0 ? p.fy + p.h * Math.max(0, emax() - ey()) * p.e / (p.e + p.h) : p.e * emax());
@@ -81,7 +81,7 @@ const SsCurve = (p: { e: number; fy: number; h: number }) => {
       <path class="ax" d={`M${L} 6V${H - B}H${W - 4}`} fill="none" />
       <polyline class="ss" points={pts().map(([e, sg]) => `${X(e)},${Y(sg)}`).join(" ")} fill="none" />
       <Show when={p.fy > 0}><line class="fy" x1={L} x2={X(ey())} y1={Y(p.fy)} y2={Y(p.fy)} /><text x={L - 4} y={Y(p.fy) + 3} text-anchor="end">{fmtS(p.fy)}</text></Show>
-      <text x={L - 4} y={Y(smax()) + 3} text-anchor="end">{fmtS(smax())}</text>
+      <Show when={!(p.fy > 0) || smax() > p.fy * 1.08}><text x={L - 4} y={Y(smax()) + 3} text-anchor="end">{fmtS(smax())}</text></Show>
       <text x={W - 4} y={H - 8} text-anchor="end">{num(emax(), 2)}</text><text x={L} y={H - 8} text-anchor="middle">0</text>
     </svg>
     <p class="muted small">{p.fy > 0 ? `Yield at a strain of ${num(ey(), 3)}; then ${p.h > 0 ? `hardening, slope ${fmtS(p.h * p.e / (p.e + p.h))}` : "perfectly plastic"}.` : "Elastic only: give a yield strength for yielding."}</p>
