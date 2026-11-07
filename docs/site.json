@@ -97,24 +97,35 @@
   ],
   "roadmap": [
     {
-      "v": "0.9.2",
-      "title": "Results and the solver, further",
+      "v": "0.10.0",
+      "title": "The whole map",
       "when": "Next",
       "items": [
-        "The tube crush's first increment settling (found with the solver monitor)",
-        "Result tools as pop-ups: cut, probe, animation, display options",
-        "The legend and the solve's details drawn in the view; a choice of background"
+        "Every feature of the finished program in its place, the ones still to come shown dimmed with the release that brings them",
+        "A cleaner, more professional window",
+        "The tube crush's first increment settling"
+      ]
+    },
+    {
+      "v": "0.10–0.15",
+      "title": "Filling in the map",
+      "when": "Later",
+      "items": [
+        "Results tree, colour bands, display groups, export",
+        "Johnson–Cook, damage, kinematic hardening, rubber models, fitting to test data",
+        "Load curves, tie, coupling, connectors, bolt pretension",
+        "Nonlinear buckling with imperfections, transient heat, crash",
+        "Hexahedra and mesh refinement by itself",
+        "Job queue and scripting in Python"
       ]
     },
     {
       "v": "1.0",
-      "title": "Crash, materials and scripting",
+      "title": "Complete",
       "when": "Later",
       "items": [
-        "Contact and yielding in time: parts crushed in a crash",
-        "Johnson–Cook plasticity and damage, kinematic hardening, Mooney–Rivlin",
-        "Nonlinear buckling with imperfections",
-        "Scripting in Python: drive the model and add your own materials"
+        "Design checks of members",
+        "Several models in one file"
       ]
     }
   ]
