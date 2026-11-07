@@ -236,12 +236,6 @@ export const FEATS: Feat[] = [
     fields: [{ k: "text", l: ">>>", v: "model.add_support('Fixed', face='Body1/F2')" }, { k: "check", l: "Record what I do as a script", on: false }] },
   // ---------- 0.10.1: the rest of the map, from the mock-ups ----------
   // Geometry
-  { id: "paste", label: "Paste from a Sheet", icon: "paste", step: 1, tab: "geometry", group: "Tables", v: "0.10.2", for: FRAMES,
-    what: "Paste nodes and members copied from a spreadsheet: the columns are matched to x, y (z), start, end and section.",
-    fields: [{ k: "table", l: "Pasted", cols: ["Node", "x (m)", "y (m)", "z (m)"], rows: [["N1", "0", "0", "0"], ["N2", "6", "0", "0"]] }, { k: "check", l: "First row is headings", on: true }, { k: "check", l: "Join nodes closer than 1 mm", on: true }] },
-  { id: "nodetable", label: "Nodes and Members Table", icon: "table", step: 1, tab: "geometry", group: "Tables", v: "0.10.2", for: FRAMES,
-    what: "Every node and member in a table under the view: type, sort and change many at once; picked rows are picked in the view.",
-    fields: [{ k: "table", l: "Members", cols: ["#", "From", "To", "Kind", "Section", "Length"], rows: [["M1", "N1", "N2", "Beam", "IPE 300", "6.000"]] }] },
   { id: "splitmember", label: "Split a Member", icon: "cut", step: 1, tab: "geometry", group: "Edit", v: "0.10.2", for: FRAMES,
     what: "Split a member at a point, at its middle, or into equal pieces, with nodes where it splits.",
     fields: [{ k: "pick", l: "Member", what: "a member" }, { k: "choice", l: "Where", o: ["At a distance", "At the middle", "Into equal pieces"] }, { k: "num", l: "Distance or pieces", v: "2" }] },

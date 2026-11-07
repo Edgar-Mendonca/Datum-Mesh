@@ -1510,6 +1510,34 @@ let __page = null;
     await open("portal");
   }
 
+  {
+    // 0.10.2: a frame's nodes and members in tables under the view, typed into, picked with the view, pasted from a sheet.
+    await open("portal"); await p.waitForTimeout(150);
+    const pm = fix.portal.m;
+    await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
+    await p.click('.ribbon button:has-text("Nodes & Members")'); await p.waitForTimeout(400);
+    check("Geometry › Nodes & Members opens the Tables in the bottom panel, a row for each node and member (0.10.2)", (await p.$$('.ttab[data-table="nodes"] tbody tr')).length === pm.nodes.length && (await p.$$('.ttab[data-table="members"] tbody tr')).length === pm.members.length && (await p.textContent(".console header button.on")) === "Tables");
+    await p.click('.ttab[data-table="members"] tbody tr:nth-child(2) td:first-child'); await p.waitForTimeout(100);
+    check("a clicked row is picked, in the table and the view (0.10.2)", (await p.$$('.ttab[data-table="members"] tbody tr.on')).length === 1 && (await p.$$(".ipop")).length === 1);
+    const before = await p.evaluate(() => window.__calls.length);
+    const cell = await p.$('.ttab[data-table="nodes"] tbody tr:nth-child(3) td:nth-child(2) input');
+    await cell.fill("7.5"); await cell.press("Enter"); await p.waitForTimeout(150);
+    const setOp = await p.evaluate(n => window.__calls.slice(n).filter(c => c[0] === "apply").map(c => c[1].op)[0], before);
+    check("typing a node's x moves it, as an edit the engine makes (0.10.2)", !!setOp?.Set?.item?.Node && Math.abs(setOp.Set.item.Node.x - 7.5) < 1e-9 && setOp.Set.item.Node.id === pm.nodes[2].id, JSON.stringify(setOp));
+    const sec = await p.$('.ttab[data-table="members"] tbody tr:nth-child(1) select:nth-of-type(1)');
+    await sec.selectOption("truss"); await p.waitForTimeout(150);
+    check("…and a member's kind changes from its list", await p.evaluate(() => { const o = window.__calls.filter(c => c[0] === "apply").map(c => c[1].op).pop(); return o?.Set?.item?.Member?.kind === "truss"; }));
+    await p.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await p.evaluate(() => navigator.clipboard.writeText("Node\tx\ty\nA\t0\t9\nB\t12\t9\n\t0\t9\t12\t9\nN3\tN10\nnot a row"));
+    await p.click('.ctbar button:has-text("Paste from a sheet")'); await p.waitForTimeout(250);
+    const batch = await p.evaluate(() => window.__calls.filter(c => c[0] === "apply").map(c => c[1].op).pop()?.Batch ?? []);
+    check("Paste from a sheet: rows of x, y become nodes, x, y to x, y a member, N3 N10 a member between nodes; headings and other rows left out (0.10.2)",
+      batch.length === 4 && batch.filter(o => o.Add?.item?.Node).length === 2 && batch.filter(o => o.AddMember).length === 1 && batch.filter(o => o.Add?.item?.Member).length === 1 && batch.find(o => o.Add?.item?.Node)?.Add.item.Node.y === 9, JSON.stringify(batch));
+    await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(150);
+    check("…and says what it did in Messages, with the rows it left out", await p.evaluate(() => [...document.querySelectorAll(".cmsg span")].some(e => /Pasted from a sheet: 2 nodes and 2 members; 2 rows not understood/.test(e.textContent))));
+    await p.click('.console header .cchev'); await p.waitForTimeout(100);
+  }
+
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100);
   await p.click('.bs aside button:has-text("Print")'); await p.waitForTimeout(300);
   check("print preview draws the model and the report", (await p.$$(".pprev .printdiag line")).length === pf.members.length && (await p.textContent(".pprev")).includes("Structural steel"));

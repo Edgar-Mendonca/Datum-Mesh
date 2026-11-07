@@ -14,7 +14,7 @@ import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
 import { stepsDialog, pathDialog, partPathDialog, isNonlinear, dynDialog, dynOf } from "./steps";
 import { Icon, Dialog } from "./ui";
 import { PlannedGroups, showPlanned, setShowPlanned } from "./planned";
-import { Help, helpCard, HELP } from "./help";
+import { Help, helpCard, helpTopics } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
 import { q3, setQ3, Q3 } from "./space3";
 import { setPlane, onPlane, plateT, setPlateT } from "./plane3";
@@ -412,6 +412,8 @@ export const Ribbon = () => {
           <Show when={sp() && onPlane()}><FramePlates /></Show>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
+          <G l="Tables" h="tables"><B big i="table" l="Nodes & Members" run={() => import("./console").then(k => k.showTables())} title="The nodes and members in tables under the view: type into them, and click a row to pick it" />
+            <S><B i="paste" l="Paste from a Sheet" run={() => import("./tables").then(k => k.pasteSheet())} title="Add the nodes or members copied from a spreadsheet: x, y (z) for a node; x, y to x, y for a member; or two node numbers such as N1 and N2" /></S></G>
           </Show>
         </Show>
         <Show when={!activeSketch()}><G l="Snap" h="snap"><S><label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label><label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Show grid</label></S></G></Show>
@@ -517,7 +519,7 @@ export const Ribbon = () => {
         <G l="Settings" h="options"><B big i="opts" l="Options" run={() => setBackstage("options")} /></G>
       </Show>
       <Show when={tab() === "help"}>
-        <G l="Learn"><B big i="report" l="Getting Started" run={() => D.gettingStarted()} /><B big i="info" l="Glossary" run={() => D.glossary()} /><B big i="help" l="What Is This Tool?" dd={e => openMenu(e, Object.entries(HELP).map(([k, h]) => ({ label: h.t, run: () => helpCard(k) })))} /><B big i="keys" l="Shortcuts" run={() => D.shortcuts()} /><B big i="search" l="Tell Me" run={palette} /></G>
+        <G l="Learn"><B big i="report" l="Getting Started" run={() => D.gettingStarted()} /><B big i="info" l="Glossary" run={() => D.glossary()} /><B big i="help" l="What Is This Tool?" dd={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); helpTopics().then(all => openMenu({ x: r.left, y: r.bottom + 2 }, all.map(([k, h]) => ({ label: h.t, run: () => helpCard(k) })))); }} /><B big i="keys" l="Shortcuts" run={() => D.shortcuts()} /><B big i="search" l="Tell Me" run={palette} /></G>
         <G l="Trust"><B big i="verify" l="Verification" run={() => D.verification()} /></G>
         <G l="Datum Mesh on GitHub"><B big i="github" l="GitHub" run={() => call("open_url", { url: GH })} /><B big i="tag" l="Releases" run={() => call("open_url", { url: `${GH}/releases` })} /><B big i="bug" l="Report an Issue" run={() => call("open_url", { url: `${GH}/issues/new` })} /></G>
         <G l="Updates"><B big i="upd" l="Check for Updates" run={() => setBackstage("about")} /><B big i="list" l="Roadmap" run={() => setBackstage("roadmap")} /></G>
