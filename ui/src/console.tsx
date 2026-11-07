@@ -144,7 +144,7 @@ export const Console = () => {
       <T t="messages">Messages<Show when={unread()}><i class="cbadge">{unread()}</i></Show></T>
       <T t="solver">Solver monitor</T>
       <T t="log">Log</T>
-      <Show when={showPlanned()}><For each={[["jobs", "Jobs", "0.15"], ["script", "Python", "0.15"]]}>{([id, l, v]) =>
+      <Show when={showPlanned()}><For each={[["nodetable", "Tables", "0.10.2"], ["jobs", "Jobs", "0.15"], ["script", "Python", "0.15"]]}>{([id, l, v]) =>
         <button class="cplanned" data-planned={id} title={`${l}: planned for ${v}. Click to see what it will do.`} onClick={() => openPlanned(id)}>{l}<i>{v}</i></button>}</For></Show>
       <span class="grow" />
       <Show when={run()}>{r => <span class="cnow"><span classList={{ cdot: true, live: r().status === "running", bad: r().status === "failed" }} />{STATUS[r().status]} · {elapsed(r())}<Show when={progress(r()) !== null}><span class="cbar sm"><i style={{ width: `${Math.min(100, progress(r())! * 100)}%` }} /></span></Show></span>}</Show>

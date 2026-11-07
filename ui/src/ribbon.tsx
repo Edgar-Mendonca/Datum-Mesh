@@ -1,7 +1,7 @@
 // Title bar, quick access toolbar, Tell Me and the ribbon (Home · Geometry · Mesh · Loads · Solve ·
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
-import { sectionsOn, setSectionsOn } from "./store";
+import { sectionsOn, setSectionsOn, animate, setAnimate } from "./store";
 import { memberTruss, setMemberTruss, memberPlates, setMemberPlates } from "./cad";
 import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
@@ -294,7 +294,10 @@ export const TitleBar = (p: { update: string | null }) => (
 
 /** The module tabs (0.10.0): every step of the work, then View, Tools and Help. */
 const MODULE_TABS = (): [string, string][] => { const a = model()?.analysis; const heat = a === "heat" || a === "solidheat";
-  return [["geometry", "Geometry"], ["properties", "Materials"], ["loads", heat ? "Temperatures & Heat" : "Loads & BCs"], ...(isFrame(a) ? [] : [["mesh", "Mesh"] as [string, string]]), ["solve", "Analysis"], ["results", "Results"], ["view", "View"], ["tools", "Tools"], ["help", "Help"]]; };
+  const solid = a === "solid";
+  return [["geometry", "Geometry"], ...(solid ? [["assembly", "Assembly"] as [string, string]] : []), ["properties", "Materials"], ["loads", heat ? "Temperatures & Heat" : "Loads & BCs"],
+    ...(solid ? [["interactions", "Interactions"] as [string, string]] : []), ...(isFrame(a) ? [] : [["mesh", "Mesh"] as [string, string]]), ["solve", "Analysis"], ["results", "Results"],
+    ...(heat ? [] : [["animate", "Animate"] as [string, string]]), ["view", "View"], ["tools", "Tools"], ["help", "Help"]]; };
 
 /** What the Format tab works on: the selected shapes or members. */
 const fmtKind = () => {
@@ -477,6 +480,21 @@ export const Ribbon = () => {
         <Show when={modes()}>{r => <Show when={isBuckle(r())} fallback={<G l="Vibration" h="modes"><B big i="modes" l="Mode Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the natural modes on the drawing instead of the static results" /></G>}><G l="Buckling" h="buckle"><B big i="buckle" l="Buckled Shapes" on={modeOn()} run={() => setModeOn(!modeOn())} title="Show the buckled shapes on the drawing instead of the static results" /></G></Show>}</Show>
         <G l="Report" h="report"><B big i="print" l="Print" run={C.print} /><S><B i="doc" l="Results Report" run={() => C.view("report")} /><B i="csv" l="Send to Datum Plot" off={!results()} dd={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); import("./link").then(k => { const t = k.plotTables(); if (t.length) openMenu({ x: r.left, y: r.bottom + 2 }, t); else toast("Nothing to plot yet: a nonlinear step, a time history or natural frequencies give curves and lists."); }); }} title="A curve or list from this solve, as a table for Datum Plot (graphs)" /><B i="calc" l="Send to Datum Calc" off={!results()} run={() => import("./link").then(k => k.sendCalc())} title="The largest stress, movement, safety factor or frequency, as values with units for a hand check in Datum Calc" /></S></G>
       </Show>
+      <Show when={tab() === "assembly"}>
+        <G l="Parts" h="parts"><B big i="new" l="New Part" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and sketch a new part on it; then extrude or revolve it" />
+          <S><B i="repeat" l="Move or Copy…" off={!m()?.parts?.length} run={() => Mo().then(k => k.moveParts())} title="Move the selected parts, or copy them in a row" /><B i="cpattern" l="Turn or Pattern…" off={!m()?.parts?.length} run={() => Mo().then(k => k.turnParts())} title="Turn the selected parts about an axis, or copy them round it" /></S></G>
+        <G l="Assembly" h="parts"><div class="rnote">{(m()?.parts?.length ?? 0) > 1 ? `${m()!.parts!.length} parts. Where they touch, they are joined; make a contact on Interactions to let them press and slide.` : (cad()?.bodies.length ?? 0) > 1 ? `${cad()!.bodies.length} solids. Where they touch, they are joined; make a contact on Interactions to let them press and slide.` : "One solid. Add parts with New Part; where parts touch they are joined."}</div></G>
+      </Show>
+      <Show when={tab() === "interactions"}>
+        <G l="Contact" h="contact"><B big i="pin" l="Contact" off={(cad()?.bodies.length ?? 0) < 2} run={() => import("./solidtools").then(k => k.contactDialog())} title="Let two touching solids press and slide on each other (with friction) instead of being joined (needs two solids)" />
+          <div class="rnote">{(m()?.contacts?.length ?? 0) ? `${m()!.contacts!.length} contact${m()!.contacts!.length === 1 ? "" : "s"}: pressure and sliding with friction, solved step by step.` : "Solids that touch are joined. A contact lets them press on each other and slide, held back by friction."}</div></G>
+      </Show>
+      <Show when={tab() === "animate"}>
+        <G l="Play" h="animate"><B big i="play" l="Play" off={!results()} run={() => import("./player").then(k => { setAnimate(true); k.setPlaying(!k.playing()); })} title="Play the result: a static one grows from no load, a nonlinear one goes through its increments, a time history through its times, a mode swings" />
+          <S><B i="first" l="To the Start" off={!results()} run={() => import("./player").then(k => { setAnimate(true); k.setPlaying(false); k.setPos(0); })} /><B i="repeat" l="Loop" off={!results()} run={() => import("./player").then(k => k.setLoop(!k.loop()))} title="Play again from the start at the end, or stop there" />
+            <B i="play" l="Speed ▾" off={!results()} dd={e => import("./player").then(k => openMenu(e, [0.25, 0.5, 1, 2, 4].map(x => ({ label: `${x}×`, on: k.speed() === x, run: () => k.setSpeed(x) }))))} /></S></G>
+        <G l="Show" h="animate"><S><B i="view" l="Player Bar" on={animate()} run={() => setAnimate(!animate())} title="The bar over the drawing to play, pause and go to any moment" /><B i="deform" l="Deformed Shape" on={show().deformed} off={!results()} run={() => C.show({ deformed: !show().deformed })} /></S></G>
+      </Show>
       <Show when={tab() === "view"}>
         <G l="Zoom" h="zoom"><B big i="fit" l="Fit" run={C.fit} /><S><B i="zin" l="Zoom In" run={C.zoomIn} /><B i="zout" l="Zoom Out" run={C.zoomOut} /></S></G>
         <G l="Planned" h="planned"><S><label class="chk" title="Show the features still to come, dimmed, with the release that brings each (the whole map of the program)"><input type="checkbox" checked={showPlanned()} onChange={e => setShowPlanned(e.currentTarget.checked)} />Show planned features</label></S></G>
@@ -505,7 +523,7 @@ export const Ribbon = () => {
         <G l="Updates"><B big i="upd" l="Check for Updates" run={() => setBackstage("about")} /><B big i="list" l="Roadmap" run={() => setBackstage("roadmap")} /></G>
       </Show>
       {/* 0.10.0: the tab's planned features, dimmed, after its working tools (View › Show planned features). */}
-      <For each={["geometry", "properties", "loads", "mesh", "solve", "results", "view", "tools"]}>{t => <Show when={tab() === t && !sketch()}><PlannedGroups tab={t} /></Show>}</For>
+      <For each={["geometry", "assembly", "properties", "loads", "interactions", "mesh", "solve", "results", "animate", "view", "tools"]}>{t => <Show when={tab() === t && !sketch()}><PlannedGroups tab={t} /></Show>}</For>
     </section>
   );
 };
