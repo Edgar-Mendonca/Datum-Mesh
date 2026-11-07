@@ -1319,3 +1319,18 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .ttab input.tcell:focus { border-color: var(--blue); background: var(--bg2); outline: 0; }
 .ttab select { height: 20px; font-size: 12px; padding: 0 4px; border-color: transparent; background: none; }
 .ttab select:hover, .ttab select:focus { border-color: var(--line3); background: var(--bg2); }
+
+/* 0.10.2: the material manager's tabs and its curve. */
+.mtabs { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.dtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.dtabs button { padding: 4px 10px; border: 0; border-bottom: 2px solid transparent; background: none; font-size: 12.5px; color: var(--text2); }
+.dtabs button.on { border-bottom-color: var(--blue); color: var(--blue); font-weight: 600; }
+.dtabs button.soon { opacity: .5; font-style: italic; }
+.dtabs button.soon i { font-style: normal; font-size: 9.5px; margin-left: 4px; padding: 0 3px; border: 1px solid var(--line3); border-radius: 3px; }
+.mbody { display: grid; grid-template-columns: minmax(0, 1fr) 270px; gap: 14px; align-items: start; }
+.sscurve { margin: 0; }
+.sscurve figcaption { font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+.sscurve .ax { stroke: var(--line3); }
+.sscurve .ss { stroke: var(--blue); stroke-width: 2; }
+.sscurve .fy { stroke: var(--line3); stroke-dasharray: 3 3; }
+.sscurve text { font-size: 10px; fill: var(--muted); font-family: var(--mono, monospace); }

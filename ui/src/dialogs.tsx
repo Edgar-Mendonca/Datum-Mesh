@@ -8,6 +8,7 @@ import { numIn } from "./panels";
 import { Dialog, Icon } from "./ui";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { fromD } from "./axes";
+import { showPlanned } from "./planned";
 
 /** A number field inside a dialog: display units in, SI out. */
 export const F = (p: { l: string; q: Q; v: number; set: (v: number) => void }) => (
@@ -23,6 +24,8 @@ export const materials = (focus?: number) => openDialog(() => {
   const put = (x: Partial<Material>) => { const mm = m(); if (mm) act({ Set: { item: { Material: { ...mm, ...x } } } }); };
   const add = async () => { const base = m() ?? list()[0]; const o = await act({ Add: { item: { Material: { ...base, id: 0, name: `${base.name} (copy)`, source: "Your own values" } } } }); if (o?.created.length) setCur(o.created[0]); };
   const del = async () => { const o = await act({ Delete: { ids: [cur()] } }); if (o) setCur(list()[0]?.id ?? 0); };
+  const [mtab, setMtab] = createSignal<"general" | "elastic" | "yield" | "heat">("general");
+  const usedBy = (id: number) => { const mm = model()!; const n = mm.members.filter(x => x.material === id).length + mm.shapes.filter(x => (x as { material?: number }).material === id).length + (mm.parts ?? []).filter(x => (x as { material?: number }).material === id).length; return n ? `${n} ${mm.members.length ? (n === 1 ? "member" : "members") : n === 1 ? "part or shape" : "parts or shapes"}` : "nothing yet"; };
   return (
     <Dialog title="Materials" wide help="materials">
       <div class="mgr">
@@ -30,21 +33,61 @@ export const materials = (focus?: number) => openDialog(() => {
           <p class="ibtns"><button class="btn sm pri" onClick={() => library(id => setCur(id))}>From the library…</button> <button class="btn sm" title="A material sent from Datum Atlas (a .dlink file)" onClick={() => import("./link").then(k => k.readLink())}>From Datum Atlas…</button></p>
           <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={list().length < 2}>Delete</button></p>
           <p class="muted small">The library: metals and plastics from Datum Atlas, each with its source.</p></div>
-        <Show when={m()}>{mm => <div class="form">
-          <label>Name</label><input value={mm().name} onChange={e => put({ name: e.currentTarget.value })} />
-          <F l="Young's modulus E" q="modulus" v={mm().e} set={e => put({ e })} />
-          <label>Poisson's ratio ν</label><input class="mono" value={mm().nu} onChange={numIn(v => put({ nu: v }), () => mm().nu)} />
-          <F l="Density" q="density" v={mm().rho} set={rho => put({ rho })} />
-          <F l="Yield strength" q="stress" v={mm().fy} set={fy => put({ fy })} />
-          <F l="Hardening (past yield)" q="stress" v={mm().hardening ?? 0} set={hardening => put({ hardening })} />
-          <F l="Conductivity" q="cond" v={mm().k} set={k => put({ k })} />
-          <F l="Thermal expansion" q="expansion" v={mm().alpha} set={alpha => put({ alpha })} />
-          <label>Source</label><input value={mm().source} onChange={e => put({ source: e.currentTarget.value })} />
+        {/* 0.10.2 (the mock-ups): the material manager: its tabs, and the curve the solver uses beside them. */}
+        <Show when={m()}>{mm => <div class="mtabs">
+          <nav class="dtabs"><For each={[["general", "General"], ["elastic", "Elastic"], ["yield", "Yielding"], ["heat", "Heat"]] as const}>{([k, l]) => <button classList={{ on: mtab() === k }} data-mtab={k} onClick={() => setMtab(k)}>{l}</button>}</For>
+            <Show when={showPlanned()}><For each={[["damage", "Damage"], ["rate", "Rate"]] as const}>{([k, l]) => <button class="soon" title={`${l}: planned for 0.12. Click to see what it will ask.`} onClick={() => import("./planned").then(p => p.openPlanned(k))}>{l}<i>soon</i></button>}</For></Show></nav>
+          <div class="mbody"><div class="form">
+            <Show when={mtab() === "general"}>
+              <label>Name</label><input value={mm().name} onChange={e => put({ name: e.currentTarget.value })} />
+              <F l="Density" q="density" v={mm().rho} set={rho => put({ rho })} />
+              <label>Source</label><input value={mm().source} onChange={e => put({ source: e.currentTarget.value })} />
+              <label>Used by</label><span class="muted">{usedBy(mm().id)}</span>
+            </Show>
+            <Show when={mtab() === "elastic"}>
+              <F l="Young's modulus E" q="modulus" v={mm().e} set={e => put({ e })} />
+              <label>Poisson's ratio ν</label><input class="mono" value={mm().nu} onChange={numIn(v => put({ nu: v }), () => mm().nu)} />
+            </Show>
+            <Show when={mtab() === "yield"}>
+              <label>Model</label><span>{mm().fy > 0 ? "Yielding (von Mises), hardening in a straight line" : "Elastic only"}</span>
+              <F l="Yield strength" q="stress" v={mm().fy} set={fy => put({ fy })} />
+              <F l="Hardening (past yield)" q="stress" v={mm().hardening ?? 0} set={hardening => put({ hardening })} />
+              <span /><p class="muted small">The slope of stress against plastic strain past yield; 0 for perfectly plastic. Used by nonlinear steps of parts and solids.</p>
+              <Show when={showPlanned()}><label>Hardening by</label><span class="soonc" title="A table of stress against plastic strain, kinematic hardening and power laws: planned for 0.12"><span class="seg"><span class="on">Straight line</span><span>Table</span><span>Kinematic</span></span></span></Show>
+            </Show>
+            <Show when={mtab() === "heat"}>
+              <F l="Conductivity" q="cond" v={mm().k} set={k => put({ k })} />
+              <F l="Thermal expansion" q="expansion" v={mm().alpha} set={alpha => put({ alpha })} />
+            </Show>
+          </div>
+          <SsCurve e={mm().e} fy={mm().fy} h={mm().hardening ?? 0} /></div>
         </div>}</Show>
       </div>
     </Dialog>
   );
 });
+
+/** The stress against strain the solver uses (0.10.2): straight to yield (slope E), then on with the
+ *  tangent E·H/(E+H) of linear hardening; elastic only when there is no yield strength. */
+const SsCurve = (p: { e: number; fy: number; h: number }) => {
+  const W = 260, H = 170, L = 40, B = 24;
+  const ey = () => (p.fy > 0 ? p.fy / p.e : 0.002);
+  const emax = () => Math.max(ey() * 10, p.fy > 0 ? 0.02 : 0.004);
+  const smax = () => (p.fy > 0 ? p.fy + p.h * Math.max(0, emax() - ey()) * p.e / (p.e + p.h) : p.e * emax());
+  const X = (e: number) => L + (e / emax()) * (W - L - 8), Y = (sg: number) => H - B - (sg / (smax() * 1.1)) * (H - B - 8);
+  const pts = () => p.fy > 0 ? [[0, 0], [ey(), p.fy], [emax(), smax()]] : [[0, 0], [emax(), smax()]];
+  return <figure class="sscurve"><figcaption>Stress against strain</figcaption>
+    <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Stress against strain">
+      <path class="ax" d={`M${L} 6V${H - B}H${W - 4}`} fill="none" />
+      <polyline class="ss" points={pts().map(([e, sg]) => `${X(e)},${Y(sg)}`).join(" ")} fill="none" />
+      <Show when={p.fy > 0}><line class="fy" x1={L} x2={X(ey())} y1={Y(p.fy)} y2={Y(p.fy)} /><text x={L - 4} y={Y(p.fy) + 3} text-anchor="end">{fmtS(p.fy)}</text></Show>
+      <text x={L - 4} y={Y(smax()) + 3} text-anchor="end">{fmtS(smax())}</text>
+      <text x={W - 4} y={H - 8} text-anchor="end">{num(emax(), 2)}</text><text x={L} y={H - 8} text-anchor="middle">0</text>
+    </svg>
+    <p class="muted small">{p.fy > 0 ? `Yield at a strain of ${num(ey(), 3)}; then ${p.h > 0 ? `hardening, slope ${fmtS(p.h * p.e / (p.e + p.h))}` : "perfectly plastic"}.` : "Elastic only: give a yield strength for yielding."}</p>
+  </figure>;
+};
+const fmtS = (v: number) => `${num(toU("stress", v), 3)} ${unit("stress")}`;
 
 /** Home › Materials › Library: metals and plastics from Datum Atlas, with sources. Adds the chosen
  * one to the model (and calls `added` with its id). */

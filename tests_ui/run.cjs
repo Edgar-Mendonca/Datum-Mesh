@@ -695,7 +695,9 @@ let __page = null;
   check("Results › Load–Deflection for a part says when it first yields and whether it carries the load", tpd.includes("first yields") && tpd.includes("carries the whole load") && (await p.$$(".dlg svg.curve circle.unstable")).length > 0, tpd.slice(0, 200));
   await p.keyboard.press("Escape");
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("Materials")').catch(() => {}); await p.waitForTimeout(200);
-  check("the material editor has hardening past yield", (await p.textContent(".dlg").catch(() => "")).includes("Hardening (past yield)"));
+  await p.click('.dlg .dtabs button[data-mtab="yield"]').catch(() => {}); await p.waitForTimeout(100);
+  check("the material editor has hardening past yield, on its Yielding tab (0.10.2)", (await p.textContent(".dlg").catch(() => "")).includes("Hardening (past yield)"));
+  check("…with the stress–strain curve the solver uses: straight to yield, then hardening (0.10.2)", (await p.$$eval(".dlg .sscurve polyline.ss", els => els.length === 1 && els[0].getAttribute("points").trim().split(" ").length === 3).catch(() => false)) && /Yield at a strain of/.test(await p.textContent(".dlg .sscurve")));
   await p.keyboard.press("Escape");
   // 0.5.1: plasticity in a 3D solid, on the holed plate.
   await open("yield3d"); await p.waitForTimeout(400);
@@ -1292,7 +1294,8 @@ let __page = null;
   check("the Sections dialog shows the section's properties", (await p.textContent(".dlg")).includes("mm⁴"));
   await p.keyboard.press("Escape");
   await p.click('.ribbon button[title="Materials"]'); await p.waitForTimeout(150);
-  check("the Materials dialog shows E in GPa", (await p.textContent(".dlg")).includes("GPa"));
+  await p.click('.dlg .dtabs button[data-mtab="elastic"]'); await p.waitForTimeout(100);
+  check("the Materials dialog shows E in GPa, on its Elastic tab", (await p.textContent(".dlg")).includes("GPa"));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   for (const v of ["Mesh", "Results", "Report", "Model"]) { await go(p, v); await p.waitForTimeout(100); }
   for (const k of ["Print", "Options", "Roadmap", "Updates", "Export", "Home"]) { await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100); await p.click(`.bs aside button:has-text("${k}")`); await p.waitForTimeout(200); }
