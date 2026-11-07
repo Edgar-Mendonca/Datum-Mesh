@@ -1193,3 +1193,27 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .ipop .vgrip { margin: 0; width: 5px; background: var(--panel); }
 .cmsg.action b { color: var(--green); }
 .ipop.low { top: 120px; max-height: calc(100% - 128px); }
+/* 0.10.0: planned features, dimmed, with their release; their dialogs greyed. */
+.grp.planned { opacity: .62; }
+.grp.planned .cap { font-style: italic; }
+.rb.planned { position: relative; }
+.rb.planned .pv { font: 600 8.5px var(--mono); font-style: normal; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 0 3px; margin-left: 4px; }
+.rb.planned:hover { opacity: 1; }
+.grp.planned:hover { opacity: .9; }
+.ti.planned { opacity: .6; }
+.ti.planned small { font: 9.5px var(--mono); }
+.tplan > summary .tt { font-style: italic; }
+.pband { display: flex; gap: 10px; align-items: flex-start; background: var(--hl); border: 1px solid var(--warn-line); padding: 8px 12px; margin-bottom: 12px; }
+.pband svg { width: 20px; height: 20px; flex: none; margin-top: 2px; }
+.pband div { display: flex; flex-direction: column; gap: 2px; }
+.pform { border: 0; padding: 0; margin: 0; opacity: .72; }
+.pform .pf { display: flex; align-items: center; gap: 6px; }
+.pform .unit { font: 11px var(--mono); color: var(--muted); }
+.pform label.top { align-self: start; padding-top: 4px; }
+.pform .ptable input, .pform .pcurve input { width: 100%; min-width: 60px; }
+.pcurve { display: flex; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+.pcurve svg text { font: 9px var(--mono); fill: var(--muted); }
+.pcurve svg .ax { stroke: var(--line); stroke-width: 1.5; }
+.rmfeats section { margin: 10px 0; }
+.rmfeats h3 { font: 600 13px var(--mono); margin: 0 0 4px; }
+.rmfeats ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; }

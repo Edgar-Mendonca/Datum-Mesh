@@ -2,6 +2,7 @@
 // Datum family site); keep it in step with docs/MEMORY.md (the roadmap table).
 import { For } from "solid-js";
 import { call } from "./store";
+import { PlannedByRelease } from "./planned";
 
 import site from "../../docs/site.json";
 
@@ -22,5 +23,8 @@ export const RoadmapPage = () => (
         </section>
       )}</For>
     </div>
+    <h2>Every planned feature</h2>
+    <p class="muted">Each is in the window already, dimmed, with the dialog it will have (View › Show planned features). Click one to see it.</p>
+    <PlannedByRelease />
   </div>
 );

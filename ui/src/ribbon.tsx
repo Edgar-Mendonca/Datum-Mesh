@@ -13,6 +13,7 @@ import * as K from "./sketch";
 import { CasePicker, casesDialog, envelope, hasEnvelope } from "./cases";
 import { stepsDialog, pathDialog, partPathDialog, isNonlinear, dynDialog, dynOf } from "./steps";
 import { Icon, Dialog } from "./ui";
+import { PlannedGroups, showPlanned, setShowPlanned } from "./planned";
 import { Help, helpCard, HELP } from "./help";
 import { invoke, Example, isFrame, isBuckle, isSolidA } from "./api";
 import { q3, setQ3, Q3 } from "./space3";
@@ -478,6 +479,7 @@ export const Ribbon = () => {
       </Show>
       <Show when={tab() === "view"}>
         <G l="Zoom" h="zoom"><B big i="fit" l="Fit" run={C.fit} /><S><B i="zin" l="Zoom In" run={C.zoomIn} /><B i="zout" l="Zoom Out" run={C.zoomOut} /></S></G>
+        <G l="Planned" h="planned"><S><label class="chk" title="Show the features still to come, dimmed, with the release that brings each (the whole map of the program)"><input type="checkbox" checked={showPlanned()} onChange={e => setShowPlanned(e.currentTarget.checked)} />Show planned features</label></S></G>
         <G l="Show" h="show"><S>
           <label class="chk"><input type="checkbox" checked={opts().grid} onChange={e => setOpts({ ...opts(), grid: e.currentTarget.checked })} />Grid</label>
           <label class="chk"><input type="checkbox" checked={opts().snap} onChange={e => setOpts({ ...opts(), snap: e.currentTarget.checked })} />Snap to grid</label>
@@ -497,6 +499,8 @@ export const Ribbon = () => {
         <G l="Datum Mesh on GitHub"><B big i="github" l="GitHub" run={() => call("open_url", { url: GH })} /><B big i="tag" l="Releases" run={() => call("open_url", { url: `${GH}/releases` })} /><B big i="bug" l="Report an Issue" run={() => call("open_url", { url: `${GH}/issues/new` })} /></G>
         <G l="Updates"><B big i="upd" l="Check for Updates" run={() => setBackstage("about")} /><B big i="list" l="Roadmap" run={() => setBackstage("roadmap")} /></G>
       </Show>
+      {/* 0.10.0: the tab's planned features, dimmed, after its working tools (View › Show planned features). */}
+      <For each={["geometry", "properties", "loads", "mesh", "solve", "results", "view"]}>{t => <Show when={tab() === t && !sketch()}><PlannedGroups tab={t} /></Show>}</For>
     </section>
   );
 };

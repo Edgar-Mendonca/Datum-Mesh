@@ -691,7 +691,7 @@ let __page = null;
   // 0.5.5: imported tetrahedral meshes: the faces in the tree and the 3D view, picking a face, solving.
   await open("elbow"); await p.waitForTimeout(400);
   const ef = fix.elbow.m.volume;
-  check("an imported mesh is listed in the tree with its faces", (await p.textContent(".tree")).includes("Imported mesh") && (await p.$$(".tree .step:first-of-type .tgrp .ti")).length === ef.faces.length && (await p.textContent(".tree")).includes("10-node tetrahedra"), await p.textContent(".tree"));
+  check("an imported mesh is listed in the tree with its faces", (await p.textContent(".tree")).includes("Imported mesh") && (await p.$$(".tree .step:first-of-type .tgrp:not(.tplan) .ti")).length === ef.faces.length && (await p.textContent(".tree")).includes("10-node tetrahedra"), await p.textContent(".tree"));
   check("the bar above the view says what the mesh is, with no Section view", (await p.textContent(".planebar")).includes("tetrahedra") && !(await p.textContent(".planebar")).includes("Section"));
   await modelCard(); check("a mesh's material is chosen in the Inspector", (await p.textContent(".insp")).includes("Material of the mesh"));
   await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(100);
@@ -1381,6 +1381,29 @@ let __page = null;
   check("Solve after the solids changed meshes them again first", (await meshCalls()) === 2);
   check("the File page's Roadmap icon follows the text colour like the others (0.7.3, the user)", await p.evaluate(() => document.querySelector("#i-roadmap path")?.getAttribute("stroke") === "currentColor" && [...document.querySelectorAll(".bs aside button use, .tabs use")].length >= 0));
   await open("portal");
+  {
+    // 0.10.0 (docs/PLAN-1.0.md): the whole map. Planned features on each tab and in each step,
+    // their dialogs greyed, behind View › Show planned features.
+    await p.waitForTimeout(300);
+    await p.click('.flow button:has-text("Loads")'); await p.waitForTimeout(150);
+    const coming = await p.$('.ribbon .grp.planned button.rb.planned');
+    check("a tab's planned features are behind one Coming button after its working tools (0.10.0)", !!coming && /Coming/.test(await coming.textContent()));
+    await coming.click(); await p.waitForTimeout(150);
+    const items = await p.$$eval(".menu button, .menu .mi", els => els.map(e => e.textContent));
+    check("its menu lists them by kind, each with its release (0.10.0)", items.some(t => /Load Curves.*0\.12/.test(t)), JSON.stringify(items).slice(0, 300));
+    await p.click('.menu :text("Load Curves")'); await p.waitForTimeout(200);
+    const dlg = await p.textContent(".dlg");
+    check("a planned feature opens its dialog, every field there and disabled, with its release (0.10.0, the user)", /Planned for 0\.12/.test(dlg) && (await p.$$eval(".dlg fieldset.pform", f => f.length === 1 && f[0].disabled)) && (await p.$$(".dlg .pform select, .dlg .pform input")).length >= 3);
+    check("a planned dialog has no OK: nothing in it can run", (await p.$$(".dlg footer .btn.pri")).length === 0);
+    await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+    check("each step of the tree lists its planned features under Coming (0.10.0)", (await p.$$(".tree .step .tplan")).length >= 2 && (await p.$$(".tree .tplan .ti.planned")).length >= 3);
+    await p.click('.tabs > button:text-is("View")'); await p.waitForTimeout(100);
+    await p.click('.ribbon label.chk:has-text("Show planned features") input'); await p.waitForTimeout(150);
+    check("View › Show planned features off hides every planned item (0.10.0, the user)", (await p.$$(".grp.planned, .tplan, .ti.planned")).length === 0);
+    await p.click('.ribbon label.chk:has-text("Show planned features") input'); await p.waitForTimeout(150);
+    check("…and on brings them back", (await p.$$(".tplan")).length >= 2);
+    await go(p, "Model");
+  }
   {
     // 0.9.1 (the user): no side bar; the bottom panel (Messages, Solver monitor, Log) with Stop;
     // the results in the right panel; the side panels widen; a 3D mesh's Mesh view stays in 3D.

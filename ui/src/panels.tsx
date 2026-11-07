@@ -12,6 +12,7 @@ import { Help } from "./help";
 import { zUp, toD, fromD, AX, engineAxis, V3 } from "./axes";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
+import { PlannedRows } from "./planned";
 import { ResultsInsp } from "./resinsp";
 /** The properties card (0.9.1, the user): it pops up over the view when something is picked, or
  *  when opened (the model's settings from the tree's name, the results from step 6), and closes
@@ -152,7 +153,7 @@ const Step = (p: { n: number; t: string; done: boolean; why?: string; children?:
   <section class="step" classList={{ here: tab() === STEP_TABS[p.n - 1], done: p.done }}>
     <button class="sthead" onClick={() => setTab(STEP_TABS[p.n - 1])} title={p.done ? `Step ${p.n}: done` : p.why}>
       <b class="stn">{p.done ? "✓" : p.n}</b><span>{p.t}</span><Show when={!p.done && p.why}><small>{p.why}</small></Show></button>
-    <div class="stbody">{p.children}</div>
+    <div class="stbody">{p.children}<PlannedRows step={p.n} /></div>
   </section>
 );
 
