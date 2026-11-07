@@ -1462,7 +1462,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     // the results in the right panel; the side panels widen; a 3D mesh's Mesh view stays in 3D.
     check("there is no side bar, and no view icons in the status bar (0.9.1, the user)", (await p.$$("nav.side, .status .vsc")).length === 0 && (await p.$$(".console header button")).length >= 3);
     // The workflow bar at the far left (0.9.1, the user): the six steps, each done, to do or not needed.
-    const fl = await p.$$eval(".flow button", bs => bs.map(b => ({ t: b.textContent, done: b.classList.contains("done"), skip: b.classList.contains("skip") })));
+    const fl = await p.$$eval(".flow button:not(.fextra)", bs => bs.map(b => ({ t: b.textContent, done: b.classList.contains("done"), skip: b.classList.contains("skip") })));
     check("the workflow bar lists the six steps in order, a frame's Mesh not needed (0.9.1, the user)", fl.length === 6 && /Geometry/.test(fl[0].t) && /Materials/.test(fl[1].t) && /Loads/.test(fl[2].t) && /Mesh/.test(fl[3].t) && fl[3].skip && /Solve/.test(fl[4].t) && /Results/.test(fl[5].t) && fl[0].done, JSON.stringify(fl));
     await p.click('.flow button:has-text("Loads")'); await p.waitForTimeout(150);
     check("a step on the workflow bar opens its tools and its place in the tree (0.9.1)", (await p.$$('.ribbon button[title="Fixed"], .ribbon button:has-text("Fixed")')).length >= 1 && await p.$eval(".flow button:nth-child(3)", el => el.classList.contains("on")) && await p.$eval(".tree .step:nth-of-type(3)", el => el.classList.contains("here")));

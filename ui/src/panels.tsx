@@ -5,10 +5,11 @@ import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo, createSignal, createEffect, createRoot } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
-import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
+import { setBackstage, tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
 import { stepsDialog } from "./steps";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
+import { showPlanned } from "./planned";
 import { zUp, toD, fromD, AX, engineAxis, V3 } from "./axes";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
@@ -150,7 +151,11 @@ export const goStep = (i: number) => {
 export const Flow = () => <nav class="flow" aria-label="Steps of the work"><For each={flowSteps()}>{(f, i) =>
   <button classList={{ on: tab() === STEP_TABS[i()], done: f.done && !f.skip, skip: !!f.skip }} onClick={() => goStep(i())} title={`${f.n}. ${f.t}${f.skip ? ": not needed" : f.done ? ": done" : f.why ? `: ${f.why}` : ""}`}>
     <i class="fn">{f.done && !f.skip ? "✓" : f.n}</i><Ic n={f.icon} /><span>{f.short}</span>
-  </button>}</For></nav>;
+  </button>}</For>
+  {/* 0.10.2 (the mock-ups): Python (planned, 0.15) and Options at the foot of the bar. */}
+  <span class="fgrow" />
+  <Show when={showPlanned()}><button class="fextra planned" title="Python: planned for 0.15. Click to see what it will do." onClick={() => import("./planned").then(k => k.openPlanned("script"))}><Ic n="fx" /><span>Python</span></button></Show>
+  <button class="fextra" title="Options" onClick={() => setBackstage("options")}><Ic n="opts" /><span>Options</span></button></nav>;
 /** Each step's icon in the tree (0.10.2, the mock-ups: the tree's branches have icons, not numbers). */
 const STEP_ICONS = ["model", "material", "fixed", "mesh", "solve", "contour"];
 /** A new result opens the tree's Results tab (0.10.2, the mock-ups); going back to set up the model returns to Model. */

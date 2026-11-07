@@ -164,7 +164,7 @@ export const Console = () => {
       <Match when={tab() === "solver"}><Monitor /></Match>
       <Match when={tab() === "log"}><Log /></Match>
       <Match when={tab() === "tables" && isFrame(model()?.analysis)}><Suspense fallback={<p class="muted cempty">Loading the tables…</p>}><FrameTables /></Suspense></Match>
-      <Match when={tab() === "tables"}><p class="muted cempty">Tables are for frames and trusses in this release; mesh statistics and the other tables come next.</p></Match>
+      <Match when={tab() === "tables"}><Messages /></Match>
     </Switch></div></Show>
   </section>;
 };
