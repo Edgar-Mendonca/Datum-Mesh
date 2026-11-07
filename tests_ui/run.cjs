@@ -644,7 +644,15 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await open("yield3d"); await p.waitForTimeout(400);
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   const ysd = await p.$$eval(".dlg table.steps select >> nth=0", ss => [...ss[0].options].map(o => o.textContent)).catch(() => []);
-  check("a 3D solid's steps offer linear, elastic-plastic, crushing and collapse (0.7.4), or large deformation", ysd.length === 4 && ysd[1].startsWith("Elastic-plastic") && ysd[2].startsWith("Crushing and collapse") && ysd[3].startsWith("Large deformation") && !(await p.textContent(".dlg")).includes("parts come later"), ysd.join("|"));
+  check("a 3D solid's steps offer linear, elastic-plastic, crushing and collapse (0.7.4), large deformation, or impact (0.9.0)", ysd.length === 5 && ysd[4].startsWith("Impact") && ysd[1].startsWith("Elastic-plastic") && ysd[2].startsWith("Crushing and collapse") && ysd[3].startsWith("Large deformation") && !(await p.textContent(".dlg")).includes("parts come later"), ysd.join("|"));
+  {
+    // 0.9.0: switching a step to Impact brings an impact's own time (milliseconds, the stable step).
+    const before = await p.evaluate(() => window.__calls.length);
+    await p.selectOption(".dlg table.steps select >> nth=0", "explicit"); await p.waitForTimeout(200);
+    const setStep = await p.evaluate(n => window.__calls.slice(n).filter(c => c[0] === "apply").map(c => c[1]).slice(-1)[0], before);
+    const st = setStep?.op?.Set?.item?.Step ?? setStep?.Set?.item?.Step;
+    check("switching a step to Impact sets a millisecond length and the stable time step (0.9.0)", st && st.kind === "explicit" && st.duration === 0.001 && st.dt === 0 && st.time.length === 0, JSON.stringify(setStep).slice(0, 300));
+  }
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await p.evaluate(() => { window.__solveKey = "yield3d_results"; document.activeElement?.blur?.(); });
   await p.keyboard.press("F5"); await p.waitForTimeout(600);

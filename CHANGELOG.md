@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.0 — 2026-11-07
+
+Impact: fast events in a meshed solid, stepped in time.
+
+**Explicit dynamics**
+- Solve › Analysis › Impact (explicit dynamics), for meshed solids (modelled or imported): a load put on suddenly (or following a factor against time), or a solid that starts moving, stepped through time by central differences with lumped masses. The time step is found from the mesh's highest frequency and kept at 90 % of the stable limit; set how long to follow it in Solve › Steps (milliseconds: waves cross steel at about 5 km/s).
+- Supports & Loads › Velocity: the whole solid (or one face, ▾) starts moving: a bar hitting a wall, a part dropped onto a fixed face.
+- The player shows the solid moving in time; the stresses shown are at the moment it moves most, with the balance of loads, inertia forces and reactions then. Results › In Time graphs the largest movement and the energy moving, stored and together.
+- New benchmark 37: a bar hit by a sudden end load (the end moves out to twice the static movement at 2L/c, within 1 % and 2 %; the energy kept within 0.1 %), and a block in free flight (exact).
+- Our own solver (Bathe §9.2; lumped masses by HRZ), no outside code.
+- In the real app a 200 mm steel bar hitting a wall at 10 m/s: the free end moved 0.375 mm (1D theory, 0.40 mm), the stress about ρcv ≈ 400 MPa, the energy kept to 100 %.
+
+**Fixes**
+- Switching a step to Impact gives it an impact's own time (1 ms, the stable step) instead of 2 s, which would take millions of steps.
+
+**Not yet**
+- Contact, yielding and large movements in time (crash): explicit steps are elastic and small-strain for now.
+
 ## 0.8.0 — 2026-11-07
 
 Contact: solids that touch can press on each other and slide, held back by friction.

@@ -83,10 +83,10 @@ export const timeDialog = () => openDialog(() => {
     </svg>
     <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Energies against time">
       <line class="ax" x1={P} y1={H - P} x2={W - P} y2={H - P} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
-      <path class="line" d={line(h.kinetic, em)} fill="none" style={{ stroke: "var(--blue)" }} />
+      <path class="line" d={line(h.kinetic, em)} fill="none" style={{ "stroke-dasharray": "6 4" }} />
       <path class="line" d={line(h.strain, em)} fill="none" style={{ stroke: "var(--green)" }} />
-      <path class="line" d={line(h.kinetic.map((x, i) => x + h.strain[i]), em)} fill="none" />
-      <text x={P - 6} y={P - 12} class="lbl">Energy (J): moving (blue), stored (green), together</text><text x={P - 6} y={P + 4} text-anchor="end" class="lbl">{num(em, 3)}</text>
+      <path class="line" d={line(h.kinetic.map((x, i) => x + h.strain[i]), em)} fill="none" style={{ stroke: "var(--text)" }} />
+      <text x={P - 6} y={P - 12} class="lbl">Energy (J): moving (dashed), stored (green), together (solid)</text><text x={P - 6} y={P + 4} text-anchor="end" class="lbl">{num(em, 3)}</text>
     </svg>
     <p class="muted small">With no damping, the energy moving and stored together stays what the loads put in (and the starting motion): {num(kept * 100, 4)} % of it at the end. A falling total means the time step is too large for the mesh; a growing one, an unstable solve.</p>
   </Dialog>;
