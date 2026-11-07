@@ -2,6 +2,7 @@
 // out here at real size (the model as vector SVG with a title block, then a model report) and
 // printed with the WebView's print dialog, where "Save as PDF" makes a PDF. Built on Datum Plan's
 // print page (paper sizes, header and footer slots and codes, @page), by way of Datum Sim.
+import { cad } from "./cad";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
@@ -92,7 +93,7 @@ const Report = (p: { m: Model }) => {
     <h4>Model</h4>
     <table class="tbl"><tbody>
       <tr><td>Analysis</td><td>{ANALYSES.find(a => a[0] === m.analysis)?.[1]}{m.analysis === "stress" ? ` · thickness ${fmt("len", m.thickness)}` : ""}</td></tr>
-      <Show when={isFrame(m.analysis)} fallback={<tr><td>Geometry</td><td>{m.shapes.filter(s => !s.hole).length} shapes, {m.shapes.filter(s => s.hole).length} holes</td></tr>}><tr><td>Geometry</td><td>{m.nodes.length} nodes, {m.members.length} members{m.analysis === "space" ? " in 3D (drawn isometric on the first page)" : ""}</td></tr></Show>
+      <Show when={isFrame(m.analysis)} fallback={<tr><td>Geometry</td><td>{m.volume?.source === "geometry" ? (() => { const c = cad(); const n = c?.bodies.length ?? 0; return `${n} ${n === 1 ? "solid" : "solids"} (${(c?.bodies ?? []).map(b => b.name).join(", ")}), from ${c?.features.filter(f => !f.suppressed).length ?? 0} modelling features`; })() : `${m.shapes.filter(s => !s.hole).length} shapes, ${m.shapes.filter(s => s.hole).length} holes`}</td></tr>}><tr><td>Geometry</td><td>{m.nodes.length} nodes, {m.members.length} members{m.analysis === "space" ? " in 3D (drawn isometric on the first page)" : ""}</td></tr></Show>
     </tbody></table>
     <h4>Materials</h4>
     <table class="tbl"><thead><tr><th>Name</th><th>E ({unit("modulus")})</th><th>ν</th><th>Density ({unit("density")})</th><th>Yield ({unit("stress")})</th><th>Source</th></tr></thead><tbody>

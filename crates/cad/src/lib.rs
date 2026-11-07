@@ -801,7 +801,7 @@ mod tests {
         // The elements touching the end are small, those at the far end as before.
         let edge_near = |ms: &datum_core::solids::tet::TetMesh, x: f64| ms.tets.iter().filter(|t| t[..4].iter().any(|&i| (ms.nodes[i as usize][0] - x).abs() < 1e-9)).map(|t| {
             let p: Vec<[f64; 3]> = t[..4].iter().map(|&i| ms.nodes[i as usize]).collect();
-            (0..4).flat_map(|a| (a + 1..4).map(move |b| (a, b))).map(|(a, b)| crate::dist(p[a], p[b])).fold(0.0, f64::max)
+            (0..4).flat_map(|a| (a + 1..4).map(move |b| (a, b))).map(|(a, b)| ((p[a][0] - p[b][0]).powi(2) + (p[a][1] - p[b][1]).powi(2) + (p[a][2] - p[b][2]).powi(2)).sqrt()).fold(0.0, f64::max)
         }).fold(0.0, f64::max);
         assert!(edge_near(&fine, 0.0) < 0.5 * edge_near(&plain, 0.0), "{} {}", edge_near(&fine, 0.0), edge_near(&plain, 0.0));
     }
@@ -1018,9 +1018,4 @@ mod tests {
         let zmax = b.pos.chunks(3).map(|p| p[2]).fold(f32::MIN, f32::max);
         assert!((zmax - 10.0).abs() < 1e-4, "extruded 10 mm, top at {zmax}");
     }
-}
-
-#[cfg(test)]
-fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
-    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }

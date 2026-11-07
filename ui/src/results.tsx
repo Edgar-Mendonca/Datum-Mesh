@@ -272,8 +272,11 @@ export const SolidHeatResultsPage = (p: { r: SolidHeatResults }) => {
     <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
     <h2>Mesh</h2>
     <table class="tbl"><tbody>
+      <Show when={m().volume} fallback={<>
       <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} {m().revolve ? `round ${num(m().revolve! * 180 / Math.PI, 4)}°` : `through ${fmt("len", m().thickness)}`}; {r().nodes.toLocaleString()} nodes</td></tr>
-      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></tbody></table>
+      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></>}>{v => <>
+      <tr><td>Elements</td><td>{v().elements.toLocaleString()} {v().order === 2 ? "10-node (quadratic)" : "4-node (linear)"} tetrahedra; {v().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Mesh</td><td>{v().source === "geometry" ? `From the modelled solids, by Gmsh${m().mesh.size > 0 ? `, element size ${fmt("len", m().mesh.size)}` : ", automatic element size"}${m().mesh.refine.length ? `, finer near ${m().mesh.refine.length} ${m().mesh.refine.length === 1 ? "face" : "faces"}` : ""}` : `Imported (${v().source})`}</td></tr></>}</Show></tbody></table>
     <h2>Largest and smallest values</h2>
     <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at ({unit("coord")})</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
       <For each={fieldsFor("solidheat")}>{d => { const f = r().fields.find(x => x.key === d.key)!; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For></tbody></table>
@@ -303,8 +306,11 @@ export const SolidResultsPage = (p: { r: SolidResults }) => {
     <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
     <h2>Mesh</h2>
     <table class="tbl"><tbody>
+      <Show when={m().volume} fallback={<>
       <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} {m().revolve ? `round ${num(m().revolve! * 180 / Math.PI, 4)}°` : `through ${fmt("len", m().thickness)}`}; {r().nodes.toLocaleString()} nodes</td></tr>
-      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></tbody></table>
+      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></>}>{v => <>
+      <tr><td>Elements</td><td>{v().elements.toLocaleString()} {v().order === 2 ? "10-node (quadratic)" : "4-node (linear)"} tetrahedra; {v().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Mesh</td><td>{v().source === "geometry" ? `From the modelled solids, by Gmsh${m().mesh.size > 0 ? `, element size ${fmt("len", m().mesh.size)}` : ", automatic element size"}${m().mesh.refine.length ? `, finer near ${m().mesh.refine.length} ${m().mesh.refine.length === 1 ? "face" : "faces"}` : ""}` : `Imported (${v().source})`}</td></tr></>}</Show></tbody></table>
     <h2>Largest and smallest values</h2>
     <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at ({unit("coord")})</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
       <For each={fieldsFor("solid").filter(d => d.key !== "sf")}>{d => { const f = r().fields.find(x => x.key === d.key)!; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For>
@@ -321,6 +327,6 @@ export const SolidResultsPage = (p: { r: SolidResults }) => {
     <table class="tbl"><tbody>
       <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
       <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
-      <tr><td>Method</td><td>{model()?.parts?.length ? "An assembly of parts: each part's sketch swept into prisms cut into 4- or 10-node tetrahedra, placed and joined, parts tied where they touch (penalty); linear elastic, stresses averaged at the nodes, sparse Cholesky" : model()?.volume ? "An imported mesh of 4- or 10-node tetrahedra (isoparametric, volume coordinates; 1 and 4 Gauss points), linear elastic, stresses averaged at the nodes, sparse Cholesky" : <>The section's triangle mesh swept through the thickness (or round the turn) into wedges (triangle × line), linear elasticity; sparse Cholesky with a fill-reducing ordering, on every core</>}</td></tr></tbody></table>
+      <tr><td>Method</td><td>{model()?.parts?.length ? "An assembly of parts: each part's sketch swept into prisms cut into 4- or 10-node tetrahedra, placed and joined, parts tied where they touch (penalty); linear elastic, stresses averaged at the nodes, sparse Cholesky" : model()?.volume?.source === "geometry" ? "The modelled solids meshed by Gmsh into 10-node tetrahedra (isoparametric, volume coordinates; 4 Gauss points), linear elastic, stresses averaged at the nodes, sparse Cholesky" : model()?.volume ? "An imported mesh of 4- or 10-node tetrahedra (isoparametric, volume coordinates; 1 and 4 Gauss points), linear elastic, stresses averaged at the nodes, sparse Cholesky" : <>The section's triangle mesh swept through the thickness (or round the turn) into wedges (triangle × line), linear elasticity; sparse Cholesky with a fill-reducing ordering, on every core</>}</td></tr></tbody></table>
   </>;
 };

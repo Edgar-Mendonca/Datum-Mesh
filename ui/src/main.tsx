@@ -34,7 +34,7 @@ const TOOL_HINT: Record<string, string> = {
   node: "Click to place a node.", beam: "Click the start, then the end of each beam; Esc stops.", truss: "Click the start, then the end of each bar; Esc stops.",
   rect: "Click two opposite corners.", hrect: "Click two opposite corners of the hole.", circle: "Click the centre, then a point on the circle.", hcircle: "Click the centre, then a point on the hole's edge.",
   poly: "Click each corner; click the first one, double-click or press Enter to close.",
-  refine: "Click an edge or a point: the elements there become a quarter of the size.",
+  refine: "Click an edge or a point (on a 3D solid, a face): the elements there become a quarter of the size; click it again to take it off.",
 };
 const toolHint = () => { const t = tool(); if (t === "select" && solving()) return isFrame(model()?.analysis) ? "Solving…" : "Meshing and solving…"; if (t === "select" && results() && !stale()) return `Solved · ${results()!.stats.equations} equations · ${num(results()!.stats.ms, 2)} ms`; if (TOOL_HINT[t]) return TOOL_HINT[t]; if (t.startsWith("sup:")) return "Click where the support goes."; if (t.startsWith("load:")) return "Click where the load acts."; return "Ready"; };
 

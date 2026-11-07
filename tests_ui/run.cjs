@@ -561,8 +561,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.evaluate(() => { window.__solveKey = "vessel3d_results"; document.activeElement?.blur?.(); });
   await p.keyboard.press("F5"); await p.waitForTimeout(600);
   await p.evaluate(() => { window.__solveKey = null; });
-  check("a solved revolved solid can be cut across x, y or z", (await p.$$eval(".legend .seg button", bs => bs.map(b => b.textContent))).join() === "Off,x,y,z");
-  await p.click('.legend .seg button:text-is("z")'); await p.waitForTimeout(300);
+  check("a solved revolved solid can be cut square to X, Y or Z (shown Z up, 0.7.7)", (await p.$$eval(".legend .seg button", bs => bs.map(b => b.textContent))).join() === "Off,X,Y,Z");
+  await p.click('.legend .seg button:text-is("Y")'); await p.waitForTimeout(300);
   check("cutting shows a slider to move the plane", (await p.$$('.legend input[type=range][title^="Where the plane cuts"]')).length === 1);
   if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "vessel3d-cut.png") });
   await p.click('.legend .seg button:text-is("Off")');
@@ -1328,6 +1328,12 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the Mesh step counts the tetrahedra", (await p.textContent(".tree .step:nth-of-type(4)")).includes("10-node tetrahedra"));
   check("a modelled solid has no 3D/Section switch in the analysis steps either", !(await p.$('.planebar button:text-is("Section")')));
   check("Supports & Loads on a solid offers Move a Face and Face Force (crushing, 0.7.3)", (await p.$$('.ribbon button:has-text("Move a Face")')).length === 1 && (await p.$$('.ribbon button:has-text("Face Force")')).length === 1);
+  check("Supports & Loads on a solid offers Remote Force (0.7.7)", (await p.$$('.ribbon button:has-text("Remote Force")')).length === 1);
+  await p.click('.ribbon button:has-text("Remote Force")'); await p.waitForTimeout(100);
+  check("Remote Force waits for a face", (await p.textContent("body")).includes("Click a face of the mesh"));
+  await p.click('.tree .step:nth-of-type(4) > .sthead'); await p.waitForTimeout(200);
+  check("the Mesh step of a modelled solid offers Finer Near a Face (0.7.7)", (await p.$$('.ribbon button:has-text("Finer Near a Face")')).length === 1);
+  await p.keyboard.press("Escape");
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Extrude the last sketch"]'); await p.waitForTimeout(400);
   await p.click('.view3d .xpanel button:has-text("OK")'); await p.waitForTimeout(100);
   await p.keyboard.press("F5"); await p.waitForTimeout(500);

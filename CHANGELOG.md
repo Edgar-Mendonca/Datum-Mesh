@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.7 — 2026-11-07
+
+Loads off the part, a finer mesh where it matters, and more ways to read the results.
+
+**Remote force**
+- Supports & Loads › Remote Force: a force and a moment acting at a point off the face (a pin, a shaft's coupling, a load on a bracket's arm), carried onto the face you click. The face takes the force, and the moment the force makes from that point, spread as a traction that varies linearly over it, so it stays free to deform. It starts at the face's centre; move its point in the Inspector. It is drawn as an arrow at the point with a line to the face.
+- New benchmark 35: a cantilever loaded through a remote force half a metre beyond its tip (deflection within 1 % of beam theory, bending stress within 2 %), and a square bar twisted by a remote moment (twist within 3 % of Saint-Venant torsion), each in equilibrium.
+
+**Mesh**
+- Mesh › Finer Near a Face: click a face and the solids are meshed again with elements a quarter of the size near it, growing back over a few elements; click it again to take it off. Its size is in the tree under Mesh, and it follows the face when the solids change.
+
+**Results**
+- Results › Along a Line: the result shown, graphed along a straight line through the solid (from one side to the other through its middle to start; type the ends).
+- The section view under the results is labelled X, Y and Z as the view shows them (Z up).
+- The report of a modelled solid names its solids and features, and says how it was meshed (it called the tetrahedra wedges before).
+
 ## 0.7.6 — 2026-11-07
 
 More modelling, files in and out, and buildings laid out by level.
