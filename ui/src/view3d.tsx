@@ -420,7 +420,7 @@ export const View3D = () => {
       const g = sweepLines(dp, dr);
       if (g.length) fat(g, null, accent, 2.2);
     }
-    // Supported and loaded faces outlined: green for supports, crimson for loads.
+    // Supported and loaded faces outlined: green for supports, red for loads.
     const selSet = new Set(sel());
     const faceLines = (at: Target, colour: string) => {
       const pts: number[] = [];

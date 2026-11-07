@@ -1,8 +1,8 @@
-/* Datum Mesh: the family stylesheet from Datum Plan (FAMILY §3–8, by way of Datum Sim) with the crimson accent set; Mesh's own parts are at the end. */
+/* Datum Mesh: the family stylesheet from Datum Plan (FAMILY §3–8, by way of Datum Sim) with the Petrol accent set (0.10.0; crimson before); Mesh's own parts are at the end. */
 :root {
   --bg: #F2F3EF; --bg2: #FFFFFF; --panel: #F8F8F5; --panel2: #ECEDE8; --side: #F3F4F0; --line: #D3D7D6; --line2: #E6E8E5; --line3: #B9BFC2;
-  --text: #0C1A2B; --text2: #3B4859; --muted: #5B6878; --navy: #0C1A2B; --blue: #B83250; --blue2: #9C2944; --accent2: #D9667F;
-  --solid: #B4C6DC; --bar: #D9667F; --sky: #F1B3C1; --pale: #FBEBEF; --sel: #F6DCE3; --sel2: #EDBAC7; --hl: #FFF4D6;
+  --text: #0C1A2B; --text2: #3B4859; --muted: #5B6878; --navy: #0C1A2B; --blue: #0F6E8C; --blue2: #0D5C76; --accent2: #579AAF;
+  --solid: #B4C6DC; --bar: #579AAF; --sky: #93BECB; --pale: #E9F2F5; --sel: #D9E8ED; --sel2: #B7D4DD; --hl: #FFF4D6;
   --amber: #B7791F; --crit: #C0392B; --green: #1F7A4D;
   --ok-bg: #DDF2E5; --ok-fg: #1F7A4D; --warn-bg: #FBEFD5; --warn-fg: #8A5A00; --warn-line: #E8C77A; --err-bg: #FBE3E0; --err-fg: #9B2C2C;
   --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, ui-monospace, monospace;
@@ -10,8 +10,8 @@
 }
 :root[data-theme="dark"] {
   --bg: #0B1119; --bg2: #101823; --panel: #0D141E; --panel2: #16212E; --side: #0D141E; --line: #223041; --line2: #1A2533; --line3: #2F4157;
-  --text: #E6EDF5; --text2: #B8C4D2; --muted: #8D9AAB; --navy: #E6EDF5; --blue: #EF7A93; --blue2: #F39AAE; --accent2: #EF7A93;
-  --solid: #50627A; --bar: #EF7A93; --sky: #6B2033; --pale: #2A1218; --sel: #3A1820; --sel2: #5A2433; --hl: #3A3015;
+  --text: #E6EDF5; --text2: #B8C4D2; --muted: #8D9AAB; --navy: #E6EDF5; --blue: #63A1B4; --blue2: #82B6C6; --accent2: #63A1B4;
+  --solid: #50627A; --bar: #63A1B4; --sky: #1E4A58; --pale: #0E2128; --sel: #12303A; --sel2: #1B4452; --hl: #3A3015;
   --amber: #F0B450; --crit: #F2766B; --green: #4CC38A;
   --ok-bg: #12301F; --ok-fg: #4CC38A; --warn-bg: #3A2C10; --warn-fg: #F0B450; --warn-line: #6B5321; --err-bg: #3A1716; --err-fg: #F2766B;
   color-scheme: dark;
@@ -252,8 +252,8 @@ tr.link:hover td { background: var(--pale); }
 /* Backstage */
 .bs { position: fixed; inset: 0; display: flex; background: var(--panel); z-index: 10; }
 .bs aside { width: 140px; background: var(--blue); display: flex; flex-direction: column; padding-bottom: 10px; color: var(--bg2); }
-.bs aside button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 0; color: #FBEBEF; }
-:root[data-theme="dark"] .bs aside { background: #5E1A2A; }
+.bs aside button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 0; color: #E3EFF3; }
+:root[data-theme="dark"] .bs aside { background: #07313F; }
 .bs aside button:hover { background: rgba(255,255,255,.12); }
 .bs aside button.on { background: rgba(255,255,255,.2); color: var(--bg2); box-shadow: inset 3px 0 var(--amber); }
 .bs aside .back { font-size: 22px; padding: 10px 0 16px; }
@@ -427,7 +427,7 @@ body, .app { background: var(--bg); color: var(--text); }
 .dlg header { font: 600 14px var(--sans); border-bottom: 1px solid var(--line); padding-bottom: 9px; }
 .menu, .pal, #toast { border-radius: 0; }
 .bs aside { background: var(--blue); }
-:root[data-theme="dark"] .bs aside { background: #0A3D73; }
+:root[data-theme="dark"] .bs aside { background: #07313F; }
 .bs aside button.on { box-shadow: inset 3px 0 var(--accent2); }
 .dtabs button { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 .dtabs button.on { color: var(--blue); }

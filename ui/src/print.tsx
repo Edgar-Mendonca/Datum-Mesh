@@ -48,11 +48,11 @@ export const ModelDrawing = (q: { m: Model; w: number; h: number }) => {
     : t.on === "edge" ? (() => { const sh = p.m.shapes.find(x => x.id === t.shape); if (!sh) return null; const o = sh.geom.kind === "circle" ? [sh.geom.c[0] + sh.geom.r, sh.geom.c[1]] as Pt : sh.geom.pts[t.edge]; const q = sh.geom.kind === "circle" ? o : sh.geom.pts[(t.edge + 1) % sh.geom.pts.length]; return S([(o[0] + q[0]) / 2, (o[1] + q[1]) / 2]); })() : null;
   return (
     <svg width={p.w} height={p.h} viewBox={`0 0 ${p.w} ${p.h}`} class="printdiag">
-      <For each={[...p.m.shapes.filter(x => !x.hole), ...p.m.shapes.filter(x => x.hole)]}>{sh => <path d={svgPath(sh.geom, S, s)} fill={sh.hole ? "#fff" : "#FBEBEF"} stroke="#1B2733" stroke-width="1.2" stroke-dasharray={sh.hole ? "4 3" : undefined} />}</For>
+      <For each={[...p.m.shapes.filter(x => !x.hole), ...p.m.shapes.filter(x => x.hole)]}>{sh => <path d={svgPath(sh.geom, S, s)} fill={sh.hole ? "#fff" : "#E9F2F5"} stroke="#1B2733" stroke-width="1.2" stroke-dasharray={sh.hole ? "4 3" : undefined} />}</For>
       <For each={p.m.members}>{mb => { const a = np.get(mb.a)!, b = np.get(mb.b)!; return <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#1B2733" stroke-width={mb.kind === "truss" ? 1.4 : 2.4} />; }}</For>
       <For each={p.m.nodes}>{n => { const q = np.get(n.id)!; return <rect x={q[0] - 2.5} y={q[1] - 2.5} width={5} height={5} fill="#1B2733" />; }}</For>
       <For each={p.m.supports}>{sp => { const q = at(sp.at); return q && <><path d={`M${q[0]} ${q[1]}l-7 11h14z`} fill="none" stroke="#1F7A4D" stroke-width="1.4" /><text x={q[0] + 9} y={q[1] + 12} font-size="8.5" fill="#1F7A4D">{SUPPORT_NAMES[sp.kind.kind].split(" ")[0]}</text></>; }}</For>
-      <For each={p.m.loads.filter(l => l.at.on !== "body")}>{l => { const q = at(l.at); return q && <><path d={`M${q[0]} ${q[1] - 26}V${q[1] - 3}m-4 -6l4 6l4 -6`} fill="none" stroke="#B83250" stroke-width="1.4" /><text x={q[0] + 6} y={q[1] - 20} font-size="8.5" fill="#B83250">{l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : LOAD_NAMES[l.kind.kind]}</text></>; }}</For>
+      <For each={p.m.loads.filter(l => l.at.on !== "body")}>{l => { const q = at(l.at); return q && <><path d={`M${q[0]} ${q[1] - 26}V${q[1] - 3}m-4 -6l4 6l4 -6`} fill="none" stroke="#C0392B" stroke-width="1.4" /><text x={q[0] + 6} y={q[1] - 20} font-size="8.5" fill="#C0392B">{l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : LOAD_NAMES[l.kind.kind]}</text></>; }}</For>
     </svg>
   );
 };

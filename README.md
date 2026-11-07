@@ -5,9 +5,9 @@
 <p align="center">Finite-element analysis on the desktop: stresses, deflections and temperatures in parts and frames.</p>
 
 <p align="center">
-  <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/releases"><img src="https://img.shields.io/github/v/release/Edgar-Mendonca/Datum-Mesh?include_prereleases&color=B83250" alt="Release"></a>
+  <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/releases"><img src="https://img.shields.io/github/v/release/Edgar-Mendonca/Datum-Mesh?include_prereleases&color=0F6E8C" alt="Release"></a>
   <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Edgar-Mendonca/Datum-Mesh/ci.yml?label=CI" alt="CI"></a>
-  <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/releases"><img src="https://img.shields.io/github/downloads/Edgar-Mendonca/Datum-Mesh/total?color=B83250" alt="Downloads"></a>
+  <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/releases"><img src="https://img.shields.io/github/downloads/Edgar-Mendonca/Datum-Mesh/total?color=0F6E8C" alt="Downloads"></a>
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT">
   <img src="https://img.shields.io/badge/platform-Windows%2010%2F11-0C1A2B" alt="Windows">
   <img src="https://img.shields.io/badge/Rust-engine-B7410E" alt="Rust">
@@ -16,7 +16,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/releases/latest"><img src="https://img.shields.io/badge/Download_for_Windows-B83250?style=for-the-badge" alt="Download for Windows"></a>
+  <a href="https://github.com/Edgar-Mendonca/Datum-Mesh/releases/latest"><img src="https://img.shields.io/badge/Download_for_Windows-0F6E8C?style=for-the-badge" alt="Download for Windows"></a>
   <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/What's_new-0C1A2B?style=for-the-badge" alt="What's new"></a>
   <a href="docs/MEMORY.md"><img src="https://img.shields.io/badge/Memory_&_roadmap-5B6878?style=for-the-badge" alt="Memory and roadmap"></a>
 </p>

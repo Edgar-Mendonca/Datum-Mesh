@@ -1,7 +1,7 @@
 {
   "id": "mesh",
   "name": "Datum Mesh",
-  "accent": "#B83250",
+  "accent": "#0F6E8C",
   "logo": "docs/brand/datum-mesh-icon.svg",
   "tagline": "One open-source platform for structural and finite-element analysis: frames, plates, solids, heat and vibration, our own solver that proves its answers.",
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",

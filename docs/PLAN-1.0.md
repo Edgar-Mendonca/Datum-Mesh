@@ -117,20 +117,23 @@ The user: the window still feels a bit unprofessional; it has to be easier and l
 - **Colour.** The crimson for the one thing that matters on screen (the current step, the primary button, the selection); results in their own colour scale; warnings amber, errors red, done green.
 - **Checks.** Screenshots of each step in light and dark before each release, compared with the last.
 
-## Phase B: filling it in
+## The agreed roadmap (the user, 2026-11-07, after reviewing 25 mock-up screens)
 
-Each release turns a group of dimmed items into working ones, each with its benchmark and its line in the verification report. The order can change; the register says where each item stands.
+The look was drawn first as mock-ups (scratch, not in the repo): the File page (Home with the updates card, New in two questions, Examples in folders), frames (tables, load cases, member forces), a 3D building, sketching, 3D modelling, assembly and contact, materials, mesh, the step manager, solving, solid, impact, vibration, buckling, time history, plate and heat results, the report, the Python console, light and dark. The accent is **Petrol `#0F6E8C`** (between Plot's teal and Plan's blue; crimson retired) and the mark a **tetrahedron** (the element the solver uses) in the family tile.
 
-| Release | Group |
+| Release | What |
 | --- | --- |
-| 0.10.0 | The whole map (Phase A); the professional pass; the tube crush settling |
-| 0.10.x | View controls (render, selection filter, saved views, display groups); the Results tree; colour bands and markers; result tools as pop-ups; export |
-| 0.11 | Materials: kinematic hardening, Johnson–Cook and damage, Mooney–Rivlin, Yeoh, Ogden, temperature-dependent properties, fitting to test data |
-| 0.12 | Setup: named load curves, starting conditions, tie, coupling and reference points, connectors, bolt pretension, centrifugal loads |
-| 0.13 | Nonlinear buckling with imperfections; transient heat; coupled thermal stress; crash (yielding and contact in impact) |
-| 0.14 | Mesh: hexahedra, refinement by itself, convergence studies, sets |
-| 0.15 | Solve: job queue, output choices, restart; scripting in Python |
-| 1.0 | Design checks of members; several models per file; every item above working |
+| 0.10.0 | The new look: Petrol accent set, the tetrahedron logo and icons; the File page; the window shell (ribbon tabs for every module, context bar, light workflow bar, dense tree with Model and Results tabs, tool strip, pop-up card, bottom terminal), light and dark |
+| 0.10.1 | Every module's UI from the mock-ups wired to what exists; everything else present and greyed ("soon", its dialog greyed), the feature register grown to about 100 |
+| 0.10.2 | Tables and managers: nodes and members (paste from a sheet), load cases and combinations, step manager, material manager with its curve, interactions, mesh statistics, job queue |
+| 0.11 | Results tools (results tree, colour bands, markers, display groups, export, legend in the view); the tube crush settling |
+| 0.12 | Materials: Johnson–Cook, damage, kinematic hardening, rubber models, fitting to test data |
+| 0.13 | Setup: load curves, tie, coupling, connectors, bolt pretension, starting conditions |
+| 0.14 | Nonlinear buckling with imperfection, transient heat, coupled thermal stress, crash with contact |
+| 0.15 | Mesh (hexahedra, adaptive, convergence); solve (job queue, restart); Python console |
+| 1.0 | Member design checks, plate reinforcement, several models per file; every "soon" working |
+
+The order may move as releases show where things stand; each is checked against the mock-ups in the real app before it goes to the updater.
 
 ## How each release is checked
 
