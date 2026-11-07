@@ -108,6 +108,25 @@ fn cad_run(st: State<CadSt>, app: State<St>, id: String, params: serde_json::Val
     c.scene()
 }
 
+/// A STEP file's solids brought into the design (0.7.6), as a component named after the file.
+#[tauri::command]
+async fn cad_import_step(app: AppHandle, st: State<'_, CadSt>, doc: State<'_, St>) -> R<Option<datum_cad::Scene>> {
+    let Some(path) = pick(&app, "STEP model", &["step", "stp"]) else { return Ok(None) };
+    let mut c = st.lock();
+    c.run("file.insert_step", &serde_json::json!({ "path": path }))?;
+    doc.lock().doc.mark_unsaved();
+    Ok(Some(c.scene()?))
+}
+
+/// The design's solids saved as a STEP or STL file (0.7.6), for other programs.
+#[tauri::command]
+async fn cad_export(app: AppHandle, st: State<'_, CadSt>, name: String, format: String) -> R<Option<String>> {
+    let (ext, cmd) = if format == "stl" { ("stl", "file.export_stl") } else { ("step", "file.export_step") };
+    let Some(path) = app.dialog().file().add_filter(ext.to_uppercase(), &[ext]).set_file_name(format!("{name}.{ext}")).blocking_save_file().and_then(|f| f.into_path().ok()) else { return Ok(None) };
+    st.lock().run(cmd, &serde_json::json!({ "path": path }))?;
+    Ok(Some(path.display().to_string()))
+}
+
 /// Gmsh, the mesher (a separate program, GPL): `DATUM_GMSH`, then the copy installed with Datum
 /// Mesh (`gmsh/gmsh.exe` beside the program), then `gmsh` on the path.
 fn gmsh_path() -> PathBuf {
@@ -163,16 +182,22 @@ async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out>
 /// becomes a member (`truss`: truss bars, else beams), joined where their ends meet, as one step
 /// Undo takes back; the sketches are then taken out of the design (the members are the frame).
 #[tauri::command]
-fn cad_members(st: State<CadSt>, app: State<St>, truss: bool) -> R<Out> {
+fn cad_members(st: State<CadSt>, app: State<St>, truss: bool, plates: Option<bool>) -> R<Out> {
+    use datum_core::doc::{Item, Op};
+    use datum_core::model::{Geom, MemberKind, Plate, Shape};
     let mut c = st.lock();
     let (lines, used) = c.member_lines()?;
     if lines.is_empty() {
         return Err("The sketch has no lines to make members of: draw lines (construction lines are left out).".into());
     }
-    let kind = if truss { datum_core::model::MemberKind::Truss } else { datum_core::model::MemberKind::Beam };
-    let ops = lines.iter().map(|(a, b)| datum_core::doc::Op::AddMember { from: [a[0], a[1]], to: [b[0], b[1]], kind, section: None, material: None, z: [a[2], b[2]] }).collect();
+    // 0.7.6: closed outlines on their own become plates (0.2 m thick to start), the rest members.
+    let (lines, loops) = if plates.unwrap_or(false) { datum_cad::Cad::plates_of(&lines) } else { (lines, vec![]) };
+    let kind = if truss { MemberKind::Truss } else { MemberKind::Beam };
     let mut a = app.lock();
-    let created = a.doc.apply(datum_core::doc::Op::Batch(ops))?;
+    let material = a.doc.m.materials.first().map(|x| x.id).unwrap_or(0);
+    let mut ops: Vec<Op> = lines.iter().map(|(p, q)| Op::AddMember { from: [p[0], p[1]], to: [q[0], q[1]], kind, section: None, material: None, z: [p[2], q[2]] }).collect();
+    ops.extend(loops.into_iter().map(|(plane, depth, pts)| Op::Add { item: Item::Shape(Shape { id: 0, name: String::new(), hole: false, material, geom: Geom::Poly { pts, bulge: vec![] }, plate: Some(Plate { plane, depth, t: 0.2 }), part: 0 }) }));
+    let created = a.doc.apply(Op::Batch(ops))?;
     // The sketches are the members now (the frame is edited as members from here).
     let ids: Vec<u64> = c.scene()?.features.iter().filter(|f| used.contains(&f.id)).map(|f| f.id).collect();
     for id in ids {
@@ -730,7 +755,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            cad_run, cad_scene, cad_mesh, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

@@ -87,6 +87,8 @@ export const newSketch = async (plane: "XY" | "XZ" | "YZ") => {
 };
 /** 3D frames drawn with the sketch tools (0.7.5): whether lines become truss bars (else beams). */
 export const [memberTruss, setMemberTruss] = createSignal(false);
+/** 3D frames (0.7.6): whether closed outlines on their own become plates (else members round them). */
+export const [memberPlates, setMemberPlates] = createSignal(false);
 export const finishSketch = async () => {
   pickTool(null);
   const sk = activeSketch();
@@ -95,12 +97,13 @@ export const finishSketch = async () => {
   // A 3D frame: the sketch's lines become members, joined where they meet (0.7.5).
   if (model()?.analysis === "space") {
     try {
-      const o = await invoke<Out>("cad_members", { truss: memberTruss() });
+      const o = await invoke<Out>("cad_members", { truss: memberTruss(), plates: memberPlates() });
       setOut(o); await cadLoad();
       // Frame the frame now that it is there (the turn back started before it was made).
       setTurnBack(turnBack() + 1);
-      const n = o.created.filter(id => o.m.members.some(b => b.id === id)).length;
-      toast(`${n} ${memberTruss() ? (n === 1 ? "truss bar" : "truss bars") : (n === 1 ? "beam" : "beams")} made from the sketch, joined where they meet: give them supports and loads, then solve.`, true);
+      const n = o.created.filter(id => o.m.members.some(b => b.id === id)).length, np = o.created.filter(id => o.m.shapes.some(s => s.id === id && s.plate)).length;
+      const what = [n && `${n} ${memberTruss() ? (n === 1 ? "truss bar" : "truss bars") : (n === 1 ? "beam" : "beams")}`, np && `${np} ${np === 1 ? "plate" : "plates"} (0.2 m thick: change it in the inspector)`].filter(Boolean).join(" and ");
+      toast(`${what} made from the sketch, joined where they meet: give them supports and loads, then solve.`, true);
     } catch (e) { toast(String(e)); }
     return;
   }
@@ -375,6 +378,8 @@ export const [holeDepth, setHoleDepth] = createSignal(0);
 export const [fillet3R, setFillet3R] = createSignal(3);
 export const [chamfer3D, setChamfer3D] = createSignal(2);
 export const [shellT, setShellT] = createSignal(2);
+/** The draft angle of the next Draft (°, 0.7.6), measured from the floor's normal. */
+export const [draftA, setDraftA] = createSignal(3);
 export const [pressD, setPressD] = createSignal(5);
 /** A 3D tool: what it asks for and the engine command a click makes. */
 export const TOOLS3: Record<string, { label: string; icon: string; hint: string; needs: "face" | "edge"; run: (h: CadHit) => [string, object] | null }> = {
@@ -383,12 +388,15 @@ export const TOOLS3: Record<string, { label: string; icon: string; hint: string;
   chamfer3: { label: "Chamfer", icon: "chamfer", hint: "Click an edge to bevel it", needs: "edge", run: h => ["solid.chamfer", { edges: [h.edge!.at], distance: chamfer3D() }] },
   shell3: { label: "Shell", icon: "solid", hint: "Click the face to open: the solid is hollowed out to the wall thickness", needs: "face", run: h => ["solid.shell", { faces: [h.face!.at], thickness: shellT(), body: h.face!.body }] },
   press3: { label: "Press Pull", icon: "up", hint: "Click a face to push it out (or in, with a negative distance)", needs: "face", run: h => ["solid.press_pull", { face: h.face!.at, distance: pressD() }] },
+  draft3: { label: "Draft", icon: "chamfer", hint: "Click a side face to slope it by the draft angle (from the floor plane up), as a moulded or cast part needs", needs: "face", run: h => ["solid.draft", { faces: [h.face!.at], angle: draftA(), neutral: "XY", body: h.face!.body }] },
+  measure3: { label: "Measure", icon: "dist", hint: "Click a face or an edge to measure it; click a second for the distance and angle between them", needs: "face", run: () => null },
   sketchface: { label: "Sketch on a face", icon: "new", hint: "Click a flat face of a solid to sketch on it", needs: "face", run: h => ["sketch.create", { plane: { face: h.face!.at, body: h.face!.body, index: h.face!.index } }] },
 };
 export const pick3 = (t: string | null) => { setCad3Tool(t); pickTool(null); };
 export const cad3Click = async (h: CadHit, tool?: string) => {
   const t = tool ?? cad3Tool(); if (!t) return;
   const T = TOOLS3[t];
+  if (t === "measure3") return import("./solidtools").then(k => k.measureClick(h));
   if ((T.needs === "face" && !h.face) || (T.needs === "edge" && !h.edge)) return toast(T.hint);
   const c = T.run(h); if (!c) return;
   if (await cadRun(c[0], c[1]) && t === "sketchface") { setCad3Tool(null); setTab("geometry"); pickTool(ways().Line); }

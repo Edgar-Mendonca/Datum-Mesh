@@ -11,6 +11,8 @@ pub mod examples;
 
 /// A straight piece of a frame: its two ends (m, the model's axes).
 pub type Segment = ([f64; 3], [f64; 3]);
+/// A plate found in a frame's sketch (0.7.6): its plane, depth (m) and outline (m, in the plane).
+pub type PlateLoop = (datum_core::model::PlaneKind, f64, Vec<[f64; 2]>);
 
 /// One design being modelled.
 pub struct Cad {
@@ -214,6 +216,74 @@ impl Cad {
             }
         }
         Ok((out, used))
+    }
+
+    /// 0.7.6: the frame's pieces split into plates and members. A closed outline whose corners
+    /// touch nothing else (a rectangle, a polygon, a circle drawn on its own) lying flat on a
+    /// plane square to an axis becomes a plate: (plane, depth, outline in that plane's (u, v), as
+    /// `Plate::at` reads them). Every other piece stays a member.
+    pub fn plates_of(segs: &[Segment]) -> (Vec<Segment>, Vec<PlateLoop>) {
+        use datum_core::model::PlaneKind;
+        let tol = 1e-6;
+        let mut pts: Vec<[f64; 3]> = vec![];
+        let mut id = |p: [f64; 3]| match pts.iter().position(|q| (0..3).all(|k| (q[k] - p[k]).abs() < tol)) {
+            Some(i) => i,
+            None => {
+                pts.push(p);
+                pts.len() - 1
+            }
+        };
+        let edges: Vec<(usize, usize)> = segs.iter().map(|(a, b)| (id(*a), id(*b))).collect();
+        let mut deg = vec![0usize; pts.len()];
+        for &(a, b) in &edges {
+            deg[a] += 1;
+            deg[b] += 1;
+        }
+        let mut used = vec![false; edges.len()];
+        let mut plates = vec![];
+        for start in 0..edges.len() {
+            if used[start] || deg[edges[start].0] != 2 || deg[edges[start].1] != 2 {
+                continue;
+            }
+            // Walk round from this edge while every corner has two pieces.
+            let (mut chain, mut ring) = (vec![start], vec![edges[start].0]);
+            let mut at = edges[start].1;
+            let closed = loop {
+                if at == ring[0] {
+                    break true;
+                }
+                if deg[at] != 2 {
+                    break false;
+                }
+                ring.push(at);
+                let Some(next) = (0..edges.len()).find(|&e| !chain.contains(&e) && (edges[e].0 == at || edges[e].1 == at)) else { break false };
+                chain.push(next);
+                at = if edges[next].0 == at { edges[next].1 } else { edges[next].0 };
+            };
+            if !closed || ring.len() < 3 {
+                continue;
+            }
+            let flat = |k: usize| ring.iter().all(|&i| (pts[i][k] - pts[ring[0]][k]).abs() < tol);
+            let plane = if flat(2) { Some((PlaneKind::Xy, 2)) } else if flat(1) { Some((PlaneKind::Xz, 1)) } else if flat(0) { Some((PlaneKind::Zy, 0)) } else { None };
+            let Some((plane, k)) = plane else { continue };
+            let uv: Vec<[f64; 2]> = ring
+                .iter()
+                .map(|&i| {
+                    let p = pts[i];
+                    match plane {
+                        PlaneKind::Xy => [p[0], p[1]],
+                        PlaneKind::Xz => [p[0], -p[2]],
+                        PlaneKind::Zy => [p[2], p[1]],
+                    }
+                })
+                .collect();
+            for &e in &chain {
+                used[e] = true;
+            }
+            plates.push((plane, pts[ring[0]][k], uv));
+        }
+        let rest = segs.iter().zip(&used).filter(|(_, u)| !**u).map(|(s, _)| *s).collect();
+        (rest, plates)
     }
 
     /// The element size (mm) used when none is given: about a twentieth of the largest extent.
@@ -596,6 +666,91 @@ mod tests {
         let sk = &s.scene().unwrap().sketches[0];
         assert!(sk.curves.iter().any(|c| c.kind == "ellipse") && sk.curves.iter().any(|c| c.kind == "spline"), "{:?}", sk.curves.iter().map(|c| c.kind).collect::<Vec<_>>());
         assert_eq!(sk.profiles, 2, "the ellipse and the rounded rectangle are closed");
+    }
+
+    /// 0.7.6: sweep, loft, draft, split, measure, STEP out and back in, with the inputs the window sends.
+    #[test]
+    fn sweep_loft_draft_split_measure_step() {
+        let mut c = Cad::new();
+        // Sweep: a circle on the side plane along an L-shaped path on the floor.
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.line", json!({"points": [[0, 0], [50, 0], [50, 40]]}));
+        run(&mut c, "sketch.finish", json!({}));
+        run(&mut c, "sketch.create", json!({"plane": "YZ"}));
+        run(&mut c, "sketch.circle.center", json!({"center": [0, 0], "radius": 4}));
+        run(&mut c, "sketch.finish", json!({}));
+        let sc = c.scene().unwrap();
+        let (path, prof) = (&sc.sketches[0], &sc.sketches[1]);
+        let ids: Vec<_> = path.curves.iter().map(|k| k.id.clone()).collect();
+        run(&mut c, "solid.sweep", json!({"sketch": prof.id, "path_sketch": path.id, "path": ids}));
+        assert_eq!(c.scene().unwrap().bodies.len(), 1, "a bent bar swept");
+        // Loft: a square on the floor to a circle 30 mm up.
+        let mut l = Cad::new();
+        run(&mut l, "sketch.create", json!({"plane": "XY"}));
+        run(&mut l, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [10, 10]}));
+        run(&mut l, "sketch.finish", json!({}));
+        run(&mut l, "construct.plane.offset", json!({"base": "XY", "offset": 30, "name": "Up"}));
+        run(&mut l, "sketch.create", json!({"plane": "Up"}));
+        run(&mut l, "sketch.circle.center", json!({"center": [0, 0], "radius": 6}));
+        run(&mut l, "sketch.finish", json!({}));
+        let sk: Vec<u64> = l.scene().unwrap().sketches.iter().map(|s| s.id).collect();
+        run(&mut l, "solid.loft", json!({"sections": sk.iter().map(|i| json!({"sketch": i})).collect::<Vec<_>>()}));
+        assert_eq!(l.scene().unwrap().bodies.len(), 1, "a square lofted into a circle");
+        // Draft a side of a box, then split it in two, then measure it.
+        let mut d = Cad::new();
+        run(&mut d, "solid.box", json!({"corner": [0, 0, 0], "length": 40, "width": 30, "height": 20}));
+        let b = d.scene().unwrap().bodies[0].name.clone();
+        run(&mut d, "solid.draft", json!({"faces": [[0.0, 15.0, 10.0]], "angle": 5, "neutral": "XY", "body": b}));
+        let m = d.run("inspect.measure", &json!({"bodies": [b]})).unwrap();
+        let v = m.pointer("/bodies/0/volume_mm3").and_then(|v| v.as_f64()).unwrap_or_else(|| panic!("{m}"));
+        let less = 0.5 * 20.0 * 20.0 * (5f64).to_radians().tan() * 30.0;
+        assert!((v - (24000.0 - less)).abs() < 1.0, "the draft took a wedge off: {v}");
+        let face = d.run("inspect.measure", &json!({"items": [{"type": "face", "body": b, "point": [20.0, 15.0, 20.0]}]})).unwrap();
+        assert!(face.to_string().contains("area"), "a face measured: {face}");
+        let two = d.run("inspect.measure", &json!({"items": [{"type": "face", "body": b, "point": [20.0, 15.0, 20.0]}, {"type": "edge", "body": b, "point": [20.0, 0.0, 0.0]}]})).unwrap();
+        assert!((two["distance_mm"].as_f64().unwrap() - 20.0).abs() < 1e-6, "top face to bottom edge: {two}");
+        run(&mut d, "solid.split_body", json!({"body": b, "plane": {"origin": [20, 0, 0], "normal": [1, 0, 0]}}));
+        assert_eq!(d.scene().unwrap().bodies.len(), 2, "split in two");
+        // STEP out, and into a new design, which then meshes.
+        let dir = std::env::temp_dir().join(format!("datum-step-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("box.step");
+        run(&mut d, "file.export_step", json!({"path": f}));
+        run(&mut d, "file.export_stl", json!({"path": dir.join("box.stl")}));
+        assert!(std::fs::metadata(dir.join("box.stl")).unwrap().len() > 84);
+        let mut i = Cad::new();
+        run(&mut i, "file.insert_step", json!({"path": f}));
+        assert_eq!(i.scene().unwrap().bodies.len(), 2, "both halves came back");
+        if let Some(g) = gmsh() {
+            let ms = i.mesh(5.0, &g, &dir.join("w")).unwrap();
+            assert!(ms.tets.len() > 50, "the imported solids mesh");
+        }
+    }
+
+    /// 0.7.6: a rectangle on the floor on its own is a plate; a column standing on its corner is not.
+    #[test]
+    fn closed_outlines_become_plates() {
+        let sq: Vec<Segment> = vec![([0.0, 3.0, 0.0], [4.0, 3.0, 0.0]), ([4.0, 3.0, 0.0], [4.0, 3.0, -5.0]), ([4.0, 3.0, -5.0], [0.0, 3.0, -5.0]), ([0.0, 3.0, -5.0], [0.0, 3.0, 0.0])];
+        let (rest, plates) = Cad::plates_of(&sq);
+        assert!(rest.is_empty() && plates.len() == 1, "{rest:?} {plates:?}");
+        let (plane, depth, uv) = &plates[0];
+        assert_eq!(*plane, datum_core::model::PlaneKind::Xz);
+        assert!((depth - 3.0).abs() < 1e-12 && uv.len() == 4);
+        let pl = datum_core::model::Plate { plane: *plane, depth: *depth, t: 0.2 };
+        for (p, q) in uv.iter().zip([[0.0, 3.0, 0.0], [4.0, 3.0, 0.0], [4.0, 3.0, -5.0], [0.0, 3.0, -5.0]]) {
+            let r = pl.at(p[0], p[1]);
+            assert!((0..3).all(|k| (r[k] - q[k]).abs() < 1e-12), "{r:?} {q:?}");
+        }
+        // A column on one corner: that corner has three pieces, so the outline stays members.
+        let mut more = sq.clone();
+        more.push(([0.0, 0.0, 0.0], [0.0, 3.0, 0.0]));
+        let (rest, plates) = Cad::plates_of(&more);
+        assert!(plates.is_empty() && rest.len() == 5);
+        // A wall on the front plane and a lone beam: one plate, one member.
+        let mut w: Vec<Segment> = vec![([0.0, 0.0, 0.0], [6.0, 0.0, 0.0]), ([6.0, 0.0, 0.0], [6.0, 3.0, 0.0]), ([6.0, 3.0, 0.0], [0.0, 3.0, 0.0]), ([0.0, 3.0, 0.0], [0.0, 0.0, 0.0])];
+        w.push(([10.0, 0.0, 0.0], [10.0, 3.0, 0.0]));
+        let (rest, plates) = Cad::plates_of(&w);
+        assert!(rest.len() == 1 && plates.len() == 1 && plates[0].0 == datum_core::model::PlaneKind::Xy);
     }
 
     /// Every 3D tool, with the inputs the window sends (points picked on faces and edges, in mm).

@@ -2,7 +2,7 @@
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
 import { sectionsOn, setSectionsOn } from "./store";
-import { memberTruss, setMemberTruss } from "./cad";
+import { memberTruss, setMemberTruss, memberPlates, setMemberPlates } from "./cad";
 import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { holeD, setHoleD, edgeSize, setEdgeSize, sketch, solidRes, modes, modeOn, setModeOn, toast, call, out, model, tab, setTab, setBackstage, openMenu, openDialog, closeDialog, theme, setTheme, sel, opts, setOpts, tool, act, results, show, solving, partRes, setSel, setEdgeSel, view, setView, frameRes, spaceRes } from "./store";
@@ -20,7 +20,7 @@ import { setPlane, onPlane, plateT, setPlateT } from "./plane3";
 import { parseNum } from "./api";
 import { toU, fromU, unit } from "./units";
 import { setPlanePick } from "./cad";
-import { cad3Tool, pick3, TOOLS3, holeD3, setHoleD3, holeDepth, setHoleDepth, fillet3R, setFillet3R, chamfer3D, setChamfer3D, shellT, setShellT, pressD, setPressD, bodyNames } from "./cad";
+import { cad3Tool, pick3, TOOLS3, holeD3, setHoleD3, holeDepth, setHoleDepth, fillet3R, setFillet3R, chamfer3D, setChamfer3D, shellT, setShellT, pressD, setPressD, bodyNames, draftA, setDraftA } from "./cad";
 import { cad, cadRun, cadQuery, activeSketch, cadTool, pickTool, ways, setWays, TOOLS, FAMILIES, sides, setSides, slotW, setSlotW, roundR, setRoundR, EDITS, CONSTRAINTS, pickEdit, consMode, setConsMode, toggleConstruction, deleteSelected, rectPattern, sel as cadSel, filletR, setFilletR, chamferD, setChamferD, offsetD, setOffsetD, patN, setPatN, patA, setPatA, rowN, setRowN, rowS, setRowS, colN, setColN, colS, setColS, newSketch, finishSketch, cancelSketch, revolve, extrudeD, setExtrudeD, extrudeDir, setExtrudeDir, revolveA, setRevolveA, revolveAxis, setRevolveAxis } from "./cad";
 
 const GH = "https://github.com/Edgar-Mendonca/Datum-Mesh";
@@ -92,6 +92,7 @@ const size3 = (): Field[] => {
   if (t === "fillet3") return [["Radius", "mm", false, fillet3R, setFillet3R]];
   if (t === "chamfer3") return [["Distance", "mm", false, chamfer3D, setChamfer3D]];
   if (t === "shell3") return [["Wall", "mm", false, shellT, setShellT]];
+  if (t === "draft3") return [["Draft angle", "°", false, draftA, setDraftA]];
   if (t === "press3") return [["Distance", "mm", false, pressD, setPressD]];
   if (t) return [];
   return [["Extrude", "mm", false, extrudeD, setExtrudeD], ["Revolve", "°", false, revolveA, v => setRevolveA(Math.min(360, v))]];
@@ -207,18 +208,24 @@ const CadGroups = () => {
           { label: "On a face of a solid…", run: () => pick3("sketchface") }, { label: "On an offset plane…", run: offsetPlaneDialog }])} /></G>
       <G l="Create"><B big i="solid" l="Extrude" run={() => { pick3(null); import("./extrude").then(k => k.openExtrude()); }} title="Extrude the last sketch's closed regions into a solid (distance and direction under Sizes)" />
         <B big i="axi" l="Revolve" run={() => { pick3(null); revolve(); }} title="Turn the last sketch's closed regions about one of its axes into a solid" />
-        <B big i={TOOLS3.hole3.icon} l="Hole" on={cad3Tool() === "hole3"} run={() => pick3("hole3")} title={TOOLS3.hole3.hint} /></G>
+        <B big i={TOOLS3.hole3.icon} l="Hole" on={cad3Tool() === "hole3"} run={() => pick3("hole3")} title={TOOLS3.hole3.hint} />
+        <S><B i="curve" l="Sweep" run={() => { pick3(null); import("./solidtools").then(k => k.sweepDialog()); }} title="Carry a closed profile along a path drawn in another sketch (pipes, rails, springs)" />
+          <B i="poly" l="Loft" run={() => { pick3(null); import("./solidtools").then(k => k.loftDialog()); }} title="A solid through closed sections drawn on different planes (a square base to a round top)" /></S></G>
       <G l="Primitives" h="modelling"><B big i="solid" l="Box" run={() => import("./primitives").then(k => k.primitiveDialog("box"))} title="A box: its corner and its length, width and height" dd={e => openMenu(e, ([["cylinder", "Cylinder"], ["cone", "Cone"], ["sphere", "Sphere"]] as const).map(([k, l]) => ({ label: `${l}…`, run: () => import("./primitives").then(m => m.primitiveDialog(k)) })))} />
         <B big i="union" l="Combine" run={() => import("./primitives").then(k => k.combineDialog())} title="Join, cut or intersect solids" /></G>
-      <G l="Modify"><For each={["fillet3", "chamfer3", "shell3", "press3"]}>{k => <B big i={TOOLS3[k].icon} l={TOOLS3[k].label} on={cad3Tool() === k} run={() => pick3(k)} title={TOOLS3[k].hint} />}</For></G>
+      <G l="Modify"><For each={["fillet3", "chamfer3", "shell3", "press3"]}>{k => <B big i={TOOLS3[k].icon} l={TOOLS3[k].label} on={cad3Tool() === k} run={() => pick3(k)} title={TOOLS3[k].hint} />}</For>
+        <S><B i={TOOLS3.draft3.icon} l="Draft" on={cad3Tool() === "draft3"} run={() => pick3("draft3")} title={TOOLS3.draft3.hint} />
+          <B i="cut" l="Split" run={() => { pick3(null); import("./solidtools").then(k => k.splitDialog()); }} title="Cut a solid in two by a plane: each piece a solid of its own" /></S></G>
+      <G l="Inspect" h="modelling"><B big i="dist" l="Measure" on={cad3Tool() === "measure3"} run={() => pick3("measure3")} title={TOOLS3.measure3.hint} />
+        <S><B i="info" l="Mass" run={() => import("./solidtools").then(k => k.massDialog())} title="Each solid's volume, area, centre of mass and mass" /></S></G>
       <G l="Arrange"><B big i="copy" l="Move / Copy" run={moveDialog} title="Move, turn or copy solids" />
         <B big i="symmetry" l="Mirror" run={mirrorDialog} title="Mirror solids in a plane, as a copy (or joined)" />
         <B big i="pattern" l="Pattern" run={patternDialog} title="Copies of solids in rows and columns, or round an axis" /></G>
-      <G l="Sizes"><S><For each={size3()}>{f => <MmNum l={f[0]} u={f[1]} int={f[2]} title={f[0]} v={f[3]} set={f[4]} />}</For>
+      <Show when={size3().length || !cad3Tool()}><G l="Sizes"><S><For each={size3()}>{f => <MmNum l={f[0]} u={f[1]} int={f[2]} title={f[0]} v={f[3]} set={f[4]} />}</For>
         <Show when={!cad3Tool()}><B i="up" l={({ positive: "Out of the sketch", negative: "Into it", symmetric: "Both ways evenly" } as const)[extrudeDir()]} dd={e => openMenu(e, ([["Out of the sketch", "positive"], ["Into it", "negative"], ["Both ways evenly", "symmetric"]] as const).map(([l, k]) => ({ label: l, on: extrudeDir() === k, run: () => setExtrudeDir(k) })))} />
-          <B i="axi" l={`Revolve about the sketch's ${revolveAxis()} axis`} dd={e => openMenu(e, (["x", "y"] as const).map(k => ({ label: `Revolve about the sketch's ${k} axis`, on: revolveAxis() === k, run: () => setRevolveAxis(k) })))} /></Show></S></G>
-      <G l="Configure"><B big i="fx" l="Parameters" run={parametersDialog} title="Named sizes (W = 40) that dimensions and features can use" /></G>
-      <G l="Construct"><B big i="grid" l="Offset Plane" run={offsetPlaneDialog} title="A plane parallel to the floor, front or side, set off by a distance: sketch on it" /></G>
+          <B i="axi" l={`Revolve about the sketch's ${revolveAxis()} axis`} dd={e => openMenu(e, (["x", "y"] as const).map(k => ({ label: `Revolve about the sketch's ${k} axis`, on: revolveAxis() === k, run: () => setRevolveAxis(k) })))} /></Show></S></G></Show>
+      <G l="Construct"><S><B i="grid" l="Offset Plane" run={offsetPlaneDialog} title="A plane parallel to the floor, front or side, set off by a distance: sketch on it" />
+        <B i="fx" l="Parameters" run={parametersDialog} title="Named sizes (W = 40) that dimensions and features can use" /></S></G>
       <G l="Edit"><S><B i="undo" l="Undo" off={!cad()?.undo} run={() => cadRun("edit.undo")} /><B i="redo" l="Redo" off={!cad()?.redo} run={() => cadRun("edit.redo")} /><B i="select" l="Select" on={!cad3Tool()} run={() => pick3(null)} /></S></G>
     </>}>
       <G l="Create"><For each={FAMILIES}>{fam}</For>
@@ -384,11 +391,14 @@ export const Ribbon = () => {
 
           <Show when={!isSolidA(m()?.analysis) || !!m()?.parts?.length || !!m()?.shapes.length}>
           <G l="Material" h="materials"><B big i="material" l="Materials" run={() => D.materials()} /></G></Show>
-          <Show when={!activeSketch()}><G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /><B big i="solid" l="Mesh" dd={(e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); openMenu({ x: r.left, y: r.bottom + 2 }, [["Coordinates in millimetres", 1e-3], ["Coordinates in metres", 1], ["Coordinates in inches", 0.0254]].map(([l, u]) => ({ label: `${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) }))); }} title="A part of any shape: a tetrahedral mesh from a mesher (Gmsh .msh, CalculiX-format .inp), as a new 3D solid" /></G></Show>
+          <Show when={!activeSketch() && isSolidA(m()?.analysis)}><G l="Import" h="import"><B big i="import" l="STEP" run={() => import("./solidtools").then(k => k.importStep())} title="Bring in the solids of a STEP file from another CAD program, to mesh and analyse (▾: a mesh file, or a DXF section)"
+              dd={e => openMenu(e, [{ label: "STEP file (solids)…", run: () => import("./solidtools").then(k => k.importStep()) }, ...([["coordinates in millimetres", 1e-3], ["coordinates in metres", 1], ["coordinates in inches", 0.0254]] as [string, number][]).map(([l, u]) => ({ label: `Mesh file, ${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) })), { label: "DXF section (extruded)…", run: K.importDxf }])} />
+            <B big i="export" l="Export" dd={e => openMenu(e, [{ label: "STEP file (solids)…", run: () => import("./solidtools").then(k => k.exportCad("step")) }, { label: "STL file (surface triangles)…", run: () => import("./solidtools").then(k => k.exportCad("stl")) }])} title="Save the solids as a STEP or STL file for other programs" /></G></Show>
+          <Show when={!activeSketch() && !isSolidA(m()?.analysis)}><G l="Import" h="import"><B big i="import" l="DXF" run={K.importDxf} title="Import a section drawn in CAD (ASCII DXF): its closed outlines become shapes and holes" /><B big i="solid" l="Mesh" dd={(e: MouseEvent) => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); openMenu({ x: r.left, y: r.bottom + 2 }, [["Coordinates in millimetres", 1e-3], ["Coordinates in metres", 1], ["Coordinates in inches", 0.0254]].map(([l, u]) => ({ label: `${l} (.msh, .inp)…`, run: () => C.importMesh(u as number) }))); }} title="A part of any shape: a tetrahedral mesh from a mesher (Gmsh .msh, CalculiX-format .inp), as a new 3D solid" /></G></Show>
         </>}>
           <Show when={sp() && activeSketch()}><CadGroups /></Show>
           <Show when={sp() && !activeSketch()}><G l="Sketch" h="sketchplane"><B big i="new" l="New Sketch" run={() => { pick3(null); setPlanePick(true); }} title="Draw the frame with the sketch tools: click a plane, draw lines (and arcs); Finish Sketch makes them members joined where they meet" />
-            <S><B i="beam" l="Lines become Beams" on={!memberTruss()} run={() => setMemberTruss(false)} /><B i="truss" l="Lines become Truss Bars" on={memberTruss()} run={() => setMemberTruss(true)} /><B i="poly" l="Members & Plates" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and draw members and plates on it one by one (the plane sketch of 0.6.2)" /></S></G></Show>
+            <S><B i="beam" l="Lines become Beams" on={!memberTruss()} run={() => setMemberTruss(false)} /><B i="truss" l="Lines become Truss Bars" on={memberTruss()} run={() => setMemberTruss(true)} /><B i="poly" l="Closed Shapes become Plates" on={memberPlates()} run={() => setMemberPlates(!memberPlates())} title="A closed outline drawn on its own (a rectangle, polygon or circle, its corners touching nothing else) becomes a plate (a slab or wall), not members round it" /></S><S><B i="new" l="Members & Plates" run={() => import("./sketchmode").then(k => k.newSketch())} title="Pick a plane and draw members and plates on it one by one (the plane sketch of 0.6.2)" /></S></G></Show>
           <Show when={!(sp() && activeSketch())}>
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
           <Show when={sp() && onPlane()}><FramePlates /></Show>

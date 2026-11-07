@@ -52,6 +52,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
           if (c === "cad_auto_size") return 5;
           if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
+          if (c === "cad_import_step") { window.__cad = f.cad.extruded; return f.cad.extruded; }
+          if (c === "cad_export") return "/tmp/model." + a.format;
+          if (c === "cad_query" && a.id === "inspect.measure") return a.params.items ? { items: a.params.items.map(i => ({ type: i.type, area_mm2: 100 })), distance_mm: 20, angle_deg: 90 } : { bodies: (window.__cad ?? f.cad.empty).bodies.map(b => ({ name: b.name, closed: true, volume_mm3: 24000, area_mm2: 5200, center_of_mass: [20, 15, 10] })) };
           if (c === "cad_query") return a.id === "timeline.inspect" ? f.cad.inspect_extrude : a.id === "sketch.inspect" ? { curves: [], points: [] } : a.id === "parameters.list" ? [] : {};
           if (c === "cad_run") { const id = a.id; const k = id === "sketch.create" ? "sketch" : id === "sketch.finish" ? "finished" : id === "sketch.cancel" ? "empty" : id.startsWith("sketch.") ? "drawn" : id === "solid.extrude" ? "extruded" : id === "solid.revolve" ? "revolved" : null; if (k) window.__cad = f.cad[k]; return window.__cad ?? f.cad.empty; }
           if (c === "state") return window.__cur;
@@ -390,12 +393,16 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.tabs > button:text-is("Home")');
   check("Home shows 3D Frame chosen", await p.$eval('.ribbon button[title^="3D frames and trusses"]', el => el.classList.contains("on")));
   // 0.7.5: New Sketch draws the frame with the modelling sketch tools; Finish Sketch makes members.
-  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(250);
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.waitForTimeout(150);
+  await p.click('.ribbon button[title^="A closed outline drawn on its own"]'); await p.waitForTimeout(100);
+  check("Closed Shapes become Plates turns on (0.7.6)", await p.$eval('.ribbon button[title^="A closed outline drawn on its own"]', b => b.classList.contains("on")));
+  await p.click('.ribbon button[title^="A closed outline drawn on its own"]'); await p.waitForTimeout(100);
+  await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(250);
   check("a 3D frame's New Sketch asks for a plane like a part's (0.7.5)", (await p.$$(".view3d .pickplane")).length === 1);
   await p.click('.view3d .pickplane button:has-text("Front (XZ)")'); await p.waitForTimeout(300);
   check("the frame sketch opens with the modelling sketch tools", (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
   await p.click('.ribbon button[title^="Keep the sketch"]'); await p.waitForTimeout(400);
-  check("Finish Sketch on a 3D frame makes members of its lines (beams by default)", JSON.stringify(await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_members").map(c => c[1]).slice(-1)[0])) === JSON.stringify({ truss: false }));
+  check("Finish Sketch on a 3D frame makes members of its lines (beams by default)", JSON.stringify(await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_members").map(c => c[1]).slice(-1)[0])) === JSON.stringify({ truss: false, plates: false }));
   // 0.6.2: Beam (one by one), pick the Front plane: the sketch canvas lies over the 3D view, square to it.
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title^="Draw beams"]'); await p.waitForTimeout(250);
   check("Beam asks for a plane, with the squares at the origin and a bar", (await p.$$(".view3d .pickbar")).length === 1);
@@ -1265,6 +1272,23 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
 
   // 0.7.2: the history, its right-click menu, Edit Feature, the timeline; no browser menu.
   check("the modelling ribbon offers primitives and Combine (0.7.6)", (await p.$$('.ribbon button[title^="A box: its corner"]')).length === 1 && (await p.$$('.ribbon button[title^="Join, cut or intersect solids"]')).length === 1);
+  {
+    const body = fix.cad.extruded.bodies[0].name;
+    await p.click('.ribbon button[title^="Cut a solid in two"]'); await p.waitForTimeout(150);
+    await p.click('.dlg .seg button:text-is("Z")'); await p.fill('.dlg tr:has-text("At") input', "5"); await p.click('.dlg footer .btn.pri'); await p.waitForTimeout(150);
+    check("Split cuts the solid by the plane chosen (0.7.6)", JSON.stringify(await cadCall()) === JSON.stringify({ id: "solid.split_body", params: { body, plane: { origin: [0, 0, 5], normal: [0, 0, 1] } } }), JSON.stringify(await cadCall()));
+    await p.click('.ribbon button[title^="Each solid\'s volume"]'); await p.waitForTimeout(200);
+    const mt = await p.textContent(".dlg");
+    check("Mass lists each solid's volume, and its mass from the model's material (0.7.6)", mt.includes(body) && mt.includes("24.00 cm³") && /\d\.\d{3} kg/.test(mt), mt);
+    await p.click(".dlg footer .btn"); await p.waitForTimeout(100);
+    await p.click('.ribbon button[title^="Carry a closed profile"]'); await p.waitForTimeout(150);
+    check("Sweep with one sketch says it needs a profile and a path (0.7.6)", (await p.textContent("#toast")).includes("two finished sketches") && !(await p.$(".dlg")));
+    await p.click('.ribbon button[title^="Click a face or an edge to measure"]'); await p.waitForTimeout(100);
+    check("Measure waits for a click on a face or edge", await p.$eval('.ribbon button[title^="Click a face or an edge to measure"]', b => b.classList.contains("on")));
+    await p.click('.ribbon button[title^="Click a side face to slope"]'); await p.waitForTimeout(100);
+    check("Draft shows its angle under Sizes", (await p.textContent(".ribbon")).includes("Draft angle"));
+    await p.keyboard.press("Escape");
+  }
   check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti span', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
   check("a modelled solid has no 3D/Section bar and no section settings (0.7.2, the user)", !(await p.$('.planebar button:text-is("Section")')) && !(await p.textContent(".insp")).includes("Thickness (extruded") && !(await p.textContent(".insp")).includes("Layers through"));
   await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))'); await p.waitForTimeout(150);
