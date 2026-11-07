@@ -79,15 +79,17 @@ const Home = () => {
         <h1>Good {new Date().getHours() < 12 ? "morning" : new Date().getHours() < 18 ? "afternoon" : "evening"}</h1>
         <button class="startnew" onClick={() => setBackstage("new")}><Icon n="new" size={28} /><span><b>Start a new study</b><small>Choose what you are analysing (a truss, a frame, a part, a 3D solid or heat) and what you want to know: the model is set up for it.</small></span></button>
         <h2>Or start from a blank model</h2>
-        <div class="tiles">
+        <div class="tiles blanks">
           <For each={(ex() ?? []).filter(t => (t.group ?? "Blank") === "Blank")}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For>
           <button class="tile" data-blank="heat" onClick={() => C.newModel(null, "heat")}><div class="pic"><svg viewBox="0 0 100 60" class="exart"><path d="M8 52H92V44H84V12H78V44H64V12H58V44H44V12H38V44H24V12H18V44H8z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" /></svg></div><b>Blank heat part</b><span>Temperatures and heat flow through a 2D part: fins, walls, plates.</span></button>
-          <button class="tile" onClick={() => setBackstage("examples")}><div class="pic"><svg class="ic"><use href="#i-folder" /></svg></div><b>Examples</b><span>{(ex() ?? []).filter(t => t.group && t.group !== "Blank").length} worked examples, by kind: frames, 3D frames, parts, 3D solids and assemblies, nonlinear, dynamics.</span></button>
-          <button class="tile" onClick={() => setBackstage("roadmap")}><div class="pic"><svg class="ic"><use href="#i-roadmap" /></svg></div><b>Roadmap</b><span>What each release adds, and what is coming: the dimmed features in the window are on it.</span></button>
+        </div>
+        <div class="tiles links">
+          <button class="tile wide" onClick={() => setBackstage("examples")}><svg class="ic"><use href="#i-folder" /></svg><div><b>Examples</b><span>{(ex() ?? []).filter(t => t.group && t.group !== "Blank").length} worked examples, by kind: frames, 3D frames, parts, 3D solids and assemblies, nonlinear, dynamics.</span></div></button>
+          <button class="tile wide" onClick={() => setBackstage("roadmap")}><svg class="ic"><use href="#i-roadmap" /></svg><div><b>Roadmap</b><span>What each release adds and what comes next; the planned features are already in the window, dimmed.</span></div></button>
         </div>
         <h2>Recent</h2>
         <Show when={(recent() ?? []).length} fallback={<p class="recentnone muted">Models you open or save appear here.</p>}>
-          <div class="recentc"><For each={recent() ?? []}>{r => <button class="rcard" title={r.path} onClick={() => C.openPath(r.path)}><img src="logo.svg" alt="" /><span><b>{r.name}</b><small>{r.modified}</small><small class="p">{r.path}</small></span></button>}</For></div>
+          <div class="recentc"><For each={recent() ?? []}>{r => <button class="rcard" title={r.path} onClick={() => C.openPath(r.path)}><span class="rpic"><img src="logo.svg" alt="" /></span><span class="rname"><b>{r.name}</b><small>{r.path}</small></span><small class="rwhen">{r.modified}</small></button>}</For></div>
         </Show>
       </div>
       <UpdateCard />
