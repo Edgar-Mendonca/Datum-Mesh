@@ -2011,6 +2011,128 @@ fn remote_load() -> Vec<Check> {
     v
 }
 
+/// Benchmark 36 (0.8.0): contact between two blocks meshed apart, 10-node tetrahedra. A block
+/// pressed onto another through a frictionless contact whose meshes do not match, and a block
+/// pressed down and dragged sideways over a fixed one with friction.
+fn contact() -> Vec<Check> {
+    use crate::model::Contact;
+    use crate::solids::tet::{grid, TetMesh};
+    let mut v = vec![];
+    let (e, nu) = (200e9, 0.3);
+    // Two meshes in one, apart; and the face of either that lies where `inside` says.
+    let join = |a: TetMesh, b: TetMesh| {
+        let (na, ta, fa) = (a.nodes.len() as u32, a.tets.len() as u32, a.faces.len());
+        let mut m = a;
+        m.nodes.extend(b.nodes);
+        m.tets.extend(b.tets.into_iter().map(|t| t.into_iter().map(|q| q + na).collect()));
+        m.faces.extend(b.faces.into_iter().map(|mut f| {
+            f.facets.iter_mut().for_each(|x| x.0 += ta);
+            f
+        }));
+        (m, fa)
+    };
+    let face_of = |ms: &TetMesh, from: usize, to: usize, inside: &dyn Fn([f64; 3]) -> bool| {
+        (from..to).find(|&f| ms.faces[f].facets.iter().all(|&(el, k)| ms.facet(el as usize, k as usize)[..3].iter().all(|&i| inside(ms.nodes[i as usize])))).map(|f| f as u32).expect("face")
+    };
+    let solid = |ms: TetMesh| {
+        let mut d = Doc::new(Model::new(Analysis::Solid));
+        d.m.materials[0].e = e;
+        d.m.materials[0].nu = nu;
+        d.m.materials[0].rho = 0.0;
+        d.m.volume = Some(Box::new(ms));
+        d
+    };
+    let sup = |d: &mut Doc, face: u32, kind: SupportKind| add_id(d, Item::Support(Support { id: 0, at: Target::Face { face }, kind }));
+    // A 1 m cube on another, rollers on two sides and under the lower one; 10 MPa on top. The
+    // stress is uniform, −p, in both, and the top moves down 2pL/E with no sideways restraint
+    // (uniaxial stress).
+    {
+        let p = 10e6;
+        let lower = grid([3, 3, 3], 2, |q| q).unwrap();
+        let upper = grid([4, 4, 4], 2, |q| [q[0], q[1], 1.0 + q[2]]).unwrap();
+        let nf = lower.faces.len();
+        let (ms, fa) = join(lower, upper);
+        let nall = ms.faces.len();
+        let mut d = solid(ms);
+        let m = d.m.volume.as_ref().unwrap().clone();
+        for (lo, hi) in [(0, fa), (fa, nall)] {
+            sup(&mut d, face_of(&m, lo, hi, &|q| q[0].abs() < 1e-9), SupportKind::Symmetry);
+            sup(&mut d, face_of(&m, lo, hi, &|q| q[1].abs() < 1e-9), SupportKind::Symmetry);
+        }
+        sup(&mut d, face_of(&m, 0, nf, &|q| q[2].abs() < 1e-9), SupportKind::Symmetry);
+        let top = face_of(&m, fa, nall, &|q| (q[2] - 2.0).abs() < 1e-9);
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Face { face: top }, kind: LoadKind::Pressure { p } }));
+        let a = face_of(&m, fa, nall, &|q| (q[2] - 1.0).abs() < 1e-9);
+        let b = face_of(&m, 0, nf, &|q| (q[2] - 1.0).abs() < 1e-9);
+        add_id(&mut d, Item::Contact(Contact { id: 0, a: Target::Face { face: a }, b: Target::Face { face: b }, friction: 0.0 }));
+        let r = crate::solids::tet::solve(&d.m).expect("blocks in contact");
+        let name = "A block pressed onto another, frictionless contact, meshes not matching (4 × 4 on 3 × 3), 10-node tetrahedra";
+        let c = &r.contact[0];
+        let src = "Uniaxial stress through the contact (exact; the penalty lets the faces overlap by about a thousandth of the movement)";
+        v.push(check(36, name, "Force through the contact pA", "force", p, c.normal, 1e-6, src));
+        let mid = |z: f64| { let i = r.volume.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, [0.5, 0.5, z]).total_cmp(&crate::model::dist3(*b.1, [0.5, 0.5, z]))).unwrap().0; r.volume.v[r.fields.iter().position(|f| f.key == "sz").unwrap()][i] };
+        v.push(check(36, name, "Stress in the lower block, mid-height", "stress", -p, mid(0.5), 0.02, src));
+        v.push(check(36, name, "Stress in the upper block, mid-height", "stress", -p, mid(1.5), 0.02, src));
+        v.push(check(36, name, "Top moves down 2pL/E", "len", -2.0 * p / e, r.field("uz").min, 0.01, src));
+        v.push(check(36, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics"));
+    }
+    // The upper block pressed down by 1 MPa and its top face moved 1 mm sideways: it slides, and
+    // the friction is μ times the force pressing, μ = 0.3.
+    {
+        let (p, mu) = (1e6, 0.3);
+        let lower = grid([3, 3, 2], 2, |q| [q[0], q[1], 0.5 * q[2]]).unwrap();
+        let upper = grid([3, 3, 2], 2, |q| [q[0], q[1], 0.5 + 0.5 * q[2]]).unwrap();
+        let nf = lower.faces.len();
+        let (ms, fa) = join(lower, upper);
+        let nall = ms.faces.len();
+        let mut d = solid(ms);
+        let m = d.m.volume.as_ref().unwrap().clone();
+        sup(&mut d, face_of(&m, 0, nf, &|q| q[2].abs() < 1e-9), SupportKind::Fixed);
+        sup(&mut d, face_of(&m, fa, nall, &|q| q[1].abs() < 1e-9), SupportKind::Symmetry);
+        let top = face_of(&m, fa, nall, &|q| (q[2] - 1.0).abs() < 1e-9);
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Face { face: top }, kind: LoadKind::Pressure { p } }));
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Face { face: top }, kind: LoadKind::Settlement { dx: 1e-3, dy: 0.0, dz: 0.0 } }));
+        let a = face_of(&m, fa, nall, &|q| (q[2] - 0.5).abs() < 1e-9);
+        let b = face_of(&m, 0, nf, &|q| (q[2] - 0.5).abs() < 1e-9);
+        add_id(&mut d, Item::Contact(Contact { id: 0, a: Target::Face { face: a }, b: Target::Face { face: b }, friction: mu }));
+        let r = crate::solids::tet::solve(&d.m).expect("block dragged");
+        let c = &r.contact[0];
+        let name = "A block pressed down and dragged over another, Coulomb friction μ = 0.3, 10-node tetrahedra";
+        let src = "Coulomb friction: sliding, the friction is μ N (exact)";
+        v.push(check(36, name, "Force pressing N = pA", "force", p, c.normal, 1e-6, src));
+        v.push(check(36, name, "Friction μN while it slides", "force", mu * p, -c.force[0], 1e-6, src));
+        v.push(check(36, name, "Share of the touching nodes sliding", "ratio", 1.0, c.sliding as f64 / c.touching.max(1) as f64, 1e-12, src));
+    }
+    // The same block pushed sideways by a force a third of μN on its side: it holds, and the
+    // friction is the push (an edge the push's moment unloads may slip a little).
+    {
+        let (p, mu, t) = (1e6, 0.3, 1e5);
+        let lower = grid([3, 3, 2], 2, |q| [q[0], q[1], 0.5 * q[2]]).unwrap();
+        let upper = grid([3, 3, 2], 2, |q| [q[0], q[1], 0.5 + 0.5 * q[2]]).unwrap();
+        let nf = lower.faces.len();
+        let (ms, fa) = join(lower, upper);
+        let nall = ms.faces.len();
+        let mut d = solid(ms);
+        let m = d.m.volume.as_ref().unwrap().clone();
+        sup(&mut d, face_of(&m, 0, nf, &|q| q[2].abs() < 1e-9), SupportKind::Fixed);
+        sup(&mut d, face_of(&m, fa, nall, &|q| q[1].abs() < 1e-9), SupportKind::Symmetry);
+        let top = face_of(&m, fa, nall, &|q| (q[2] - 1.0).abs() < 1e-9);
+        let side = face_of(&m, fa, nall, &|q| q[0].abs() < 1e-9);
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Face { face: top }, kind: LoadKind::Pressure { p } }));
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Face { face: side }, kind: LoadKind::Traction { fx: t, fy: 0.0, fz: 0.0, total: true } }));
+        let a = face_of(&m, fa, nall, &|q| (q[2] - 0.5).abs() < 1e-9);
+        let b = face_of(&m, 0, nf, &|q| (q[2] - 0.5).abs() < 1e-9);
+        add_id(&mut d, Item::Contact(Contact { id: 0, a: Target::Face { face: a }, b: Target::Face { face: b }, friction: mu }));
+        let r = crate::solids::tet::solve(&d.m).expect("block pushed");
+        let c = &r.contact[0];
+        let name = "The block pushed sideways by a third of μN, Coulomb friction μ = 0.3, 10-node tetrahedra";
+        let src = "Coulomb friction: holding, the friction is the push (statics, exact)";
+        v.push(check(36, name, "Friction equals the push", "force", t, -c.force[0], 1e-6, src));
+        v.push(check(36, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-6, "Statics"));
+    }
+    v
+}
+
 /// Benchmark 29 (0.5.6): natural frequencies and heat conduction on tetrahedra.
 fn tetra_more() -> Vec<Check> {
     use crate::solids::tet::{grid, TetMesh};
@@ -2608,11 +2730,19 @@ pub fn run() -> Vec<Check> {
     v.extend(modelling());
     v.extend(yielding_large());
     v.extend(remote_load());
+    v.extend(contact());
     v
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn contact_on_its_own() {
+        for r in super::contact() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
     #[test]
     fn remote_load_on_its_own() {
         for r in super::remote_load() {

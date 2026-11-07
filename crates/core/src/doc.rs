@@ -24,6 +24,8 @@ pub enum Item {
     Step(Step),
     /// Parts of an assembly (0.6.0).
     Part(crate::model::Part),
+    /// Contact between two faces (0.8.0).
+    Contact(crate::model::Contact),
 }
 
 /// The model-wide settings, edited together.
@@ -334,6 +336,12 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     }
                     m.steps.push(x);
                 }
+                Item::Contact(mut x) => {
+                    x.id = id;
+                    // One contact per pair of faces.
+                    m.contacts.retain(|c| !((c.a == x.a && c.b == x.b) || (c.a == x.b && c.b == x.a)));
+                    m.contacts.push(x);
+                }
                 Item::Part(mut x) => {
                     x.id = id;
                     if x.name.trim().is_empty() {
@@ -369,6 +377,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Combo(x) => put(&mut m.combos, |y| y.id, x)?,
                 Item::Step(x) => put(&mut m.steps, |y| y.id, x)?,
                 Item::Part(x) => put(&mut m.parts, |y| y.id, x)?,
+                Item::Contact(x) => put(&mut m.contacts, |y| y.id, x)?,
             }
         }
         Op::AddMember { from, to, kind, section, material, z } => {
@@ -546,6 +555,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             m.sections.retain(|x| !set.contains(&x.id));
             m.materials.retain(|x| !set.contains(&x.id));
             m.supports.retain(|x| !set.contains(&x.id));
+            m.contacts.retain(|x| !set.contains(&x.id));
             // A deleted load case takes its loads with it, and leaves the combinations.
             let gone: Vec<u32> = m.cases.iter().filter(|c| set.contains(&c.id)).map(|c| c.id).collect();
             if !gone.is_empty() {
@@ -1222,6 +1232,7 @@ fn prune(m: &mut Model) {
     m.supports.retain(|s| alive(&s.at));
     m.loads.retain(|s| alive(&s.at));
     m.mesh.refine.retain(|s| alive(&s.at));
+    m.contacts.retain(|c| alive(&c.a) && alive(&c.b));
 }
 
 #[cfg(test)]

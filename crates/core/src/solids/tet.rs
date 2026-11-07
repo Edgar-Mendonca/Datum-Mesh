@@ -701,7 +701,7 @@ fn solve3(a: [[f64; 3]; 3], b: [f64; 3]) -> Option<[f64; 3]> {
     }))
 }
 
-fn facet_points(m: &TetMesh, e: usize, k: usize) -> Vec<([f64; 3], [f64; 3], Vec<(usize, f64)>)> {
+pub(super) fn facet_points(m: &TetMesh, e: usize, k: usize) -> Vec<([f64; 3], [f64; 3], Vec<(usize, f64)>)> {
     let f = m.facet(e, k);
     let o = if m.order == 2 { 2 } else { 1 };
     let xyz: Vec<[f64; 3]> = f.iter().map(|&i| m.nodes[i as usize]).collect();
@@ -1048,6 +1048,11 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
         return Err("A moved face is solved linearly or with a 'Large deformation with yielding' step; change the step (Solve › Steps).".into());
     }
     let mut pl = None;
+    // Contact (0.8.0): the contact forces on the nodes, what each contact carried, the pressure.
+    let mut contact: Option<(Vec<f64>, Vec<super::contact::ContactOut>, Vec<f64>)> = None;
+    if !m.contacts.is_empty() && nl.is_some() {
+        return Err("Contact is solved with a linear static step for now: remove the other steps (Solve › Steps), or the contact.".into());
+    }
     let (u, stats) = match nl {
         Some((inc, big)) => {
             let t0 = std::time::Instant::now();
@@ -1071,6 +1076,11 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
             pl = Some(p);
             (u, crate::engine::sparse::Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros: nz, residual: 0.0, ms: t0.elapsed().as_secs_f64() * 1e3 })
         }
+        None if !m.contacts.is_empty() => {
+            let (u, st, fnode, outs, cp) = super::contact::solve(m, ms, &sys, &held, &presc, &mut warnings)?;
+            contact = Some((fnode, outs, cp));
+            (u, st)
+        }
         None => sys.solve(&held, &presc).map_err(|e| format!("{e} A 3D solid needs holding so it cannot turn about any axis: a fixed face, or rollers on three faces at angles to each other."))?,
     };
     if stats.residual > 1e-8 {
@@ -1078,10 +1088,16 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
     }
     // Reactions and the balance (from the true internal forces past yield; moments about the
     // moved nodes after a large deformation).
-    let ku = match &pl {
+    let mut ku = match &pl {
         Some(p) => p.kint.clone(),
         None => sys.mul(&u),
     };
+    // The supports take what the elements and the contact springs do not.
+    if let Some((fnode, _, _)) = &contact {
+        for (k, f) in ku.iter_mut().zip(fnode) {
+            *k -= f;
+        }
+    }
     let pos = |q: usize| { let x = ms.nodes[q]; if large { [x[0] + u[3 * q], x[1] + u[3 * q + 1], x[2] + u[3 * q + 2]] } else { x } };
     let mut taken = vec![false; 3 * nn];
     let mut reactions = vec![];
@@ -1171,6 +1187,10 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
         keys.push("peeq");
         all.push(p.peeq.clone());
     }
+    if let Some((_, _, cp)) = &contact {
+        keys.push("cp");
+        all.push(cp.clone());
+    }
     let (surface, ids) = surface(ms);
     let fields = keys
         .iter()
@@ -1219,6 +1239,7 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
         frames: pl.as_ref().and_then(|p| crate::engine::frames::Frames::from_snaps("load", "vm", &p.snaps, &ids, 3)),
         path: pl.map(|p| p.path),
         large,
+        contact: contact.map(|c| c.1).unwrap_or_default(),
     })
 }
 

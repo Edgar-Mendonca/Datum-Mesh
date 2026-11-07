@@ -714,6 +714,19 @@ impl Default for Step {
     }
 }
 
+/// Contact (0.8.0): two faces of meshed solids that may touch: where they press they push each
+/// other apart, never pull, and slide along each other held back by friction (Coulomb, the
+/// coefficient `friction`; 0 for none). The nodes of face `a` are kept out of face `b`: give `a`
+/// the finer of the two.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Contact {
+    pub id: u32,
+    pub a: Target,
+    pub b: Target,
+    #[serde(default)]
+    pub friction: f64,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Refine {
     pub at: Target,
@@ -788,6 +801,8 @@ pub struct Model {
     /// Assemblies (0.6.0): the parts of a 3D solid model; empty for a single swept solid.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub parts: Vec<Part>,
+    /// Contact between faces of meshed solids (0.8.0).
+    pub contacts: Vec<Contact>,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -819,6 +834,7 @@ impl Default for Model {
             study: String::new(),
             volume: None,
             parts: vec![],
+            contacts: vec![],
             next: 1,
         }
     }
@@ -985,6 +1001,16 @@ impl Model {
         for r in &self.mesh.refine {
             pos(r.size, "A local element size")?;
             self.target_ok(&r.at)?;
+        }
+        for c in &self.contacts {
+            if !matches!(c.a, Target::Face { .. }) || !matches!(c.b, Target::Face { .. }) || c.a == c.b {
+                return Err("Contact is between two different faces of a meshed solid.".into());
+            }
+            self.target_ok(&c.a)?;
+            self.target_ok(&c.b)?;
+            if !(c.friction.is_finite() && c.friction >= 0.0 && c.friction <= 5.0) {
+                return Err("A friction coefficient is between 0 and 5.".into());
+            }
         }
         if self.units != "SI" && self.units != "US" {
             return Err("Units are SI or US.".into());

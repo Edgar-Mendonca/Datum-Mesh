@@ -10,4 +10,5 @@ pub mod plane;
 pub mod solid;
 pub mod tet;
 pub mod assembly;
+pub mod contact;
 pub mod modelling;

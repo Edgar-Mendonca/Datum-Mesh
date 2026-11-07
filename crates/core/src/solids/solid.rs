@@ -82,6 +82,9 @@ pub struct SolidResults {
     /// Large deformation (0.5.2): the movements are drawn true to size.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub large: bool,
+    /// Contact (0.8.0): what each contact carried.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contact: Vec<super::contact::ContactOut>,
 }
 
 impl SolidResults {
@@ -860,6 +863,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, nl: Option<(usize, bool)>) -> Re
         frames: pl.as_ref().and_then(|p| crate::engine::frames::Frames::from_snaps("load", "vm", &p.snaps, &ids, 3)),
         path: pl.map(|p| p.path),
         large,
+        contact: vec![],
     })
 }
 
