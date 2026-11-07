@@ -283,7 +283,7 @@ export const View3D = () => {
     }
   };
   const buildSolid = (m: Model) => {
-    const ink = css("--text"), green = css("--green"), load = css("--blue2"), accent = css("--blue");
+    const ink = css("--text"), green = css("--green"), load = css("--load"), accent = css("--blue");
     scene.background = new THREE.Color(css("--bg2"));
     const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4), rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
     // An imported mesh, or an assembly of parts (0.6.0) meshed and joined: drawn from their surface.
@@ -485,7 +485,7 @@ export const View3D = () => {
     // An empty frame (0.6.0): the floor covers the 6 × 4 × 4 m space the view first looks at.
     const empty = !m.nodes.length && !m.shapes.length;
     const P = at3(m), span = empty ? 6 : span3(m), selSet = new Set(sel());
-    const ink = css("--text"), accent = css("--blue"), faint = css("--line3"), load = css("--blue2");
+    const ink = css("--text"), accent = css("--blue"), faint = css("--line3"), load = css("--load");
     scene.background = new THREE.Color(css("--bg2"));
     // The stage: the floor grid at the origin, fixed in size, the axes, and the origin planes
     // while nothing is drawn or a plane is to be picked.

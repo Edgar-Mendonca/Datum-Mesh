@@ -18,6 +18,8 @@ import { ResultsInsp } from "./resinsp";
  *  when opened (the model's settings from the tree's name, the results from step 6), and closes
  *  with ×, leaving the whole workspace to the model. */
 export const [inspOpen, setInspOpen] = createSignal(false);
+/** The tree shows the model, or the results (0.10.0). */
+export const [treeTab, setTreeTab] = createSignal<"model" | "results">("model");
 /** What the card shows with nothing picked: the model's settings, or the results summary. */
 export const [popWhat, setPopWhat] = createSignal<"model" | "results">("model");
 const exists = (id: number) => { const m = model(); return !!m && [m.nodes, m.members, m.shapes, m.supports, m.loads, m.parts ?? [], m.contacts ?? []].some(xs => (xs as { id: number }[]).some(x => x.id === id)); };
@@ -141,7 +143,7 @@ export const flowSteps = (): FlowStep[] => {
 /** Go to a step: its ribbon tab, its place in the tree, the view of the model (0.9.1). */
 export const goStep = (i: number) => {
   setTab(STEP_TABS[i]); setView("model");
-  if (i === 5 && results()) { setPopWhat("results"); setInspOpen(true); }
+  if (i === 5 && results()) setTreeTab("results"); else if (i < 5) setTreeTab("model");
   requestAnimationFrame(() => document.querySelectorAll(".tree .step")[i]?.scrollIntoView({ block: "start", behavior: "smooth" }));
 };
 /** The workflow bar at the far left (0.9.1, the user): the steps in order, each done, to do, or not needed. */
@@ -173,8 +175,9 @@ export const Tree = () => {
   const noYield = () => plastic() ? (m()?.materials ?? []).filter(x => !(x.fy > 0) && (frame() ? m()!.members.some(b => b.material === x.id) : parts().some(s => s.material === x.id))) : [];
   return (
     <aside class="tree">
-      <header>Steps<Help k="tree" /></header>
-      <div class="tbody">
+      <div class="ttabs" role="tablist"><button role="tab" classList={{ on: treeTab() === "model" }} onClick={() => setTreeTab("model")}>Model</button><button role="tab" classList={{ on: treeTab() === "results" }} onClick={() => setTreeTab("results")}>Results</button><Help k="tree" /></div>
+      <Show when={treeTab() === "results"}><div class="tbody tres"><Show when={m() && results()} fallback={<p class="muted small tempty">Nothing solved yet. Solve (F5), and the results are here: each result's range (click one to show it), the balance check, the tables, graphs and report.</p>}><ResultsInsp m={m()!} /></Show></div></Show>
+      <div class="tbody" style={{ display: treeTab() === "results" ? "none" : undefined }}>
         <Show when={m()}>{mm => <>
           <div class="troot" title="The model's name, analysis, units and notes" onClick={() => { setSel([]); setPopWhat("model"); setInspOpen(true); }}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
           <Step n={1} t={fs()[0].t} done={fs()[0].done} why={fs()[0].why}>

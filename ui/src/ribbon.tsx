@@ -285,16 +285,16 @@ export const TitleBar = (p: { update: string | null }) => (
       <button class="file" onClick={() => setBackstage("home")}>File</button>
       <Show when={sketch()}><button class="sktab" classList={{ on: tab() === "sketch" }} onClick={() => setTab("sketch")}>Sketch</button></Show>
       <button classList={{ on: tab() === "home" }} onClick={() => setTab("home")}>Home</button>
-      {/* 0.7.1: the steps are chosen in the tree on the left; the ribbon shows the tools of the step chosen. */}
-      <Show when={STEP_NAMES[tab()]}><button class="on steptools" title="The tools of the step chosen in the tree on the left">{STEP_NAMES[tab()]}</button></Show>
-      <For each={[["view", "View"], ["help", "Help"]]}>{([k, l]) => <button classList={{ on: tab() === k }} onClick={() => setTab(k)}>{l}</button>}</For>
+      {/* 0.10.0: every module has its tab (the mock-ups the user approved); the workflow bar and the tree go to the same tabs. */}
+      <For each={MODULE_TABS()}>{([k, l]) => <button classList={{ on: tab() === k }} onClick={() => setTab(k)}>{l}</button>}</For>
       <div class="ctxgrp" style={{ visibility: fmtKind() ? "visible" : "hidden" }}><small>{fmtKind() === "shape" ? "Shape Tools" : "Member Tools"}</small><button classList={{ on: tab() === "format" }} onClick={() => setTab("format")}>Format</button></div>
     </nav>
   </header>
 );
 
-/** The ribbon's label for each step's tools (the steps are in the tree). */
-const STEP_NAMES: Record<string, string> = { geometry: "Geometry", properties: "Properties", loads: "Supports & Loads", mesh: "Mesh", solve: "Analysis", results: "Results" };
+/** The module tabs (0.10.0): every step of the work, then View, Tools and Help. */
+const MODULE_TABS = (): [string, string][] => { const a = model()?.analysis; const heat = a === "heat" || a === "solidheat";
+  return [["geometry", "Geometry"], ["properties", "Materials"], ["loads", heat ? "Temperatures & Heat" : "Loads & BCs"], ...(isFrame(a) ? [] : [["mesh", "Mesh"] as [string, string]]), ["solve", "Analysis"], ["results", "Results"], ["view", "View"], ["tools", "Tools"], ["help", "Help"]]; };
 
 /** What the Format tab works on: the selected shapes or members. */
 const fmtKind = () => {
@@ -493,6 +493,11 @@ export const Ribbon = () => {
         <Show when={fmtKind() === "member"}><G l="Member" h="members"><B big i="beam" l="Beam" run={() => formatMembers(() => ({ kind: "beam" }))} /><B big i="truss" l="Truss Bar" run={() => formatMembers(() => ({ kind: "truss" }))} /><B big i="node" l="Join Where They Cross" run={() => joinCrossings()} title="Put a node where the selected members cross, joining them there" />
           <S><B i="section" l="Section ▾" dd={e => openMenu(e, (m()?.sections ?? []).map(x => ({ label: x.name, run: () => formatMembers(() => ({ section: x.id })) })))} /><B i="material" l="Material ▾" dd={e => openMenu(e, (m()?.materials ?? []).map(x => ({ label: x.name, run: () => formatMembers(() => ({ material: x.id })) })))} /></S></G></Show>
       </Show>
+      <Show when={tab() === "tools"}>
+        <G l="Libraries" h="materials"><B big i="material" l="Materials Library" run={() => D.library()} /><B big i="section" l="Sections" run={() => D.sections()} /></G>
+        <G l="Trust" h="verify"><B big i="verify" l="Verification" run={() => D.verification()} /></G>
+        <G l="Settings" h="options"><B big i="opts" l="Options" run={() => setBackstage("options")} /></G>
+      </Show>
       <Show when={tab() === "help"}>
         <G l="Learn"><B big i="report" l="Getting Started" run={() => D.gettingStarted()} /><B big i="info" l="Glossary" run={() => D.glossary()} /><B big i="help" l="What Is This Tool?" dd={e => openMenu(e, Object.entries(HELP).map(([k, h]) => ({ label: h.t, run: () => helpCard(k) })))} /><B big i="keys" l="Shortcuts" run={() => D.shortcuts()} /><B big i="search" l="Tell Me" run={palette} /></G>
         <G l="Trust"><B big i="verify" l="Verification" run={() => D.verification()} /></G>
@@ -500,7 +505,7 @@ export const Ribbon = () => {
         <G l="Updates"><B big i="upd" l="Check for Updates" run={() => setBackstage("about")} /><B big i="list" l="Roadmap" run={() => setBackstage("roadmap")} /></G>
       </Show>
       {/* 0.10.0: the tab's planned features, dimmed, after its working tools (View › Show planned features). */}
-      <For each={["geometry", "properties", "loads", "mesh", "solve", "results", "view"]}>{t => <Show when={tab() === t && !sketch()}><PlannedGroups tab={t} /></Show>}</For>
+      <For each={["geometry", "properties", "loads", "mesh", "solve", "results", "view", "tools"]}>{t => <Show when={tab() === t && !sketch()}><PlannedGroups tab={t} /></Show>}</For>
     </section>
   );
 };

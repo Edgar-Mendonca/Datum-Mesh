@@ -107,7 +107,7 @@ let __page = null;
     await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
     // Blank models are on Home; the worked examples on File › Examples (0.6.1).
     const ex = fix.examples_list.find(e => e.id === id);
-    if ((ex.group ?? "Blank") !== "Blank") { await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(150); }
+    if ((ex.group ?? "Blank") !== "Blank") { await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(150); await p.click(`.exfolders button[data-group="${ex.group}"]`); await p.waitForTimeout(100); }
     await p.click(`.home .tile:has(b:text-is("${ex.name}"))`); await p.waitForTimeout(250);
     // Unsaved changes are offered for saving first (0.1.2): drop them.
     if (await p.$('.dlg header:has-text("Save changes?")')) { await p.click('.dlg button:has-text("Don\'t save")'); await p.waitForTimeout(300); }
@@ -118,10 +118,15 @@ let __page = null;
   const tiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent));
   check("Home shows the blank models and a way to the examples (0.6.1)", fix.examples_list.filter(e => e.group === "Blank").every(e => tiles.includes(e.name)) && tiles.includes("Examples") && !tiles.includes("Portal frame"), JSON.stringify(tiles));
   await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(200);
-  const exTiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent)), exHeads = await p.$$eval(".home h2", els => els.map(e => e.textContent));
-  check("File › Examples lists every worked example under its heading", fix.examples_list.filter(e => e.group !== "Blank").every(e => exTiles.includes(e.name)) && ["Frames and trusses", "3D frames", "3D solids and assemblies", "Dynamics"].every(h => exHeads.includes(h)), JSON.stringify(exHeads));
+  // 0.10.0: the examples are in folders; every folder's tiles together are every example.
+  const exHeads = await p.$$eval(".exfolders button[data-group]", els => els.map(e => e.dataset.group)); const exTiles = [];
+  for (const g of exHeads) { await p.click(`.exfolders button[data-group="${g}"]`); await p.waitForTimeout(60); exTiles.push(...await p.$$eval(".home .tile b", els => els.map(e => e.textContent))); }
+  check("File › Examples lists every worked example, in folders by kind (0.10.0)", fix.examples_list.filter(e => e.group !== "Blank").every(e => exTiles.includes(e.name)) && ["Frames and trusses", "3D frames", "3D solids and assemblies", "Dynamics"].every(h => exHeads.includes(h)), JSON.stringify(exHeads));
+  await p.fill(".exsearch input", "truss"); await p.waitForTimeout(100);
+  check("searching the examples looks through every folder (0.10.0)", (await p.$$eval(".home .tile b", els => els.map(e => e.textContent))).includes("Roof truss"));
+  await p.fill(".exsearch input", ""); await p.waitForTimeout(60);
   await p.click('.bs aside button:has-text("Home")'); await p.waitForTimeout(150);
-  check("File sidebar is the crimson accent", (await p.$eval(".bs aside", el => getComputedStyle(el).backgroundColor)) === "rgb(184, 50, 80)");
+  check("File sidebar is the Petrol accent (0.10.0, the user)", (await p.$eval(".bs aside", el => getComputedStyle(el).backgroundColor)) === "rgb(15, 110, 140)");
 
   // 2. The portal frame draws its members, nodes, supports and loads.
   await open("portal");
@@ -130,11 +135,11 @@ let __page = null;
   check("nodes are drawn", (await p.$$(".node")).length === pf.nodes.length);
   check("supports are drawn", (await p.$$("g.sup")).length === pf.supports.length);
   check("loads are drawn with their values", (await p.$$("g.load")).length === pf.loads.length && (await p.textContent(".dsvg")).includes("kN/m"));
-  check("ribbon tabs", JSON.stringify(await p.$$eval(".tabs > button:not(.file):not(.steptools)", els => els.map(e => e.textContent))) === JSON.stringify(["Home", "View", "Help"]));
+  check("ribbon tabs: every module has its tab (0.10.0, the user's mock-ups); a frame has no Mesh tab", JSON.stringify(await p.$$eval(".tabs > button:not(.file)", els => els.map(e => e.textContent))) === JSON.stringify(["Home", "Geometry", "Materials", "Loads & BCs", "Analysis", "Results", "View", "Tools", "Help"]), JSON.stringify(await p.$$eval(".tabs > button:not(.file)", els => els.map(e => e.textContent))));
   // 0.7.1: the tree is laid out in six numbered steps; each step's header opens its ribbon tab.
   check("the tree shows the six numbered steps in order", JSON.stringify(await p.$$eval(".tree .sthead > span", els => els.map(e => e.textContent))) === JSON.stringify(["Geometry", "Properties", "Supports & Loads", "Mesh", "Analysis", "Results"]));
   await p.click('.sthead:has-text("Properties")');
-  check("a step's header shows its tools in the ribbon, named on the top bar", (await p.textContent(".tabs .steptools")) === "Properties" && await p.$eval(".tree .step:nth-of-type(2)", el => el.classList.contains("here")) && (await p.$$('.ribbon button[title^="The materials of the model"]')).length === 1);
+  check("a step's header shows its tools in the ribbon, named on the top bar", (await p.textContent(".tabs > button.on")) === "Materials" && await p.$eval(".tree .step:nth-of-type(2)", el => el.classList.contains("here")) && (await p.$$('.ribbon button[title^="The materials of the model"]')).length === 1);
   check("the top bar has no step tabs: the steps are in the tree (0.7.1, the user)", (await p.$$(".tabs button.step")).length === 0);
   await p.click('.tabs > button:text-is("Home")');
   check("frames are in metres on the ruler", (await p.textContent(".rtxt.unitlbl")) === "m");
@@ -286,7 +291,7 @@ let __page = null;
   check("the moment diagram is drawn for every member", (await p.$$(".diag.d-m")).length === pr2.members.length);
   check("reactions are drawn at the supports", (await p.$$(".rarrow")).length >= 4);
   check("the legend shows the equilibrium check", (await p.textContent(".legend")).includes("reactions balance the loads"));
-  check("the Results step and its tools are shown after solving", await p.$eval('.tree .step:nth-of-type(6)', el => el.classList.contains("here")) && (await p.textContent(".tabs .steptools")) === "Results");
+  check("the Results step and its tools are shown after solving", await p.$eval('.tree .step:nth-of-type(6)', el => el.classList.contains("here")) && (await p.textContent(".tabs > button.on")) === "Results");
   await p.click('.ribbon button[title="Shear Force"]'); await p.waitForTimeout(100);
   check("Shear Force switches the diagram", (await p.$$(".diag.d-v")).length === pr2.members.length && (await p.$$(".diag.d-m")).length === 0);
   const col = await p.$eval(`.mem[data-id="${pf.members[0].id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
@@ -592,7 +597,7 @@ let __page = null;
   const bm = fix.braced.m, [cg, cq, cw] = bm.cases;
   const drawn = async () => p.$$eval(".dsvg .lg, .dsvg g.load", els => els.length).catch(() => -1);
   await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.waitForTimeout(100);
-  const picks = await p.$$eval(".casepick option", os => os.map(o => o.textContent));
+  const picks = await p.$$eval(".ribbon .casepick option", os => os.map(o => o.textContent));
   check("the Loads tab picks a load case or a combination", picks.join() === "Dead,Imposed,Wind,Combination 1,Combination 2,Combination 3", picks.join());
   const nDead = await drawn();
   await p.selectOption(".casepick", `case:${cw.id}`); await p.waitForTimeout(150);
@@ -1270,7 +1275,7 @@ let __page = null;
   check("New Sketch asks for a plane: the origin planes, or a named one (0.7.2, the user)", (await p.$$(".view3d .pickplane")).length === 1);
   await p.click('.view3d .pickplane button:has-text("Floor (XY)")'); await p.waitForTimeout(300);
   check("a plane picked starts the sketch on it", JSON.stringify(await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_run").map(c => c[1]).slice(-1)[0])) === JSON.stringify({ id: "sketch.create", params: { plane: "XY" } }));
-  check("a sketch opens with the drawing tools on the ribbon, whatever tab was on (0.7.1 bug)", (await p.textContent(".tabs .steptools")) === "Geometry" && (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
+  check("a sketch opens with the drawing tools on the ribbon, whatever tab was on (0.7.1 bug)", ["Geometry", "Sketch"].includes(await p.textContent(".tabs > button.on")) && (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
   await p.click('.ribbon button[title^="Leave the sketch without keeping it"]'); await p.waitForTimeout(300);
   await p.click('.tree .step:nth-of-type(1) > .sthead');
   check("a blank 3D solid offers New Sketch, Extrude and Revolve on the Geometry ribbon", (await p.$$('.ribbon button[title^="Start a sketch: click a plane"]')).length === 1 && (await p.$$('.ribbon button[title^="Extrude the last sketch"]')).length === 1 && (await p.$$('.ribbon button[title^="Turn the last sketch"]')).length === 1);
@@ -1422,7 +1427,7 @@ let __page = null;
     await p.keyboard.press("F5"); await p.waitForTimeout(300);
     check("after a solve the card stays closed: the whole workspace is the model (0.9.1, the user)", (await p.$$(".ipop")).length === 0);
     await p.click('.flow button:has-text("Results")'); await p.waitForTimeout(150);
-    check("step 6 on the workflow bar opens the results card, the model's settings folded below (0.9.1)", (await p.textContent(".insp header")).includes("Results") && (await p.$$(".insp .rinsp")).length === 1 && (await p.$$(".insp details.isub")).length === 1);
+    check("step 6 on the workflow bar shows the results in the tree's Results tab (0.10.0)", (await p.textContent(".tree .ttabs button.on")) === "Results" && (await p.$$(".tree .tres .rinsp")).length === 1);
     await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(150);
     check("Messages keeps what the window said, with its time (0.9.1)", (await p.$$(".console .cmsg")).length >= 1 && (await p.textContent(".console .cmsgs")).includes("Solved"), await p.textContent(".console").catch(() => ""));
     await p.click('.console header button:has-text("Log")'); await p.waitForTimeout(100);
@@ -1447,11 +1452,12 @@ let __page = null;
     await p.mouse.move(g[0], g[1]); await p.mouse.down(); await p.mouse.move(g[0] + 60, g[1], { steps: 4 }); await p.mouse.up(); await p.waitForTimeout(100);
     const tw1 = await p.$eval(".tree", el => el.getBoundingClientRect().width);
     check("the steps panel widens by dragging its edge (0.9.1)", Math.abs(tw1 - tw0 - 60) < 4, `${tw0} → ${tw1}`);
+    await p.click(".tree .ttabs button:has-text('Model')"); await p.waitForTimeout(80); await p.click(".tree .troot"); await p.waitForTimeout(100);
     await p.click(".insp header .ifold"); await p.waitForTimeout(100);
     check("the card closes with × (0.9.1, the user)", (await p.$$(".ipop")).length === 0);
     await p.click('.flow button:has-text("Results")'); await p.waitForTimeout(150);
     // The Results page has its way back.
-    await p.click('.insp .rinsp button:has-text("Tables and equilibrium")'); await p.waitForTimeout(250);
+    await p.click('.tree .tres .rinsp button:has-text("Tables and equilibrium")'); await p.waitForTimeout(250);
     check("the Results page has a bar with the way back to the model (0.9.1)", (await p.$$('.pagebar button:has-text("Back to the model")')).length === 1);
     await p.click('.pagebar button:has-text("Back to the model")'); await p.waitForTimeout(150);
     // A 3D mesh's Mesh view: the elements drawn in 3D, not the flat drawing sheet (0.9.1, found in the audit).

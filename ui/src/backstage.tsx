@@ -93,19 +93,29 @@ const Home = () => {
   );
 };
 
-/** File › Examples (0.6.1): the worked examples under headings, each group from simple to harder. */
+/** File › Examples (0.10.0): the worked examples in folders (one per kind), each from simple to
+ *  harder, a search across them all, and the verification benchmarks. */
+const [exFolder, setExFolder] = createSignal<string | null>(null);
 const ExamplesPage = () => {
   const [ex] = createResource(() => call<Example[]>("examples_list"));
+  const [q, setQ] = createSignal("");
   const groups = () => { const out: [string, Example[]][] = []; for (const t of ex() ?? []) { const g = t.group ?? "Blank"; if (g === "Blank") continue; let e = out.find(x => x[0] === g); if (!e) { e = [g, []]; out.push(e); } e[1].push(t); } return out; };
+  const folder = () => exFolder() ?? groups()[0]?.[0] ?? "";
+  const shown = () => { const k = q().trim().toLowerCase(); return k ? groups().flatMap(g => g[1]).filter(t => `${t.name} ${t.what}`.toLowerCase().includes(k)) : groups().find(g => g[0] === folder())?.[1] ?? []; };
   return (
     <div class="home exhome">
-      <div>
-        <h1>Examples</h1>
-        <p class="muted">Each opens as a new model, ready to solve (F5). Its notes (Inspector, nothing selected) say what it shows.</p>
-        <For each={groups()}>{([g, list]) => <>
-          <h2>{g}</h2>
-          <div class="tiles"><For each={list}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For></div>
-        </>}</For>
+      <h1>Examples</h1>
+      <p class="muted">Each opens as a new model, ready to solve (F5); its notes (the model's settings, from its name at the top of the tree) say what it shows and what to look at.</p>
+      <div class="exgrid">
+        <nav class="exfolders" aria-label="Example folders">
+          <For each={groups()}>{([g, list]) => <button classList={{ on: !q() && g === folder() }} data-group={g} onClick={() => { setQ(""); setExFolder(g); }}><Icon n="folder" /><span>{g}</span><small>{list.length}</small></button>}</For>
+          <button onClick={() => import("./dialogs").then(k => k.verification())}><Icon n="verify" /><span>Verification (benchmarks)</span><small>✓</small></button>
+        </nav>
+        <div>
+          <div class="exhead"><b>{q() ? `Found: ${shown().length}` : folder()}</b><span class="muted">{q() ? "" : ` · ${shown().length} examples, from simple to harder`}</span><span class="grow" />
+            <label class="exsearch"><Icon n="search" /><input placeholder="Search every example" value={q()} onInput={e => setQ(e.currentTarget.value)} /></label></div>
+          <div class="tiles"><For each={shown()}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For></div>
+        </div>
       </div>
     </div>
   );

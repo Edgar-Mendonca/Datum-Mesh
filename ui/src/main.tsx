@@ -14,6 +14,7 @@ import { Backstage, update, checkUpdate } from "./backstage";
 import { Canvas, fit, scale } from "./canvas";
 import { Tree, Inspector, ANALYSES, Flow, popShown, setInspOpen } from "./panels";
 import { Console, runLine } from "./console";
+import { CtxBar, ToolStrip } from "./shell";
 import { ResultsLegend } from "./results";
 const ResultsPage = lazy(() => import("./resultspage").then(m => ({ default: m.ResultsPage })));
 import { PartLegend, MeshBar } from "./parts";
@@ -113,12 +114,13 @@ const App = () => {
     <div class="app" ref={() => document.addEventListener("keydown", keys)}>
       <TitleBar update={update()?.available ? update()!.latest : null} />
       <Ribbon />
+      <Show when={out()}><CtxBar /></Show>
       <main class="work">
         <div class="workrow">
         <Show when={out()}><Flow /></Show>
         <div class="content" style={{ "--tree-w": `${treeW()}px`, "--insp-w": `${inspW()}px` }}>
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="vgrip" onPointerDown={e => grip(e, "tree")} title="Drag to widen or narrow the steps" /><div class="center"><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
+            <Switch fallback={<div class="modelview"><Tree /><div class="vgrip" onPointerDown={e => grip(e, "tree")} title="Drag to widen or narrow the steps" /><ToolStrip /><div class="center"><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
                 // Sketching (0.6.2): the 3D view behind, square to the plane, the sketch canvas over it.
                 <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={(rawResults() || (modeOn() && modes())) && !sketch() && view() !== "mesh"}><div class="playwrap"><Suspense><Player /></Suspense></div></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Show when={popShown()}><div class="ipop" classList={{ low: !!sketch() }}><div class="vgrip" onPointerDown={e => grip(e, "insp")} title="Drag to widen or narrow this panel" /><Inspector /></div></Show></div>}>
               <Match when={view() === "results"}><div class="pagewrap"><PageBar t="Results: tables and equilibrium" /><Suspense><ResultsPage /></Suspense></div></Match>
