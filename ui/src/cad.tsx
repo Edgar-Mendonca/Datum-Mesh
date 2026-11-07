@@ -12,7 +12,7 @@ export type CadCurve = { id: string; pts: [number, number][]; construction: bool
 export type CadPoint = { id: string; at: [number, number]; fixed: boolean };
 export type CadMark = { id: string; name: string; value: number | null; at: [number, number] };
 export type CadSketch = { id: number; name: string; origin: number[]; x: number[]; y: number[]; curves: CadCurve[]; points: CadPoint[]; marks: CadMark[]; profiles: number; status: string };
-export type CadScene = { bodies: CadBody[]; sketches: CadSketch[]; features: { id: number; name: string; kind: string; suppressed: boolean }[]; marker: number | null; active: number | null; undo: boolean; redo: boolean };
+export type CadScene = { bodies: CadBody[]; sketches: CadSketch[]; features: { id: number; name: string; kind: string; suppressed: boolean }[]; marker: number | null; active: number | null; undo: boolean; redo: boolean; planes?: { name: string; plane: { origin: number[]; x_dir: number[]; y_dir: number[] } | null }[] };
 
 export const [cad, setCad] = createSignal<CadScene | null>(null);
 /** Runs one engine command; the scene comes back. False (and a message) when it is refused. */
@@ -79,8 +79,8 @@ export const pickTool = (t: string | null) => { setCadTool(t); setDraft([]); };
  * from the front and the side from the right, each with Z (the height) up the screen. (The
  * engine's own XZ plane has its y axis down, so what was drawn upward went below the floor.) */
 const PLANES = { XY: "XY", XZ: { origin: [0, 0, 0], x_dir: [1, 0, 0], y_dir: [0, 0, 1] }, YZ: { origin: [0, 0, 0], x_dir: [0, 1, 0], y_dir: [0, 0, 1] } } as const;
-export const newSketch = async (plane: "XY" | "XZ" | "YZ") => {
-  if (!(await cadRun("sketch.create", { plane: PLANES[plane] }))) return;
+export const newSketch = async (plane: "XY" | "XZ" | "YZ" | { named: string }) => {
+  if (!(await cadRun("sketch.create", { plane: typeof plane === "string" ? PLANES[plane] : plane.named }))) return;
   setTab("geometry"); pickTool(ways().Line);
   // A 3D frame is metres across: the sheet starts showing about 10 m (a part: about 200 mm).
   if (model()?.analysis === "space") setSheetView({ s: 0.08, cx: 3000, cy: plane === "XY" ? 2000 : 2500 });
@@ -102,8 +102,8 @@ export const finishSketch = async () => {
       // Frame the frame now that it is there (the turn back started before it was made).
       setTurnBack(turnBack() + 1);
       const n = o.created.filter(id => o.m.members.some(b => b.id === id)).length, np = o.created.filter(id => o.m.shapes.some(s => s.id === id && s.plate)).length;
-      const what = [n && `${n} ${memberTruss() ? (n === 1 ? "truss bar" : "truss bars") : (n === 1 ? "beam" : "beams")}`, np && `${np} ${np === 1 ? "plate" : "plates"} (0.2 m thick: change it in the inspector)`].filter(Boolean).join(" and ");
-      toast(`${what} made from the sketch, joined where they meet: give them supports and loads, then solve.`, true);
+      const what = [n && `${n} ${memberTruss() ? (n === 1 ? "truss bar" : "truss bars") : (n === 1 ? "beam" : "beams")}`, np && `${np} ${np === 1 ? "plate" : "plates"}`].filter(Boolean).join(" and ");
+      toast(`${what} made from the sketch, joined where they meet: give them supports and loads, then solve.${np ? " Plates start 0.2 m thick: change it in the Inspector." : ""}`, true);
     } catch (e) { toast(String(e)); }
     return;
   }

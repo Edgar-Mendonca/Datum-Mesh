@@ -134,3 +134,32 @@ export const exportCad = async (format: "step" | "stl") => {
     if (p) toast(`Saved ${p}`, true);
   } catch (e) { toast(String(e)); }
 };
+
+/** 3D frames (0.7.6): levels (planes at each floor, to sketch the floor's beams on) and a grid of
+ *  construction lines on the ground (where the columns go), drawn once from counts and spacings. */
+export const levelsDialog = () => openDialog(() => {
+  const [n, setN] = createSignal(3), [h, setH] = createSignal(3.5), [nx, setNx] = createSignal(3), [sx, setSx] = createSignal(6), [ny, setNy] = createSignal(2), [sy, setSy] = createSignal(5);
+  const ok = async () => {
+    if (!(n() >= 0 && h() > 0 && nx() >= 1 && ny() >= 1 && sx() > 0 && sy() > 0)) { toast("Counts must be whole numbers from 1, sizes more than 0."); return false; }
+    const have = new Set((cad()?.sketches ?? []).map(s => s.name));
+    for (let i = 1; i <= Math.round(n()); i++) if (!(await cadRun("construct.plane.offset", { base: "XY", offset: i * h() * 1000, name: `Level ${i}` }))) return false;
+    // The grid: construction lines (left out of the members), each bay's lines across the whole plan.
+    const X = Math.round(nx()) * sx() * 1000, Y = Math.round(ny()) * sy() * 1000;
+    if (!(await cadRun("sketch.create", { plane: "XY" }))) return false;
+    for (let i = 0; i <= Math.round(nx()); i++) await cadRun("sketch.line", { points: [[i * sx() * 1000, 0], [i * sx() * 1000, Y]], construction: true });
+    for (let j = 0; j <= Math.round(ny()); j++) await cadRun("sketch.line", { points: [[0, j * sy() * 1000], [X, j * sy() * 1000]], construction: true });
+    await cadRun("sketch.finish");
+    const g = (cad()?.sketches ?? []).find(s => !have.has(s.name));
+    if (g) await cadRun("timeline.rename", { feature: g.id, name: "Grid" });
+    frameIt();
+    toast(`${Math.round(n())} levels and a ${Math.round(nx())} × ${Math.round(ny())} bay grid: New Sketch ▾ › On Level 1 (and so on) to draw each floor's beams; snap to the grid's crossings for the columns.`, true);
+  };
+  return <Dialog title="Levels and grid" okText="Make" ok={ok} help="sketchplane">
+    <p class="muted small">Planes at each floor to sketch on, and dashed grid lines on the ground where the columns stand. The grid is construction: it guides the drawing and does not become members.</p>
+    <table class="kv"><tbody>
+      <tr><td>Levels above the ground</td><td><input class="mono" type="number" value={n()} onInput={e => setN(+e.currentTarget.value)} /></td><td class="muted">each</td><td><input class="mono" type="number" step="0.1" value={h()} onInput={e => setH(+e.currentTarget.value)} /></td><td class="muted">m apart</td></tr>
+      <tr><td>Bays along X</td><td><input class="mono" type="number" value={nx()} onInput={e => setNx(+e.currentTarget.value)} /></td><td class="muted">each</td><td><input class="mono" type="number" step="0.1" value={sx()} onInput={e => setSx(+e.currentTarget.value)} /></td><td class="muted">m</td></tr>
+      <tr><td>Bays along Y</td><td><input class="mono" type="number" value={ny()} onInput={e => setNy(+e.currentTarget.value)} /></td><td class="muted">each</td><td><input class="mono" type="number" step="0.1" value={sy()} onInput={e => setSy(+e.currentTarget.value)} /></td><td class="muted">m</td></tr>
+    </tbody></table>
+  </Dialog>;
+});

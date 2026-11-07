@@ -397,7 +397,13 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.ribbon button[title^="A closed outline drawn on its own"]'); await p.waitForTimeout(100);
   check("Closed Shapes become Plates turns on (0.7.6)", await p.$eval('.ribbon button[title^="A closed outline drawn on its own"]', b => b.classList.contains("on")));
   await p.click('.ribbon button[title^="A closed outline drawn on its own"]'); await p.waitForTimeout(100);
-  await p.click('.ribbon button:has-text("New Sketch")'); await p.waitForTimeout(250);
+  await p.click('.ribbon button[title="New Sketch options"]'); await p.waitForTimeout(150);
+  check("a 3D frame's New Sketch ▾ offers the three planes (and levels once made) (0.7.6)", (await p.textContent(".menu")).includes("On the ground (XY)"));
+  await p.keyboard.press("Escape"); await p.mouse.click(700, 500); await p.waitForTimeout(100);
+  await p.click('.ribbon button[title^="Levels (a plane at each floor"]'); await p.waitForTimeout(150);
+  check("Levels opens with storeys and bays (0.7.6)", (await p.textContent(".dlg")).includes("Levels above the ground") && (await p.textContent(".dlg")).includes("Bays along X"));
+  await p.click(".dlg footer .btn:not(.pri)"); await p.waitForTimeout(100);
+  await p.click('.ribbon button[title^="Draw the frame with the sketch tools"]'); await p.waitForTimeout(250);
   check("a 3D frame's New Sketch asks for a plane like a part's (0.7.5)", (await p.$$(".view3d .pickplane")).length === 1);
   await p.click('.view3d .pickplane button:has-text("Front (XZ)")'); await p.waitForTimeout(300);
   check("the frame sketch opens with the modelling sketch tools", (await p.$$('.ribbon .grp:has(.cap:text-is("Create")) .rbw')).length >= 6);
@@ -690,7 +696,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.evaluate(() => { window.__modesKey = null; });
   const emb = await p.textContent(".legend").catch(() => "");
   check("an imported mesh's natural frequencies are listed under the 3D view", emb.includes("Natural frequencies") && (await p.$$(".legend .modelist button")).length === fix.elbow_modes.modes.length, emb.slice(0, 160));
-  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button:has-text("Mesh")'); await p.waitForTimeout(150);
+  await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title="STEP options"]'); await p.waitForTimeout(150);
+  check("a 3D solid's Import offers STEP, mesh files and a DXF section (0.7.6)", (await p.textContent(".menu")).includes("STEP file") && (await p.textContent(".menu")).includes("Mesh file") && (await p.textContent(".menu")).includes("DXF section"));
   await p.click('.menu button:has-text("millimetres")').catch(() => {}); await p.waitForTimeout(250);
   if (await p.$('.dlg button:has-text("Don\'t save")')) await p.click('.dlg button:has-text("Don\'t save")');
   await p.waitForTimeout(300);

@@ -183,21 +183,11 @@ async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out>
 /// Undo takes back; the sketches are then taken out of the design (the members are the frame).
 #[tauri::command]
 fn cad_members(st: State<CadSt>, app: State<St>, truss: bool, plates: Option<bool>) -> R<Out> {
-    use datum_core::doc::{Item, Op};
-    use datum_core::model::{Geom, MemberKind, Plate, Shape};
     let mut c = st.lock();
-    let (lines, used) = c.member_lines()?;
-    if lines.is_empty() {
-        return Err("The sketch has no lines to make members of: draw lines (construction lines are left out).".into());
-    }
-    // 0.7.6: closed outlines on their own become plates (0.2 m thick to start), the rest members.
-    let (lines, loops) = if plates.unwrap_or(false) { datum_cad::Cad::plates_of(&lines) } else { (lines, vec![]) };
-    let kind = if truss { MemberKind::Truss } else { MemberKind::Beam };
     let mut a = app.lock();
     let material = a.doc.m.materials.first().map(|x| x.id).unwrap_or(0);
-    let mut ops: Vec<Op> = lines.iter().map(|(p, q)| Op::AddMember { from: [p[0], p[1]], to: [q[0], q[1]], kind, section: None, material: None, z: [p[2], q[2]] }).collect();
-    ops.extend(loops.into_iter().map(|(plane, depth, pts)| Op::Add { item: Item::Shape(Shape { id: 0, name: String::new(), hole: false, material, geom: Geom::Poly { pts, bulge: vec![] }, plate: Some(Plate { plane, depth, t: 0.2 }), part: 0 }) }));
-    let created = a.doc.apply(Op::Batch(ops))?;
+    let (ops, used) = c.frame_ops(truss, plates.unwrap_or(false), material)?;
+    let created = a.doc.apply(datum_core::doc::Op::Batch(ops))?;
     // The sketches are the members now (the frame is edited as members from here).
     let ids: Vec<u64> = c.scene()?.features.iter().filter(|f| used.contains(&f.id)).map(|f| f.id).collect();
     for id in ids {

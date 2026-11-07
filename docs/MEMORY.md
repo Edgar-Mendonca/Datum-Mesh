@@ -153,6 +153,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 
 | Version | Decision | Why |
 | --- | --- | --- |
+| 0.7.6 | Frames: a closed outline whose corners touch nothing else, flat on a plane square to an axis, becomes a plate (`Cad::plates_of`, `Cad::frame_ops`); any other outline stays members | A slab is drawn as its outline; a rectangle of beams with columns at its corners must stay beams, and the corner count tells them apart |
+| 0.7.6 | Levels are construction planes (`construct.plane.offset` named "Level n") and the grid a sketch of construction lines; the scene lists the planes with where they are (`Scene.planes`) | Sketching on a level puts its beams at the level's height with no new machinery; construction lines are already left out of members |
 | 0.7.4 | 3D frames are drawn with the modelling sketch: Finish Sketch turns every straight piece of the finished sketches into members (`Cad::member_lines`, shell `cad_members`, `AddMember` in one batch) and takes the sketches out of the design; the 0.6.2 plane sketch stays as Members & Plates | One way of drawing for parts and frames, with dimensions and constraints; plates are not yet made from sketches |
 | 0.7.4 | The front and side planes are created with explicit axes (front: x = X, y = Z; side: x = Y, y = Z), not the engine's "XZ"/"YZ" | The engine's XZ plane has y = −Z: drawn upward meant below the floor, seen from the back |
 | 0.7.4 | A response spectrum is not played (`playable`); test `every_example_plays` checks every example's frames against what is drawn | The user found animations that did not work: the two spectrum examples played combined peaks as if they grew with a load |
@@ -345,7 +347,7 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 | 0.7.3 | Analysis on the modelled solids: Gmsh meshing on demand, supports and loads on clicked faces named after their feature, solve and results; Roadmap icon colour | ✅ |
 | 0.7.4 | Every example's animation checked (spectrum results not played); heat on the modelled solids (heat sink example); 3D frames drawn with the sketch tools; front and side planes the right way up. (Crushing, modelled examples and the 3D/Section switch came early, in 0.7.3) | ✅ |
 | 0.7.5 | Sections drawn as real shapes along 3D members (orientation visible); primitives (box, cylinder, cone, sphere) and Combine; rounded rectangle, ellipse and spline in the sketch. (Members from sketch lines came in 0.7.4; releases, member loads and load cases were already there) | ✅ |
-| 0.7.6 | Grid lines and levels; plates from sketches; sweep, loft, draft, split; measure, section view; STEP and STL | ⬜ |
+| 0.7.6 | Sweep, loft, draft, split, measure, mass; STEP in and out, STL out; levels and a column grid for frames; plates from closed sketch outlines; a ribbon that fits. (The section view moved to 0.7.7) | ✅ |
 | 0.7.7 | Interactions and output: solids tied, coupling to a reference point, remote force and moment, bolt pretension; finer mesh near chosen faces, mesh quality; graphs along a path or over time; the report on the modelled solids | ⬜ |
 | 0.8 | Contact (frictionless, then friction): the folds of a crushed tube | ⬜ |
 | 0.9 | Explicit dynamics: impact | ⬜ |
@@ -482,6 +484,12 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 - **0.7.4 built (2026-11-07).** Test `every_example_plays` (found quake and building: spectrum results played as a load growing; now not playable); heat sink example (`Pick::Rest`) with its heat balance in the examples test; frames drawn with the sketch tools (`member_lines`, `cad_members`, test `sketch_lines_become_members`; ribbon New Sketch for 3D frames, Lines become Beams / Truss Bars, Members & Plates for the old plane sketch); planes with explicit axes. Real app: a 6 × 4 m portal sketched on the front plane became three beams standing on the floor; the heat sink solved (80 °C base, fins to 77 °C, heat balance). Found there: the front plane looked from the back and drew below the floor; the message counted nodes as beams; the view framed before the members existed.
 
 - **0.7.5 built (2026-11-07).** 0.7.4 released (setup 52.2 MB, CI green). Sections swept along 3D members (`sectionRing` in view3d, View › Section shapes, `sectionsOn`); primitives and Combine (`ui/src/primitives.tsx`, engine commands `solid.box/cylinder/cone/sphere/combine`), rounded rectangle, ellipse, spline (`cad.tsx`), test `primitives_combine_and_more_shapes`. Real app: the steel platform drawn with its sections; a 40 × 30 × 20 box, a cylinder at (20, 15, 0) and Combine › Cut left a box with a round pocket (7 faces). Found there: a new primitive was not framed (the view stayed at the empty grid's scale); the view now frames after each one.
+
+- **0.7.6 built (2026-11-07).** 0.7.5 released (setup 52.2 MB). `ui/src/solidtools.tsx` (Sweep, Loft, Split, Measure, Mass, STEP import, STEP/STL export, Levels), Draft and Measure as 3D tools (`TOOLS3`), shell `cad_import_step`, `cad_export`, `cad_members(plates)`; tests `sweep_loft_draft_split_measure_step` (with STEP out, back in and meshed), `closed_outlines_become_plates`, `levels_and_grid`. Real app: box drafted 10° (the top face then measured 1058.94 mm² = 40 × (30 − 20 tan 10°), 20 mm to the bottom edge), mass 0.177 kg of steel, split at Z = 10 into two meshed-together solids (14 488 tetrahedra); 3 levels and a 3 × 2 bay grid; a rectangle on Level 1 became 4 beams at 3.5 m, and with Plates on, one 200 mm slab. Found there: an empty Sizes group showed for Measure; the ribbon overflowed; a plate's outline needed a straight-edge flag per corner (refused as "arcs do not match"); Fit and the 3D view ignored a frame's sketches.
+
+## 5. Known limits (0.7.6)
+
+- Sweep takes the path sketch's curves in the order drawn; Loft takes sections in the order drawn. STL is export only (a surface cannot be meshed into solid elements). No section view yet (0.7.7).
 
 ## 5. Known limits (0.7.5)
 

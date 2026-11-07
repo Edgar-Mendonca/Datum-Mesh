@@ -254,11 +254,32 @@ export const View3D = () => {
       lines(seg, ink);
       world.children[world.children.length - 1].userData.cadEdges = b.name;
     }
+    // Finished sketches; construction lines (a frame's grid, 0.7.6) dashed.
+    const dash: number[] = [], lo = [Infinity, Infinity], hi = [-Infinity, -Infinity];
     for (const s of c.sketches) {
       if (s.id === c.active) continue;
       const seg: number[] = [], at = (p: [number, number]) => [0, 1, 2].map(k => s.origin[k] + p[0] * s.x[k] + p[1] * s.y[k]);
-      for (const cv of s.curves) for (let i = 0; i + 1 < cv.pts.length; i++) seg.push(...at(cv.pts[i]), ...at(cv.pts[i + 1]));
+      for (const cv of s.curves) for (let i = 0; i + 1 < cv.pts.length; i++) {
+        const a = at(cv.pts[i]), b = at(cv.pts[i + 1]);
+        (cv.construction ? dash : seg).push(...a, ...b);
+        for (const q of [a, b]) for (const k of [0, 1]) { lo[k] = Math.min(lo[k], q[k]); hi[k] = Math.max(hi[k], q[k]); }
+      }
       lines(seg, faint);
+    }
+    if (dash.length) {
+      const a = new Float32Array(dash.length); for (let i = 0; i < dash.length; i += 3) put(a, i, dash[i], dash[i + 1], dash[i + 2]);
+      const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(a, 3));
+      const o = new THREE.LineSegments(g, new THREE.LineDashedMaterial({ color: faint, dashSize: 0.25, gapSize: 0.15 })); o.computeLineDistances(); world.add(o);
+    }
+    // Levels (0.7.6): each plane parallel to the ground drawn as an outline over the sketches.
+    if (isFinite(lo[0])) {
+      const lv: number[] = [];
+      for (const p of c.planes ?? []) {
+        const pl = p.plane; if (!pl || Math.abs(pl.x_dir[2]) > 1e-9 || Math.abs(pl.y_dir[2]) > 1e-9) continue;
+        const z = pl.origin[2];
+        lv.push(lo[0], lo[1], z, hi[0], lo[1], z, hi[0], lo[1], z, hi[0], hi[1], z, hi[0], hi[1], z, lo[0], hi[1], z, lo[0], hi[1], z, lo[0], lo[1], z);
+      }
+      if (lv.length) lines(lv, new THREE.Color(css("--line3")));
     }
   };
   const buildSolid = (m: Model) => {
@@ -449,6 +470,7 @@ export const View3D = () => {
     clear();
     // Modelled solids (0.7.3): the solids in step 1, their mesh after it (with supports, loads, results).
     if (isSolidA(m.analysis)) { const sm = showMesh(); buildSolid(geoMesh() && !sm ? { ...m, volume: undefined, supports: [], loads: [] } : m); addCad(!sm); return; }
+    if (m.analysis === "space") addCad(false);
     // An empty frame (0.6.0): the floor covers the 6 × 4 × 4 m space the view first looks at.
     const empty = !m.nodes.length && !m.shapes.length;
     const P = at3(m), span = empty ? 6 : span3(m), selSet = new Set(sel());
@@ -459,7 +481,7 @@ export const View3D = () => {
     const SL = stageL(m);
     if (opts().grid) floor(SL);
     axes(SL);
-    if (picking() || planePick() || (empty && !sketch() && !activeSketch())) originPlanes(SL);
+    if (picking() || planePick() || (empty && !sketch() && !activeSketch() && !cad()?.sketches.length)) originPlanes(SL);
     const r = spaceRes(), f = r ? deform3(m, r) : 0, q = q3(), rg = range3(), cols = palette(opts().contours).map(c => new THREE.Color(c));
     const showRes = !!r && r.members.length === m.members.length;
     // Members: as drawn (faint when the deflected shape is on top), selected ones in the accent.
@@ -613,10 +635,12 @@ export const View3D = () => {
     // The geometry engine's solids (0.7.2): mm with Z up.
     if (isSolidA(m.analysis)) for (const b of cad()?.bodies ?? []) for (let i = 0; i < b.pos.length; i += 3) box.expandByPoint(new THREE.Vector3(b.pos[i] * 1e-3, b.pos[i + 2] * 1e-3, -b.pos[i + 1] * 1e-3));
     // ...and their sketches, so a sketch just finished is in view before its solid is made.
-    if (isSolidA(m.analysis)) for (const k of cad()?.sketches ?? []) for (const cv of k.curves) for (const [x, y] of cv.pts) {
+    if (isSolidA(m.analysis) || m.analysis === "space") for (const k of cad()?.sketches ?? []) for (const cv of k.curves) for (const [x, y] of cv.pts) {
       const q = [0, 1, 2].map(j => k.origin[j] + x * k.x[j] + y * k.y[j]);
       box.expandByPoint(new THREE.Vector3(q[0] * 1e-3, q[2] * 1e-3, -q[1] * 1e-3));
     }
+    // ...and a frame's levels over its grid (0.7.6).
+    if (m.analysis === "space" && !box.isEmpty()) for (const p of cad()?.planes ?? []) if (p.plane && Math.abs(p.plane.x_dir[2]) < 1e-9 && Math.abs(p.plane.y_dir[2]) < 1e-9) box.expandByPoint(new THREE.Vector3(box.min.x, p.plane.origin[2] * 1e-3, box.min.z));
     return box;
   };
   const fit = (keepDir = false, from?: P3) => {
@@ -993,7 +1017,7 @@ export const View3D = () => {
       <Show when={planePick()}><div class="pickplane" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}><b>New Sketch</b><span>Click a plane at the origin or a flat face of a solid, or</span>
         <For each={[["XY", "Floor (XY)"], ["XZ", "Front (XZ)"], ["YZ", "Side (YZ)"]] as const}>{([k, l]) => <button class="btn sm" onClick={() => { setPlanePick(false); newSketch(k); }}>{l}</button>}</For>
         <button class="btn sm" onClick={() => setPlanePick(false)}>Cancel</button></div></Show>
-      <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch() && !activeSketch() && !planePick()}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>New Sketch, then click one of the three planes at the origin: the view turns to it. Draw the frame with lines (and arcs), sized with dimensions as for a part; Finish Sketch makes them beams (or truss bars), joined where they meet. Sketch on the next plane for the next frame. Or draw members one by one with Beam and Truss Bar.</span><button class="btn pri" onClick={() => { pick3(null); setPlanePick(true); }}>New Sketch</button></div></Show></Show>
+      <Show when={model()?.analysis === "space" && !model()?.nodes.length && !sketch() && !activeSketch() && !planePick() && !cad()?.sketches.length}><Show when={!picking()}><div class="empty corner"><b>Draw a 3D frame</b><span>New Sketch, then click one of the three planes at the origin: the view turns to it. Draw the frame with lines (and arcs), sized with dimensions as for a part; Finish Sketch makes them beams (or truss bars), joined where they meet. Sketch on the next plane for the next frame. Or draw members one by one with Beam and Truss Bar.</span><button class="btn pri" onClick={() => { pick3(null); setPlanePick(true); }}>New Sketch</button></div></Show></Show>
       <SweepPanel />
       <Show when={picking()}><div class="draw3 pickbar" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
         <b>New sketch</b><span class="muted">{model()?.parts?.length ? "Pick a plane: a square at the origin, a flat face of a part, or" : "Pick a plane: click a square at the origin, or"}</span>

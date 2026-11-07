@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.7.6 — 2026-11-07
+
+More modelling, files in and out, and buildings laid out by level.
+
+**Modelling**
+- Sweep: a closed profile carried along a path drawn in another sketch, with an optional twist and a scale at the end (pipes, rails, springs).
+- Loft: a solid through closed sections on different planes (a square base to a round top).
+- Draft: click a side face to slope it by the draft angle, as a moulded or cast part needs.
+- Split: a solid cut in two by a plane square to X, Y or Z; the pieces are meshed joined.
+- Measure: click a face or an edge for its area, length, diameter or radius; click a second for the distance and angle between them. Mass lists each solid's volume, area, centre of mass and mass from its material.
+- New Sketch ▾ lists the planes you have made (Offset Plane, Levels).
+
+**Files**
+- Import › STEP brings in the solids of a STEP file from another CAD program, ready to mesh and analyse (mesh files and DXF sections are under its ▾).
+- Export saves the solids as a STEP file or an STL surface.
+
+**Buildings**
+- Levels: a plane at each floor and a grid of column lines on the ground, from storey height and bay sizes. New Sketch ▾ › On Level 1 draws that floor's beams at its height; the grid is dashed and never becomes members.
+- Closed Shapes become Plates: a rectangle, polygon or circle drawn on its own becomes a slab or wall (0.2 m thick to start), not four beams round it.
+
+**Ribbon**
+- The Geometry ribbon fits again: Sweep and Loft, Draft and Split, and Parameters beside Offset Plane take small buttons; Sizes shows only when a tool has a size.
+
 ## 0.7.5 — 2026-11-07
 
 3D frames drawn as they will be built, and solids made in one go.

@@ -113,6 +113,15 @@ pub struct Scene {
     pub active: Option<u64>,
     pub undo: bool,
     pub redo: bool,
+    /// The construction planes (0.7.6: levels to sketch on).
+    pub planes: Vec<NamedPlane>,
+}
+
+/// A construction plane: its name, and where it is (origin, x_dir, y_dir; mm, the design's axes).
+#[derive(Serialize)]
+pub struct NamedPlane {
+    pub name: String,
+    pub plane: Value,
 }
 
 impl Default for Cad {
@@ -216,6 +225,23 @@ impl Cad {
             }
         }
         Ok((out, used))
+    }
+
+    /// 3D frames drawn with the sketch tools: the model operations that make the finished
+    /// sketches' lines into members (truss bars or beams) and, with `plates`, closed outlines on
+    /// their own into plates 0.2 m thick (0.7.6); and the sketches used.
+    pub fn frame_ops(&self, truss: bool, plates: bool, material: u32) -> Result<(Vec<datum_core::doc::Op>, Vec<u64>), String> {
+        use datum_core::doc::{Item, Op};
+        use datum_core::model::{Geom, MemberKind, Plate, Shape};
+        let (lines, used) = self.member_lines()?;
+        if lines.is_empty() {
+            return Err("The sketch has no lines to make members of: draw lines (construction lines are left out).".into());
+        }
+        let (lines, loops) = if plates { Cad::plates_of(&lines) } else { (lines, vec![]) };
+        let kind = if truss { MemberKind::Truss } else { MemberKind::Beam };
+        let mut ops: Vec<Op> = lines.iter().map(|(p, q)| Op::AddMember { from: [p[0], p[1]], to: [q[0], q[1]], kind, section: None, material: None, z: [p[2], q[2]] }).collect();
+        ops.extend(loops.into_iter().map(|(plane, depth, pts)| Op::Add { item: Item::Shape(Shape { id: 0, name: String::new(), hole: false, material, geom: Geom::Poly { bulge: vec![0.0; pts.len()], pts }, plate: Some(Plate { plane, depth, t: 0.2 }), part: 0 }) }));
+        Ok((ops, used))
     }
 
     /// 0.7.6: the frame's pieces split into plates and members. A closed outline whose corners
@@ -340,7 +366,8 @@ impl Cad {
             .iter()
             .map(|f| FeatureItem { id: f.id, name: f.name.clone(), kind: f.kind.type_name().trim_end_matches("Feature").to_string(), suppressed: f.suppressed })
             .collect();
-        Ok(Scene { bodies, sketches, features, marker: doc.marker, active: self.session.active_sketch, undo: !self.session.undo.is_empty(), redo: !self.session.redo.is_empty() })
+        let planes = st.construct.iter().filter(|c| matches!(c.geom, solidcraft_doc::construct::ConstructGeom::Plane(_))).map(|c| NamedPlane { name: c.name.clone(), plane: match &c.geom { solidcraft_doc::construct::ConstructGeom::Plane(p) => serde_json::to_value(p).unwrap_or_default(), _ => Value::Null } }).collect();
+        Ok(Scene { bodies, sketches, features, marker: doc.marker, active: self.session.active_sketch, undo: !self.session.undo.is_empty(), redo: !self.session.redo.is_empty(), planes })
     }
 }
 
@@ -690,6 +717,7 @@ mod tests {
         run(&mut l, "sketch.rectangle.center", json!({"center": [0, 0], "corner": [10, 10]}));
         run(&mut l, "sketch.finish", json!({}));
         run(&mut l, "construct.plane.offset", json!({"base": "XY", "offset": 30, "name": "Up"}));
+        assert_eq!(l.scene().unwrap().planes.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Up"], "the plane is listed by name");
         run(&mut l, "sketch.create", json!({"plane": "Up"}));
         run(&mut l, "sketch.circle.center", json!({"center": [0, 0], "radius": 6}));
         run(&mut l, "sketch.finish", json!({}));
@@ -725,6 +753,45 @@ mod tests {
             let ms = i.mesh(5.0, &g, &dir.join("w")).unwrap();
             assert!(ms.tets.len() > 50, "the imported solids mesh");
         }
+    }
+
+    /// 0.7.6: levels are planes to sketch on, and the grid's construction lines never become members.
+    #[test]
+    fn levels_and_grid() {
+        let mut c = Cad::new();
+        for i in 1..=2 {
+            run(&mut c, "construct.plane.offset", json!({"base": "XY", "offset": i as f64 * 3500.0, "name": format!("Level {i}")}));
+        }
+        run(&mut c, "sketch.create", json!({"plane": "XY"}));
+        run(&mut c, "sketch.line", json!({"points": [[0, 0], [0, 10000]], "construction": true}));
+        run(&mut c, "sketch.line", json!({"points": [[0, 0], [12000, 0]], "construction": true}));
+        run(&mut c, "sketch.finish", json!({}));
+        let sc = c.scene().unwrap();
+        assert_eq!(sc.planes.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["Level 1", "Level 2"]);
+        assert_eq!(sc.planes[1].plane["origin"][2].as_f64(), Some(7000.0), "Level 2 is 7 m up");
+        assert!(sc.sketches[0].curves.iter().all(|k| k.construction));
+        let (segs, used) = c.member_lines().unwrap();
+        assert!(segs.is_empty() && used.is_empty(), "the grid stays a guide");
+        // A beam sketched on Level 2 is 7 m up (the model's y).
+        run(&mut c, "sketch.create", json!({"plane": "Level 2"}));
+        run(&mut c, "sketch.line", json!({"points": [[0, 0], [6000, 0]]}));
+        run(&mut c, "sketch.finish", json!({}));
+        // A slab on Level 1 with plates on: one plate, 3.5 m up, in a real model.
+        run(&mut c, "sketch.create", json!({"plane": "Level 1"}));
+        run(&mut c, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [6000, 5000]}));
+        run(&mut c, "sketch.finish", json!({}));
+        let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Space));
+        let mat = d.m.materials.first().map(|x| x.id).unwrap_or(0);
+        let (ops, used) = c.frame_ops(false, true, mat).unwrap();
+        assert_eq!(used.len(), 2, "both sketches with lines are used");
+        d.apply(datum_core::doc::Op::Batch(ops)).unwrap();
+        assert_eq!(d.m.members.len(), 1, "the beam on Level 2");
+        assert_eq!(d.m.shapes.iter().filter(|s| s.plate.is_some()).count(), 1, "the slab on Level 1");
+        let pl = d.m.shapes[0].plate.unwrap();
+        assert!((pl.depth - 3.5).abs() < 1e-9, "{pl:?}");
+        let segs: Vec<Segment> = c.member_lines().unwrap().0.into_iter().filter(|(a, _)| (a[1] - 7.0).abs() < 1e-9).collect();
+        assert_eq!(segs.len(), 1);
+        assert!((segs[0].0[1] - 7.0).abs() < 1e-9 && (segs[0].1[1] - 7.0).abs() < 1e-9, "{segs:?}");
     }
 
     /// 0.7.6: a rectangle on the floor on its own is a plate; a column standing on its corner is not.

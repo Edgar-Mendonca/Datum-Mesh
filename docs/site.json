@@ -7,7 +7,7 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
-    "From 0.7.5 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, ellipses, splines, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, boxes, cylinders, cones and spheres made in one go, solids joined, cut or intersected, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; frames drawn with the same sketch tools, and a history of every feature to edit, suppress, roll back or delete. The solids are then meshed by Gmsh (installed with it) and analysed by Datum Mesh's own engine, with supports and loads on the faces you click. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
+    "From 0.7.6 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, ellipses, splines, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, boxes, cylinders, cones and spheres made in one go, solids joined, cut or intersected, sweeps, lofts, drafts and splits, STEP files in and out, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; frames drawn with the same sketch tools, and a history of every feature to edit, suppress, roll back or delete. The solids are then meshed by Gmsh (installed with it) and analysed by Datum Mesh's own engine, with supports and loads on the faces you click. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
     "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load, in 2D and 3D; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both; 3D solids also follow large deformation, rubber included (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
   ],
@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "Sweep, loft, draft, split and measure; STEP files in and out; buildings laid out by levels and a column grid, with slabs drawn as plates",
     "3D frames drawn as they will be built: each member shown as its I, channel, angle, box or tube section, turned the way the solver turns it; boxes, cylinders, cones and spheres made in one go and combined",
     "3D frames drawn with the sketch tools: click a plane, draw lines and arcs with dimensions, and Finish Sketch makes them beams or truss bars joined where they meet",
     "Crushing and collapse: a tube pushed by a platen until its wall folds, the force peaking at the squash load and falling after it; examples modelled with the new tools",
@@ -92,23 +93,13 @@
   ],
   "roadmap": [
     {
-      "v": "0.7.6",
-      "title": "More modelling and frames",
-      "when": "Next",
-      "items": [
-        "Grid lines and levels; plates drawn with the sketch tools",
-        "Sweep, loft, draft and split; measure; a section view",
-        "STEP and STL files"
-      ]
-    },
-    {
       "v": "0.7.7",
       "title": "Interactions and output",
-      "when": "Later",
+      "when": "Next",
       "items": [
         "Solids tied together; coupling to a reference point; remote forces; bolt pretension",
-        "Finer mesh near chosen faces",
-        "Graphs along a path or over time; the report"
+        "Finer mesh near chosen faces; a section view through the solid",
+        "Graphs along a path or over time; the report on the modelled solids"
       ]
     },
     {
