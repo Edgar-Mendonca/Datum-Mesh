@@ -266,18 +266,24 @@ export const palette = () => openDialog(() => {
   );
 });
 
+const ANALYSIS_NAMES: Record<string, string> = { frame: "2D frame", space: "3D frame", stress: "plane stress", strain: "plane strain", axi: "axisymmetric", heat: "heat", solid: "3D solid", solidheat: "3D heat" };
+/** The file's name as saved (with .dmesh), or the model's name before it is. */
+const fileName = (o: { path: string | null; m: { name: string } }) => o.path ? o.path.split(/[\\/]/).pop()! : o.m.name;
 export const TitleBar = (p: { update: string | null }) => (
   <header class="top">
     <div class="bar">
       <div class="qat">
-        <img src="logo.svg" alt="" class="logo" />
+        <img src="logo.svg" alt="" class="logo" /><b class="appname">Datum Mesh</b>
+        <button title="New (Ctrl+N)" onClick={() => setBackstage("home")}><Icon n="new" /></button>
+        <button title="Open (Ctrl+O)" onClick={() => C.open()}><Icon n="open" /></button>
         <button title="Save (Ctrl+S)" onClick={() => C.save()}><Icon n="save" /></button>
         <button title="Undo (Ctrl+Z)" disabled={!out()?.undo} onClick={C.undo}><Icon n="undo" /></button>
         <button title="Redo (Ctrl+Y)" disabled={!out()?.redo} onClick={C.redo}><Icon n="redo" /></button>
         <button title="Print (Ctrl+P)" onClick={C.print}><Icon n="print" /></button>
       </div>
-      <div class="title">{out() ? `${out()!.m.name}${out()!.dirty ? " •" : ""} — Datum Mesh` : "Datum Mesh"}</div>
-      <button class="search" onClick={palette} title="Tell me what you want to do (Ctrl+K)"><Icon n="search" /><span>Tell me what you want to do</span><kbd>Ctrl+K</kbd></button>
+      {/* 0.10.2 (the mock-ups): the file, then what it is: its analysis, whether nonlinear, its units. */}
+      <div class="title"><Show when={out()} fallback="Datum Mesh">{o => <><b>{fileName(o())}{o().dirty ? " •" : ""}</b><span class="tsub"> · {ANALYSIS_NAMES[o().m.analysis] ?? o().m.analysis} · {(o().m as { steps?: { kind: string }[] }).steps?.some(s => s.kind !== "linear") ? "nonlinear" : "linear"} · {o().m.units === "US" ? "US" : "SI"}</span></>}</Show></div>
+      <button class="search" onClick={palette} title="Search commands, models and help (Ctrl+K)"><Icon n="search" /><span>Search commands, models, help</span><kbd>Ctrl+K</kbd></button>
       <Show when={p.update}><button class="upd" onClick={() => setBackstage("about")}>Update {p.update} available</button></Show>
       <button class="theme" title="Theme: Auto follows Windows" onClick={() => setTheme(theme() === "auto" ? "light" : theme() === "light" ? "dark" : "auto")}>Theme · {theme()}</button>
     </div>

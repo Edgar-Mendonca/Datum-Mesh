@@ -3,7 +3,7 @@
 import { cad, cadRun, meshOld, setMeshOld } from "./cad";
 import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
-import { For, Show, JSX, createMemo, createSignal, createEffect } from "solid-js";
+import { For, Show, JSX, createMemo, createSignal, createEffect, createRoot } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
 import { stepsDialog } from "./steps";
@@ -151,10 +151,15 @@ export const Flow = () => <nav class="flow" aria-label="Steps of the work"><For 
   <button classList={{ on: tab() === STEP_TABS[i()], done: f.done && !f.skip, skip: !!f.skip }} onClick={() => goStep(i())} title={`${f.n}. ${f.t}${f.skip ? ": not needed" : f.done ? ": done" : f.why ? `: ${f.why}` : ""}`}>
     <i class="fn">{f.done && !f.skip ? "✓" : f.n}</i><Ic n={f.icon} /><span>{f.short}</span>
   </button>}</For></nav>;
+/** Each step's icon in the tree (0.10.2, the mock-ups: the tree's branches have icons, not numbers). */
+const STEP_ICONS = ["model", "material", "fixed", "mesh", "solve", "contour"];
+/** A new result opens the tree's Results tab (0.10.2, the mock-ups); going back to set up the model returns to Model. */
+let hadResults = false;
+createRoot(() => createEffect(() => { const r = !!results() && !stale(); if (r && !hadResults) setTreeTab("results"); hadResults = r; }));
 const Step = (p: { n: number; t: string; done: boolean; why?: string; children?: JSX.Element }) => (
   <section class="step" classList={{ here: tab() === STEP_TABS[p.n - 1], done: p.done }}>
     <button class="sthead" onClick={() => setTab(STEP_TABS[p.n - 1])} title={p.done ? `Step ${p.n}: done` : p.why}>
-      <b class="stn">{p.done ? "✓" : p.n}</b><span>{p.t}</span><Show when={!p.done && p.why}><small>{p.why}</small></Show></button>
+      <b class="stn">{p.done ? "✓" : p.n}</b><Ic n={STEP_ICONS[p.n - 1]} /><span>{p.t}</span><Show when={!p.done && p.why}><small>{p.why}</small></Show></button>
     <div class="stbody">{p.children}<PlannedRows step={p.n} /></div>
   </section>
 );

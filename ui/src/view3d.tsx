@@ -78,6 +78,7 @@ export const View3D = () => {
   const floorGrp = new THREE.Group();
   scene.add(floorGrp);
   let floorOn = false, floorL = 1, floorKey = "";
+  let darkOn = false;
   const floor = (L: number) => { floorOn = true; floorL = L; };
   const adaptFloor = () => {
     floorGrp.visible = floorOn && !cadFacing(); // the sheet has its own grid
@@ -86,13 +87,14 @@ export const View3D = () => {
     const minor = nice(d / 30), mant = Math.round(minor / 10 ** Math.floor(Math.log10(minor) + 1e-9)), major = minor * (mant === 5 ? 10 : 5);
     const R = Math.ceil(Math.max(floorL, d * 3) / major) * major, Rm = Math.min(R, d * 1.2);
     const cx = Math.round(t.x / major) * major, cz = Math.round(t.z / major) * major;
-    const bgc = css("--bg2"), c1 = css("--line2"), c2 = css("--line3");
+    // On the dark ground of results (0.10.2) the grid stays faint, as on paper.
+    const bgc = darkOn ? "#4A5967" : css("--bg2"), c1 = darkOn ? "#56656F" : css("--line2"), c2 = darkOn ? "#64737F" : css("--line3");
     const key = `${minor}|${cx}|${cz}|${R}|${bgc}|${c1}|${c2}`;
     if (key === floorKey) return;
     floorKey = key;
     floorGrp.children.forEach(o => { const x = o as any; x.geometry?.dispose?.(); x.material?.dispose?.(); });
     floorGrp.clear();
-    const bg = new THREE.Color(bgc), cMin = new THREE.Color(c2).lerp(bg, 0.35), cMaj = new THREE.Color(c2).lerp(new THREE.Color(css("--text")), 0.18);
+    const bg = new THREE.Color(bgc), cMin = new THREE.Color(c2).lerp(bg, 0.35), cMaj = new THREE.Color(c2).lerp(new THREE.Color(darkOn ? "#9AA8B4" : css("--text")), 0.18);
     const pos: number[] = [], col: number[] = [];
     // A line in short pieces, each coloured by its distance from the centre (out to `reach`).
     const seg = (a: [number, number], b: [number, number], c: THREE.Color, reach: number) => {
@@ -282,9 +284,23 @@ export const View3D = () => {
       if (lv.length) lines(lv, new THREE.Color(css("--line3")));
     }
   };
+  /** Results are shown on a dark ground (0.10.2, the mock-ups): the colours of a contour read best
+   *  on it, and it tells at a glance that this is a result, not the model being set up. */
+  let darkBg: THREE.Texture | null = null;
+  const ground = (results: boolean) => {
+    darkOn = results;
+    if (!results) { scene.background = new THREE.Color(css("--bg2")); return; }
+    if (!darkBg) {
+      const c = document.createElement("canvas"); c.width = 2; c.height = 256;
+      const g = c.getContext("2d")!, gr = g.createLinearGradient(0, 0, 0, 256);
+      gr.addColorStop(0, "#23303C"); gr.addColorStop(1, "#6B7C8C"); g.fillStyle = gr; g.fillRect(0, 0, 2, 256);
+      darkBg = new THREE.CanvasTexture(c); darkBg.colorSpace = THREE.SRGBColorSpace;
+    }
+    scene.background = darkBg;
+  };
   const buildSolid = (m: Model) => {
     const ink = css("--text"), green = css("--green"), load = css("--load"), accent = css("--blue");
-    scene.background = new THREE.Color(css("--bg2"));
+    ground(!!solidRes() && !stale());
     const t = m.thickness, tol = Math.max(1e-6, (m.grid || 0.005) / 4), rev = m.revolve ?? 0, full = rev >= Math.PI * 2 - 1e-9;
     // An imported mesh, or an assembly of parts (0.6.0) meshed and joined: drawn from their surface.
     const asm = m.assembly, vp = m.volume ?? asm, bounds: number[][] = vp ? vp.surface.nodes : m.shapes.flatMap(s => outline(s.geom, tol));
@@ -485,8 +501,9 @@ export const View3D = () => {
     // An empty frame (0.6.0): the floor covers the 6 × 4 × 4 m space the view first looks at.
     const empty = !m.nodes.length && !m.shapes.length;
     const P = at3(m), span = empty ? 6 : span3(m), selSet = new Set(sel());
-    const ink = css("--text"), accent = css("--blue"), faint = css("--line3"), load = css("--load");
-    scene.background = new THREE.Color(css("--bg2"));
+    const darkRes = !!spaceRes() && !stale() && spaceRes()!.members.length === m.members.length;
+    const ink = darkRes ? "#E8EEF3" : css("--text"), accent = css("--blue"), faint = darkRes ? "#8D9CAA" : css("--line3"), load = css("--load");
+    ground(darkRes);
     // The stage: the floor grid at the origin, fixed in size, the axes, and the origin planes
     // while nothing is drawn or a plane is to be picked.
     const SL = stageL(m);

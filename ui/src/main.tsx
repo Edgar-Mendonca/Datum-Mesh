@@ -44,7 +44,7 @@ const FrameNoMesh = () => <div class="legend"><div class="lrow"><span>Frames and
 
 /** The side panels' widths (0.9.1): dragged, and kept for next time. */
 const keep = (k: string, d: number) => { try { return +(localStorage.getItem(k) ?? d) || d; } catch { return d; } };
-const [treeW, setTreeW] = createSignal(Math.min(480, Math.max(180, keep("dm.tree.w", 250))));
+const [treeW, setTreeW] = createSignal(Math.min(480, Math.max(180, keep("dm.tree.w", 290))));
 const [inspW, setInspW] = createSignal(Math.min(520, Math.max(220, keep("dm.insp.w", 270))));
 const grip = (e: PointerEvent, which: "tree" | "insp") => {
   const x0 = e.clientX, w0 = which === "tree" ? treeW() : inspW(), el = e.currentTarget as HTMLElement; el.setPointerCapture(e.pointerId);

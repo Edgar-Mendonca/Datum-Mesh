@@ -1335,3 +1335,45 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .sscurve path.ax, .sscurve line.fy { fill: none; }
 .sscurve .fy { stroke: var(--line3); stroke-dasharray: 3 3; }
 .sscurve text { font-size: 10px; fill: var(--muted); font-family: var(--mono, monospace); }
+
+/* 0.10.2: the tree as the approved mock-ups draw it: one dense tree, chevrons and icons, counts as
+   plain grey numbers on the right, the ? and + only on the row under the pointer, no step circles. */
+.tree { background: var(--bg2); }
+.tree .tbody { padding: 2px 0 10px; font-size: 12px; }
+.tree .troot { border-bottom: 0; padding: 4px 8px 2px 6px; margin: 0; gap: 6px; }
+.tree .troot::before { content: ""; width: 0; height: 0; border-top: 4px solid var(--muted); border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; margin: 0 2px; flex: none; }
+.tree .troot b { font-size: 12px; font-weight: 600; }
+.tree .troot small { font: 10.5px var(--mono); }
+.tree .step { border: 0; background: none; box-shadow: none; margin-left: 13px; }
+.tree .step.here { background: none; box-shadow: none; }
+.tree .sthead { padding: 2px 8px 2px 4px; gap: 6px; font-size: 12px; font-weight: 500; min-height: 21px; }
+.tree .sthead::before { content: ""; width: 0; height: 0; border-top: 4px solid var(--muted); border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; margin: 0 2px; flex: none; }
+.tree .sthead .stn { display: none; }
+.tree .sthead .tic, .tree .sthead svg { width: 14px; height: 14px; flex: none; }
+.tree .step.here > .sthead { color: var(--blue); }
+.tree .sthead small { font: 10.5px var(--mono); max-width: 120px; }
+.tree .stbody { margin-left: 9px; padding-left: 4px; border-left: 1px solid var(--line2); }
+.tree .tgrp summary { padding: 2px 8px 2px 4px; font-size: 12px; font-weight: 400; gap: 6px; min-height: 20px; }
+.tree .tgrp summary .grow { display: none; }
+.tree .tgrp summary .pill { margin-left: auto; border: 0; padding: 0; font: 10.5px var(--mono); color: var(--muted); letter-spacing: 0; background: none; }
+.tree .tgrp summary .tnote2 { margin-left: auto; font: 10.5px var(--mono); }
+.tree .tgrp summary .pill + .tnote2 { margin-left: 6px; }
+.tree .tgrp summary .tmark.ok, .tree .tgrp summary .help, .tree .tgrp summary .tadd { display: none; }
+.tree .tgrp summary:hover .help, .tree .tgrp summary:hover .tadd { display: inline-grid; place-items: center; }
+.tree .tgrp summary .tadd { width: 16px; height: 16px; font-size: 12px; border-color: var(--line); }
+.tree .tgrp summary .tmark.need { width: 13px; height: 13px; font-size: 9px; }
+.tree .tlist { margin-left: 9px; border-left: 1px solid var(--line2); }
+.tree .ti { padding: 2px 8px 2px 10px; font-size: 12px; min-height: 20px; gap: 6px; border-left-width: 2px; }
+.tree .ti small { font: 10.5px var(--mono); }
+.tree .ti.on { background: var(--sel); border-left-color: var(--blue); }
+.tree .tplan > summary { font-style: italic; color: var(--muted); }
+.tree .tplan > summary .tt { font-style: italic; }
+.tree .ti.planned { font-style: italic; color: var(--muted); opacity: 1; }
+.tree .ti.planned span { opacity: .8; }
+.tree .tfilter { margin: 6px 8px 4px; }
+.tree .ttabs button { font-size: 12px; }
+
+/* 0.10.2: the title bar of the mock-ups: the app's name by its mark, the file and what it is in the middle. */
+.top .qat .appname { font-size: 13px; font-weight: 600; margin: 0 10px 0 2px; white-space: nowrap; color: var(--text); }
+.top .title b { font-weight: 600; }
+.top .title .tsub { color: var(--muted); font-weight: 400; }
