@@ -500,6 +500,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 
 - **0.9.0 built (2026-11-07).** 0.8.0 released. `StepKind::Explicit`, `LoadKind::Velocity`, `tet::{Ex, solve_explicit, integrate, factor_at}`, `History` in `SolidResults`, steps routing, benchmark 37 (`explicit`); window: Impact analysis and step settings, Velocity (body or face), In Time dialog, help `explicit`, units `vel`. Real app: a 200 × 20 × 20 mm steel bar fixed at one end, the rest at 10 m/s toward it, 0.2 ms: 6 s in a debug build, the free end 0.375 mm (1D 0.40), stress about 400 MPa (ρcv 396), energy kept 100 %, total 31.2 J (½mv² 31.4 J less the held end). Found there: switching a step to Impact kept 2 s and 5 ms (millions of steps); the tree showed "explicit"; the energy graph's "blue" was the crimson accent.
 
+- **CI fix (2026-11-07, after 0.9.0).** The CI `check` job had failed since 0.8 on the window's size budget (startup 484 kB against 480 kB), so its clippy, Rust tests and UI tests never ran there. The analysis-steps dialogs moved to `ui/src/stepdialogs.tsx`, loaded when first opened (`steps.tsx` keeps the helpers and thin wrappers): startup 458 kB. The budget was not raised. No new features: the user is reviewing the program and will list issues to solve one by one.
+
 ## 5. Known limits (0.9.0)
 
 - Explicit steps are elastic, small-strain, without contact or damping; moved faces are not stepped in time (use a starting velocity). The stable step is set by the smallest element: fine meshes of steel take many steps.
