@@ -14,6 +14,18 @@ use crate::Results;
 
 /// Solve the model by its steps, for the load case or combination chosen in the window.
 pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
+    if let Some(st) = m.steps.iter().find(|s| s.kind == StepKind::Explicit) {
+        // Explicit dynamics (0.9.0): meshed solids, a step on its own.
+        if m.steps.len() > 1 {
+            return Err("An explicit-dynamics step stands on its own: make it the only step (Solve › Steps).".into());
+        }
+        if m.analysis != Analysis::Solid || m.volume.is_none() || !m.parts.is_empty() {
+            return Err("Explicit dynamics is for meshed solids: model the solid (step 1) or import its mesh.".into());
+        }
+        let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+        let ex = crate::solids::tet::Ex { duration: st.duration, dt: st.dt, curve: st.time.clone() };
+        return crate::solids::tet::solve_explicit(&mm, &ex).map(Results::Solid);
+    }
     if let Some(st) = m.steps.iter().find(|s| matches!(s.kind, StepKind::Spectrum | StepKind::History)) {
         if m.steps.len() > 1 {
             return Err("A dynamic step (response spectrum or time history) stands on its own: make it the only step (Solve › Steps).".into());

@@ -35,7 +35,7 @@ export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number; fz?: number } | { kind: "moment"; m: number; mx?: number; my?: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "z" | "local" }
   | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean; fz?: number } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
-  | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number } | { kind: "mass"; m: number } | { kind: "settlement"; dx: number; dy: number; dz?: number } | { kind: "remote"; at: [number, number, number]; f: [number, number, number]; m: [number, number, number] };
+  | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number } | { kind: "mass"; m: number } | { kind: "settlement"; dx: number; dy: number; dz?: number } | { kind: "remote"; at: [number, number, number]; f: [number, number, number]; m: [number, number, number] } | { kind: "velocity"; v: [number, number, number] };
 export interface Load { id: number; at: Target; kind: LoadKind; case?: number }
 /** Contact between two faces of meshed solids (0.8.0): `a` kept out of `b`, Coulomb friction. */
 export interface Contact { id: number; a: Target; b: Target; friction: number }
@@ -45,7 +45,7 @@ export interface Case { id: number; name: string }
 export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
 export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
 /** An analysis step (0.4.0). */
-export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large" | "largeplastic";
+export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large" | "largeplastic" | "explicit";
 export interface Step { id: number; name: string; kind: StepKind; load: Which | null; factor: number; increments: number; pieces: number; monitor: number | null; along: [number, number, number]; spectrum: [number, number][]; damping: number; modes: number; cqc: boolean; time: [number, number][]; ground: boolean; dt: number; duration: number }
 /** A dynamic solution (0.4.2): a spectrum's modes, or a time history's record. */
 export interface ModeRow { f: number; period: number; sa: number; gamma: number; mass: number; share: number }
@@ -129,7 +129,7 @@ export interface SolidHeatResults {
 /** A solid result's surface movements (none for heat). */
 export const solidDisp = (r: SolidResults | SolidHeatResults): P3[] => r.kind === "solid" ? r.disp : r.surface.nodes.map(() => [0, 0, 0] as P3);
 export interface SolidResults {
-  kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[]; contact?: ContactOut[];
+  kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[]; contact?: ContactOut[]; history?: { t: number[]; umax: number[]; kinetic: number[]; strain: number[]; work: number[]; dt: number; dt_stable: number; steps: number; peak: number };
   reactions: { support: number; f: P3 }[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[];
   elements: number; nodes: number; layers: number; order: number; size: number; quality: Quality;
   /** Every node, its movement and field values (in the order of `fields`), and tetrahedra: for the cutting plane. */

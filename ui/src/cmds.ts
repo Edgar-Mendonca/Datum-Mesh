@@ -107,10 +107,10 @@ export const C = {
   del: () => { if (sel().length) act({ Delete: { ids: sel() } }).then(o => { if (o) setSel([]); }); else if (edgeSel()) toast("An edge belongs to its shape: select the shape to delete it."); },
   selectAll: () => { const m = model(); if (m) setSel([...m.nodes, ...m.members, ...m.shapes].map(x => x.id)); },
   /** Gravity or heat generation on the whole model (one of each). */
-  body: async (kind: "gravity" | "heat" | "warming") => {
+  body: async (kind: "gravity" | "heat" | "warming" | "velocity") => {
     const m = model(); if (!m) return;
-    const have = m.loads.find(l => l.kind.kind === kind);
-    if (have) { setSel([have.id]); return toast(`${{ gravity: "Gravity", heat: "Heat generation", warming: "A temperature change" }[kind]} is already on: change it in the Inspector.`); }
+    const have = m.loads.find(l => l.kind.kind === kind && l.at.on === "body");
+    if (have) { setSel([have.id]); return toast(`${{ gravity: "Gravity", heat: "Heat generation", warming: "A temperature change", velocity: "A starting velocity" }[kind]} is already on: change it in the Inspector.`); }
     const o = await act({ Add: { item: { Load: { id: 0, at: { on: "body" }, kind: defaultLoad(kind, isFrame(m.analysis)) } } } });
     if (o?.created.length) { setSel(o.created); setEdgeSel(null); }
   },

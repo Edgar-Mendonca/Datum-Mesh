@@ -34,6 +34,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "mass": return { kind: "mass", m: 1000 };
     case "settlement": return { kind: "settlement", dx: 0, dy: -0.01, dz: 0 };
     case "remote": return { kind: "remote", at: [0, 0, 0], f: [0, -1e3, 0], m: [0, 0, 0] };
+    case "velocity": return { kind: "velocity", v: [0, -10, 0] };
     case "traction": return { kind: "traction", fx: 0, fy: -1e3, total: true };
     case "bearing": return { kind: "bearing", fx: 0, fy: 1e3 };
     case "gravity": return { kind: "gravity", gx: 0, gy: -9.81 };
@@ -46,7 +47,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement", remote: "Remote force" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement", remote: "Remote force", velocity: "Starting velocity" };
 /** On a solid, a settlement is a face moved by a set amount (0.7.4). */
 const MOVED = "Moved face";
 /** A load's name: a force spread over a solid's face is a face force (0.7.3). */
@@ -100,7 +101,7 @@ const Row2 = (p: { icon: string; label: string; sub?: string; run?: () => void; 
   <button class="ti" classList={{ on: !!p.on }} onClick={() => p.run?.()}><Ic n={p.icon} /><span>{p.label}</span>{p.sub && <small>{p.sub}</small>}</button>
 );
 const SUP_ICON: Record<string, string> = { fixed: "fixed", pinned: "pinned", rollerx: "roller", rollery: "roller", roller: "roller", symmetry: "symmetry", spring: "spring", temperature: "temp", hold: "roller" };
-const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle", remote: "force" };
+const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle", remote: "force", velocity: "up" };
 const STEP_NAME: Record<string, string> = { linear: "Linear (small deflections)", newton: "Large deflection", arc: "Past limit loads", spectrum: "Response spectrum", history: "Time history", large: "Large deformation", largeplastic: "Crushing and collapse" };
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
@@ -443,6 +444,9 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
         <Vec3 pre="Moves " q="len" v={[f("settlement").dx, f("settlement").dy, f("settlement").dz ?? 0]} set={v => put({ ...f("settlement"), dx: v[0], dy: v[1], dz: v[2] })} hint="Down is −Z." />
       </Show>
       <p class="hint">{p.l.at.on === "face" ? "The face is moved by this much in the directions it moves (free in the others, like a smooth platen; add a support on it to hold those too). With a crushing step it is moved in increments and the force it takes is drawn against the movement." : "The support moves by this much in the directions it holds; the frame follows, and the forces it takes to make it are in the results."}</p></Show>
+    <Show when={k().kind === "velocity"}>
+      <Vec3 pre="v" q="vel" v={f("velocity").v} set={v => put({ ...f("velocity"), v })} hint="Down is −Z." />
+      <p class="hint">The solid's nodes (or this face's) start moving at this velocity in an explicit-dynamics step (Solve › Analysis › Impact): a part dropped or thrown, hitting a fixed face.</p></Show>
     <Show when={k().kind === "remote"}>
       <Vec3 pre="At " q="coord" v={f("remote").at} set={v => put({ ...f("remote"), at: v })} />
       <Vec3 pre="F" q="force" v={f("remote").f} set={v => put({ ...f("remote"), f: v })} />

@@ -85,6 +85,26 @@ pub struct SolidResults {
     /// Contact (0.8.0): what each contact carried.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contact: Vec<super::contact::ContactOut>,
+    /// Explicit dynamics (0.9.0): the solid's motion in time.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history: Option<History>,
+}
+
+/// Explicit dynamics (0.9.0): through time, the largest movement and the energies. The results
+/// shown are at `peak`, the moment the solid moved most.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct History {
+    pub t: Vec<f64>,
+    pub umax: Vec<f64>,
+    /// Kinetic and strain energy, and the work the loads have done (J).
+    pub kinetic: Vec<f64>,
+    pub strain: Vec<f64>,
+    pub work: Vec<f64>,
+    /// The time step (s), the largest stable one (s), steps taken, and the time of the results.
+    pub dt: f64,
+    pub dt_stable: f64,
+    pub steps: usize,
+    pub peak: f64,
 }
 
 impl SolidResults {
@@ -864,6 +884,7 @@ pub(crate) fn solve_swept(m: &Model, sw: Swept, nl: Option<(usize, bool)>) -> Re
         path: pl.map(|p| p.path),
         large,
         contact: vec![],
+        history: None,
     })
 }
 

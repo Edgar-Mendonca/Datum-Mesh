@@ -881,6 +881,8 @@ fn build(m: &Model) -> Result<Built, String> {
                 }
             }
             (LoadKind::Gravity { .. }, _) if l.at == Target::Body => {}
+            // Starting velocities (0.9.0) are for explicit dynamics, read there.
+            (LoadKind::Velocity { .. }, _) => {}
             // A face moved by a set amount (0.7.4): its nodes held there (set below).
             (LoadKind::Settlement { .. }, Some(_)) => {}
             _ => warnings.push("A load that does not act on a meshed solid (only pressure, face forces, remote forces, gravity and moved faces do) was left out.".into()),
@@ -1028,6 +1030,21 @@ pub(crate) enum Nl {
     Large,
     /// Yielding with large movements (small strains, large rotations): crushing and collapse.
     LargePlastic,
+    /// Explicit dynamics (0.9.0): stepped in time; the duration, time step (0: the largest
+    /// stable) and the load's factor against time are in `Ex`.
+    Explicit,
+}
+
+/// An explicit-dynamics step's settings (0.9.0).
+pub struct Ex {
+    pub duration: f64,
+    pub dt: f64,
+    pub curve: Vec<[f64; 2]>,
+}
+
+/// Explicit dynamics of a meshed solid (0.9.0).
+pub fn solve_explicit(m: &Model, ex: &Ex) -> Result<SolidResults, String> {
+    solve_ex(m, Some((1, Nl::Explicit)), Some(ex))
 }
 
 /// Yielding with large movements of a meshed solid (0.7.4), the load and any moved faces in
@@ -1037,23 +1054,230 @@ pub fn solve_large_plastic(m: &Model, increments: usize) -> Result<SolidResults,
 }
 
 pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResults, String> {
+    solve_ex(m, nl, None)
+}
+
+/// The load factor at time `t` on the curve `c` (points (t, factor), straight between, level
+/// past the ends); none: 1 (the load on at once).
+fn factor_at(c: &[[f64; 2]], t: f64) -> f64 {
+    match c {
+        [] => 1.0,
+        [p] => p[1],
+        _ => {
+            if t <= c[0][0] {
+                return c[0][1];
+            }
+            for w in c.windows(2) {
+                if t <= w[1][0] {
+                    let s = if w[1][0] > w[0][0] { (t - w[0][0]) / (w[1][0] - w[0][0]) } else { 1.0 };
+                    return w[0][1] + s * (w[1][1] - w[0][1]);
+                }
+            }
+            c[c.len() - 1][1]
+        }
+    }
+}
+
+/// Central differences (Bathe §9.2.1) with lumped masses: the movement at the moment it is
+/// largest, the inertia force there (−M a), the snapshots for the player and the history.
+#[allow(clippy::type_complexity)]
+fn integrate(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], el_props: &[[f64; 4]], ex: &Ex, warnings: &mut Vec<String>) -> Result<(Vec<f64>, Vec<f64>, Vec<crate::engine::frames::Snap>, super::solid::History), String> {
+    let nn = ms.nodes.len();
+    let n = 3 * nn;
+    if !(ex.duration > 0.0 && ex.duration.is_finite()) {
+        return Err("An explicit-dynamics step needs a length of time above zero (Solve › Steps).".into());
+    }
+    // Lumped masses (HRZ: each element's consistent diagonal, scaled to its whole mass; Hinton,
+    // Rock and Zienkiewicz 1976): positive for quadratic elements too.
+    if el_props.iter().any(|p| !(p[3] > 0.0)) {
+        return Err("A material of the solid has no density, so it has no mass to move (Home › Materials).".into());
+    }
+    let pts = rule14();
+    let mut mass = vec![0.0; nn];
+    for (el, p) in ms.tets.iter().zip(el_props) {
+        let xyz: Vec<[f64; 3]> = el.iter().map(|&q| ms.nodes[q as usize]).collect();
+        let mut d = vec![0.0; el.len()];
+        let mut vol = 0.0;
+        for &(x, w) in &pts {
+            let (_, nf, det) = grads(&xyz, ms.order, x);
+            vol += w * det;
+            for i in 0..el.len() {
+                d[i] += p[3] * nf[i] * nf[i] * w * det;
+            }
+        }
+        let tot: f64 = d.iter().sum();
+        for (i, &q) in el.iter().enumerate() {
+            mass[q as usize] += d[i] * p[3] * vol / tot.max(1e-300);
+        }
+    }
+    let minv: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { 1.0 / mass[i / 3].max(1e-300) }).collect();
+    // The highest frequency (power iteration on M⁻¹K), for the largest stable step 2/ω.
+    let mut x: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { 1.0 + 0.37 * ((i * 7919) % 13) as f64 }).collect();
+    let mut lam = 0.0;
+    for _ in 0..80 {
+        let kx = sys.mul(&x);
+        let y: Vec<f64> = (0..n).map(|i| minv[i] * kx[i]).collect();
+        let ny = y.iter().map(|v| v * v).sum::<f64>().sqrt();
+        let nx = x.iter().map(|v| v * v).sum::<f64>().sqrt().max(1e-300);
+        lam = ny / nx;
+        x = y.iter().map(|v| v / ny.max(1e-300)).collect();
+    }
+    // The power iteration comes from below: a little margin, and 0.9 of the stable step.
+    let dt_stable = 2.0 / (1.05 * lam).sqrt().max(1e-300);
+    let mut dt = 0.9 * dt_stable;
+    if ex.dt > 0.0 {
+        if ex.dt > dt {
+            warnings.push(format!("The time step asked for ({:.3e} s) is larger than the stable step ({:.3e} s): {:.3e} s was used.", ex.dt, dt_stable, dt));
+        } else {
+            dt = ex.dt;
+        }
+    }
+    let steps = (ex.duration / dt).ceil() as usize;
+    if steps > 400_000 {
+        return Err(format!("This would take {steps} time steps (each {dt:.2e} s, set by the smallest element): shorten the time, or mesh coarser."));
+    }
+    let dt = ex.duration / steps as f64;
+    // Starting velocities: the body's, then faces' (a face's wins on its nodes).
+    let mut v = vec![0.0; n];
+    for l in m.loads.iter().filter(|l| l.at == Target::Body) {
+        if let LoadKind::Velocity { v: w } = l.kind {
+            for q in 0..nn {
+                for c in 0..3 {
+                    v[3 * q + c] = w[c];
+                }
+            }
+        }
+    }
+    for l in &m.loads {
+        if let (LoadKind::Velocity { v: w }, Target::Face { face }) = (&l.kind, &l.at) {
+            for &(e, k) in &ms.faces.get(*face as usize).ok_or("A starting velocity is on a face the mesh no longer has.")?.facets {
+                for q in ms.facet(e as usize, k as usize) {
+                    for c in 0..3 {
+                        v[3 * q as usize + c] = w[c];
+                    }
+                }
+            }
+        }
+    }
+    for i in 0..n {
+        if held[i] {
+            v[i] = 0.0;
+        }
+    }
+    let f0 = &sys.f;
+    let mut u = vec![0.0; n];
+    let accel = |u: &[f64], t: f64| -> Vec<f64> {
+        let ku = sys.mul(u);
+        let fa = factor_at(&ex.curve, t);
+        (0..n).map(|i| minv[i] * (fa * f0[i] - ku[i])).collect()
+    };
+    let mut a = accel(&u, 0.0);
+    // Velocity at the half step.
+    let mut vh: Vec<f64> = (0..n).map(|i| v[i] + 0.5 * dt * a[i]).collect();
+    let every = (steps / 120).max(1);
+    let mut hist = super::solid::History { dt, dt_stable, steps, ..Default::default() };
+    let mut snaps = vec![];
+    let energy = |u: &[f64], vel: &[f64]| -> (f64, f64) {
+        let ku = sys.mul(u);
+        (0.5 * (0..n).map(|i| mass[i / 3] * vel[i] * vel[i]).sum::<f64>(), 0.5 * (0..n).map(|i| u[i] * ku[i]).sum::<f64>())
+    };
+    let (k0, s0) = energy(&u, &v);
+    let mut work = 0.0;
+    hist.t.push(0.0);
+    hist.umax.push(0.0);
+    hist.kinetic.push(k0);
+    hist.strain.push(s0);
+    hist.work.push(0.0);
+    let (mut best, mut best_u, mut best_a, mut best_t) = (0.0f64, u.clone(), a.clone(), 0.0);
+    for s in 1..=steps {
+        let t = s as f64 * dt;
+        let fa_prev = factor_at(&ex.curve, t - dt);
+        let fa_now = factor_at(&ex.curve, t);
+        let du: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { dt * vh[i] }).collect();
+        for i in 0..n {
+            u[i] += du[i];
+            work += 0.5 * (fa_prev + fa_now) * f0[i] * du[i];
+        }
+        a = accel(&u, t);
+        // Full-step velocity (for the energy), then on to the next half step.
+        let vfull: Vec<f64> = (0..n).map(|i| vh[i] + 0.5 * dt * a[i]).collect();
+        for i in 0..n {
+            vh[i] += dt * a[i];
+            if held[i] {
+                vh[i] = 0.0;
+            }
+        }
+        if !u.iter().all(|x| x.is_finite()) {
+            return Err("The explicit solve became unstable (the movements grew without bound): use a smaller time step.".into());
+        }
+        let umax = (0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max);
+        if umax > best {
+            best = umax;
+            best_u.clone_from(&u);
+            best_a.clone_from(&a);
+            best_t = t;
+        }
+        if s % every == 0 || s == steps {
+            let (ke, se) = energy(&u, &vfull);
+            hist.t.push(t);
+            hist.umax.push(umax);
+            hist.kinetic.push(ke);
+            hist.strain.push(se);
+            hist.work.push(work);
+            snaps.push(crate::engine::frames::Snap { at: t, u: u.iter().map(|x| *x as f32).collect(), v: vec![] });
+        }
+    }
+    hist.peak = best_t;
+    let inertia: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { -mass[i / 3] * best_a[i] }).collect();
+    let _ = warnings;
+    Ok((best_u, inertia, snaps, hist))
+}
+
+fn solve_ex(m: &Model, nl: Option<(usize, Nl)>, ex: Option<&Ex>) -> Result<SolidResults, String> {
     if m.analysis != Analysis::Solid {
         return Err("Imported meshes are solved as 3D solids.".into());
     }
     let ms = m.volume.as_deref().ok_or("This 3D solid has no imported mesh.")?;
     let nn = ms.nodes.len();
     let Built { mut sys, held, sup_nodes, penalties, kpen, mut applied, mut warnings, el_props, presc } = build(m)?;
-    let large = nl.is_some_and(|x| x.1 != Nl::Plastic);
+    let large = nl.is_some_and(|x| matches!(x.1, Nl::Large | Nl::LargePlastic));
     if presc.iter().any(|v| *v != 0.0) && nl.is_some_and(|x| x.1 != Nl::LargePlastic) {
         return Err("A moved face is solved linearly or with a 'Large deformation with yielding' step; change the step (Solve › Steps).".into());
     }
     let mut pl = None;
+    // Explicit dynamics (0.9.0): the snapshots and history; the inertia force at the moment shown.
+    let mut dynamic: Option<(Vec<crate::engine::frames::Snap>, super::solid::History)> = None;
     // Contact (0.8.0): the contact forces on the nodes, what each contact carried, the pressure.
     let mut contact: Option<(Vec<f64>, Vec<super::contact::ContactOut>, Vec<f64>)> = None;
     if !m.contacts.is_empty() && nl.is_some() {
         return Err("Contact is solved with a linear static step for now: remove the other steps (Solve › Steps), or the contact.".into());
     }
     let (u, stats) = match nl {
+        Some((_, Nl::Explicit)) => {
+            if !m.contacts.is_empty() {
+                return Err("Contact is not yet solved in time: remove the contact or the explicit step.".into());
+            }
+            if presc.iter().any(|v| *v != 0.0) {
+                return Err("Faces moved by set amounts are not yet solved in time: give the solid a starting velocity instead (Supports & Loads › Velocity).".into());
+            }
+            let t0 = std::time::Instant::now();
+            let ex = ex.ok_or("An explicit step needs its time settings.")?;
+            let (u, inertia, snaps, hist) = integrate(m, ms, &sys, &held, &el_props, ex, &mut warnings)?;
+            // d'Alembert: at the moment shown the loads, the inertia forces and the reactions
+            // balance; the loads are the curve's share of them then.
+            let fa = factor_at(&ex.curve, hist.peak);
+            for (f, i) in sys.f.iter_mut().zip(&inertia) {
+                *f = *f * fa + i;
+            }
+            applied = Tally::default();
+            for q in 0..nn {
+                applied.add(ms.nodes[q], [sys.f[3 * q], sys.f[3 * q + 1], sys.f[3 * q + 2]]);
+            }
+            warnings.push(format!("Explicit dynamics: {} time steps of {:.3e} s (the largest stable is {:.3e} s); the stresses shown are at {:.4e} s, when the solid moved most. The balance below counts the inertia forces then.", hist.steps, hist.dt, hist.dt_stable, hist.peak));
+            dynamic = Some((snaps, hist));
+            let nz = sys.k.len();
+            (u, crate::engine::sparse::Stats { equations: held.iter().filter(|h| !**h).count(), nonzeros: nz, residual: 0.0, ms: t0.elapsed().as_secs_f64() * 1e3 })
+        }
         Some((inc, big)) => {
             let t0 = std::time::Instant::now();
             let cl = cloud(m, ms)?;
@@ -1061,6 +1285,7 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
                 Nl::Large => super::solid::large3(m, &cl, &sys, &held, &penalties, kpen, inc, &mut warnings)?,
                 Nl::Plastic => super::solid::plastic3(m, &cl, &sys, &held, inc, &mut warnings)?,
                 Nl::LargePlastic => super::solid::plastic_large3(m, &cl, &sys, &held, &presc, &penalties, kpen, inc, &mut warnings)?,
+                Nl::Explicit => return Err("Explicit dynamics is solved on its own.".into()),
             };
             for v in sys.f.iter_mut() {
                 *v *= p.lam;
@@ -1236,10 +1461,14 @@ pub(crate) fn solve_mode(m: &Model, nl: Option<(usize, Nl)>) -> Result<SolidResu
         size: mean_edge(ms),
         quality,
         volume: Volume { nodes: ms.nodes.clone(), disp: (0..nn).map(|q| [u[3 * q], u[3 * q + 1], u[3 * q + 2]]).collect(), tets: corner_tets(ms), v: all },
-        frames: pl.as_ref().and_then(|p| crate::engine::frames::Frames::from_snaps("load", "vm", &p.snaps, &ids, 3)),
+        frames: match &dynamic {
+            Some((snaps, _)) => crate::engine::frames::Frames::from_snaps("time", "", snaps, &ids, 3),
+            None => pl.as_ref().and_then(|p| crate::engine::frames::Frames::from_snaps("load", "vm", &p.snaps, &ids, 3)),
+        },
         path: pl.map(|p| p.path),
         large,
         contact: contact.map(|c| c.1).unwrap_or_default(),
+        history: dynamic.map(|d| d.1),
     })
 }
 

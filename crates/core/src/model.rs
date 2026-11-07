@@ -581,6 +581,11 @@ pub enum LoadKind {
         #[serde(default)]
         dz: f64,
     },
+    /// Meshed solids moving at the start of an explicit-dynamics step (0.9.0): the body's or a
+    /// face's nodes start at this velocity (m/s), as a solid does when it hits something.
+    Velocity {
+        v: [f64; 3],
+    },
     /// Faces of a meshed solid (0.7.7): a force (N) and a moment (N·m) acting at a point away
     /// from the face (a bracket's pin, a shaft's coupling), passed onto the face through a
     /// distributing coupling: the face takes a traction varying linearly over it whose resultant
@@ -651,6 +656,10 @@ pub enum StepKind {
     /// collapse).
     #[serde(rename = "largeplastic")]
     LargePlastic,
+    /// Explicit dynamics of meshed solids (0.9.0): fast events (impact, a sudden load), stepped
+    /// in time by central differences with lumped masses; the load follows `time` (its factor
+    /// against time; none: on at once), solids may start moving (Velocity loads).
+    Explicit,
 }
 
 /// An analysis step (0.4.0): a load, its factor, and how it is solved. Nonlinear steps carry on
@@ -1162,6 +1171,7 @@ impl Model {
                 (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. } | Target::Face { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 (LoadKind::Remote { at, f, m }, Target::Face { .. }) => at.iter().chain(f).chain(m).all(|x| x.is_finite()),
+                (LoadKind::Velocity { v }, Target::Body | Target::Face { .. }) => v.iter().all(|x| x.is_finite()),
                 _ => return Err("That load cannot go there.".into()),
             };
             if !ok {

@@ -843,7 +843,7 @@ export const View3D = () => {
         return;
       }
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
-      const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction", "load:settlement", "load:remote"].includes(t);
+      const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction", "load:settlement", "load:remote", "load:velocity"].includes(t);
       if (t === "load:remote" && !model()?.volume) { toast("A remote force goes on a face of a meshed solid."); return; }
       if (!at || !ok) { toast(model()?.volume ? (ok ? "Click on a face of the mesh." : `On a ${model()?.volume?.source === "geometry" ? "solid" : "meshed solid"}, supports (fixed, pinned, roller, symmetry, held directions) and forces or pressures go on its faces.`) : ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
       const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(at.on === "end" && t === "sup:pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];

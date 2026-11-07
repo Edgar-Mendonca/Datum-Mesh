@@ -64,14 +64,14 @@ export const dynDialog = () => openDialog(() => {
 });
 
 /** A new step of a kind, with the usual settings. */
-export const stepOf = (kind: StepKind): Step => ({ id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : [[0, 1], [10, 1]], ground: kind === "history", dt: 0.005, duration: 2 });
+export const stepOf = (kind: StepKind): Step => ({ id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : kind === "explicit" ? [] : [[0, 1], [10, 1]], ground: kind === "history", dt: kind === "explicit" ? 0 : 0.005, duration: kind === "explicit" ? 0.001 : 2 });
 
 /** The analyses each kind of model offers (the Analysis stage, 0.6.0): a step kind, its name, what it is for. */
 export const analysesFor = (a: string): [StepKind, string, string][] => {
   const lin: [StepKind, string, string] = ["linear", "Static, linear", "Small movements, elastic materials: most design checks"];
   if (a === "frame") return [lin, ["newton", "Large deflection", "Second-order (P-delta) effects and large rotations, in increments"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
   if (a === "space") return [lin, ["newton", "Large deflection", "Large rotations and second-order effects, in increments (P-delta with plates)"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length (no plates)"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
-  if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["largeplastic", "Crushing and collapse", "Yielding with large movements: a tube crushed, a part bent until it folds (meshed solids)"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"]];
+  if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["largeplastic", "Crushing and collapse", "Yielding with large movements: a tube crushed, a part bent until it folds (meshed solids)"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"], ["explicit", "Impact (explicit dynamics)", "Fast events in time: a sudden load, or a solid hitting at speed, stepped in time (meshed solids)"]];
   if (["stress", "strain", "axi"].includes(a)) return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"]];
   return [];
 };
@@ -94,7 +94,7 @@ export const stepsDialog = () => openDialog(() => {
   /** Parts (0.5.0) and 3D solids (0.5.1): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
   const part = () => ["stress", "strain", "axi", "solid"].includes(m().analysis);
   const solid = () => m().analysis === "solid";
-  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["largeplastic", "Crushing and collapse (yielding with large movements)"] as [StepKind, string], ["large", "Large deformation (rubber, large movements)"] as [StepKind, string]] : [])] : KINDS;
+  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["largeplastic", "Crushing and collapse (yielding with large movements)"] as [StepKind, string], ["large", "Large deformation (rubber, large movements)"] as [StepKind, string], ["explicit", "Impact (explicit dynamics)"] as [StepKind, string]] : [])] : KINDS;
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
       <table class="tbl cases steps"><thead><tr><th>Name</th><th>How</th><th>Load</th><th class="r">Factor</th><th class="r">Increments</th><th class="r">Pieces</th><th>Curve follows</th><th /></tr></thead><tbody>
@@ -116,6 +116,15 @@ export const stepsDialog = () => openDialog(() => {
           <td><button class="x" title="Delete this step" onClick={() => act({ Delete: { ids: [s.id] } })}>×</button></td>
         </tr>}</For></tbody></table>
     </Show>
+    <For each={sts().filter(s => s.kind === "explicit")}>{s => <div class="dynset">
+      <h4>{s.name}: explicit dynamics</h4>
+      <div class="dyngrid">
+        <label>Length<input class="mono fac" value={num(s.duration, 6)} onChange={numIn(v => v > 0 && set(s, { duration: v }), () => num(s.duration, 6))} /><span class="unit">s</span></label>
+        <label>Time step<input class="mono fac" value={num(s.dt, 6)} title="0: the largest stable step, found from the mesh (a step larger than that is cut to it)" onChange={numIn(v => v >= 0 && set(s, { dt: v }), () => num(s.dt, 6))} /><span class="unit">s (0: the largest stable)</span></label>
+      </div>
+      <label class="tbl2">Factor on the step's load against time (s): one “time, factor” a line, straight between; empty: the load on at once and held<textarea class="mono" rows={4} value={fromTable(s.time)} onChange={e => { const v = e.currentTarget.value.trim(); if (!v) { set(s, { time: [] }); return; } const t = toTable(v); if (t) set(s, { time: t }); else e.currentTarget.value = fromTable(s.time); }} /></label>
+      <p class="muted small">Stepped in time by central differences with lumped masses: no equations to solve each step, but the step must be shorter than the time a wave takes to cross the smallest element (a few microseconds in steel), so keep events short (milliseconds). Give solids a starting velocity with Supports & Loads › Velocity. The results shown are at the moment the solid moves most; Results › In Time graphs the movement and the energies.</p>
+    </div>}</For>
     <For each={sts().filter(s => isDyn(s.kind))}>{s => <div class="dynset">
       <h4>{s.name}: {s.kind === "spectrum" ? "response spectrum" : "time history"}</h4>
       <div class="dyngrid">

@@ -2133,6 +2133,55 @@ fn contact() -> Vec<Check> {
     v
 }
 
+/// Benchmark 37 (0.9.0): explicit dynamics of meshed solids, 10-node tetrahedra, central
+/// differences with lumped masses.
+fn explicit() -> Vec<Check> {
+    use crate::solids::tet::{grid, solve_explicit, Ex};
+    let mut v = vec![];
+    let (e, rho) = (200e9, 7850.0);
+    let solid = |nu: f64| {
+        let mut d = Doc::new(Model::new(Analysis::Solid));
+        d.m.materials[0].e = e;
+        d.m.materials[0].nu = nu;
+        d.m.materials[0].rho = rho;
+        d
+    };
+    // A bar 1 m long fixed at one end, a pressure p put on at once on the other (ν = 0, so the
+    // bar is exactly one-dimensional): a wave runs along at c = √(E/ρ), reflects, and the end
+    // moves out to twice the static movement, 2pL/E, at t = 2L/c, then back.
+    {
+        let (l, h, p) = (1.0, 0.05, 50e6);
+        let mut d = solid(0.0);
+        d.m.volume = Some(Box::new(grid([40, 1, 1], 2, |q| [l * q[0], h * q[1], h * q[2]]).unwrap()));
+        let ms = d.m.volume.as_ref().unwrap().clone();
+        let fixed = Target::Face { face: ms.face_where(|q| q[0].abs() < 1e-9).expect("root") };
+        let end = Target::Face { face: ms.face_where(|q| (q[0] - l).abs() < 1e-9).expect("end") };
+        add_id(&mut d, Item::Support(Support { id: 0, at: fixed, kind: SupportKind::Fixed }));
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: end, kind: LoadKind::Pressure { p: -p } }));
+        let c = (e / rho).sqrt();
+        let r = solve_explicit(&d.m, &Ex { duration: 3.0 * l / c, dt: 0.0, curve: vec![] }).expect("bar wave");
+        let hs = r.history.as_ref().unwrap();
+        let name = "A bar hit by a sudden end load: the stress wave, ν = 0, 10-node tetrahedra";
+        let src = "One-dimensional wave in a bar (exact: the end moves 2pL/E at t = 2L/c; Graff, Wave Motion in Elastic Solids, ch. 2)";
+        v.push(check(37, name, "Largest end movement 2pL/E (twice the static)", "len", 2.0 * p * l / e, r.field("ux").max, 0.02, src));
+        v.push(check(37, name, "When it moves most, 2L/c", "ratio", 2.0 * l / c, hs.peak, 0.03, src));
+        let k = hs.t.len() - 1;
+        v.push(check(37, name, "Energy kept: kinetic + strain over the work done, at the end", "ratio", 1.0, (hs.kinetic[k] + hs.strain[k]) / hs.work[k].max(1e-300), 0.01, "Central differences conserve energy to the order of the time step"));
+    }
+    // A block flying at 10 m/s, held by nothing: it moves 10 t, as one piece.
+    {
+        let mut d = solid(0.3);
+        d.m.volume = Some(Box::new(grid([2, 2, 2], 2, |q| [0.1 * q[0], 0.1 * q[1], 0.1 * q[2]]).unwrap()));
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: Target::Body, kind: LoadKind::Velocity { v: [10.0, 0.0, 0.0] } }));
+        let t = 1e-3;
+        let r = solve_explicit(&d.m, &Ex { duration: t, dt: 0.0, curve: vec![] }).expect("flying block");
+        let name = "A block flying at 10 m/s with nothing on it, 10-node tetrahedra";
+        v.push(check(37, name, "How far it moves in 1 ms, vt", "len", 10.0 * t, r.field("ux").max, 1e-9, "Newton's first law (exact)"));
+        v.push(check(37, name, "Still one piece: the most any point moves over the least", "ratio", 1.0, r.field("ux").max / r.field("ux").min, 1e-9, "Rigid motion (exact)"));
+    }
+    v
+}
+
 /// Benchmark 29 (0.5.6): natural frequencies and heat conduction on tetrahedra.
 fn tetra_more() -> Vec<Check> {
     use crate::solids::tet::{grid, TetMesh};
@@ -2731,11 +2780,19 @@ pub fn run() -> Vec<Check> {
     v.extend(yielding_large());
     v.extend(remote_load());
     v.extend(contact());
+    v.extend(explicit());
     v
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn explicit_on_its_own() {
+        for r in super::explicit() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
     #[test]
     fn contact_on_its_own() {
         for r in super::contact() {

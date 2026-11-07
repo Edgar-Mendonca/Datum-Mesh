@@ -64,3 +64,30 @@ export const lineDialog = () => openDialog(() => {
     <p class="muted small">{fd.name} inside the solid at {N + 1} points along the line, from the corners of the element each lies in (straight between them); where the line is outside the solid it is left out. Pick another result in Results to graph it.</p>
   </Dialog>;
 });
+
+/** Explicit dynamics (0.9.0): the largest movement and the energies through time. */
+export const timeDialog = () => openDialog(() => {
+  const r = solidRes() as any, h = r?.history as { t: number[]; umax: number[]; kinetic: number[]; strain: number[]; work: number[]; dt: number; dt_stable: number; steps: number; peak: number } | undefined;
+  if (!h) return <Dialog title="In time" help="explicit"><p class="muted">Solve an explicit-dynamics step first (Solve › Analysis › Impact).</p></Dialog>;
+  const W = 520, H = 240, P = 52;
+  const line = (ys: number[], y1: number) => { const x1 = Math.max(...h.t, 1e-300); return ys.map((y, i) => `${i ? "L" : "M"}${(P + h.t[i] / x1 * (W - 2 * P)).toFixed(1)} ${(H - P - y / (y1 || 1) * (H - 2 * P)).toFixed(1)}`).join(""); };
+  const um = Math.max(...h.umax, 1e-300), em = Math.max(...h.work, ...h.kinetic.map((k, i) => k + h.strain[i]), 1e-300);
+  const k = h.t.length - 1, kept = (h.kinetic[k] + h.strain[k]) / Math.max(h.work[k] + h.kinetic[0], 1e-300);
+  return <Dialog title="In time" wide help="explicit" cancel="Close">
+    <p class="small">{h.steps.toLocaleString()} steps of {num(h.dt * 1e6, 3)} µs (the largest stable is {num(h.dt_stable * 1e6, 3)} µs). It moves most, {num(toU("len", um), 4)} {unit("len")}, at {num(h.peak * 1e3, 4)} ms: the stresses shown are then.</p>
+    <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Largest movement against time">
+      <line class="ax" x1={P} y1={H - P} x2={W - P} y2={H - P} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
+      <path class="line" d={line(h.umax, um)} fill="none" />
+      <text x={P - 6} y={P - 12} class="lbl">Largest movement ({unit("len")})</text><text x={P - 6} y={P + 4} text-anchor="end" class="lbl">{num(toU("len", um), 3)}</text>
+      <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">Time (ms)</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(h.t[k] * 1e3, 4)}</text>
+    </svg>
+    <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Energies against time">
+      <line class="ax" x1={P} y1={H - P} x2={W - P} y2={H - P} /><line class="ax" x1={P} y1={P} x2={P} y2={H - P} />
+      <path class="line" d={line(h.kinetic, em)} fill="none" style={{ stroke: "var(--blue)" }} />
+      <path class="line" d={line(h.strain, em)} fill="none" style={{ stroke: "var(--green)" }} />
+      <path class="line" d={line(h.kinetic.map((x, i) => x + h.strain[i]), em)} fill="none" />
+      <text x={P - 6} y={P - 12} class="lbl">Energy (J): moving (blue), stored (green), together</text><text x={P - 6} y={P + 4} text-anchor="end" class="lbl">{num(em, 3)}</text>
+    </svg>
+    <p class="muted small">With no damping, the energy moving and stored together stays what the loads put in (and the starting motion): {num(kept * 100, 4)} % of it at the end. A falling total means the time step is too large for the mesh; a growing one, an unstable solve.</p>
+  </Dialog>;
+});
