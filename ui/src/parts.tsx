@@ -29,6 +29,7 @@ export const FIELDS: FieldDef[] = [
   { key: "sf", name: "Safety factor against yield", short: "SF", q: "ratio", reverse: true },
   // Plasticity (0.5.0): only where the results have it.
   { key: "peeq", name: "Equivalent plastic strain", short: "ε̄p", q: "ratio" },
+  { key: "cp", name: "Contact pressure", short: "p", q: "stress" },
   { key: "t", name: "Temperature", short: "T", q: "temp", heat: true, nodal: true },
   { key: "qmag", name: "Heat flux", short: "|q|", q: "flux", heat: true },
   { key: "qx", name: "Heat flux in x", short: "qx", q: "flux", heat: true },
@@ -50,7 +51,7 @@ export const fieldDef = (key: string): FieldDef => named(FIELDS.find(x => x.key 
 /** The results an analysis has; a part solved with thermal stress also has its temperatures. */
 export const fieldsFor = (a: string) => {
   if (a === "solidheat") return ["t", "qmag", "qx", "qy", "qz"].map(k => FIELDS.find(f => f.key === k)!);
-  if (a === "solid") { const s = solidRes(); return [...SOLID, ...(s?.kind === "solid" && s.fields.some(f => f.key === "peeq") ? ["peeq"] : [])].map(k => FIELDS.find(f => f.key === k)!).map(f => f.key === "sz" ? { ...f, name: "Stress σz" } : f); }
+  if (a === "solid") { const s = solidRes(); return [...SOLID, ...(s?.kind === "solid" && s.fields.some(f => f.key === "peeq") ? ["peeq"] : []), ...(s?.kind === "solid" && s.fields.some(f => f.key === "cp") ? ["cp"] : [])].map(k => FIELDS.find(f => f.key === k)!).map(f => f.key === "sz" ? { ...f, name: "Stress σz" } : f); }
   const r = partRes(), warm = a !== "heat" && r?.kind === "plane" && r.fields.some(f => f.key === "t");
   const plastic = r?.kind === "plane" && r.fields.some(f => f.key === "peeq");
   return FIELDS.filter(f => !["s3", "tyz", "tzx", "uz", "qz"].includes(f.key) && (f.key !== "peeq" || plastic) && (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));

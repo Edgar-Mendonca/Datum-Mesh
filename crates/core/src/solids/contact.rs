@@ -205,139 +205,156 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
     }
     let eps = 1e3 * dg.iter().sum::<f64>() / dg.len().max(1) as f64;
     let scale = ms.nodes.iter().fold(0.0f64, |a, p| a.max(p[0].abs()).max(p[1].abs()).max(p[2].abs())).max(1e-9);
-    let start: Vec<State> = sl.iter().map(|s| if s.g0 <= 1e-9 * scale { State::Stick } else { State::Open }).collect();
-    // One run of rounds: with friction (`mu_on`) or without, from the states and sliding forces
-    // given, until they settle.
-    #[allow(clippy::type_complexity)]
-    let run = |mu_on: bool, mut state: Vec<State>, mut slide: Vec<[f64; 3]>, warnings: &mut Vec<String>| -> Result<(Vec<f64>, crate::engine::sparse::Stats, Vec<f64>, Vec<f64>, Vec<[f64; 3]>, Vec<State>, Vec<[f64; 3]>), String> {
-        let mu = |s: &Slave| if mu_on { s.mu } else { 0.0 };
-        let mut last = None;
-        for it in 0..80 {
-            let mut s2 = System { n: sys.n, k: sys.k.clone(), f: sys.f.clone(), half: sys.half, general: sys.general };
-            for (i, s) in sl.iter().enumerate() {
-                if state[i] == State::Open {
-                    continue;
-                }
-                spring(&mut s2, s, s.n, eps);
-                push(&mut s2.f, s, s.n.map(|v| -eps * s.g0 * v));
-                match state[i] {
-                    State::Stick if mu(s) > 0.0 => {
-                        for t in s.t {
-                            spring(&mut s2, s, t, eps);
-                        }
-                    }
-                    State::Slide => push(&mut s2.f, s, slide[i]),
-                    _ => {}
-                }
+    // Each node: apart or touching; touching with friction it has a tangential spring whose
+    // rest point (its slip so far, `sp`) moves when the spring would pull harder than μ times the
+    // pressing force (a return mapping, as in plasticity: Wriggers ch. 5.2; Simo and Hughes
+    // ch. 1): so a sliding node keeps a stiffness and a solid held only by friction stays held.
+    let mut state: Vec<State> = sl.iter().map(|s| if s.g0 <= 1e-9 * scale { State::Stick } else { State::Open }).collect();
+    let mut sp: Vec<[f64; 3]> = vec![[0.0; 3]; sl.len()];
+    // The sliding nodes' spring: soft, so the friction it gives hardly changes as the node moves
+    // in a round (no overshoot), yet the node is never free.
+    let ks = 1e-3 * eps;
+    let tang = |s: &Slave, u: &[f64]| -> [f64; 3] { std::array::from_fn(|c| s.t[0][c] * along(s, u, s.t[0]) + s.t[1][c] * along(s, u, s.t[1])) };
+    let mut last = None;
+    // Friction comes in a second phase: first where the faces press, without it (phase 0); then
+    // each node that slid starts sliding at μ times that pressure along its slide. If the solids
+    // cannot be held without friction, friction is on from the start, every node sticking.
+    let any_mu = sl.iter().any(|s| s.mu > 0.0);
+    let mut phase = if any_mu { 0 } else { 1 };
+    for it in 0..120 {
+        let mu_of = |s: &Slave| if phase == 0 { 0.0 } else { s.mu };
+        let mut s2 = System { n: sys.n, k: sys.k.clone(), f: sys.f.clone(), half: sys.half, general: sys.general };
+        for (i, s) in sl.iter().enumerate() {
+            if state[i] == State::Open {
+                continue;
             }
-            let (u, st) = s2.solve(held, presc).map_err(|e| format!("{e} With contact, each solid must be held on its own or pressed onto another: a solid held only by contact without friction can slide away."))?;
-            // The forces now, and the new states.
-            let mut next = state.clone();
-            let mut nslide = slide.clone();
-            let mut fnode = vec![0.0; 3 * ms.nodes.len()];
-            let mut fn_ = vec![0.0; sl.len()];
-            let mut fs = vec![[0.0; 3]; sl.len()];
-            for (i, s) in sl.iter().enumerate() {
-                let g = s.g0 + along(s, &u, s.n);
-                if state[i] == State::Open {
-                    // A node closing: it sticks where it has not moved along the face, and
-                    // slides (its friction found next round) where it has.
-                    let st_: [f64; 3] = std::array::from_fn(|c| s.t[0][c] * along(s, &u, s.t[0]) + s.t[1][c] * along(s, &u, s.t[1]));
-                    let moved = dot(st_, st_).sqrt() > 1e-12 * scale;
-                    next[i] = if g >= 0.0 { State::Open } else if mu(s) > 0.0 && !moved { State::Stick } else { State::Slide };
-                    nslide[i] = [0.0; 3];
-                    continue;
+            spring(&mut s2, s, s.n, eps);
+            push(&mut s2.f, s, s.n.map(|v| -eps * s.g0 * v));
+            if mu_of(s) > 0.0 {
+                // Sticking, the stiff spring; sliding, a soft one set to pull μ pn (see below).
+                let k = if state[i] == State::Slide { ks } else { eps };
+                for t in s.t {
+                    spring(&mut s2, s, t, k);
                 }
-                let pn = -eps * g;
-                if pn <= 0.0 {
-                    next[i] = State::Open;
-                    continue;
+                // The spring pulls towards its rest point: f = −k (s_t − sp) = −k s_t + k sp.
+                push(&mut s2.f, s, sp[i].map(|v| k * v));
+            }
+        }
+        let (u, st) = match s2.solve(held, presc) {
+            Ok(x) => x,
+            Err(_) if phase == 0 => {
+                phase = 1;
+                continue;
+            }
+            Err(e) => return Err(format!("{e} With contact, each solid must be held on its own or pressed onto another: a solid held only by contact without friction can slide away.")),
+        };
+        let mut next = state.clone();
+        let mut nsp = sp.clone();
+        let mut fnode = vec![0.0; 3 * ms.nodes.len()];
+        let mut fn_ = vec![0.0; sl.len()];
+        let mut fs = vec![[0.0; 3]; sl.len()];
+        // A dead band against flip-flopping at the edge of a contact: a hundredth of the deepest
+        // overlap; a node opens past it, and closes past it the other way.
+        let deepest = sl.iter().enumerate().filter(|(i, _)| state[*i] != State::Open).map(|(_, s)| -(s.g0 + along(s, &u, s.n))).fold(0.0f64, f64::max);
+        let band = 1e-2 * deepest;
+        for (i, s) in sl.iter().enumerate() {
+            let g = s.g0 + along(s, &u, s.n);
+            let stv = tang(s, &u);
+            if state[i] == State::Open {
+                // A node closing starts with its spring at rest where it touched.
+                if g < -band || (deepest == 0.0 && g < 0.0) {
+                    next[i] = State::Stick;
+                    nsp[i] = stv;
                 }
-                fn_[i] = pn;
-                let mut f = s.n.map(|v| pn * v);
-                if mu(s) > 0.0 {
-                    let st_: [f64; 3] = std::array::from_fn(|c| s.t[0][c] * along(s, &u, s.t[0]) + s.t[1][c] * along(s, &u, s.t[1]));
-                    let trial = st_.map(|v| -eps * v);
-                    let tn = dot(trial, trial).sqrt();
-                    // Sliding stays sliding while the load goes on (it only grows); its friction,
-                    // μ times the pressing force against the way it slides, is eased towards the
-                    // new value round by round so the pressing and the friction settle together.
-                    let sl_ = dot(st_, st_).sqrt();
-                    let limit = if sl_ < 1e-300 { [0.0; 3] } else { st_.map(|v| -mu(s) * pn * v / sl_) };
-                    let sticks = state[i] == State::Stick && tn <= mu(s) * pn * (1.0 + 1e-9);
-                    let ft = if sticks { trial } else if state[i] == State::Slide { slide[i] } else { limit };
-                    next[i] = if sticks { State::Stick } else { State::Slide };
-                    if !sticks {
-                        nslide[i] = if state[i] == State::Slide { std::array::from_fn(|c| 0.5 * (slide[i][c] + limit[c])) } else { limit };
-                    }
+                continue;
+            }
+            if g > band {
+                next[i] = State::Open;
+                continue;
+            }
+            // Inside the band a node may pull a very little; it is counted as it is.
+            let pn = -eps * g;
+            fn_[i] = pn;
+            let mut f = s.n.map(|v| pn * v);
+            if mu_of(s) > 0.0 {
+                let el = sub(stv, sp[i]);
+                let trial = el.map(|v| -eps * v);
+                let tn = dot(trial, trial).sqrt();
+                let lim = s.mu * pn.max(0.0);
+                if state[i] == State::Stick && tn <= lim * (1.0 + 1e-9) {
+                    next[i] = State::Stick;
                     for c in 0..3 {
-                        f[c] += ft[c];
+                        f[c] += trial[c];
                     }
                 } else {
+                    // Slides: the rest point moves so the spring pulls exactly μ pn, against the
+                    // way it slides.
                     next[i] = State::Slide;
-                    nslide[i] = [0.0; 3];
-                }
-                push(&mut fnode, s, f);
-                fs[i] = f;
-            }
-            let changed = next != state;
-            let moved = nslide.iter().zip(&slide).map(|(a, b)| dot(sub(*a, *b), sub(*a, *b)).sqrt()).fold(0.0, f64::max);
-            let big = nslide.iter().map(|a| dot(*a, *a).sqrt()).fold(0.0, f64::max).max(1e-300);
-            state = next;
-            slide = nslide;
-            let done = !changed && moved <= 1e-8 * big && it > 0;
-            last = Some((u, st, fnode, fn_, fs));
-            if done {
-                break;
-            }
-            if it == 79 {
-                warnings.push("Contact did not settle in 80 rounds: which nodes touch or slide is still changing. The results are the last round's.".into());
-            }
-        }
-        let (u, st, fnode, fn_, fs) = last.ok_or("Contact could not be solved.")?;
-        Ok((u, st, fnode, fn_, fs, state, slide))
-    };
-    let zero = vec![[0.0; 3]; sl.len()];
-    let (u, st, fnode, fn_, fs, state, _) = if sl.iter().any(|s| s.mu > 0.0) {
-        // With friction: first where the faces press, without it; then friction from there,
-        // sliding at μ times that pressure the way they slid (sticking where they did not).
-        let mut quiet = vec![];
-        match run(false, start.clone(), zero.clone(), &mut quiet) {
-            Ok((u0, _, _, fn0, _, st0, _)) => {
-                let mut state = st0.clone();
-                let mut slide = zero.clone();
-                for (i, s) in sl.iter().enumerate() {
-                    if st0[i] == State::Open || s.mu <= 0.0 {
-                        continue;
-                    }
-                    let st_: [f64; 3] = std::array::from_fn(|c| s.t[0][c] * along(s, &u0, s.t[0]) + s.t[1][c] * along(s, &u0, s.t[1]));
-                    let l = dot(st_, st_).sqrt();
-                    if l > 1e-12 * scale {
-                        state[i] = State::Slide;
-                        slide[i] = st_.map(|v| -s.mu * fn0[i] * v / l);
-                    } else {
-                        state[i] = State::Stick;
+                    // The load goes on at once, so it slides along its whole slide (the way it has
+                    // moved along the face), or along this round's pull if it has not moved.
+                    let w = if dot(stv, stv).sqrt() > 1e-12 * scale { stv } else { el };
+                    let d = w.map(|v| v / dot(w, w).sqrt().max(1e-300));
+                    nsp[i] = std::array::from_fn(|c| stv[c] - lim / ks * d[c]);
+                    for c in 0..3 {
+                        f[c] -= lim * d[c];
                     }
                 }
-                run(true, state, slide, warnings)?
+            } else if s.mu <= 0.0 {
+                next[i] = State::Slide;
             }
-            Err(_) => run(true, start, zero, warnings)?,
+            push(&mut fnode, s, f);
+            fs[i] = f;
         }
-    } else {
-        run(false, start, zero, warnings)?
-    };
+        let changed = next.iter().zip(&state).any(|(a, b)| (*a == State::Open) != (*b == State::Open));
+        let moved = nsp.iter().zip(&sp).map(|(a, b)| dot(sub(*a, *b), sub(*a, *b)).sqrt()).fold(0.0, f64::max);
+        let big = sl.iter().zip(&nsp).map(|(_, a)| dot(*a, *a).sqrt()).fold(0.0, f64::max);
+        let tiny = 1e-9 * u.iter().fold(0.0f64, |a, v| a.max(v.abs())).max(1e-300);
+        state = next;
+        sp = nsp;
+        last = Some((u, st, fnode, fn_, fs));
+        if phase == 0 && !changed && it > 0 {
+            // Pressing settled without friction: friction on, each touching node sliding at μ pn
+            // along its slide (sticking if it has not moved).
+            let (u0, _, _, fn0, _) = last.as_ref().ok_or("Contact could not be solved.")?;
+            for (i, s) in sl.iter().enumerate() {
+                if state[i] == State::Open || s.mu <= 0.0 {
+                    continue;
+                }
+                let stv = tang(s, u0);
+                let l = dot(stv, stv).sqrt();
+                if l > 1e-12 * scale && fn0[i] > 0.0 {
+                    state[i] = State::Slide;
+                    sp[i] = std::array::from_fn(|c| stv[c] - s.mu * fn0[i] / ks * stv[c] / l);
+                } else {
+                    state[i] = State::Stick;
+                    sp[i] = stv;
+                }
+            }
+            phase = 1;
+            continue;
+        }
+        if phase == 1 && !changed && it > 0 && moved <= (1e-4 * big).max(tiny) {
+            break;
+        }
+        if it == 119 {
+            warnings.push("Contact did not settle in 120 rounds: which nodes touch or slide is still changing a little. The results are the last round's.".into());
+        }
+    }
+    let (u, st, fnode, fn_, fs) = last.ok_or("Contact could not be solved.")?;
     // What each contact carried, and the pressure at each node of the first faces.
     let mut outs: Vec<ContactOut> = m.contacts.iter().map(|c| ContactOut { id: c.id, ..Default::default() }).collect();
     let mut cp = vec![0.0f64; ms.nodes.len()];
     for (i, s) in sl.iter().enumerate() {
         let o = &mut outs[s.pair];
         o.nodes += 1;
-        if state[i] == State::Open || fn_[i] <= 0.0 {
+        if state[i] == State::Open {
             continue;
         }
-        o.touching += 1;
-        if state[i] == State::Slide && s.mu > 0.0 {
-            o.sliding += 1;
+        if fn_[i] > 0.0 {
+            o.touching += 1;
+            if state[i] == State::Slide && s.mu > 0.0 {
+                o.sliding += 1;
+            }
         }
         let f = fs[i];
         for c in 0..3 {
@@ -346,10 +363,50 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
         o.normal += fn_[i];
         let ft = sub(f, s.n.map(|v| v * dot(f, s.n)));
         o.friction += dot(ft, ft).sqrt();
-        let p = fn_[i] / s.area.max(1e-300);
+        let p = fn_[i].max(0.0) / s.area.max(1e-300);
         cp[s.q] = cp[s.q].max(p);
         o.max_pressure = o.max_pressure.max(p);
         o.max_overlap = o.max_overlap.max(fn_[i] / eps);
     }
     Ok((u, st, fnode, outs, cp))
+}
+
+/// The pairs of faces, one from `a` and one from `b`, that touch: a corner of one within `tol`
+/// (m) of a facet of the other, over it (0.8.0: contact between two solids found by itself). Each
+/// pair comes with its finer face first (the one whose nodes are kept out of the other).
+pub fn touching(ms: &TetMesh, a: &[u32], b: &[u32], tol: f64) -> Vec<(u32, u32)> {
+    let corners = |f: u32| -> Vec<usize> {
+        let mut v: Vec<usize> = ms.faces[f as usize].facets.iter().flat_map(|&(e, k)| ms.facet(e as usize, k as usize)[..3].iter().map(|&i| i as usize).collect::<Vec<_>>()).collect();
+        v.sort_unstable();
+        v.dedup();
+        v
+    };
+    let near = |nodes: &[usize], f: u32| {
+        ms.faces[f as usize].facets.iter().any(|&(e, k)| {
+            let fc = ms.facet(e as usize, k as usize);
+            let cn = [0, 1, 2].map(|i| ms.nodes[fc[i] as usize]);
+            let (e1, e2) = (sub(cn[1], cn[0]), sub(cn[2], cn[0]));
+            let n = unit(cross(e1, e2));
+            let (a11, a12, a22) = (dot(e1, e1), dot(e1, e2), dot(e2, e2));
+            let det = a11 * a22 - a12 * a12;
+            det > 0.0
+                && nodes.iter().any(|&q| {
+                    let d = sub(ms.nodes[q], cn[0]);
+                    let (b1, b2) = (dot(e1, d), dot(e2, d));
+                    let (l1, l2) = ((b1 * a22 - b2 * a12) / det, (a11 * b2 - a12 * b1) / det);
+                    l1 > 1e-6 && l2 > 1e-6 && l1 + l2 < 1.0 - 1e-6 && dot(d, n).abs() <= tol
+                })
+        })
+    };
+    let mut out = vec![];
+    for &fa in a {
+        let ca = corners(fa);
+        for &fb in b {
+            let cb = corners(fb);
+            if fa != fb && (near(&ca, fb) || near(&cb, fa)) {
+                out.push(if ca.len() >= cb.len() { (fa, fb) } else { (fb, fa) });
+            }
+        }
+    }
+    out
 }

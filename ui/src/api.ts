@@ -37,6 +37,9 @@ export type LoadKind =
   | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean; fz?: number } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
   | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number } | { kind: "mass"; m: number } | { kind: "settlement"; dx: number; dy: number; dz?: number } | { kind: "remote"; at: [number, number, number]; f: [number, number, number]; m: [number, number, number] };
 export interface Load { id: number; at: Target; kind: LoadKind; case?: number }
+/** Contact between two faces of meshed solids (0.8.0): `a` kept out of `b`, Coulomb friction. */
+export interface Contact { id: number; a: Target; b: Target; friction: number }
+export interface ContactOut { id: number; force: P3; normal: number; friction: number; touching: number; sliding: number; nodes: number; max_pressure: number; max_overlap: number }
 /** Load cases and combinations (0.3.3). */
 export interface Case { id: number; name: string }
 export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
@@ -56,7 +59,7 @@ export interface MeshSettings { size: number; order: number; min_angle: number; 
  * drawn triangle, and its faces' names and sizes (the mesh itself stays in the engine). */
 export interface VolPreview { order: number; elements: number; nodes: number; material: number; source: string; faces: { name: string; facets: number; area: number }[]; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; tface: number[] }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; parts?: Part[]; assembly?: VolPreview & { targets: (Target | null)[]; face_part: number[]; ties: number }; assembly_error?: string; /** Each part's exact volume, m³ (0.6.3). */ part_volume?: Record<string, number>; cases?: Case[]; combos?: Combo[]; steps?: Step[];
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; parts?: Part[]; contacts?: Contact[]; assembly?: VolPreview & { targets: (Target | null)[]; face_part: number[]; ties: number }; assembly_error?: string; /** Each part's exact volume, m³ (0.6.3). */ part_volume?: Record<string, number>; cases?: Case[]; combos?: Combo[]; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }
@@ -126,7 +129,7 @@ export interface SolidHeatResults {
 /** A solid result's surface movements (none for heat). */
 export const solidDisp = (r: SolidResults | SolidHeatResults): P3[] => r.kind === "solid" ? r.disp : r.surface.nodes.map(() => [0, 0, 0] as P3);
 export interface SolidResults {
-  kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[];
+  kind: "solid"; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; disp: P3[]; fields: Field3[]; contact?: ContactOut[];
   reactions: { support: number; f: P3 }[]; applied: number[]; reacted: number[]; scale: [number, number]; imbalance: number; stats: SolveStats; warnings: string[];
   elements: number; nodes: number; layers: number; order: number; size: number; quality: Quality;
   /** Every node, its movement and field values (in the order of `fields`), and tetrahedra: for the cutting plane. */

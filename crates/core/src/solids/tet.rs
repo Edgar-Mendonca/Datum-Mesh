@@ -1585,7 +1585,8 @@ fn corner_tets(ms: &TetMesh) -> Vec<[u32; 4]> {
     out
 }
 
-fn mean_edge(ms: &TetMesh) -> f64 {
+/// The mean length of the elements' corner-to-corner edges (m).
+pub fn mean_edge(ms: &TetMesh) -> f64 {
     let mut s = 0.0;
     for el in &ms.tets {
         for (a, b) in EDGES {

@@ -146,7 +146,7 @@ pub fn auto_size(solids: &[Solid]) -> f64 {
 /// The Gmsh script: read the solids, fuse touching ones, name every surface `S<tag>`, mesh in
 /// quadratic tetrahedra of about `size` (mm) and save as text.
 pub fn gmsh_script(step: &str, msh: &str, size: f64) -> String {
-    gmsh_script_fine(step, msh, size, &[])
+    gmsh_script_fine(step, msh, size, &[], true)
 }
 
 /// A region meshed finer (0.7.7): a box (mm, the design's axes) and the element size inside it.
@@ -154,7 +154,10 @@ pub type Fine = ([f64; 3], [f64; 3], f64);
 
 /// The Gmsh script, with elements of `fine.2` (mm) inside each box of `fine`, growing to `size`
 /// over a few elements outside it (box size fields, the smallest of them taken).
-pub fn gmsh_script_fine(step: &str, msh: &str, size: f64, fine: &[Fine]) -> String {
+/// `fuse`: touching solids are fused (meshed as one, sharing nodes where they touch); else each is
+/// meshed on its own, for contact between them (0.8.0).
+pub fn gmsh_script_fine(step: &str, msh: &str, size: f64, fine: &[Fine], fuse: bool) -> String {
+    let fragments = if fuse { "If (#v() > 1)\n  BooleanFragments{ Volume{:}; Delete; }{}\nEndIf\n" } else { "" };
     let mut fields = String::new();
     for (i, (lo, hi, h)) in fine.iter().enumerate() {
         let pad = h * 0.5;
@@ -174,10 +177,7 @@ pub fn gmsh_script_fine(step: &str, msh: &str, size: f64, fine: &[Fine]) -> Stri
         r#"SetFactory("OpenCASCADE");
 Merge "{step}";
 v() = Volume{{:}};
-If (#v() > 1)
-  BooleanFragments{{ Volume{{:}}; Delete; }}{{}}
-EndIf
-s() = Surface{{:}};
+{fragments}s() = Surface{{:}};
 For i In {{0:#s()-1}}
   Physical Surface(Sprintf("S%g", s(i))) = {{s(i)}};
 EndFor
@@ -198,11 +198,11 @@ Save "{msh}";
 /// Mesh the solids: STEP out, Gmsh (`gmsh`, a program path), the mesh read back and each of its
 /// faces traced to a model face. `work` is a folder for the files passed between them.
 pub fn mesh(solids: &[Solid], size: f64, gmsh: &Path, work: &Path) -> Result<Meshed, String> {
-    mesh_fine(solids, size, &[], gmsh, work)
+    mesh_fine(solids, size, &[], true, gmsh, work)
 }
 
 /// As `mesh`, finer inside the boxes of `fine` (0.7.7).
-pub fn mesh_fine(solids: &[Solid], size: f64, fine: &[Fine], gmsh: &Path, work: &Path) -> Result<Meshed, String> {
+pub fn mesh_fine(solids: &[Solid], size: f64, fine: &[Fine], fuse: bool, gmsh: &Path, work: &Path) -> Result<Meshed, String> {
     if solids.is_empty() {
         return Err("There is no solid to mesh: model a solid first.".into());
     }
@@ -214,7 +214,7 @@ pub fn mesh_fine(solids: &[Solid], size: f64, fine: &[Fine], gmsh: &Path, work: 
     std::fs::write(&step_path, step).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&msh_path);
     let slash = |p: &Path| p.to_string_lossy().replace('\\', "/");
-    std::fs::write(&geo_path, gmsh_script_fine(&slash(&step_path), &slash(&msh_path), size, fine)).map_err(|e| e.to_string())?;
+    std::fs::write(&geo_path, gmsh_script_fine(&slash(&step_path), &slash(&msh_path), size, fine, fuse)).map_err(|e| e.to_string())?;
     let out = std::process::Command::new(gmsh)
         .arg(&geo_path)
         .arg("-parse_and_exit")
@@ -235,18 +235,23 @@ pub fn mesh_fine(solids: &[Solid], size: f64, fine: &[Fine], gmsh: &Path, work: 
 /// model surface triangle, the face most of them land on.
 pub fn trace_faces(mesh: &TetMesh, solids: &[Solid]) -> Vec<Option<FaceRef>> {
     // Model triangles' centres (mm) and faces, in a grid for nearest searches.
-    let mut pts: Vec<([f64; 3], usize, u32)> = vec![];
+    // Each model triangle's centre (mm), outward normal, solid and face.
+    let mut pts: Vec<([f64; 3], [f64; 3], usize, u32)> = vec![];
     for (b, s) in solids.iter().enumerate() {
         for (t, tri) in s.surface.triangles.iter().enumerate() {
-            let c = tri.iter().fold([0.0; 3], |a, &i| {
-                let p = &s.surface.positions[i as usize];
-                [a[0] + p.x / 3.0, a[1] + p.y / 3.0, a[2] + p.z / 3.0]
+            let p = tri.map(|i| {
+                let v = &s.surface.positions[i as usize];
+                [v.x, v.y, v.z]
             });
-            pts.push((c, b, s.surface.tri_face.get(t).copied().unwrap_or(0)));
+            let c = [0, 1, 2].map(|k| (p[0][k] + p[1][k] + p[2][k]) / 3.0);
+            pts.push((c, cross3(sub3(p[1], p[0]), sub3(p[2], p[0])), b, s.surface.tri_face.get(t).copied().unwrap_or(0)));
         }
     }
-    let nearest = |q: [f64; 3]| -> Option<(usize, u32)> {
-        pts.iter().min_by(|a, b| d2(a.0, q).total_cmp(&d2(b.0, q))).map(|p| (p.1, p.2))
+    // The nearest model triangle facing the same way (solids meshed apart touch face to face,
+    // their faces facing opposite ways); any nearest if none does.
+    let nearest = |q: [f64; 3], n: [f64; 3]| -> Option<(usize, u32)> {
+        let best = |same: bool| pts.iter().filter(|p| !same || dot3(p.1, n) > 0.0).min_by(|a, b| d2(a.0, q).total_cmp(&d2(b.0, q)));
+        best(true).or_else(|| best(false)).map(|p| (p.2, p.3))
     };
     mesh.faces
         .iter()
@@ -260,7 +265,14 @@ pub fn trace_faces(mesh: &TetMesh, solids: &[Solid]) -> Vec<Option<FaceRef>> {
                     let p = mesh.nodes[el[i] as usize];
                     [a[0] + p[0] * 1e3 / 3.0, a[1] + p[1] * 1e3 / 3.0, a[2] + p[2] * 1e3 / 3.0]
                 });
-                if let Some(hit) = nearest(c) {
+                // The facet's outward normal: away from its element's fourth corner.
+                let cn = FACES[k as usize].map(|i| mesh.nodes[el[i] as usize]);
+                let other = (0..4).find(|i| !FACES[k as usize].contains(i)).unwrap_or(0);
+                let mut n = cross3(sub3(cn[1], cn[0]), sub3(cn[2], cn[0]));
+                if dot3(n, sub3(mesh.nodes[el[other] as usize], cn[0])) > 0.0 {
+                    n = n.map(|v| -v);
+                }
+                if let Some(hit) = nearest(c, n) {
                     *votes.entry(hit).or_default() += 1;
                 }
             }
@@ -269,6 +281,16 @@ pub fn trace_faces(mesh: &TetMesh, solids: &[Solid]) -> Vec<Option<FaceRef>> {
             Some(FaceRef { body: s.name.to_string(), face: s.face_names.get(face as usize)?.clone() })
         })
         .collect()
+}
+
+fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
+}
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 }
 
 fn d2(a: [f64; 3], b: [f64; 3]) -> f64 {

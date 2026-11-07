@@ -150,6 +150,34 @@ fn gmsh_path() -> PathBuf {
 /// whose face is gone is dropped, and said so.
 #[tauri::command]
 async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out> {
+    remesh(&st, &app, size, false)
+}
+
+/// Contact between two solids (0.8.0): the solids are meshed apart, the faces where solid `a`
+/// touches solid `b` (closer than half an element) are found, and a contact with friction
+/// coefficient `friction` is made on each pair, finer face first.
+#[tauri::command]
+async fn cad_contacts(st: State<'_, CadSt>, app: State<'_, St>, a: String, b: String, friction: f64, size: f64) -> R<Out> {
+    remesh(&st, &app, size, true)?;
+    let mut d = app.lock();
+    let ms = d.doc.m.volume.as_ref().ok_or("The solids could not be meshed.")?;
+    let faces_of = |body: &str| ms.faces.iter().enumerate().filter(|(_, f)| f.name.starts_with(&format!("{body}/"))).map(|(i, _)| i as u32).collect::<Vec<u32>>();
+    let (fa, fb) = (faces_of(&a), faces_of(&b));
+    let h = datum_core::solids::tet::mean_edge(ms);
+    let pairs = datum_core::solids::contact::touching(ms, &fa, &fb, 0.5 * h);
+    if pairs.is_empty() {
+        return Err(format!("{a} and {b} do not touch (nowhere closer than half an element, {:.2} mm): move one onto the other, or pick two that touch.", 0.5 * h * 1e3));
+    }
+    let ops = pairs.into_iter().map(|(x, y)| datum_core::doc::Op::Add { item: datum_core::doc::Item::Contact(datum_core::model::Contact { id: 0, a: datum_core::model::Target::Face { face: x }, b: datum_core::model::Target::Face { face: y }, friction }) }).collect();
+    let created = d.doc.apply(datum_core::doc::Op::Batch(ops))?;
+    let mut o = out(&d);
+    o.created = created;
+    Ok(o)
+}
+
+/// Mesh the solids again, keeping supports, loads, contacts and finer places on their faces;
+/// `apart`: mesh the solids apart even with no contact yet.
+fn remesh(st: &CadSt, app: &St, size: f64, apart: bool) -> R<Out> {
     let work = std::env::temp_dir().join(format!("datum-mesh-{}", std::process::id()));
     // Finer near chosen faces (0.7.7): each face's name and its size (mm).
     let fine: Vec<(String, f64)> = {
@@ -157,7 +185,9 @@ async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out>
         let names: Vec<String> = a.doc.m.volume.as_ref().map(|v| v.faces.iter().map(|f| f.name.clone()).collect()).unwrap_or_default();
         a.doc.m.mesh.refine.iter().filter_map(|r| match r.at { datum_core::model::Target::Face { face } => names.get(face as usize).map(|n| (n.clone(), r.size * 1e3)), _ => None }).collect()
     };
-    let ms = st.lock().mesh_fine(if size.is_finite() && size > 0.0 { size } else { 0.0 }, &fine, &gmsh_path(), &work)?;
+    // Solids with contact between them are meshed apart (0.8.0); else touching solids are one.
+    let fuse = !apart && app.lock().doc.m.contacts.is_empty();
+    let ms = st.lock().mesh_fine(if size.is_finite() && size > 0.0 { size } else { 0.0 }, &fine, fuse, &gmsh_path(), &work)?;
     let _ = std::fs::remove_dir_all(&work);
     let mut a = app.lock();
     let mut m = a.doc.m.clone();
@@ -171,6 +201,14 @@ async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out>
     m.loads.retain_mut(|l| match &mut l.at {
         datum_core::model::Target::Face { face } => match new_of(*face) { Some(n) => { *face = n; true } None => { lost += 1; false } },
         _ => true,
+    });
+    // Contacts follow their faces too; one whose face is gone goes.
+    m.contacts.retain_mut(|c| match (&mut c.a, &mut c.b) {
+        (datum_core::model::Target::Face { face: a }, datum_core::model::Target::Face { face: b }) => match (new_of(*a), new_of(*b)) {
+            (Some(x), Some(y)) => { *a = x; *b = y; true }
+            _ => { lost += 1; false }
+        },
+        _ => false,
     });
     m.mesh.refine.retain_mut(|r| match &mut r.at {
         datum_core::model::Target::Face { face } => match new_of(*face) { Some(n) => { *face = n; true } None => false },
@@ -755,7 +793,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            cad_run, cad_scene, cad_mesh, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

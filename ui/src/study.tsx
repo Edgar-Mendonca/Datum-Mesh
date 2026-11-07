@@ -3,7 +3,7 @@
 // after the solid's face it lies on ("Body1/…"). From then on supports, loads, the solve and the
 // results are those of any meshed solid. Step 1 shows the solids themselves; the later steps show
 // the mesh, made again by itself whenever the solids have changed since.
-import { createEffect, on } from "solid-js";
+import { createEffect, createSignal, on } from "solid-js";
 import { model, setOut, tab, toast, setStale, results } from "./store";
 import { invoke as _i, Out } from "./api";
 import { cad, activeSketch, meshOld, setMeshOld } from "./cad";
@@ -35,8 +35,14 @@ export const meshSolids = (quiet = false): Promise<boolean> => {
   })();
   return busy;
 };
+/** The solids were meshed apart for contact (0.8.0); with the contacts gone they are meshed
+ *  joined again before the next solve. */
+export const [meshApart, setMeshApart] = createSignal(false);
 /** Mesh first if the solids have none, or have changed since. */
-export const ensureMesh = async () => !hasSolids() || (geoMesh() && !meshOld()) || meshSolids(true);
+export const ensureMesh = async () => {
+  if (meshApart() && !(model()?.contacts ?? []).length) { setMeshApart(false); return meshSolids(true); }
+  return !hasSolids() || (geoMesh() && !meshOld()) || meshSolids(true);
+};
 
 // Supports, loads and the mesh are put on the mesh's faces: entering those steps meshes first.
 createEffect(on(tab, t => { if ((t === "loads" || t === "mesh" || t === "properties") && hasSolids() && (!geoMesh() || meshOld())) meshSolids(true); }, { defer: true }));

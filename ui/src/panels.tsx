@@ -4,7 +4,7 @@ import { cad, cadRun, meshOld, setMeshOld } from "./cad";
 import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo } from "solid-js";
-import { Model, Node, Member, Shape, Support, Load, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
+import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
 import { stepsDialog } from "./steps";
 import { Q, toU, fromU, unit, fmt } from "./units";
@@ -52,7 +52,7 @@ const MOVED = "Moved face";
 /** A load's name: a force spread over a solid's face is a face force (0.7.3). */
 export const loadName = (l: { kind: { kind: string }; at: Target }) => l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : l.kind.kind === "settlement" && l.at.on === "face" ? MOVED : LOAD_NAMES[l.kind.kind];
 
-const targetName = (m: Model, t: Target) => {
+export const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
   if (t.on === "member") return `Member ${m.members.findIndex(n => n.id === t.id) + 1}`;
   if (t.on === "edge" && m.assembly) { const f = m.assembly.targets.findIndex(x => x?.on === "edge" && x.shape === t.shape && x.edge === t.edge); if (f >= 0) return m.assembly.faces[f].name; }
@@ -72,6 +72,7 @@ export const itemName = (m: Model, id: number): string => {
   const s = m.shapes.find(x => x.id === id); if (s) return s.name;
   const sp = m.supports.find(x => x.id === id); if (sp) return `${SUPPORT_NAMES[sp.kind.kind]} · ${targetName(m, sp.at)}`;
   const l = m.loads.find(x => x.id === id); if (l) return `${loadName(l)} · ${targetName(m, l.at)}`;
+  const c = (m.contacts ?? []).find(x => x.id === id); if (c) return `Contact · ${targetName(m, c.a)} on ${targetName(m, c.b)}`;
   return "";
 };
 
@@ -172,6 +173,8 @@ export const Tree = () => {
             <Show when={(mm().cases ?? []).length > 1} fallback={<For each={mm().loads}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={loadName(l)} sub={targetName(mm(), l.at)} />}</For>}>
               <For each={mm().cases!}>{c => <details class="tsub" open><summary><Ic n="list" /><span>{c.name}</span><span class="pill">{mm().loads.filter(l => caseOf(mm(), l) === c.id).length}</span></summary>
                 <For each={mm().loads.filter(l => caseOf(mm(), l) === c.id)}>{l => <Leaf id={l.id} icon={LOAD_ICON[l.kind.kind] ?? "force"} label={loadName(l)} sub={targetName(mm(), l.at)} />}</For></details>}</For></Show></Branch>
+          <Show when={isSolidA(mm().analysis) && (cad()?.bodies.length ?? 0) > 1}><Branch t="Contacts" icon="pin" n={(mm().contacts ?? []).length} help="contact" add={() => import("./solidtools").then(k => k.contactDialog())} addText="Solids touching are joined; add contact to let them press and slide">
+            <For each={mm().contacts ?? []}>{c => <Leaf id={c.id} icon="pin" label={c.friction > 0 ? `Contact, μ ${num(c.friction, 3)}` : "Contact, no friction"} sub={`${targetName(mm(), c.a)} on ${targetName(mm(), c.b)}`} />}</For></Branch></Show>
           <Show when={(mm().combos ?? []).length}><Branch t="Combinations" icon="table" n={mm().combos!.length} help="cases" open={false}><For each={mm().combos!}>{c => <Row2 icon="table" label={c.name} sub={c.parts.map(x => `${num(x.f, 3)} ${mm().cases?.find(k => k.id === x.case)?.name ?? ""}`).join(" + ")} />}</For></Branch></Show>
           </Step>
           <Step n={4} t="Mesh" done={frame() || !!mm().volume || !!mm().assembly || !!(meshed() ?? partRes()?.mesh) || !!solidRes()} why="Made when you solve, or Mesh › Mesh now">
@@ -499,13 +502,25 @@ const ModelInsp = (p: { m: Model }) => {
   </>;
 };
 
+/** A contact (0.8.0): its faces, friction, which face is kept out of which. */
+const ContactInsp = (p: { c: Contact; m: Model }) => {
+  const put = (c: Contact) => act({ Set: { item: { Contact: c } } });
+  return <>
+    <div class="iprow"><label>Pressing</label><span>{targetName(p.m, p.c.a)}</span></div>
+    <div class="iprow"><label>On</label><span>{targetName(p.m, p.c.b)}</span></div>
+    <NumField label="Friction coefficient μ" q="ratio" v={p.c.friction} min={0} set={v => v >= 0 && v <= 5 && put({ ...p.c, friction: v })} hint="0 for none (they slide freely); about 0.15 to 0.3 for steel on steel, dry; 0.5 to 0.8 for rubber on concrete." />
+    <p class="ibtns"><button class="btn sm" onClick={() => put({ ...p.c, a: p.c.b, b: p.c.a })}>Swap the faces</button></p>
+    <p class="hint">Where the faces press they push each other apart, never pull; where they part they are free. Friction holds them until it reaches μ times the pressing force, then they slide. The nodes of the first face are kept out of the second: the finer face should be first.</p>
+  </>;
+};
+
 export const Inspector = () => {
   const m = () => model();
   const one = createMemo(() => {
     const mm = m(), s = sel(); if (!mm || s.length !== 1) return null;
     const id = s[0];
     const f = <T extends { id: number }>(xs: T[]) => xs.find(x => x.id === id);
-    return { node: f(mm.nodes), member: f(mm.members), shape: f(mm.shapes), support: f(mm.supports), load: f(mm.loads), part: f(mm.parts ?? []) };
+    return { node: f(mm.nodes), member: f(mm.members), shape: f(mm.shapes), support: f(mm.supports), load: f(mm.loads), part: f(mm.parts ?? []), contact: f(mm.contacts ?? []) };
   });
   const title = () => {
     const mm = m(); if (!mm) return "";
@@ -527,6 +542,7 @@ export const Inspector = () => {
           <Show when={one()?.support}>{s => <SupportInsp s={s()} m={mm()} />}</Show>
           <Show when={one()?.load}>{l => <LoadInsp l={l()} m={mm()} />}</Show>
           <Show when={one()?.part}>{p => <PartInsp p={p()} m={mm()} />}</Show>
+          <Show when={one()?.contact}>{c => <ContactInsp c={c()} m={mm()} />}</Show>
           <Show when={!sel().length && edgeSel()}>{e => <EdgeInsp m={mm()} e={e()} />}</Show>
           <Show when={!sel().length && !edgeSel() && cad()?.features.some(x => x.id === selFeature())}><FeatureInsp id={selFeature()!} /></Show>
           <Show when={!sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature())}><ModelInsp m={mm()} /></Show>

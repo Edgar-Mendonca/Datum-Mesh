@@ -11,6 +11,7 @@ import { C, imbalanceOf } from "./cmds";
 import { Help } from "./help";
 import { engineAxis, toD } from "./axes";
 import { Icon } from "./ui";
+import { targetName } from "./panels";
 import { PartResultsPage } from "./parts";
 import { ModesTable } from "./modes";
 import { dynDialog } from "./steps";
@@ -322,6 +323,10 @@ export const SolidResultsPage = (p: { r: SolidResults }) => {
     <h2>Reactions</h2>
     <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th></tr></thead><tbody>
       <For each={r().reactions}>{x => <tr><td>{supName(x.support)}</td><For each={[0, 1, 2]}>{k => <td class="r">{fmt("force", clean(comp(x.f, k), sc(0))).split(" ")[0]}</td>}</For></tr>}</For></tbody></table>
+    <Show when={r().contact?.length}><h2>Contact <Help k="contact" /></h2>
+    <table class="tbl"><thead><tr><th>Contact</th><th class="r">Pressing ({unit("force")})</th><th class="r">Friction</th><th class="r">Touching</th><th class="r">Sliding</th><th class="r">Largest pressure ({unit("stress")})</th></tr></thead><tbody>
+      <For each={r().contact!}>{c => { const k = (m().contacts ?? []).find(x => x.id === c.id); return <tr><td>{k ? `${targetName(m(), k.a)} on ${targetName(m(), k.b)}` : "A contact"}</td><td class="r">{fmt("force", c.normal).split(" ")[0]}</td><td class="r">{fmt("force", c.friction).split(" ")[0]}</td><td class="r">{c.touching} of {c.nodes}</td><td class="r">{c.sliding}</td><td class="r">{fmt("stress", c.max_pressure).split(" ")[0]}</td></tr>; }}</For></tbody></table>
+    <p class="muted small">Pressing: the force across the faces; friction: its size along them. Touching and sliding count the nodes of the first face over the second. The faces overlap by at most {fmt("len", Math.max(0, ...r().contact!.map(c => c.max_overlap)))} (the penalty).</p></Show>
     <p class="muted small">Stresses are averaged at the nodes from the elements round them. Where a fixed face meets a free one, or at a sharp inside corner, the stress keeps rising as the mesh gets finer (a singularity): read the stress a little away from it.</p>
     <h2>Solver</h2>
     <table class="tbl"><tbody>

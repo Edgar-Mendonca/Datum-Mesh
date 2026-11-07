@@ -2,9 +2,9 @@
 // Measure what is clicked (one face or edge, or the distance and angle between two), the mass of
 // the solids, and STEP in and out (STL out). Each is one command of the geometry engine.
 import { For, Show, createSignal } from "solid-js";
-import { openDialog, toast, model } from "./store";
+import { openDialog, toast, model, setOut } from "./store";
 import { cad, setCad, cadRun, cadQuery, pick3, turnBack, setTurnBack, CadHit, CadScene, setMeshOld } from "./cad";
-import { invoke } from "./api";
+import { invoke, Out } from "./api";
 import { Dialog } from "./ui";
 
 const sketches = () => (cad()?.sketches ?? []).filter(s => s.curves.some(c => !c.construction));
@@ -163,3 +163,29 @@ export const levelsDialog = () => openDialog(() => {
     </tbody></table>
   </Dialog>;
 });
+
+/** Contact between two solids (0.8.0): they are meshed apart and every pair of faces where they
+ *  touch gets a contact, with the friction coefficient given. */
+export const contactDialog = () => {
+  const names = (cad()?.bodies ?? []).map(b => b.name);
+  if (names.length < 2) return toast("Contact is between two solids: make another (Extrude, Primitives) that touches this one.");
+  openDialog(() => {
+    const [a, setA] = createSignal(names[0]), [b, setB] = createSignal(names[1]), [mu, setMu] = createSignal(0.2);
+    const ok = async () => {
+      if (a() === b()) { toast("Pick two different solids."); return false; }
+      try {
+        const o = await invoke<Out>("cad_contacts", { a: a(), b: b(), friction: Math.max(0, mu()), size: (model()?.mesh.size || 0) * 1e3 });
+        setOut(o); setMeshOld(false); import("./study").then(k => k.setMeshApart(true));
+        toast(`${o.created.length} ${o.created.length === 1 ? "contact" : "contacts"} where ${a()} touches ${b()}: they now press and slide instead of being joined.`, true);
+      } catch (e) { toast(String(e)); return false; }
+    };
+    return <Dialog title="Contact between solids" okText="Make" ok={ok} help="contact">
+      <p class="muted small">Solids that touch are joined, as if glued. With contact they press on each other where they meet, part where they pull, and slide held back by friction. The solids are meshed apart and the faces where they touch are found.</p>
+      <table class="kv"><tbody>
+        <tr><td>Solid</td><td><select value={a()} onChange={e => setA(e.currentTarget.value)}><For each={names}>{n => <option value={n}>{n}</option>}</For></select></td></tr>
+        <tr><td>Touching</td><td><select value={b()} onChange={e => setB(e.currentTarget.value)}><For each={names}>{n => <option value={n}>{n}</option>}</For></select></td></tr>
+        <tr><td>Friction coefficient μ</td><td><input class="mono" type="number" step="0.05" min="0" value={mu()} onInput={e => setMu(+e.currentTarget.value)} /></td><td class="muted">0: none</td></tr>
+      </tbody></table>
+    </Dialog>;
+  });
+};

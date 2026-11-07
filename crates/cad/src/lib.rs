@@ -162,12 +162,13 @@ impl Cad {
     /// is named `Body/face` after the solid's face it lies on, so supports and loads find their
     /// faces again after the design changes and is meshed again. Coordinates in metres.
     pub fn mesh(&self, size: f64, gmsh: &std::path::Path, work: &std::path::Path) -> Result<datum_core::solids::tet::TetMesh, String> {
-        self.mesh_fine(size, &[], gmsh, work)
+        self.mesh_fine(size, &[], true, gmsh, work)
     }
 
     /// As `mesh`, with elements of a given size (mm) near the faces named in `fine`
     /// (`Body/face`, as the mesh names them; 0.7.7). A name no solid has is passed over.
-    pub fn mesh_fine(&self, size: f64, fine: &[(String, f64)], gmsh: &std::path::Path, work: &std::path::Path) -> Result<datum_core::solids::tet::TetMesh, String> {
+    /// `fuse`: solids that touch are meshed as one; else each on its own, for contact (0.8.0).
+    pub fn mesh_fine(&self, size: f64, fine: &[(String, f64)], fuse: bool, gmsh: &std::path::Path, work: &std::path::Path) -> Result<datum_core::solids::tet::TetMesh, String> {
         let st = self.session.world_state().map_err(|e| e.to_string())?;
         let parts: Vec<_> = st.bodies.iter().map(|b| (b.name.clone(), b.body.clone(), (*b.mesh()).clone(), (*solidcraft_engine::doc::naming::face_names(b)).clone())).collect();
         if parts.is_empty() {
@@ -200,7 +201,7 @@ impl Cad {
                 (lo[0] <= hi[0] && *h > 0.0).then_some((lo, hi, *h))
             })
             .collect();
-        let meshed = datum_analysis::mesh_fine(&list, size, &boxes, gmsh, work)?;
+        let meshed = datum_analysis::mesh_fine(&list, size, &boxes, fuse, gmsh, work)?;
         let mut ms = meshed.mesh;
         for (f, o) in ms.faces.iter_mut().zip(&meshed.owner) {
             if let Some(o) = o {
@@ -784,6 +785,77 @@ mod tests {
         }
     }
 
+    /// 0.8.0: two boxes stacked, meshed apart (not fused), a contact between them: the pressure
+    /// on top passes through the contact; the touching faces are told apart by which way they face.
+    #[test]
+    /// 0.8.0, found in the real app: the upper of two stacked boxes held only by friction (the
+    /// lower one fixed by a side face) was reported as free; a sliding node keeps a spring now.
+    fn held_only_by_friction() {
+        let Some(g) = gmsh() else { return };
+        let mut c = Cad::new();
+        run(&mut c, "solid.box", json!({"corner": [0, 0, 0], "length": 40, "width": 30, "height": 20}));
+        run(&mut c, "solid.box", json!({"corner": [0, 0, 20], "length": 40, "width": 30, "height": 20}));
+        let dir = std::env::temp_dir().join(format!("datum-repro-{}", std::process::id()));
+        let ms = c.mesh_fine(6.0, &[], false, &g, &dir).unwrap();
+        let (b1, b2) = (c.scene().unwrap().bodies[0].name.clone(), c.scene().unwrap().bodies[1].name.clone());
+        let faces_of = |body: &str| ms.faces.iter().enumerate().filter(|(_, f)| f.name.starts_with(&format!("{body}/"))).map(|(i, _)| i as u32).collect::<Vec<u32>>();
+        let h = datum_core::solids::tet::mean_edge(&ms);
+        let pairs = datum_core::solids::contact::touching(&ms, &faces_of(&b1), &faces_of(&b2), 0.5 * h);
+        assert_eq!(pairs.len(), 1, "{pairs:?}");
+        let on = |f: usize, k: usize, v: f64| ms.faces[f].facets.iter().all(|&(e, kk)| ms.facet(e as usize, kk as usize).iter().all(|&i| (ms.nodes[i as usize][k] - v).abs() < 1e-9));
+        let side = (0..ms.faces.len()).find(|&f| ms.faces[f].name.starts_with(&format!("{b1}/")) && on(f, 0, 0.04)).unwrap() as u32;
+        let roof = (0..ms.faces.len()).find(|&f| on(f, 1, 0.04)).unwrap() as u32;
+        let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Solid));
+        d.m.volume = Some(Box::new(ms));
+        use datum_core::doc::{Item, Op};
+        use datum_core::model::{Contact, Load, LoadKind, Support, SupportKind, Target};
+        let mut ops = vec![
+            Op::Add { item: Item::Support(Support { id: 0, at: Target::Face { face: side }, kind: SupportKind::Fixed }) },
+            Op::Add { item: Item::Load(Load { id: 0, case: 0, at: Target::Face { face: roof }, kind: LoadKind::Pressure { p: 1e6 } }) },
+        ];
+        for (a, b) in pairs { ops.push(Op::Add { item: Item::Contact(Contact { id: 0, a: Target::Face { face: a }, b: Target::Face { face: b }, friction: 0.2 }) }); }
+        d.apply(Op::Batch(ops)).unwrap();
+        let r = datum_core::solids::tet::solve(&d.m).unwrap();
+        let n = r.contact[0].normal;
+        assert!((n - 1e6 * 1.2e-3).abs() < 2e-3 * 1.2e3, "the pressure passes through: {n}");
+    }
+
+    #[test]
+    fn stacked_solids_in_contact() {
+        let Some(g) = gmsh() else { return };
+        let mut c = Cad::new();
+        run(&mut c, "solid.box", json!({"corner": [0, 0, 0], "length": 20, "width": 20, "height": 10}));
+        run(&mut c, "solid.box", json!({"corner": [0, 0, 10], "length": 20, "width": 20, "height": 10}));
+        assert_eq!(c.scene().unwrap().bodies.len(), 2);
+        let dir = std::env::temp_dir().join(format!("datum-contact-{}", std::process::id()));
+        let ms = c.mesh_fine(4.0, &[], false, &g, &dir).unwrap();
+        // Model axes are Y up (m): the boxes meet at y = 0.01.
+        let on = |ms: &datum_core::solids::tet::TetMesh, f: usize, y: f64| ms.faces[f].facets.iter().all(|&(e, k)| ms.facet(e as usize, k as usize).iter().all(|&i| (ms.nodes[i as usize][1] - y).abs() < 1e-9));
+        let (b1, b2) = (c.scene().unwrap().bodies[0].name.clone(), c.scene().unwrap().bodies[1].name.clone());
+        let find = |body: &str, y: f64| (0..ms.faces.len()).find(|&f| ms.faces[f].name.starts_with(&format!("{body}/")) && on(&ms, f, y)).unwrap_or_else(|| panic!("{body} at {y}: {:?}", ms.faces.iter().map(|f| &f.name).collect::<Vec<_>>())) as u32;
+        let (top_of_lower, under_upper, floor, roof) = (find(&b1, 0.01), find(&b2, 0.01), find(&b1, 0.0), find(&b2, 0.02));
+        assert_ne!(top_of_lower, under_upper, "the two touching faces are apart");
+        let faces_of = |body: &str| ms.faces.iter().enumerate().filter(|(_, f)| f.name.starts_with(&format!("{body}/"))).map(|(i, _)| i as u32).collect::<Vec<u32>>();
+        let pairs = datum_core::solids::contact::touching(&ms, &faces_of(&b1), &faces_of(&b2), 1e-6);
+        assert_eq!(pairs.len(), 1, "one pair of faces touches: {pairs:?}");
+        assert!([pairs[0].0, pairs[0].1].contains(&top_of_lower) && [pairs[0].0, pairs[0].1].contains(&under_upper));
+        let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Solid));
+        d.m.volume = Some(Box::new(ms));
+        use datum_core::doc::{Item, Op};
+        use datum_core::model::{Contact, Load, LoadKind, Support, SupportKind, Target};
+        let p = 5e6;
+        d.apply(Op::Batch(vec![
+            Op::Add { item: Item::Support(Support { id: 0, at: Target::Face { face: floor }, kind: SupportKind::Fixed }) },
+            Op::Add { item: Item::Load(Load { id: 0, case: 0, at: Target::Face { face: roof }, kind: LoadKind::Pressure { p } }) },
+            Op::Add { item: Item::Contact(Contact { id: 0, a: Target::Face { face: under_upper }, b: Target::Face { face: top_of_lower }, friction: 0.3 }) },
+        ]))
+        .unwrap();
+        let r = datum_core::solids::tet::solve(&d.m).unwrap();
+        let n = r.contact[0].normal;
+        assert!((n - p * 4e-4).abs() < 1e-3 * p * 4e-4, "the contact carries pA: {n}");
+        assert!(r.imbalance < 1e-6, "{}", r.imbalance);
+    }
+
     /// 0.7.7: a finer mesh near one face: many more elements, and smaller ones there.
     #[test]
     fn finer_near_a_face() {
@@ -796,7 +868,7 @@ mod tests {
             let pts: Vec<[f64; 3]> = f.facets.iter().flat_map(|&(e, k)| plain.facet(e as usize, k as usize).into_iter().map(|i| plain.nodes[i as usize])).collect();
             pts.iter().all(|p| p[0].abs() < 1e-9)
         }).expect("the end face at x = 0").name.clone();
-        let fine = c.mesh_fine(10.0, &[(end, 2.0)], &g, &dir.join("b")).unwrap();
+        let fine = c.mesh_fine(10.0, &[(end, 2.0)], true, &g, &dir.join("b")).unwrap();
         assert!(fine.tets.len() > 2 * plain.tets.len(), "{} against {}", fine.tets.len(), plain.tets.len());
         // The elements touching the end are small, those at the far end as before.
         let edge_near = |ms: &datum_core::solids::tet::TetMesh, x: f64| ms.tets.iter().filter(|t| t[..4].iter().any(|&i| (ms.nodes[i as usize][0] - x).abs() < 1e-9)).map(|t| {
