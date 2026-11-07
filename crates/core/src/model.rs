@@ -581,6 +581,20 @@ pub enum LoadKind {
         #[serde(default)]
         dz: f64,
     },
+    /// Faces of a meshed solid (0.7.7): a force (N) and a moment (N·m) acting at a point away
+    /// from the face (a bracket's pin, a shaft's coupling), passed onto the face through a
+    /// distributing coupling: the face takes a traction varying linearly over it whose resultant
+    /// is the force, and whose moment about the face's centre is the moment plus the force's
+    /// moment from the point. The face stays free to deform.
+    Remote {
+        /// The point (m).
+        at: [f64; 3],
+        /// The force (N).
+        f: [f64; 3],
+        /// The moment (N·m).
+        #[serde(default)]
+        m: [f64; 3],
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -1121,6 +1135,7 @@ impl Model {
                 (LoadKind::Mass { m }, Target::Node { .. }) => m.is_finite() && *m >= 0.0,
                 (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. } | Target::Face { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
+                (LoadKind::Remote { at, f, m }, Target::Face { .. }) => at.iter().chain(f).chain(m).all(|x| x.is_finite()),
                 _ => return Err("That load cannot go there.".into()),
             };
             if !ok {

@@ -684,6 +684,23 @@ fn node_ref(order: u8) -> Vec<[f64; 3]> {
 
 /// Integration points on a facet: point, outward normal times the area element, and the facet's
 /// nodes with their shape function values.
+/// The solution of the 3 × 3 system `a x = b`, or None when `a` is (nearly) singular.
+fn solve3(a: [[f64; 3]; 3], b: [f64; 3]) -> Option<[f64; 3]> {
+    let det = |m: &[[f64; 3]; 3]| m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0]) + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    let d = det(&a);
+    let scale = a.iter().flatten().map(|v| v.abs()).fold(0.0, f64::max);
+    if !(d.abs() > 1e-12 * scale.powi(3)) {
+        return None;
+    }
+    Some(std::array::from_fn(|k| {
+        let mut m = a;
+        for (row, bv) in m.iter_mut().zip(b) {
+            row[k] = bv;
+        }
+        det(&m) / d
+    }))
+}
+
 fn facet_points(m: &TetMesh, e: usize, k: usize) -> Vec<([f64; 3], [f64; 3], Vec<(usize, f64)>)> {
     let f = m.facet(e, k);
     let o = if m.order == 2 { 2 } else { 1 };
@@ -816,10 +833,57 @@ fn build(m: &Model) -> Result<Built, String> {
                     }
                 }
             }
+            // A remote force and moment (0.7.7): a distributing coupling, the traction linear over
+            // the face, t = F/A + a × r with r from the face's centre c and a = J⁻¹ M_c, where
+            // J = ∫ (|r|² I − r rᵀ) dA, so that ∫ t dA = F and ∫ r × t dA = M_c exactly.
+            (LoadKind::Remote { at, f, m: mo }, Some(fs)) => {
+                let pts = points(fs);
+                let area: f64 = pts.iter().map(|(_, nv, _)| dot(*nv, *nv).sqrt()).sum();
+                if area <= 0.0 {
+                    warnings.push("A remote load is on a face with no area; it was left out.".into());
+                    continue;
+                }
+                let mut c = [0.0; 3];
+                for (x, nv, _) in &pts {
+                    let da = dot(*nv, *nv).sqrt();
+                    for k in 0..3 {
+                        c[k] += x[k] * da / area;
+                    }
+                }
+                let mut jm = [[0.0; 3]; 3];
+                for (x, nv, _) in &pts {
+                    let da = dot(*nv, *nv).sqrt();
+                    let r = [x[0] - c[0], x[1] - c[1], x[2] - c[2]];
+                    let rr = dot(r, r);
+                    for i in 0..3 {
+                        for j in 0..3 {
+                            jm[i][j] += da * (if i == j { rr } else { 0.0 } - r[i] * r[j]);
+                        }
+                    }
+                }
+                let arm = [at[0] - c[0], at[1] - c[1], at[2] - c[2]];
+                let mf = cross(arm, *f);
+                let mc = [mo[0] + mf[0], mo[1] + mf[1], mo[2] + mf[2]];
+                let Some(a) = solve3(jm, mc) else {
+                    warnings.push("A remote load's face is too small to carry a moment; it was left out.".into());
+                    continue;
+                };
+                for (x, nv, ns) in pts {
+                    let da = dot(nv, nv).sqrt();
+                    let r = [x[0] - c[0], x[1] - c[1], x[2] - c[2]];
+                    let ar = cross(a, r);
+                    let tr: [f64; 3] = std::array::from_fn(|k| (f[k] / area + ar[k]) * da);
+                    for (q, s) in ns {
+                        for k in 0..3 {
+                            sys.f[3 * q + k] += s * tr[k];
+                        }
+                    }
+                }
+            }
             (LoadKind::Gravity { .. }, _) if l.at == Target::Body => {}
             // A face moved by a set amount (0.7.4): its nodes held there (set below).
             (LoadKind::Settlement { .. }, Some(_)) => {}
-            _ => warnings.push("A load that does not act on a meshed solid (only pressure, face forces, gravity and moved faces do) was left out.".into()),
+            _ => warnings.push("A load that does not act on a meshed solid (only pressure, face forces, remote forces, gravity and moved faces do) was left out.".into()),
         }
     }
     let mut applied = Tally::default();

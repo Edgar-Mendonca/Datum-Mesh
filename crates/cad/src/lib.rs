@@ -162,6 +162,12 @@ impl Cad {
     /// is named `Body/face` after the solid's face it lies on, so supports and loads find their
     /// faces again after the design changes and is meshed again. Coordinates in metres.
     pub fn mesh(&self, size: f64, gmsh: &std::path::Path, work: &std::path::Path) -> Result<datum_core::solids::tet::TetMesh, String> {
+        self.mesh_fine(size, &[], gmsh, work)
+    }
+
+    /// As `mesh`, with elements of a given size (mm) near the faces named in `fine`
+    /// (`Body/face`, as the mesh names them; 0.7.7). A name no solid has is passed over.
+    pub fn mesh_fine(&self, size: f64, fine: &[(String, f64)], gmsh: &std::path::Path, work: &std::path::Path) -> Result<datum_core::solids::tet::TetMesh, String> {
         let st = self.session.world_state().map_err(|e| e.to_string())?;
         let parts: Vec<_> = st.bodies.iter().map(|b| (b.name.clone(), b.body.clone(), (*b.mesh()).clone(), (*solidcraft_engine::doc::naming::face_names(b)).clone())).collect();
         if parts.is_empty() {
@@ -171,7 +177,30 @@ impl Cad {
             return Err(format!("{} is not closed, so it cannot be filled with elements. Close it (or delete it) first.", b.name));
         }
         let list: Vec<datum_analysis::Solid> = parts.iter().map(|(n, b, m, f)| datum_analysis::Solid { name: n, body: b, surface: m, face_names: f }).collect();
-        let meshed = datum_analysis::mesh(&list, size, gmsh, work)?;
+        // Each named face's box (mm), from the solid's surface triangles on it.
+        let boxes: Vec<datum_analysis::Fine> = fine
+            .iter()
+            .filter_map(|(name, h)| {
+                let (body, face) = name.split_once('/')?;
+                let (_, _, m, f) = parts.iter().find(|p| p.0 == body)?;
+                let k = f.iter().position(|x| x == face)? as u32;
+                let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
+                for (t, tri) in m.triangles.iter().enumerate() {
+                    if m.tri_face.get(t) != Some(&k) {
+                        continue;
+                    }
+                    for &i in tri {
+                        let p = &m.positions[i as usize];
+                        for (c, v) in [p.x, p.y, p.z].into_iter().enumerate() {
+                            lo[c] = lo[c].min(v);
+                            hi[c] = hi[c].max(v);
+                        }
+                    }
+                }
+                (lo[0] <= hi[0] && *h > 0.0).then_some((lo, hi, *h))
+            })
+            .collect();
+        let meshed = datum_analysis::mesh_fine(&list, size, &boxes, gmsh, work)?;
         let mut ms = meshed.mesh;
         for (f, o) in ms.faces.iter_mut().zip(&meshed.owner) {
             if let Some(o) = o {
@@ -755,6 +784,28 @@ mod tests {
         }
     }
 
+    /// 0.7.7: a finer mesh near one face: many more elements, and smaller ones there.
+    #[test]
+    fn finer_near_a_face() {
+        let Some(g) = gmsh() else { return };
+        let mut c = Cad::new();
+        run(&mut c, "solid.box", json!({"corner": [0, 0, 0], "length": 100, "width": 20, "height": 20}));
+        let dir = std::env::temp_dir().join(format!("datum-fine-{}", std::process::id()));
+        let plain = c.mesh(10.0, &g, &dir.join("a")).unwrap();
+        let end = plain.faces.iter().find(|f| {
+            let pts: Vec<[f64; 3]> = f.facets.iter().flat_map(|&(e, k)| plain.facet(e as usize, k as usize).into_iter().map(|i| plain.nodes[i as usize])).collect();
+            pts.iter().all(|p| p[0].abs() < 1e-9)
+        }).expect("the end face at x = 0").name.clone();
+        let fine = c.mesh_fine(10.0, &[(end, 2.0)], &g, &dir.join("b")).unwrap();
+        assert!(fine.tets.len() > 2 * plain.tets.len(), "{} against {}", fine.tets.len(), plain.tets.len());
+        // The elements touching the end are small, those at the far end as before.
+        let edge_near = |ms: &datum_core::solids::tet::TetMesh, x: f64| ms.tets.iter().filter(|t| t[..4].iter().any(|&i| (ms.nodes[i as usize][0] - x).abs() < 1e-9)).map(|t| {
+            let p: Vec<[f64; 3]> = t[..4].iter().map(|&i| ms.nodes[i as usize]).collect();
+            (0..4).flat_map(|a| (a + 1..4).map(move |b| (a, b))).map(|(a, b)| crate::dist(p[a], p[b])).fold(0.0, f64::max)
+        }).fold(0.0, f64::max);
+        assert!(edge_near(&fine, 0.0) < 0.5 * edge_near(&plain, 0.0), "{} {}", edge_near(&fine, 0.0), edge_near(&plain, 0.0));
+    }
+
     /// 0.7.6: levels are planes to sketch on, and the grid's construction lines never become members.
     #[test]
     fn levels_and_grid() {
@@ -967,4 +1018,9 @@ mod tests {
         let zmax = b.pos.chunks(3).map(|p| p[2]).fold(f32::MIN, f32::max);
         assert!((zmax - 10.0).abs() < 1e-4, "extruded 10 mm, top at {zmax}");
     }
+}
+
+#[cfg(test)]
+fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
+    ((a[0] - b[0]).powi(2) + (a[1] - b[1]).powi(2) + (a[2] - b[2]).powi(2)).sqrt()
 }

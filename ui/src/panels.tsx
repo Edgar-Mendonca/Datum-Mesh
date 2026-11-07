@@ -1,6 +1,6 @@
 // The model tree (left) and the Inspector (right): every item of the model, and the values of the
 // selected one with their units. Edits go to the engine as Set operations.
-import { cad, cadRun, meshOld } from "./cad";
+import { cad, cadRun, meshOld, setMeshOld } from "./cad";
 import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo } from "solid-js";
@@ -33,6 +33,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
     case "platepressure": return { kind: "pressure", p: 5e3 };
     case "mass": return { kind: "mass", m: 1000 };
     case "settlement": return { kind: "settlement", dx: 0, dy: -0.01, dz: 0 };
+    case "remote": return { kind: "remote", at: [0, 0, 0], f: [0, -1e3, 0], m: [0, 0, 0] };
     case "traction": return { kind: "traction", fx: 0, fy: -1e3, total: true };
     case "bearing": return { kind: "bearing", fx: 0, fy: 1e3 };
     case "gravity": return { kind: "gravity", gx: 0, gy: -9.81 };
@@ -45,7 +46,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement", remote: "Remote force" };
 /** On a solid, a settlement is a face moved by a set amount (0.7.4). */
 const MOVED = "Moved face";
 /** A load's name: a force spread over a solid's face is a face force (0.7.3). */
@@ -98,7 +99,7 @@ const Row2 = (p: { icon: string; label: string; sub?: string; run?: () => void; 
   <button class="ti" classList={{ on: !!p.on }} onClick={() => p.run?.()}><Ic n={p.icon} /><span>{p.label}</span>{p.sub && <small>{p.sub}</small>}</button>
 );
 const SUP_ICON: Record<string, string> = { fixed: "fixed", pinned: "pinned", rollerx: "roller", rollery: "roller", roller: "roller", symmetry: "symmetry", spring: "spring", temperature: "temp", hold: "roller" };
-const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle" };
+const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle", remote: "force" };
 const STEP_NAME: Record<string, string> = { linear: "Linear (small deflections)", newton: "Large deflection", arc: "Past limit loads", spectrum: "Response spectrum", history: "Time history", large: "Large deformation", largeplastic: "Crushing and collapse" };
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
@@ -177,10 +178,10 @@ export const Tree = () => {
           <Show when={frame()}><Row2 icon="frame" label="Each member is one element" sub="no mesh needed" /></Show>
           <Show when={!frame()}><Branch t="Mesh" icon="mesh" n={mm().mesh.refine.length || undefined} help="mesh">
             <Show when={mm().volume}>{v => <Row2 icon="solid" label={`${v().elements.toLocaleString()} ${v().order === 2 ? "10-node" : "4-node"} tetrahedra`} sub={geoMesh() ? (meshOld() ? "the solids changed: meshed again when you solve" : `${v().nodes.toLocaleString()} nodes, from the solids`) : `${v().nodes.toLocaleString()} nodes, imported`} />}</Show>
-            <Show when={!mm().volume}><Row2 icon={mm().mesh.order === 2 ? "tri6" : "tri3"} label={mesh()} sub={mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} run={() => C.mesh()} />
+            <Show when={!mm().volume}><Row2 icon={mm().mesh.order === 2 ? "tri6" : "tri3"} label={mesh()} sub={mm().mesh.size > 0 ? fmt("len", mm().mesh.size) : "automatic size"} run={() => C.mesh()} /></Show>
             <For each={mm().mesh.refine}>{(r, i) => <div class="ti refrow"><Ic n="refine" /><span>Finer near {targetName(mm(), r.at)}</span>
-              <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => v > 0 && C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }), () => num(toU("len", r.size), 4))} />
-              <button class="x" title="Remove" onClick={() => C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) })}>×</button></div>}</For></Show>
+              <input class="mono" title={`Element size there (${unit("len")})`} value={num(toU("len", r.size), 4)} onChange={numIn(v => { if (v > 0) { C.meshSettings({ refine: mm().mesh.refine.map((x, k) => k === i() ? { ...x, size: fromU("len", v) } : x) }); if (geoMesh()) setMeshOld(true); } }, () => num(toU("len", r.size), 4))} />
+              <button class="x" title="Remove" onClick={() => { C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) }); if (geoMesh()) setMeshOld(true); }}>×</button></div>}</For>
           </Branch></Show>
           </Step>
           <Step n={5} t="Analysis" done={true}>
@@ -439,6 +440,11 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
         <Vec3 pre="Moves " q="len" v={[f("settlement").dx, f("settlement").dy, f("settlement").dz ?? 0]} set={v => put({ ...f("settlement"), dx: v[0], dy: v[1], dz: v[2] })} hint="Down is −Z." />
       </Show>
       <p class="hint">{p.l.at.on === "face" ? "The face is moved by this much in the directions it moves (free in the others, like a smooth platen; add a support on it to hold those too). With a crushing step it is moved in increments and the force it takes is drawn against the movement." : "The support moves by this much in the directions it holds; the frame follows, and the forces it takes to make it are in the results."}</p></Show>
+    <Show when={k().kind === "remote"}>
+      <Vec3 pre="At " q="coord" v={f("remote").at} set={v => put({ ...f("remote"), at: v })} />
+      <Vec3 pre="F" q="force" v={f("remote").f} set={v => put({ ...f("remote"), f: v })} />
+      <Vec3 pre="M" q="moment" v={f("remote").m} set={v => put({ ...f("remote"), m: v })} />
+      <p class="hint">A force and a moment acting at a point off the face (a pin, a shaft's coupling, a load on a bracket's arm), carried onto the face so that it takes the force and the moment the force makes from that point. The face stays free to deform.</p></Show>
     <Show when={k().kind === "mass"}><NumField label="Mass" q="mass" v={f("mass").m} min={0} set={m => m >= 0 && put({ kind: "mass", m })} hint="Moves with the node in every direction, for natural frequencies and dynamics. It is in every load case and adds no weight to a static solve (use loads for that)." /></Show>
   </>;
 };

@@ -1958,6 +1958,59 @@ fn tetra() -> Vec<Check> {
     v
 }
 
+/// Benchmark 35 (0.7.7): a remote force and a remote moment carried onto a face by a
+/// distributing coupling, on a 10-node tetrahedral cantilever 1 × 0.1 × 0.1 m fixed at its root.
+fn remote_load() -> Vec<Check> {
+    use crate::solids::tet::{grid, TetMesh};
+    let mut v = vec![];
+    let (l, h, e, nu) = (1.0, 0.1, 200e9, 0.3);
+    let g = e / (2.0 * (1.0 + nu));
+    let model = |ms: TetMesh| {
+        let mut d = Doc::new(Model::new(Analysis::Solid));
+        d.m.materials[0].e = e;
+        d.m.materials[0].nu = nu;
+        d.m.materials[0].rho = 0.0;
+        d.m.volume = Some(Box::new(ms));
+        let root = Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|q| q[0].abs() < 1e-9).expect("root") };
+        add_id(&mut d, Item::Support(Support { id: 0, at: root, kind: SupportKind::Fixed }));
+        d
+    };
+    let tip = |d: &Doc| Target::Face { face: d.m.volume.as_ref().unwrap().face_where(|q| (q[0] - l).abs() < 1e-9).expect("tip") };
+    let near = |r: &crate::solid::SolidResults, k: &str, p: [f64; 3]| {
+        let i = r.volume.nodes.iter().enumerate().min_by(|a, b| crate::model::dist3(*a.1, p).total_cmp(&crate::model::dist3(*b.1, p))).unwrap().0;
+        r.volume.v[r.fields.iter().position(|f| f.key == k).unwrap()][i]
+    };
+    // 10 kN down at a point half a metre beyond the tip, on its axis: the tip carries the force
+    // and a moment of half a metre times it, both bending it down.
+    {
+        let pf = 10e3;
+        let mut d = model(grid([40, 5, 5], 2, |q| [l * q[0], h * q[1], h * q[2]]).unwrap());
+        let t = tip(&d);
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: t, kind: LoadKind::Remote { at: [1.5 * l, h / 2.0, h / 2.0], f: [0.0, -pf, 0.0], m: [0.0; 3] } }));
+        let r = crate::solids::tet::solve(&d.m).expect("remote force");
+        let i = h.powi(4) / 12.0;
+        let want = pf * l.powi(3) / (3.0 * e * i) + 0.5 * pf * l * l * l / (2.0 * e * i) + pf * l / (5.0 / 6.0 * g * h * h);
+        let name = "Cantilever, a force 0.5 m beyond its tip carried by a remote load, 10-node tetrahedra";
+        v.push(check(35, name, "Tip deflection PL³/3EI + (Pa)L²/2EI + PL/κGA", "len", -want, near(&r, "uy", [l, h / 2.0, h / 2.0]), 0.01, "Timoshenko beam theory (a fixed root is a little stiffer)"));
+        v.push(check(35, name, "Bending stress 6P(L + a − x)/bh² at a quarter span, top", "stress", 6.0 * pf * (1.5 * l - 0.25 * l) / h.powi(3), near(&r, "sx", [0.25 * l, h, h / 2.0]), 0.02, "Beam theory: the remote force's moment carried down the bar"));
+        v.push(check(35, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+    }
+    // A torque of 1 kN·m about the bar's axis at its tip: the tip turns TL/GJ, J = 0.1406 b⁴.
+    {
+        let tq = 1e3;
+        let mut d = model(grid([40, 6, 6], 2, |q| [l * q[0], h * q[1], h * q[2]]).unwrap());
+        let t = tip(&d);
+        add_id(&mut d, Item::Load(Load { case: 0, id: 0, at: t, kind: LoadKind::Remote { at: [l, h / 2.0, h / 2.0], f: [0.0; 3], m: [tq, 0.0, 0.0] } }));
+        let r = crate::solids::tet::solve(&d.m).expect("remote torque");
+        let x = 0.75 * l;
+        let turn = (near(&r, "uz", [x, h, h / 2.0]) - near(&r, "uz", [x, 0.0, h / 2.0])) / h;
+        let name = "Square bar twisted by a remote moment on its tip, 10-node tetrahedra";
+        v.push(check(35, name, "Twist three quarters along, Tx/GJ (J = 0.1406 b⁴)", "ratio", tq * x / (g * 0.1406 * h.powi(4)), turn, 0.03, "Saint-Venant torsion of a square bar (Timoshenko and Goodier); the root's held warping makes it a little stiffer"));
+        v.push(check(35, name, "Equilibrium (load over reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics"));
+    }
+    v
+}
+
 /// Benchmark 29 (0.5.6): natural frequencies and heat conduction on tetrahedra.
 fn tetra_more() -> Vec<Check> {
     use crate::solids::tet::{grid, TetMesh};
@@ -2554,11 +2607,19 @@ pub fn run() -> Vec<Check> {
     v.extend(assembly());
     v.extend(modelling());
     v.extend(yielding_large());
+    v.extend(remote_load());
     v
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn remote_load_on_its_own() {
+        for r in super::remote_load() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
     #[test]
     fn yielding_with_large_movements_on_its_own() {
         for r in super::yielding_large() {

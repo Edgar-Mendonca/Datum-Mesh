@@ -146,6 +146,30 @@ pub fn auto_size(solids: &[Solid]) -> f64 {
 /// The Gmsh script: read the solids, fuse touching ones, name every surface `S<tag>`, mesh in
 /// quadratic tetrahedra of about `size` (mm) and save as text.
 pub fn gmsh_script(step: &str, msh: &str, size: f64) -> String {
+    gmsh_script_fine(step, msh, size, &[])
+}
+
+/// A region meshed finer (0.7.7): a box (mm, the design's axes) and the element size inside it.
+pub type Fine = ([f64; 3], [f64; 3], f64);
+
+/// The Gmsh script, with elements of `fine.2` (mm) inside each box of `fine`, growing to `size`
+/// over a few elements outside it (box size fields, the smallest of them taken).
+pub fn gmsh_script_fine(step: &str, msh: &str, size: f64, fine: &[Fine]) -> String {
+    let mut fields = String::new();
+    for (i, (lo, hi, h)) in fine.iter().enumerate() {
+        let pad = h * 0.5;
+        fields.push_str(&format!(
+            "Field[{n}] = Box;\nField[{n}].VIn = {h};\nField[{n}].VOut = {size};\nField[{n}].XMin = {};\nField[{n}].XMax = {};\nField[{n}].YMin = {};\nField[{n}].YMax = {};\nField[{n}].ZMin = {};\nField[{n}].ZMax = {};\nField[{n}].Thickness = {t};\n",
+            lo[0] - pad, hi[0] + pad, lo[1] - pad, hi[1] + pad, lo[2] - pad, hi[2] + pad,
+            n = i + 1,
+            t = 3.0 * size,
+        ));
+    }
+    if !fine.is_empty() {
+        let list = (1..=fine.len()).map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+        fields.push_str(&format!("Field[{m}] = Min;\nField[{m}].FieldsList = {{{list}}};\nBackground Field = {m};\nMesh.MeshSizeExtendFromBoundary = 0;\n", m = fine.len() + 1));
+    }
+    let min = fine.iter().map(|f| f.2 / 2.0).fold(size / 10.0, f64::min);
     format!(
         r#"SetFactory("OpenCASCADE");
 Merge "{step}";
@@ -158,7 +182,7 @@ For i In {{0:#s()-1}}
   Physical Surface(Sprintf("S%g", s(i))) = {{s(i)}};
 EndFor
 Physical Volume("solid") = Volume{{:}};
-Mesh.MeshSizeMax = {size};
+{fields}Mesh.MeshSizeMax = {size};
 Mesh.MeshSizeMin = {min};
 Mesh.MeshSizeFromCurvature = 12;
 Mesh.ElementOrder = 2;
@@ -167,14 +191,18 @@ Mesh.MshFileVersion = 4.1;
 Mesh.Binary = 0;
 Mesh 3;
 Save "{msh}";
-"#,
-        min = size / 10.0
+"#
     )
 }
 
 /// Mesh the solids: STEP out, Gmsh (`gmsh`, a program path), the mesh read back and each of its
 /// faces traced to a model face. `work` is a folder for the files passed between them.
 pub fn mesh(solids: &[Solid], size: f64, gmsh: &Path, work: &Path) -> Result<Meshed, String> {
+    mesh_fine(solids, size, &[], gmsh, work)
+}
+
+/// As `mesh`, finer inside the boxes of `fine` (0.7.7).
+pub fn mesh_fine(solids: &[Solid], size: f64, fine: &[Fine], gmsh: &Path, work: &Path) -> Result<Meshed, String> {
     if solids.is_empty() {
         return Err("There is no solid to mesh: model a solid first.".into());
     }
@@ -186,7 +214,7 @@ pub fn mesh(solids: &[Solid], size: f64, gmsh: &Path, work: &Path) -> Result<Mes
     std::fs::write(&step_path, step).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&msh_path);
     let slash = |p: &Path| p.to_string_lossy().replace('\\', "/");
-    std::fs::write(&geo_path, gmsh_script(&slash(&step_path), &slash(&msh_path), size)).map_err(|e| e.to_string())?;
+    std::fs::write(&geo_path, gmsh_script_fine(&slash(&step_path), &slash(&msh_path), size, fine)).map_err(|e| e.to_string())?;
     let out = std::process::Command::new(gmsh)
         .arg(&geo_path)
         .arg("-parse_and_exit")

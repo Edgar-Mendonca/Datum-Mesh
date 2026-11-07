@@ -151,7 +151,13 @@ fn gmsh_path() -> PathBuf {
 #[tauri::command]
 async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out> {
     let work = std::env::temp_dir().join(format!("datum-mesh-{}", std::process::id()));
-    let ms = st.lock().mesh(if size.is_finite() && size > 0.0 { size } else { 0.0 }, &gmsh_path(), &work)?;
+    // Finer near chosen faces (0.7.7): each face's name and its size (mm).
+    let fine: Vec<(String, f64)> = {
+        let a = app.lock();
+        let names: Vec<String> = a.doc.m.volume.as_ref().map(|v| v.faces.iter().map(|f| f.name.clone()).collect()).unwrap_or_default();
+        a.doc.m.mesh.refine.iter().filter_map(|r| match r.at { datum_core::model::Target::Face { face } => names.get(face as usize).map(|n| (n.clone(), r.size * 1e3)), _ => None }).collect()
+    };
+    let ms = st.lock().mesh_fine(if size.is_finite() && size > 0.0 { size } else { 0.0 }, &fine, &gmsh_path(), &work)?;
     let _ = std::fs::remove_dir_all(&work);
     let mut a = app.lock();
     let mut m = a.doc.m.clone();
@@ -164,6 +170,10 @@ async fn cad_mesh(st: State<'_, CadSt>, app: State<'_, St>, size: f64) -> R<Out>
     });
     m.loads.retain_mut(|l| match &mut l.at {
         datum_core::model::Target::Face { face } => match new_of(*face) { Some(n) => { *face = n; true } None => { lost += 1; false } },
+        _ => true,
+    });
+    m.mesh.refine.retain_mut(|r| match &mut r.at {
+        datum_core::model::Target::Face { face } => match new_of(*face) { Some(n) => { *face = n; true } None => false },
         _ => true,
     });
     let mut v = ms;

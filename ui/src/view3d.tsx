@@ -4,9 +4,9 @@
 // nodes and members (and places supports and loads); drawing happens on a working plane.
 import { sectionsOn } from "./store";
 import type { SectionShape } from "./api";
-import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack, pick3 } from "./cad";
+import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack, pick3, setMeshOld } from "./cad";
 import { Timeline, bodyMenu } from "./history";
-import { showMesh, geoMesh } from "./study";
+import { showMesh, geoMesh, meshSolids } from "./study";
 import { ExtrudePanel } from "./extrude";
 import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import * as THREE from "three";
@@ -14,7 +14,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { Model, SpaceMember, Target, clean, isSolidA, solidDisp } from "./api";
+import { Model, SpaceMember, Target, clean, isSolidA, solidDisp, invoke } from "./api";
 import { solved, sketch, sketchPick, setSketchPick, model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
 import { palette, BANDS, curField, rangeOf } from "./parts";
 import { outline, edgePts, inside } from "./geom";
@@ -461,6 +461,17 @@ export const View3D = () => {
     };
     for (const s of m.supports) faceLines(s.at, selSet.has(s.id) ? accent : green);
     for (const l of m.loads.filter(x => shownLoad(m, x))) faceLines(l.at, selSet.has(l.id) ? accent : load);
+    // Remote forces (0.7.7): an arrow at the point, and a line from it to the face's centre.
+    for (const l of m.loads) {
+      if (l.kind.kind !== "remote" || l.at.on !== "face" || !shownLoad(m, l)) continue;
+      const k = l.kind, c = faceCentre(l.at.face), col = new THREE.Color(selSet.has(l.id) ? accent : load);
+      const span = vp ? Math.max(...[0, 1, 2].map(j => Math.max(...vp.surface.nodes.map(q => q[j])) - Math.min(...vp.surface.nodes.map(q => q[j])))) : 0.1;
+      const g = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...k.at), new THREE.Vector3(...c)]);
+      world.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: col })));
+      const fl = Math.hypot(...k.f);
+      if (fl > 0) { const d = new THREE.Vector3(...k.f).normalize(), len = span * 0.3; world.add(new THREE.ArrowHelper(d, new THREE.Vector3(...k.at).addScaledVector(d, -len), len, col, len * 0.25, len * 0.12)); }
+      const dot = new THREE.Mesh(new THREE.SphereGeometry(span * 0.012, 12, 8), new THREE.MeshBasicMaterial({ color: col })); dot.position.set(...k.at); world.add(dot);
+    }
     draw();
   };
 
@@ -820,10 +831,24 @@ export const View3D = () => {
       }
       // On a solid, Force on a face is shared over the face (0.7.3).
       if (t === "load:force") t = "load:traction";
+      // Finer near a face (0.7.7): a click adds the face (a quarter of the element size there), a
+      // second click takes it off; the solids are meshed again.
+      if (t === "refine" && model()?.volume) {
+        const f = pickFace(e.clientX - rc.left, e.clientY - rc.top), m = model()!;
+        if (!f || f.on !== "face") return toast("Click a face of the solid to mesh finer near it.");
+        const had = m.mesh.refine.some(r => r.at.on === "face" && r.at.face === f.face);
+        const base = m.mesh.size > 0 ? m.mesh.size : (await invoke<number>("cad_auto_size")) * 1e-3;
+        await C.meshSettings({ refine: had ? m.mesh.refine.filter(r => !(r.at.on === "face" && r.at.face === f.face)) : [...m.mesh.refine, { at: f, size: base / 4 }] });
+        if (geoMesh()) { setMeshOld(true); await meshSolids(); }
+        return;
+      }
       const at = pickFace(e.clientX - rc.left, e.clientY - rc.top);
-      const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction", "load:settlement"].includes(t);
+      const ok = model()?.analysis === "solidheat" ? ["sup:temperature", "load:flux", "load:convection"].includes(t) : (t.startsWith("sup:") && !["sup:temperature", "sup:rollerx", "sup:rollery", "sup:spring"].includes(t)) || ["load:pressure", "load:traction", "load:settlement", "load:remote"].includes(t);
+      if (t === "load:remote" && !model()?.volume) { toast("A remote force goes on a face of a meshed solid."); return; }
       if (!at || !ok) { toast(model()?.volume ? (ok ? "Click on a face of the mesh." : `On a ${model()?.volume?.source === "geometry" ? "solid" : "meshed solid"}, supports (fixed, pinned, roller, symmetry, held directions) and forces or pressures go on its faces.`) : ok ? "Click on the part: a side face, or the back or front face." : "Put it on a face: an edge in Section (its side face), or the back or front face."); return; }
       const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(at.on === "end" && t === "sup:pinned" ? "fixed" : t.slice(4))] : ["Load", defaultLoad(t.slice(5), false)];
+      // A remote force (0.7.7) starts at the face's centre, 1 kN down: move its point in the Inspector.
+      if (t === "load:remote" && at.on === "face") (val as { at: number[] }).at = faceCentre(at.face);
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) setSel(o.created);
       return;
@@ -882,6 +907,20 @@ export const View3D = () => {
   };
   /** The face of a solid under the pointer (0.3.2): the back or front face, or the side face of the
    * section edge nearest the point hit. */
+  /** The centre (area-weighted) of a meshed solid's face, from its surface triangles. */
+  const faceCentre = (f: number): [number, number, number] => {
+    const v = model()?.volume, c = [0, 0, 0]; let a = 0;
+    if (!v) return [0, 0, 0];
+    v.surface.tris.forEach((t, i) => {
+      if (v.tface[i] !== f) return;
+      const [p, q, r] = t.map(k => v.surface.nodes[k]);
+      const u = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], w = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
+      const ar = Math.hypot(u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]) / 2;
+      for (let k = 0; k < 3; k++) c[k] += ar * (p[k] + q[k] + r[k]) / 3;
+      a += ar;
+    });
+    return a > 0 ? [c[0] / a, c[1] / a, c[2] / a] : [0, 0, 0];
+  };
   const pickFace = (x: number, y: number): Target | null => {
     const m = model(); if (!m) return null;
     const [w, h] = size(), ray = new THREE.Raycaster();

@@ -31,6 +31,7 @@ fn scaled(k: &LoadKind, f: f64) -> Option<LoadKind> {
         // A mass is the structure's, not a load: never scaled.
         Mass { m } => Mass { m },
         Settlement { dx, dy, dz } => Settlement { dx: dx * f, dy: dy * f, dz: dz * f },
+        Remote { at, f: fv, m } => Remote { at, f: fv.map(|v| v * f), m: m.map(|v| v * f) },
         Convection { .. } => return None,
     })
 }
