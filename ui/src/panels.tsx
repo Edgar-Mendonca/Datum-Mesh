@@ -3,7 +3,7 @@
 import { cad, cadRun, meshOld, setMeshOld } from "./cad";
 import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
-import { For, Show, JSX, createMemo, createSignal } from "solid-js";
+import { For, Show, JSX, createMemo, createSignal, createEffect } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
 import { stepsDialog } from "./steps";
@@ -159,6 +159,19 @@ const Step = (p: { n: number; t: string; done: boolean; why?: string; children?:
   </section>
 );
 
+/** The tree's filter (0.10.0, the user's mock-up): rows whose words do not match are hidden, and the
+ *  branches holding a match open; cleared, every row shows again. */
+const [treeFilter, setTreeFilter] = createSignal("");
+const applyFilter = (body: HTMLElement, q: string) => {
+  const t = q.trim().toLowerCase();
+  body.querySelectorAll<HTMLElement>("details.tgrp").forEach(d => {
+    const head = (d.querySelector("summary .tt")?.textContent ?? "").toLowerCase();
+    let any = false;
+    d.querySelectorAll<HTMLElement>(":scope > .tlist > .ti").forEach(r => { const hit = !t || head.includes(t) || (r.textContent ?? "").toLowerCase().includes(t); r.style.display = hit ? "" : "none"; any ||= hit; });
+    d.style.display = !t || any || head.includes(t) ? "" : "none";
+    if (t && any) (d as HTMLDetailsElement).open = true;
+  });
+};
 export const Tree = () => {
   const m = () => model();
   const frame = () => isFrame(m()?.analysis);
@@ -177,7 +190,8 @@ export const Tree = () => {
     <aside class="tree">
       <div class="ttabs" role="tablist"><button role="tab" classList={{ on: treeTab() === "model" }} onClick={() => setTreeTab("model")}>Model</button><button role="tab" classList={{ on: treeTab() === "results" }} onClick={() => setTreeTab("results")}>Results</button><Help k="tree" /></div>
       <Show when={treeTab() === "results"}><div class="tbody tres"><Show when={m() && results()} fallback={<p class="muted small tempty">Nothing solved yet. Solve (F5), and the results are here: each result's range (click one to show it), the balance check, the tables, graphs and report.</p>}><ResultsInsp m={m()!} /></Show></div></Show>
-      <div class="tbody" style={{ display: treeTab() === "results" ? "none" : undefined }}>
+      <Show when={treeTab() === "model"}><label class="tfilter"><svg class="ic"><use href="#i-search" /></svg><input type="search" placeholder="Filter the tree" value={treeFilter()} onInput={e => setTreeFilter(e.currentTarget.value)} /></label></Show>
+      <div class="tbody" ref={el => createEffect(() => { treeFilter(); model(); setTimeout(() => applyFilter(el, treeFilter()), 0); })} style={{ display: treeTab() === "results" ? "none" : undefined }}>
         <Show when={m()}>{mm => <>
           <div class="troot" title="The model's name, analysis, units and notes" onClick={() => { setSel([]); setPopWhat("model"); setInspOpen(true); }}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
           <Step n={1} t={fs()[0].t} done={fs()[0].done} why={fs()[0].why}>

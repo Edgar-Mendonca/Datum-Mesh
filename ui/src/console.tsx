@@ -4,6 +4,7 @@
 // The engine reports its progress (`datum_core::progress`); the shell sends it as `solver` events.
 import { For, Show, Switch, Match, createSignal, createMemo, JSX } from "solid-js";
 import { notes, setNotes, note } from "./store";
+import { showPlanned, openPlanned } from "./planned";
 import { invoke, listen, num } from "./api";
 
 type Ev = { e: "stage"; text: string } | { e: "increment"; lambda: number } | { e: "iteration"; it: number; residual: number }
@@ -143,6 +144,8 @@ export const Console = () => {
       <T t="messages">Messages<Show when={unread()}><i class="cbadge">{unread()}</i></Show></T>
       <T t="solver">Solver monitor</T>
       <T t="log">Log</T>
+      <Show when={showPlanned()}><For each={[["jobs", "Jobs", "0.15"], ["script", "Python", "0.15"]]}>{([id, l, v]) =>
+        <button class="cplanned" data-planned={id} title={`${l}: planned for ${v}. Click to see what it will do.`} onClick={() => openPlanned(id)}>{l}<i>{v}</i></button>}</For></Show>
       <span class="grow" />
       <Show when={run()}>{r => <span class="cnow"><span classList={{ cdot: true, live: r().status === "running", bad: r().status === "failed" }} />{STATUS[r().status]} · {elapsed(r())}<Show when={progress(r()) !== null}><span class="cbar sm"><i style={{ width: `${Math.min(100, progress(r())! * 100)}%` }} /></span></Show></span>}</Show>
       <Show when={run()?.status === "running"}><button class="btn sm" disabled={run()?.stopAsked} onClick={stopRun} title="End the solve at its next load increment or time step, keeping what it reached">Stop</button></Show>

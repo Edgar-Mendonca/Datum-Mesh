@@ -1284,3 +1284,13 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .rname small, .rwhen { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recentnone { padding: 8px 10px; border: 1px solid var(--line); background: var(--bg2); margin: 0; }
 @media (max-width: 1200px) { .tiles.blanks { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+
+/* 0.10.0: planned tabs of the bottom panel, dimmed with their release. */
+.console header .cplanned { opacity: .5; font-style: italic; }
+.console header .cplanned i { font-style: normal; font-size: 9.5px; margin-left: 5px; padding: 0 4px; border: 1px solid var(--line3); border-radius: 3px; color: var(--muted); }
+
+/* 0.10.0: the tree's filter box. */
+.tfilter { display: flex; align-items: center; gap: 6px; margin: 6px 8px 4px; padding: 0 8px; height: 24px; border: 1px solid var(--line); background: var(--bg2); }
+.tfilter:focus-within { border-color: var(--blue); }
+.tfilter .ic { width: 13px; height: 13px; color: var(--muted); flex: none; }
+.tfilter input { border: 0; outline: 0; background: none; flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 0; height: 22px; color: var(--text); }

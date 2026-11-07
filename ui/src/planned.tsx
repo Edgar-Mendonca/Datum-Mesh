@@ -18,6 +18,9 @@ let mod: typeof import("./features") | null = null;
 // Loaded after the window's first paint: the register is words, not needed to start.
 setTimeout(() => import("./features").then(m => { mod = m; setFeats(m.FEATS); }), 0);
 
+/** Opens a planned feature's greyed dialog by its id (the bottom panel's planned tabs). */
+export const openPlanned = (id: string) => { const f = feats().find(x => x.id === id); if (f) plannedDialog(f); };
+
 /** The planned features shown for the open model (none when the switch is off). */
 export const plannedFor = (f: { tab?: string; step?: number }) => createMemo(() => {
   feats(); if (!showPlanned() || !mod) return [] as Feat[];
