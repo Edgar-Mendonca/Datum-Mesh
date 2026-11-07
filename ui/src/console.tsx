@@ -37,7 +37,7 @@ const push = () => { if (cur) setRun({ ...cur, resid: [...cur.resid], incs: [...
 /** A solve (or meshing) starts: the monitor follows it; it opens by itself if it takes a while. */
 export const beginRun = (what: string) => {
   cur = { what, t0: Date.now(), t1: 0, status: "running", stage: "", target: 0, lambda: 0, it: 0, residual: NaN, resid: [], incs: [], cuts: 0, pending: 0, time: null, stopAsked: false };
-  push(); logLine(`${what}: started`);
+  push(); note(`${what}: started`);
   clearInterval(tick); tick = window.setInterval(() => setNow(Date.now()), 250);
   setTimeout(() => { if (cur?.status === "running" && Date.now() - cur.t0 >= 900 && !open()) { setTab("solver"); setOpen(true); } }, 1000);
 };
@@ -46,13 +46,13 @@ export const endRun = (ok: boolean, why = "") => {
   if (!cur) return;
   cur.t1 = Date.now(); cur.status = !ok ? "failed" : cur.stopAsked ? "stopped" : "done";
   clearInterval(tick); setNow(cur.t1);
-  logLine(`${cur.what}: ${cur.status === "failed" ? `failed. ${why}` : cur.status === "stopped" ? "stopped at your request" : "finished"} after ${dur(cur.t1 - cur.t0)}`);
+  note(`${cur.what}: ${cur.status === "failed" ? `failed. ${why}` : cur.status === "stopped" ? "stopped at your request" : "finished"} after ${dur(cur.t1 - cur.t0)}`, cur.status === "failed" ? "error" : "info");
   push();
 };
 export const stopRun = () => {
   if (!cur || cur.status !== "running") return;
   cur.stopAsked = true; push();
-  logLine("Stop asked: the solve ends at its next load increment or time step, keeping what it reached.");
+  note("Stop asked: the solve ends at its next load increment or time step, keeping what it reached.");
   invoke("stop_solve").catch(() => {});
 };
 
@@ -65,11 +65,13 @@ const take = (evs: Ev[]) => {
     else if (e.e === "converged") { cur.lambda = e.lambda; cur.incs.push({ n: cur.incs.length + 1, lambda: e.lambda, iterations: e.iterations, cuts: cur.pending }); cur.pending = 0; if (cur.incs.length > 2000) cur.incs.shift(); logLine(`  balanced at ${pct(e.lambda)} in ${e.iterations} ${e.iterations === 1 ? "iteration" : "iterations"}`); }
     else if (e.e === "cut") { cur.cuts++; cur.pending++; logLine(`  cut back: ${e.why}; next try ${pct(e.lambda)}`); }
     else if (e.e === "time") { cur.time = { t: e.t, of: e.of, steps: e.steps }; logLine(`Time ${num(e.t * 1e3, 4)} of ${num(e.of * 1e3, 4)} ms (${e.steps.toLocaleString()} steps)`); }
-    else if (e.e === "note") { logLine(e.text); note(e.text); }
+    else if (e.e === "note") note(e.text);
   }
   push();
 };
 listen("solver", (p: Ev[]) => take(p));
+// Everything said in Messages is in the Log too, in order with the solver's lines.
+window.addEventListener("dm-note", e => logLine((e as CustomEvent<string>).detail));
 
 /** How far the solve is (0 to 1), or null before it says. */
 export const progress = (r: Run) => r.time ? r.time.t / (r.time.of || 1) : r.incs.length || r.target ? r.lambda : null;
@@ -118,9 +120,9 @@ const Monitor = () => <Show when={run()} fallback={<p class="muted cempty">Nothi
   </div>;
 }}</Show>;
 
-const LEVEL: Record<string, string> = { info: "Info", warn: "Warning", error: "Error" };
+const LEVEL: Record<string, string> = { info: "Info", warn: "Warning", error: "Error", action: "Done" };
 const Messages = () => <Show when={notes().length} fallback={<p class="muted cempty">No messages yet. What the window tells you (a solve finished, a warning, an error) is kept here with its time.</p>}>
-  <div class="cmsgs"><For each={[...notes()].reverse()}>{n => <div class={`cmsg ${n.level}`}><time>{new Date(n.at).toLocaleTimeString()}</time><b>{LEVEL[n.level]}</b><span>{n.text}</span></div>}</For></div>
+  <div class="cmsgs"><For each={[...notes()].reverse()}>{n => <div class={`cmsg ${n.kind ?? n.level}`}><time>{new Date(n.at).toLocaleTimeString()}</time><b>{LEVEL[n.kind ?? n.level]}</b><span>{n.text}</span></div>}</For></div>
 </Show>;
 
 const Log = () => <div class="clog"><pre>{lines().join("\n") || "The solver's log shows here when you solve."}</pre></div>;

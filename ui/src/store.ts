@@ -155,9 +155,23 @@ const withCase = (op: any): any => {
 };
 
 // ---------- editing ----------
+/** An edit in words, for the bottom panel (0.9.1, the user: every step kept). */
+const ITEM: Record<string, string> = { Node: "a node", Member: "a member", Shape: "a shape", Section: "a section", Material: "a material", Support: "a support", Load: "a load", Case: "a load case", Combo: "a combination", Step: "an analysis step", Part: "a part", Contact: "a contact" };
+export const describeOp = (op: any): string => {
+  if (!op || typeof op !== "object") return "Changed the model";
+  if (op.Batch) return op.Batch.length === 1 ? describeOp(op.Batch[0]) : `${op.Batch.length} changes at once`;
+  const k = Object.keys(op)[0], v = op[k] ?? {}, it = v.item ? Object.keys(v.item)[0] : "", what = ITEM[it] ?? (it ? it.toLowerCase() : "");
+  if (k === "Add") return `Added ${what}`;
+  if (k === "Set") return `Changed ${what}`;
+  if (k === "Delete") return `Deleted ${v.ids?.length === 1 ? "one item" : `${v.ids?.length ?? 0} items`}`;
+  if (k === "AddMember") return "Added a member";
+  if (k === "Move") return `Moved ${v.ids?.length === 1 ? "one item" : `${v.ids?.length ?? 0} items`}`;
+  if (k === "SetSettings") return "Changed the model's settings";
+  return k.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/^./, c => c.toUpperCase());
+};
 export const act = async (op: object, quiet = false): Promise<Out | null> => {
   op = withPart(withCase(op));
-  try { const o = await invoke<Out>("apply", { op }); setOut(o); const sk = sketch(); if (sk) setSketch({ ...sk, edits: sk.edits + 1 }); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
+  try { const o = await invoke<Out>("apply", { op }); note(describeOp(op), "info", "action"); setOut(o); const sk = sketch(); if (sk) setSketch({ ...sk, edits: sk.edits + 1 }); if (results()) setStale(true); if (meshed()) setMeshStale(true); if (modes()) setModesStale(true); return o; }
   catch (e) { if (!quiet) toast(String(e)); return null; }
 };
 export const call = async <T = any>(cmd: string, args?: object): Promise<T | undefined> => {
@@ -166,6 +180,7 @@ export const call = async <T = any>(cmd: string, args?: object): Promise<T | und
 export const loadOut = async (cmd: string, args?: object) => {
   const o = await call<Out | null>(cmd, args);
   if (o) batch(() => { setSel([]); setEdgeSel(null); setTool("select"); setActiveRaw(null); setResults(null); setStale(false); setMeshed(null); setMeshStale(false); setModes(null); setModeOn(false); setModesStale(false); setOut(o); setBackstage(null); setView("model"); });
+  if (o) note(`${cmd === "open" ? "Opened" : cmd === "new_model" ? "Started" : "Loaded"} “${o.m.name}”${o.path ? ` (${o.path})` : ""}`, "info", "action");
   // A model opened or started afresh brings its own geometry (0.7.1): cad.tsx reloads it.
   if (o) window.dispatchEvent(new Event("cad-reload"));
   return o;
@@ -175,9 +190,13 @@ export const loadOut = async (cmd: string, args?: object) => {
 export const [msg, setMsg] = createSignal<{ text: string; ok: boolean } | null>(null);
 let timer = 0;
 /** Messages (0.9.1): everything said to the person is kept, with its time, in the bottom panel. */
-export type Note = { at: number; level: "info" | "warn" | "error"; text: string };
+export type Note = { at: number; level: "info" | "warn" | "error"; text: string; kind?: "action" };
 export const [notes, setNotes] = createSignal<Note[]>([]);
-export const note = (text: string, level: Note["level"] = "info") => setNotes(v => [...v.slice(-499), { at: Date.now(), level, text }]);
+/** Kept in Messages and written to the Log; `kind` "action" marks an edit (shown as Done). */
+export const note = (text: string, level: Note["level"] = "info", kind?: "action") => {
+  setNotes(v => [...v.slice(-999), { at: Date.now(), level, text, kind }]);
+  window.dispatchEvent(new CustomEvent("dm-note", { detail: `${level === "info" ? "" : level === "warn" ? "Warning: " : "Error: "}${text}` }));
+};
 export const toast = (text: string, ok = false) => { note(text, ok ? "info" : "warn"); setMsg({ text, ok }); clearTimeout(timer); timer = window.setTimeout(() => setMsg(null), ok ? 3000 : 7000); };
 export type Item = { label: string; run?: () => void; keys?: string; off?: boolean; on?: boolean; sub?: Item[]; icon?: string } | "-";
 export const [menu, setMenu] = createSignal<{ x: number; y: number; items: Item[] } | null>(null);

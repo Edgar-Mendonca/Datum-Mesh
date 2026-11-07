@@ -1172,3 +1172,24 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .cres .res { fill: none; stroke: var(--blue); stroke-width: 1.5; }
 .cinc { max-height: 150px; overflow: auto; }
 .cinc .tbl { font-size: 11.5px; }
+/* 0.9.1 stage 2 (the user): the workflow bar at the far left, and the properties card that pops
+   up over the view. */
+.workrow { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.flow { width: 74px; flex: none; display: flex; flex-direction: column; gap: 2px; padding: 6px 0; background: var(--side); border-right: 1px solid var(--line); overflow-y: auto; }
+.flow button { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 2px 7px; color: var(--text2); border-left: 3px solid transparent; }
+.flow button svg { width: 22px; height: 22px; }
+.flow button span { font: 500 9.5px var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+.flow button .fn { position: absolute; top: 4px; left: 6px; font: 600 10px var(--mono); font-style: normal; width: 16px; height: 16px; line-height: 16px; border-radius: 50%; text-align: center; background: var(--line); color: var(--text2); }
+.flow button.done .fn { background: var(--green); color: #fff; }
+.flow button.skip { opacity: .5; }
+.flow button:hover { background: var(--pale); color: var(--blue); }
+.flow button.on { background: var(--bg2); color: var(--blue); border-left-color: var(--blue); }
+.flow button.on span { font-weight: 600; }
+.flow button:not(:last-child)::after { content: ""; position: absolute; bottom: -2px; left: 50%; width: 1px; height: 4px; background: var(--line); }
+.modelview { position: relative; }
+.ipop { position: absolute; top: 44px; right: 8px; max-height: calc(100% - 52px); display: flex; z-index: 6; box-shadow: 0 8px 28px rgba(0, 0, 0, .18); border: 1px solid var(--line); }
+.ipop .insp { border-left: 0; max-height: 100%; }
+.ipop .insp .ibody { overflow: auto; }
+.ipop .vgrip { margin: 0; width: 5px; background: var(--panel); }
+.cmsg.action b { color: var(--green); }
+.ipop.low { top: 120px; max-height: calc(100% - 128px); }

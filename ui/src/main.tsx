@@ -12,7 +12,7 @@ import { C } from "./cmds";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
 import { Canvas, fit, scale } from "./canvas";
-import { Tree, Inspector, ANALYSES, inspOpen, setInspOpen } from "./panels";
+import { Tree, Inspector, ANALYSES, Flow, popShown, setInspOpen } from "./panels";
 import { Console, runLine } from "./console";
 import { ResultsLegend } from "./results";
 const ResultsPage = lazy(() => import("./resultspage").then(m => ({ default: m.ResultsPage })));
@@ -107,21 +107,25 @@ const App = () => {
     else if (e.key === "F5") { e.preventDefault(); C.solve(); }
     else if (k === "f" && !ctrl && !typing && !backstage()) fit();
     else if (e.key === "Escape" && backstage() && out()) setBackstage(null);
+    else if (e.key === "Escape" && !typing) setInspOpen(false);
   };
   return (
     <div class="app" ref={() => document.addEventListener("keydown", keys)}>
       <TitleBar update={update()?.available ? update()!.latest : null} />
       <Ribbon />
       <main class="work">
+        <div class="workrow">
+        <Show when={out()}><Flow /></Show>
         <div class="content" style={{ "--tree-w": `${treeW()}px`, "--insp-w": `${inspW()}px` }}>
           <Show when={out()}>
             <Switch fallback={<div class="modelview"><Tree /><div class="vgrip" onPointerDown={e => grip(e, "tree")} title="Drag to widen or narrow the steps" /><div class="center"><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
                 // Sketching (0.6.2): the 3D view behind, square to the plane, the sketch canvas over it.
-                <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={(rawResults() || (modeOn() && modes())) && !sketch() && view() !== "mesh"}><div class="playwrap"><Suspense><Player /></Suspense></div></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Show when={inspOpen()} fallback={<button class="iunfold" onClick={() => setInspOpen(true)} title="Show the properties panel">«<span>{results() && !sel().length ? "Results" : "Properties"}</span></button>}><div class="vgrip" onPointerDown={e => grip(e, "insp")} title="Drag to widen or narrow this panel" /><Inspector /></Show></div>}>
+                <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={(rawResults() || (modeOn() && modes())) && !sketch() && view() !== "mesh"}><div class="playwrap"><Suspense><Player /></Suspense></div></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Show when={popShown()}><div class="ipop" classList={{ low: !!sketch() }}><div class="vgrip" onPointerDown={e => grip(e, "insp")} title="Drag to widen or narrow this panel" /><Inspector /></div></Show></div>}>
               <Match when={view() === "results"}><div class="pagewrap"><PageBar t="Results: tables and equilibrium" /><Suspense><ResultsPage /></Suspense></div></Match>
               <Match when={view() === "report"}><div class="pagewrap"><PageBar t="Report" /><Suspense><ReportPage /></Suspense></div></Match>
             </Switch>
           </Show>
+        </div>
         </div>
         <Show when={out()}><Console /></Show>
       </main>

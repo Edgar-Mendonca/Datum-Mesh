@@ -7,7 +7,7 @@
   "for": "Mechanical, structural, process and aerospace engineers, students and lecturers.",
   "about": [
     "Its purpose: to show any engineer or student how a part or structure carries load, heat and vibration (where it is stressed, how far it moves, how hot it gets) in a free app they can trust because it proves its own answers.",
-    "From 0.9.0 the window is laid out in numbered steps (Geometry, Properties, Supports & Loads, Mesh, Analysis, Results) and has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, ellipses, splines, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, boxes, cylinders, cones and spheres made in one go, solids joined, cut or intersected, sweeps, lofts, drafts and splits, STEP files in and out, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; frames drawn with the same sketch tools, and a history of every feature to edit, suppress, roll back or delete. The solids are then meshed by Gmsh (installed with it) and analysed by Datum Mesh's own engine, with supports and loads on the faces you click. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
+    "From 0.9.1 the window is laid out for the work: the steps down the left (Geometry, Materials, Loads, Mesh, Solve, Results, each ticked when done), the model across the middle, a card that pops up when you pick something, and a terminal along the bottom that keeps every message and follows each solve as it runs (increments, iterations, how far from balance, cut-backs, time left, Stop). It has full sketching and 3D modelling: click a plane and the view turns to it; lines, arcs, circles and rectangles drawn several ways, polygons, slots, ellipses, splines, trim, offset, fillet, mirror, patterns, dimensions and constraints; extrude with the solid changing as you type, revolve, boxes, cylinders, cones and spheres made in one go, solids joined, cut or intersected, sweeps, lofts, drafts and splits, STEP files in and out, holes, fillets, chamfers, shells, press pull, move, mirror and patterns of solids; frames drawn with the same sketch tools, and a history of every feature to edit, suppress, roll back or delete. The solids are then meshed by Gmsh (installed with it) and analysed by Datum Mesh's own engine, with supports and loads on the faces you click. The geometry comes from SolidCraft's open-source engine, working behind the Datum window.",
     "Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method. You draw a frame of beams and truss bars, or the outline of a part with its holes, put on the supports and loads, and solve.",
     "Frames and trusses give the deflected shape, the moment, shear and axial diagrams, the reactions and member utilisation, by linear analysis or in steps with large deflection and P-delta, followed past the limit load, in 2D and 3D; 3D frames carry plates (slabs, walls) joined to their beams; frames and plates respond to earthquakes by response spectrum or time history. Parts are meshed into triangles and solved in plane stress, plane strain or steady heat conduction, or as 3D solids (extruded or revolved) for stress, vibration and heat, and elastic-plastic (yielding) up to collapse in both; 3D solids also follow large deformation, rubber included (with thermal stress from the temperatures), with contours of stress, displacement, safety factor and temperature, and a probe that reads any point. Every solve ends with an equilibrium check, and Help › Verification solves benchmarks with known answers in front of you (a plate with a hole, a thick cylinder, NAFEMS LE1, conduction, patch tests, the NAFEMS large-deflection beams, the Scordelis–Lo roof and the pinched cylinder), so you can see how far to trust each result."
   ],
@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "A terminal along the bottom: every edit, message and solve kept with its time, and a solver monitor that shows each load increment and iteration as it runs, with Stop",
     "Impact: fast events in a meshed solid stepped in time (explicit dynamics), with starting velocities, the movement and energies in time, and a stress wave checked against its exact answer",
     "Contact between solids: touching parts press on each other and slide, held back by friction, with the contact pressure and forces shown; checked against exact answers in benchmark 36",
     "Remote forces and moments carried onto a face, a finer mesh near the faces you choose, and results graphed along a line through the solid",
@@ -96,13 +97,24 @@
   ],
   "roadmap": [
     {
-      "v": "1.0",
-      "title": "Crash and contact, further",
+      "v": "0.9.2",
+      "title": "Results and the solver, further",
       "when": "Next",
       "items": [
+        "The tube crush's first increment settling (found with the solver monitor)",
+        "Result tools as pop-ups: cut, probe, animation, display options",
+        "The legend and the solve's details drawn in the view; a choice of background"
+      ]
+    },
+    {
+      "v": "1.0",
+      "title": "Crash, materials and scripting",
+      "when": "Later",
+      "items": [
         "Contact and yielding in time: parts crushed in a crash",
-        "Contact with large movements (the folds of a crushed tube)",
-        "Bolts tightened before the load (pretension)"
+        "Johnson–Cook plasticity and damage, kinematic hardening, Mooney–Rivlin",
+        "Nonlinear buckling with imperfections",
+        "Scripting in Python: drive the model and add your own materials"
       ]
     }
   ]

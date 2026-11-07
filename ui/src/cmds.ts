@@ -16,7 +16,7 @@ const fresh3d = () => import("./plane3").then(p => { p.setPlane("3d"); setTool("
 
 export const C = {
   // ---------- file ----------
-  save: async (asNew = false) => { const o = await call<Out | null>("save", { asNew }); if (o) { setOut(o); toast("Saved.", true); } },
+  save: async (asNew = false) => { const o = await call<Out | null>("save", { asNew }); if (o) { setOut(o); toast(`Saved${o.path ? ` to ${o.path}` : ""}.`, true); } },
   // Each of these replaces the open model, so unsaved changes are offered for saving first (0.1.1 bug: they were lost).
   open: () => D.keepChanges(() => loadOut("open", { path: null }).then(o => { if (o) { fresh3d(); setTimeout(fit, 60); } })),
   /** File › Import Mesh (0.5.5): a tetrahedral mesh (.msh, .inp) as a new 3D solid; `unit` is the
@@ -30,8 +30,8 @@ export const C = {
     return loadOut("new_model", { example, analysis }).then(o => { if (gm) endRun(!!o); if (o) { fresh3d(); setTimeout(fit, 60); } });
   }),
   print: () => setBackstage("print"),
-  undo: async () => { const o = await call<Out>("history", { redo: false }); if (o) { setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
-  redo: async () => { const o = await call<Out>("history", { redo: true }); if (o) { setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
+  undo: async () => { const o = await call<Out>("history", { redo: false }); if (o) { note("Undone", "info", "action"); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
+  redo: async () => { const o = await call<Out>("history", { redo: true }); if (o) { note("Redone", "info", "action"); setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
 
   // ---------- solving ----------
   solve: async () => {

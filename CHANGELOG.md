@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.1 — 2026-11-07
+
+A window laid out for the work: the steps down the left, the whole middle for the model, a card that pops up when you pick something, and a terminal along the bottom that follows every solve.
+
+**Layout**
+- The workflow bar at the far left: Geometry, Materials, Loads, Mesh, Solve, Results, each ticked when done (Mesh is greyed for frames, which need none). Click one and its tools open in the ribbon and the tree goes to it.
+- The properties card pops up over the view when you pick something (a member, a load, a face, a feature) and closes with × or Esc, so the model has the whole width. The model's own settings open from its name at the top of the tree; step 6 opens the results card.
+- The results card: what was solved, the balance check, each result's smallest and largest value (click one to show it), the smallest safety factor, and the way to the tables, graphs and report.
+- The steps panel and the card widen by dragging their edge, and keep their width.
+- The old side bar (Model, Mesh, Results, Report) is gone; the tables and the report have a bar with the way back to the model.
+
+**The terminal (bottom panel)**
+- Messages: everything the window tells you is kept with its time: each edit (added, changed, deleted, moved), each model opened, each solve started, finished, stopped or failed, every warning and error. Pop-up notes no longer vanish for good.
+- Solver monitor: the solve as it runs: the load increment and the iteration, the load reached, how far from balance each iteration is (with a graph), the increments cut back and why, the time reached in an impact, how long it has taken and about how long is left. It opens by itself when a solve takes more than a second.
+- Stop ends a solve at its next increment or time step, keeping what it reached, as a collapse does.
+- Log: the same as plain lines, to copy.
+- The engine reports its own progress (`progress.rs`), from the frame path follower, plasticity of parts and solids, large deformation, contact, impact and time history; the window only shows it.
+
+**Fixes**
+- The Mesh view of a 3D solid opened the flat drawing sheet and said there was nothing to mesh; it now draws the elements on the solid in 3D (Mesh › Show Elements).
+- Opening a modelled example meshes it with Gmsh off the window's thread: the window no longer freezes for the ten seconds that takes, and says what it is doing.
+- Pop-up notes sit above the bottom panel.
+
+**Found with the monitor, not fixed yet**
+- The tube-crush example's first increment does not settle (the force out of balance stays near the load for over 100 iterations, cut back five times): why that solve takes minutes. Next.
+
 ## 0.9.0 — 2026-11-07
 
 Impact: fast events in a meshed solid, stepped in time.

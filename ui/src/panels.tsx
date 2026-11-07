@@ -13,8 +13,15 @@ import { zUp, toD, fromD, AX, engineAxis, V3 } from "./axes";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
 import { ResultsInsp } from "./resinsp";
-/** The right panel is shown, or folded to a thin edge (0.9.1). */
-export const [inspOpen, setInspOpen] = createSignal(true);
+/** The properties card (0.9.1, the user): it pops up over the view when something is picked, or
+ *  when opened (the model's settings from the tree's name, the results from step 6), and closes
+ *  with ×, leaving the whole workspace to the model. */
+export const [inspOpen, setInspOpen] = createSignal(false);
+/** What the card shows with nothing picked: the model's settings, or the results summary. */
+export const [popWhat, setPopWhat] = createSignal<"model" | "results">("model");
+const exists = (id: number) => { const m = model(); return !!m && [m.nodes, m.members, m.shapes, m.supports, m.loads, m.parts ?? [], m.contacts ?? []].some(xs => (xs as { id: number }[]).some(x => x.id === id)); };
+export const popShown = () => inspOpen() || sel().some(exists) || !!edgeSel() || !!cad()?.features.some(x => x.id === selFeature());
+export const closePop = () => { setInspOpen(false); setSel([]); setEdgeSel(null); setSelFeature(null); };
 import * as D from "./dialogs";
 import { sharpCorners, corners } from "./sketch";
 
@@ -111,6 +118,36 @@ const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? o
 // 0.7.1: the tree is laid out in numbered steps, in the order a model is made; each step's
 // header turns its ribbon tab on, shows ✓ when it is done or says what it still needs.
 export const STEP_TABS = ["geometry", "properties", "loads", "mesh", "solve", "results"];
+export type FlowStep = { n: number; t: string; short: string; icon: string; done: boolean; why?: string; skip?: boolean };
+/** The six steps of the work (0.9.1): one source for the tree and the workflow bar at the left. */
+export const flowSteps = (): FlowStep[] => {
+  const mm = model(); if (!mm) return [];
+  const frame = isFrame(mm.analysis), heat = mm.analysis === "heat" || mm.analysis === "solidheat", part = !frame && !heat;
+  const plastic = part && (mm.steps ?? []).some(s => s.kind === "newton");
+  const parts = mm.shapes.filter(s => !s.plate);
+  const drawn = frame ? mm.members.length > 0 : parts.some(s => !s.hole);
+  const sups = mm.supports.filter(s => heat ? s.kind.kind === "temperature" : s.kind.kind !== "temperature");
+  const noYield = plastic ? mm.materials.filter(x => !(x.fy > 0) && (frame ? mm.members.some(b => b.material === x.id) : parts.some(s => s.material === x.id))) : [];
+  return [
+    { n: 1, t: "Geometry", short: "Geometry", icon: "model", done: drawn || !!mm.volume || (mm.parts?.length ?? 0) > 0 || (isSolidA(mm.analysis) && !!cad()?.bodies.length), why: frame ? "Draw the members" : "New Sketch, then Extrude" },
+    { n: 2, t: "Properties", short: "Materials", icon: "material", done: mm.materials.length > 0 && !noYield.length && (!frame || mm.sections.length > 0), why: "Pick a material" },
+    { n: 3, t: heat ? "Temperatures & Heat" : "Supports & Loads", short: heat ? "Heat" : "Loads", icon: heat ? "temp" : "fixed", done: sups.length > 0 && (heat || mm.loads.length > 0), why: sups.length ? "Add a load" : "Add a support" },
+    { n: 4, t: "Mesh", short: "Mesh", icon: "mesh", done: frame || !!mm.volume || !!mm.assembly || !!(meshed() ?? partRes()?.mesh) || !!solidRes(), why: frame ? "Not needed: each member is one exact element" : "Made when you solve, or Mesh › Mesh now", skip: frame },
+    { n: 5, t: "Analysis", short: "Solve", icon: "solve", done: !!results() && !stale(), why: "Set the steps, then Solve (F5)" },
+    { n: 6, t: "Results", short: "Results", icon: "contour", done: !!results() && !stale(), why: results() ? "Out of date: solve again (F5)" : "Solve (F5) to see the results" },
+  ];
+};
+/** Go to a step: its ribbon tab, its place in the tree, the view of the model (0.9.1). */
+export const goStep = (i: number) => {
+  setTab(STEP_TABS[i]); setView("model");
+  if (i === 5 && results()) { setPopWhat("results"); setInspOpen(true); }
+  requestAnimationFrame(() => document.querySelectorAll(".tree .step")[i]?.scrollIntoView({ block: "start", behavior: "smooth" }));
+};
+/** The workflow bar at the far left (0.9.1, the user): the steps in order, each done, to do, or not needed. */
+export const Flow = () => <nav class="flow" aria-label="Steps of the work"><For each={flowSteps()}>{(f, i) =>
+  <button classList={{ on: tab() === STEP_TABS[i()], done: f.done && !f.skip, skip: !!f.skip }} onClick={() => goStep(i())} title={`${f.n}. ${f.t}${f.skip ? ": not needed" : f.done ? ": done" : f.why ? `: ${f.why}` : ""}`}>
+    <i class="fn">{f.done && !f.skip ? "✓" : f.n}</i><Ic n={f.icon} /><span>{f.short}</span>
+  </button>}</For></nav>;
 const Step = (p: { n: number; t: string; done: boolean; why?: string; children?: JSX.Element }) => (
   <section class="step" classList={{ here: tab() === STEP_TABS[p.n - 1], done: p.done }}>
     <button class="sthead" onClick={() => setTab(STEP_TABS[p.n - 1])} title={p.done ? `Step ${p.n}: done` : p.why}>
@@ -130,6 +167,7 @@ export const Tree = () => {
   const plates = () => (m()?.shapes ?? []).filter(s => s.plate);
   const drawn = () => frame() ? (m()?.members.length ?? 0) > 0 : parts().some(s => !s.hole);
   const sups = () => (m()?.supports ?? []).filter(s => heat() ? s.kind.kind === "temperature" : s.kind.kind !== "temperature");
+  const fs = flowSteps;
   const mesh = () => solidRes() && !solidRes()!.layers ? `${solidRes()!.elements.toLocaleString()} tetrahedra` : m()?.assembly ? `${m()!.assembly!.elements.toLocaleString()} tetrahedra in ${m()!.parts!.length} parts` : solidRes() ? `${solidRes()!.elements.toLocaleString()} wedges, ${solidRes()!.layers} ${solidRes()!.layers === 1 ? "layer" : "layers"}` : (meshed() ?? partRes()?.mesh) ? `${(meshed() ?? partRes()!.mesh).tris.length.toLocaleString()} ${isSolidA(m()!.analysis) ? "triangles in the section" : "elements"}` : "Not meshed yet: made when you solve";
   const noYield = () => plastic() ? (m()?.materials ?? []).filter(x => !(x.fy > 0) && (frame() ? m()!.members.some(b => b.material === x.id) : parts().some(s => s.material === x.id))) : [];
   return (
@@ -137,8 +175,8 @@ export const Tree = () => {
       <header>Steps<Help k="tree" /></header>
       <div class="tbody">
         <Show when={m()}>{mm => <>
-          <div class="troot" title="Model › Name in the Inspector (nothing selected)" onClick={() => setSel([])}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
-          <Step n={1} t="Geometry" done={drawn() || !!mm().volume || (mm().parts?.length ?? 0) > 0 || (isSolidA(mm().analysis) && !!cad()?.bodies.length)} why={frame() ? "Draw the members" : "New Sketch, then Extrude"}>
+          <div class="troot" title="The model's name, analysis, units and notes" onClick={() => { setSel([]); setPopWhat("model"); setInspOpen(true); }}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
+          <Step n={1} t={fs()[0].t} done={fs()[0].done} why={fs()[0].why}>
           <Show when={isSolidA(mm().analysis) && (cad()?.features.length || cad()?.bodies.length)}>
             <Branch t="History" icon="list" n={cad()!.features.length} help="modelling">
               <For each={cad()!.features}>{(f, i) => <button class="ti" classList={{ on: selFeature() === f.id || f.id === cad()!.active, dim: f.suppressed || rolledBack(i()) }}
@@ -163,12 +201,12 @@ export const Tree = () => {
           </Show>
           </Show>
           </Step>
-          <Step n={2} t="Properties" done={mm().materials.length > 0 && !noYield().length && (!frame() || mm().sections.length > 0)} why="Pick a material">
+          <Step n={2} t={fs()[1].t} done={fs()[1].done} why={fs()[1].why}>
           <Branch t="Materials" icon="material" n={mm().materials.length} help="materials" add={() => D.materials()} mark={noYield().length ? { ok: false, why: `${noYield()[0].name} needs a yield strength for the elastic-plastic step` } : null}>
             <For each={mm().materials}>{x => <Row2 icon="material" label={x.name} sub={noYield().includes(x) ? "no yield strength" : undefined} run={() => D.materials(x.id)} />}</For></Branch>
           <Show when={frame()}><Branch t="Sections" icon="section" n={mm().sections.length} help="sections" add={() => D.sections()}><For each={mm().sections}>{x => <Row2 icon="section" label={x.name} run={() => D.sections(x.id)} />}</For></Branch></Show>
           </Step>
-          <Step n={3} t={heat() ? "Temperatures & Heat" : "Supports & Loads"} done={sups().length > 0 && (heat() || mm().loads.length > 0)} why={sups().length ? "Add a load" : "Add a support"}>
+          <Step n={3} t={fs()[2].t} done={fs()[2].done} why={fs()[2].why}>
           <Branch t={heat() ? "Temperatures" : "Supports"} icon={heat() ? "temp" : "fixed"} n={sups().length} help="supports" add={() => setTool(heat() ? "sup:temperature" : "sup:fixed")} addText={heat() ? "Fix a temperature (Loads tab)" : "Add a support (Loads › Fixed, Pinned…)"}
             mark={drawn() ? { ok: sups().length > 0 || (heat() && mm().loads.some(l => l.kind.kind === "convection")), why: heat() ? "Fix a temperature on an edge, or add convection: heat needs somewhere to go" : "Add supports: nothing holds the model yet" } : null}>
             <For each={sups()}>{s => <Leaf id={s.id} icon={SUP_ICON[s.kind.kind] ?? "fixed"} label={SUPPORT_NAMES[s.kind.kind]} sub={targetName(mm(), s.at)} />}</For></Branch>
@@ -181,7 +219,7 @@ export const Tree = () => {
             <For each={mm().contacts ?? []}>{c => <Leaf id={c.id} icon="pin" label={c.friction > 0 ? `Contact, μ ${num(c.friction, 3)}` : "Contact, no friction"} sub={`${targetName(mm(), c.a)} on ${targetName(mm(), c.b)}`} />}</For></Branch></Show>
           <Show when={(mm().combos ?? []).length}><Branch t="Combinations" icon="table" n={mm().combos!.length} help="cases" open={false}><For each={mm().combos!}>{c => <Row2 icon="table" label={c.name} sub={c.parts.map(x => `${num(x.f, 3)} ${mm().cases?.find(k => k.id === x.case)?.name ?? ""}`).join(" + ")} />}</For></Branch></Show>
           </Step>
-          <Step n={4} t="Mesh" done={frame() || !!mm().volume || !!mm().assembly || !!(meshed() ?? partRes()?.mesh) || !!solidRes()} why="Made when you solve, or Mesh › Mesh now">
+          <Step n={4} t={fs()[3].t} done={fs()[3].done} why={fs()[3].why}>
           <Show when={frame()}><Row2 icon="frame" label="Each member is one element" sub="no mesh needed" /></Show>
           <Show when={!frame()}><Branch t="Mesh" icon="mesh" n={mm().mesh.refine.length || undefined} help="mesh">
             <Show when={mm().volume}>{v => <Row2 icon="solid" label={`${v().elements.toLocaleString()} ${v().order === 2 ? "10-node" : "4-node"} tetrahedra`} sub={geoMesh() ? (meshOld() ? "the solids changed: meshed again when you solve" : `${v().nodes.toLocaleString()} nodes, from the solids`) : `${v().nodes.toLocaleString()} nodes, imported`} />}</Show>
@@ -191,13 +229,13 @@ export const Tree = () => {
               <button class="x" title="Remove" onClick={() => { C.meshSettings({ refine: mm().mesh.refine.filter((_, k) => k !== i()) }); if (geoMesh()) setMeshOld(true); }}>×</button></div>}</For>
           </Branch></Show>
           </Step>
-          <Step n={5} t="Analysis" done={true}>
+          <Step n={5} t={fs()[4].t} done={fs()[4].done} why={fs()[4].why}>
           <Show when={heat()}><Row2 icon="solve" label="Steady heat conduction" sub="one solve" /></Show>
           <Show when={!heat()}><Branch t="Steps" icon="list" n={(mm().steps ?? []).length || undefined} help="steps">
             <Show when={(mm().steps ?? []).length} fallback={<Row2 icon="solve" label="Static, linear" sub="one solve" run={stepsDialog} />}>
               <For each={mm().steps!}>{(s, i) => <Row2 icon={s.kind === "spectrum" || s.kind === "history" ? "wave" : s.kind === "linear" ? "solve" : "curve"} label={s.name || `Step ${i() + 1}`} sub={`${STEP_NAME[s.kind] ?? s.kind}${s.kind === "newton" || s.kind === "arc" || s.kind === "large" || s.kind === "largeplastic" ? ` · ${plural(s.increments, "increment")}` : ""}`} run={stepsDialog} />}</For></Show></Branch></Show>
           </Step>
-          <Step n={6} t="Results" done={!!results() && !stale()} why={results() ? "Out of date: solve again (F5)" : "Solve (F5) to see the results"}>
+          <Step n={6} t={fs()[5].t} done={fs()[5].done} why={fs()[5].why}>
           <Branch t="Results" icon="contour" help="results" mark={results() ? { ok: !stale(), why: "The model changed since it was solved: solve again (F5)" } : null}>
             <Show when={results()} fallback={<button class="ti ghost" onClick={() => C.solve()}><Ic n="solve" /><span>Not solved yet: Solve (F5)</span></button>}>
               <Row2 icon="solve" label={stale() ? "Out of date" : "Solved"} sub={`${results()!.stats.equations.toLocaleString()} equations`} />
@@ -539,10 +577,10 @@ export const Inspector = () => {
   };
   // 0.9.1: after a solve, with nothing selected, the panel shows the results; the model's
   // settings fold away below them.
-  const resultsShown = () => !!results() && !sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature());
+  const resultsShown = () => !!results() && popWhat() === "results" && !sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature());
   return (
     <aside class="insp">
-      <header><b>{title()}</b><span class="grow" /><Help k="inspector" /><button class="ifold" title="Hide this panel (it comes back from the edge)" aria-label="Hide the panel" onClick={() => setInspOpen(false)}>»</button></header>
+      <header><b>{title()}</b><span class="grow" /><Help k="inspector" /><button class="ifold" title="Close (Esc clears the selection too)" aria-label="Close" onClick={closePop}>×</button></header>
       <div class="ibody">
         <Show when={m()}>{mm => <>
           <Show when={sel().length > 1}><p class="muted">Drag any of them to move them together, or press Delete.</p><p class="ibtns"><button class="btn sm" onClick={C.del}>Delete</button><button class="btn sm" onClick={() => setSel([])}>Clear selection</button></p></Show>

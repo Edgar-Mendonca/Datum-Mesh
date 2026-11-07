@@ -4,7 +4,7 @@
 // sheet over the 3D view, square to the sketch's plane, where clicks place the points.
 import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { invoke, Out } from "./api";
-import { toast, setTab, model, setOut } from "./store";
+import { toast, note, setTab, model, setOut } from "./store";
 import { fmt } from "./units";
 
 export type CadBody = { name: string; pos: number[]; nrm: number[]; tris: number[]; face: number[]; edges: number[][]; closed: boolean };
@@ -19,7 +19,7 @@ export const [cad, setCad] = createSignal<CadScene | null>(null);
 /** The solids have changed since they were meshed (0.7.3): the mesh is made again before it is used. */
 export const [meshOld, setMeshOld] = createSignal(false);
 export const cadRun = async (id: string, params: object = {}) => {
-  try { setCad(await invoke<CadScene>("cad_run", { id, params })); setMeshOld(true); return true; } catch (e) { toast(String(e)); return false; }
+  try { setCad(await invoke<CadScene>("cad_run", { id, params })); setMeshOld(true); note(`Geometry: ${id.replace(/^(\w+)\./, (_, g) => `${g} › `).replace(/[._]/g, " ")}`, "info", "action"); return true; } catch (e) { toast(String(e)); return false; }
 };
 /** One engine command's own reply (a report, a list); null (and a message) when refused. */
 export const cadQuery = async <T,>(id: string, params: object = {}) => { try { return await invoke<T>("cad_query", { id, params }); } catch (e) { toast(String(e)); return null; } };

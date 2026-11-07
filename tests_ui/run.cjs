@@ -37,12 +37,16 @@ const go = async (p, v) => {
     : v === "Report" ? await first('.pagebar button:has-text("Report")', '.rinsp button:has-text("Report")', '.tree button.ti:has-text("Report")') : null;
   if (b) await b.click(); else await p.evaluate(x => window.__setView(x), v.toLowerCase());
 };
+// 0.9.1: the properties card pops up when something is picked; the model's own settings open from
+// the model's name at the top of the tree.
+const modelCard = async () => { await __page.click(".tree .troot"); await __page.waitForTimeout(100); };
+let __page = null;
 
 (async () => {
   await new Promise(ok => srv.listen(0, ok));
   const url = `http://localhost:${srv.address().port}/`;
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
-  const p = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  const p = await b.newPage({ viewport: { width: 1440, height: 900 } }); __page = p;
   const errors = [];
   p.on("pageerror", e => errors.push(e.message));
   await p.addInitScript(f => {
@@ -146,7 +150,9 @@ const go = async (p, v) => {
   const ribbonTop = await p.$eval(".ribbon", el => el.getBoundingClientRect().top);
   const m0 = pf.members[0];
   const mc = await p.$eval(`.mem[data-id="${m0.id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
-  await p.mouse.click(mc[0], mc[1]);
+  // 0.9.1: the drawing is wider (the card pops up over it), and the column's middle lies under its
+  // wind load's arrows: picked a little way up from its foot instead.
+  await p.mouse.click(mc[0], mc[1] + (await p.$eval(`.mem[data-id="${m0.id}"] line`, el => el.getBoundingClientRect().height)) * 0.45);
   await p.waitForTimeout(150);
   check("clicking a member selects it", (await p.$$(".mem.sel")).length === 1 && (await p.textContent(".insp header")).includes("Member 1"));
   check("the Inspector offers the member's section", (await p.$$(".insp select")).length >= 3);
@@ -217,7 +223,9 @@ const go = async (p, v) => {
   const pg = await lastOp();
   check("a polygon closes with Enter", pg?.Add?.item?.Shape?.geom?.pts?.length === 3, JSON.stringify(pg));
   await p.click('.ribbon button[title="Round Hole"]');
-  await p.mouse.click(cb2.x + 400, cb2.y + 400); await p.mouse.click(cb2.x + 420, cb2.y + 400); await p.waitForTimeout(150);
+  // Inside the bracket's foot, wherever the drawing sits (0.9.1: the drawing is wider).
+  const foot = await p.$eval(".shape", el => { const r = el.getBoundingClientRect(); return [r.left + r.width * 0.12, r.bottom - r.height * 0.08]; });
+  await p.mouse.click(foot[0], foot[1]); await p.mouse.click(foot[0] + 12, foot[1]); await p.waitForTimeout(150);
   const hc = await lastOp();
   check("the round hole tool adds a circular hole", hc?.Add?.item?.Shape?.hole === true && hc.Add.item.Shape.geom.kind === "circle", JSON.stringify(hc));
   await p.keyboard.press("Escape");
@@ -234,7 +242,7 @@ const go = async (p, v) => {
   check("convection and the fixed temperature are drawn", (await p.$$("g.load")).length === fix.fin.m.loads.length && (await p.textContent(".dsvg")).includes("°C"));
 
   // 10. Help, Tell Me, shortcuts.
-  await p.click(".insp header .help"); await p.waitForTimeout(100);
+  await modelCard(); await p.click(".insp header .help"); await p.waitForTimeout(100);
   check("? card opens", (await p.textContent(".dlg")).includes("Inspector"));
   await p.keyboard.press("Escape");
   await p.keyboard.press("Control+k"); await p.keyboard.type("pressure"); await p.waitForTimeout(100);
@@ -355,7 +363,7 @@ const go = async (p, v) => {
   await p.selectOption(".legend .fpick", "t"); await p.waitForTimeout(150);
   check("the heated plate's temperatures run from 20 to 220 °C", (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".mm.max")).includes("220"));
   await p.click(".canvas", { position: { x: 30, y: 400 } }); await p.keyboard.press("Escape"); await p.waitForTimeout(100);
-  check("the Inspector has the stress-free temperature", (await p.textContent(".insp")).includes("Stress-free temperature"));
+  await modelCard(); check("the Inspector has the stress-free temperature", (await p.textContent(".insp")).includes("Stress-free temperature"));
   await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.click('.ribbon button[title^="A uniform change of temperature"]'); await p.waitForTimeout(150);
   const wl = (await ops()).reverse().find(o => o.Add && o.Add.item.Load && o.Add.item.Load.kind.kind === "warming");
   check("Temperature Change adds a uniform warming of the whole part", !!wl && wl.Add.item.Load.at.on === "body", JSON.stringify(wl));
@@ -450,6 +458,8 @@ const go = async (p, v) => {
   await p.click('.tabs > button:text-is("View")'); await p.waitForTimeout(100);
   check("a 3D frame is drawn with its section shapes, a View choice (0.7.5)", (await p.$$('.ribbon label.chk:has-text("Section shapes") input:checked')).length === 1);
   await p.click('.tree .step:nth-of-type(1) > .sthead');
+  // 0.9.1: the card's × lets go of the member picked before (Repeat then takes the whole frame).
+  if (await p.$(".ipop")) { await p.click(".ipop .ifold"); await p.waitForTimeout(100); }
   await p.click('.ribbon button[title^="Copy the selected members along the depth"]'); await p.waitForTimeout(150);
   await p.click('.dlg button:text-is("Repeat")'); await p.waitForTimeout(150);
   const rp = await lastOp();
@@ -485,7 +495,7 @@ const go = async (p, v) => {
   check("a 3D solid opens in the 3D view, with Edit Section instead of a 3D/Section switch (0.7.4, the user)", (await p.$$(".view3d canvas")).length === 1 && (await p.$$(".planebar .seg button")).length === 0 && (await p.$$('.planebar button:text-is("Edit Section")')).length === 1);
   await p.click('.tabs > button:text-is("Home")');
   check("Home shows 3D Solid chosen", await p.$eval('.ribbon button[title^="3D solids: the part"]', el => el.classList.contains("on")));
-  check("the Inspector has the thickness of the extrusion and the layers", (await p.textContent(".insp")).includes("Thickness (extruded along z)") && (await p.textContent(".insp")).includes("Layers through the thickness"));
+  await modelCard(); check("the Inspector has the thickness of the extrusion and the layers", (await p.textContent(".insp")).includes("Thickness (extruded along z)") && (await p.textContent(".insp")).includes("Layers through the thickness"));
   await p.click('.planebar button:text-is("Edit Section")'); await p.waitForTimeout(250);
   check("Section shows the part's outline to edit", (await p.$$(".dsvg .shape")).length === fix.bracket3d.m.shapes.length);
   await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.click('.ribbon button:has-text("Fixed")'); await p.waitForTimeout(100);
@@ -562,7 +572,7 @@ const go = async (p, v) => {
   await open("vessel3d"); await p.waitForTimeout(300);
   check("a revolved solid says so above the view", (await p.textContent(".planebar")).includes("revolved 90° about the y axis"));
   await p.click('.tabs > button:text-is("Home")');
-  const rins = await p.textContent(".insp");
+  await modelCard(); const rins = await p.textContent(".insp");
   check("the Inspector offers extruded or revolved, the angle, and layers round the turn", rins.includes("Turned through") && rins.includes("Layers round the turn") && !rins.includes("Thickness (extruded"), rins.slice(0, 300));
   await p.click(".tree .ti:has-text('Symmetry')"); await p.waitForTimeout(150);
   check("a solid's support can hold chosen directions", (await p.$$eval(".insp select option", os => os.map(o => o.textContent))).includes("Held directions"));
@@ -683,7 +693,7 @@ const go = async (p, v) => {
   const ef = fix.elbow.m.volume;
   check("an imported mesh is listed in the tree with its faces", (await p.textContent(".tree")).includes("Imported mesh") && (await p.$$(".tree .step:first-of-type .tgrp .ti")).length === ef.faces.length && (await p.textContent(".tree")).includes("10-node tetrahedra"), await p.textContent(".tree"));
   check("the bar above the view says what the mesh is, with no Section view", (await p.textContent(".planebar")).includes("tetrahedra") && !(await p.textContent(".planebar")).includes("Section"));
-  check("a mesh's material is chosen in the Inspector", (await p.textContent(".insp")).includes("Material of the mesh"));
+  await modelCard(); check("a mesh's material is chosen in the Inspector", (await p.textContent(".insp")).includes("Material of the mesh"));
   await p.click('.tree .step:nth-of-type(3) > .sthead'); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(100);
   let exy = await at3([0.2121, 0.2121, 0.06]); await p.mouse.click(exy[0], exy[1]); await p.waitForTimeout(200);
   const ep = await lastOp();
@@ -773,7 +783,7 @@ const go = async (p, v) => {
   await open("building"); await p.waitForTimeout(400);
   await go(p, "Model"); await p.waitForTimeout(80);
   await p.evaluate(() => window.__setSel?.([]));
-  const rigidBox = await p.$('.insp label.chk:has-text("Rigid floors") input');
+  await modelCard(); const rigidBox = await p.$('.insp label.chk:has-text("Rigid floors") input');
   check("a 3D frame's Model panel has Rigid floors, ticked for the building", !!rigidBox && await rigidBox.isChecked());
   if (rigidBox) { await rigidBox.click(); await p.waitForTimeout(150); }
   const rigidOp = await lastOp();
@@ -1317,7 +1327,7 @@ const go = async (p, v) => {
     await p.keyboard.press("Escape");
   }
   check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti span', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
-  check("a modelled solid has no 3D/Section bar and no section settings (0.7.2, the user)", !(await p.$('.planebar button:text-is("Section")')) && !(await p.textContent(".insp")).includes("Thickness (extruded") && !(await p.textContent(".insp")).includes("Layers through"));
+  await modelCard(); check("a modelled solid has no 3D/Section bar and no section settings (0.7.2, the user)", !(await p.$('.planebar button:text-is("Section")')) && !(await p.textContent(".insp")).includes("Thickness (extruded") && !(await p.textContent(".insp")).includes("Layers through"));
   await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))'); await p.waitForTimeout(150);
   check("a feature picked in the history shows in the inspector", (await p.textContent(".insp header")).includes("Extrude1") && (await p.textContent(".insp")).includes("Place in the history"));
   await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))', { button: "right" }); await p.waitForTimeout(150);
@@ -1375,8 +1385,21 @@ const go = async (p, v) => {
     // 0.9.1 (the user): no side bar; the bottom panel (Messages, Solver monitor, Log) with Stop;
     // the results in the right panel; the side panels widen; a 3D mesh's Mesh view stays in 3D.
     check("there is no side bar, and no view icons in the status bar (0.9.1, the user)", (await p.$$("nav.side, .status .vsc")).length === 0 && (await p.$$(".console header button")).length >= 3);
+    // The workflow bar at the far left (0.9.1, the user): the six steps, each done, to do or not needed.
+    const fl = await p.$$eval(".flow button", bs => bs.map(b => ({ t: b.textContent, done: b.classList.contains("done"), skip: b.classList.contains("skip") })));
+    check("the workflow bar lists the six steps in order, a frame's Mesh not needed (0.9.1, the user)", fl.length === 6 && /Geometry/.test(fl[0].t) && /Materials/.test(fl[1].t) && /Loads/.test(fl[2].t) && /Mesh/.test(fl[3].t) && fl[3].skip && /Solve/.test(fl[4].t) && /Results/.test(fl[5].t) && fl[0].done, JSON.stringify(fl));
+    await p.click('.flow button:has-text("Loads")'); await p.waitForTimeout(150);
+    check("a step on the workflow bar opens its tools and its place in the tree (0.9.1)", (await p.$$('.ribbon button[title="Fixed"], .ribbon button:has-text("Fixed")')).length >= 1 && await p.$eval(".flow button:nth-child(3)", el => el.classList.contains("on")) && await p.$eval(".tree .step:nth-of-type(3)", el => el.classList.contains("here")));
+    // Every edit is kept in Messages (0.9.1, the user: each step seen).
+    // (the edits made by the checks above, and the models opened)
+    await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(100);
+    const msgs = await p.textContent(".console .cmsgs");
+    check("edits and the models opened are written in Messages as done (0.9.1, the user)", /Done\s*(Added|Changed|Deleted)/.test(msgs) && /Done\s*Started/.test(msgs), msgs.slice(0, 300));
+    await p.click('.console header .cchev'); await p.waitForTimeout(100);
     await p.keyboard.press("F5"); await p.waitForTimeout(300);
-    check("after a solve, with nothing selected, the right panel shows the results, the model's settings folded below (0.9.1)", (await p.textContent(".insp header")).includes("Results") && (await p.$$(".insp .rinsp")).length === 1 && (await p.$$(".insp details.isub")).length === 1);
+    check("after a solve the card stays closed: the whole workspace is the model (0.9.1, the user)", (await p.$$(".ipop")).length === 0);
+    await p.click('.flow button:has-text("Results")'); await p.waitForTimeout(150);
+    check("step 6 on the workflow bar opens the results card, the model's settings folded below (0.9.1)", (await p.textContent(".insp header")).includes("Results") && (await p.$$(".insp .rinsp")).length === 1 && (await p.$$(".insp details.isub")).length === 1);
     await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(150);
     check("Messages keeps what the window said, with its time (0.9.1)", (await p.$$(".console .cmsg")).length >= 1 && (await p.textContent(".console .cmsgs")).includes("Solved"), await p.textContent(".console").catch(() => ""));
     await p.click('.console header button:has-text("Log")'); await p.waitForTimeout(100);
@@ -1402,9 +1425,8 @@ const go = async (p, v) => {
     const tw1 = await p.$eval(".tree", el => el.getBoundingClientRect().width);
     check("the steps panel widens by dragging its edge (0.9.1)", Math.abs(tw1 - tw0 - 60) < 4, `${tw0} → ${tw1}`);
     await p.click(".insp header .ifold"); await p.waitForTimeout(100);
-    check("the right panel folds to a thin edge and comes back (0.9.1)", (await p.$$(".insp")).length === 0 && (await p.$$(".iunfold")).length === 1);
-    await p.click(".iunfold"); await p.waitForTimeout(100);
-    check("the right panel is back after unfolding", (await p.$$(".insp")).length === 1);
+    check("the card closes with × (0.9.1, the user)", (await p.$$(".ipop")).length === 0);
+    await p.click('.flow button:has-text("Results")'); await p.waitForTimeout(150);
     // The Results page has its way back.
     await p.click('.insp .rinsp button:has-text("Tables and equilibrium")'); await p.waitForTimeout(250);
     check("the Results page has a bar with the way back to the model (0.9.1)", (await p.$$('.pagebar button:has-text("Back to the model")')).length === 1);

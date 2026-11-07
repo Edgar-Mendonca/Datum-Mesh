@@ -41,9 +41,13 @@ To show any engineer or student how a part or structure carries load, heat and v
 
 Units: the engine and the file use SI base units (m, N, Pa, K, W). The window converts for display in one place (`ui/src/units.ts`): SI shows mm, kN, MPa, °C; US shows in, kip, ksi, °F; frames show coordinates in m (ft), parts in mm (in).
 
-### From 0.7.0: the program is `app/`
+### The program: the Datum window (0.7.1 on); `app/` is the geometry engine
 
-The window people use is `app/`, a fork of SolidCraft (egui + wgpu, Rust 2024; MIT or Apache-2.0, upstream commit f8a98ee), restyled as Datum Mesh. `app/AGENTS.md` lists what is ours there. It is its own cargo workspace (the root workspace has `exclude = ["app"]`) and it links `crates/core` by path.
+0.7.0 shipped `app/` (below) as the program; 0.7.1 withdrew it and went back to the Datum window (`ui/` + `src-tauri/`), which is what the release builds. SolidCraft's crates in `app/` stay as the headless geometry engine behind `crates/cad`, and `app/crates/analysis` writes the Gmsh scripts. The rest of this section describes 0.7.0's program, kept for reference.
+
+0.9.1 layout of the window: the workflow bar at the far left (`Flow`, `flowSteps`, `goStep` in panels.tsx: the six steps' state, one source for it and the tree), the steps tree (resizable), the model across the middle, the properties card popping up over it (`popShown`, `closePop`, `popWhat`), and the bottom panel (`console.tsx`: Messages, Solver monitor, Log, Stop). Every message goes through `note()` in store.ts (kept, written to the Log); edits are described by `describeOp`.
+
+The window people used in 0.7.0 was `app/`, a fork of SolidCraft (egui + wgpu, Rust 2024; MIT or Apache-2.0, upstream commit f8a98ee), restyled as Datum Mesh. `app/AGENTS.md` lists what is ours there. It is its own cargo workspace (the root workspace has `exclude = ["app"]`) and it links `crates/core` by path.
 
 - `app/crates/analysis` (datum-analysis) holds the study (material, supports and loads on named faces, element size; stored in the design under the metadata key `com.edgarmendonca.datummesh.study`). It also meshes: STEP out → `gmsh mesh.geo -parse_and_exit` (OpenCASCADE, fragments, second order, msh 4.1) → `tet::read_msh` → `trace_faces` (each mesh face to a model face by nearest surface triangles). Then it builds the model and solves with `crates/core`.
 - `app/crates/ui-egui/src/sim.rs` is the Simulation workspace. Its stage bar has five steps: Material, Supports & Loads, Mesh, Solve, Results. Solves run on a background thread; results are drawn in the viewport scene. Its hooks are in `lib.rs` (`sim::tick`), `toolbar.rs`, `context_menu.rs`, `control.rs` (`ui.sim` for driven tests), `viewport.rs` and `workspace.rs` (`sync_context` leaves the Simulation tab alone).
@@ -110,7 +114,11 @@ The window people use is `app/`, a fork of SolidCraft (egui + wgpu, Rust 2024; M
 | `crates/core/examples/dump.rs` | Writes `tests_ui/fixture.json` (the engine's real examples) for the UI tests |
 | `src-tauri/src/main.rs` | Files written safely (temporary file, sync, rename). Commands: state, apply, history, examples, new model, section properties, open/save, save file, options, recovery, recent, startup file, open_url, version, updates |
 | `src-tauri/src/update.rs` | The updater (Plan's, `REPO` = Datum-Mesh) |
-| `ui/src/main.tsx` | Window layout, sidebar (Model, Mesh, Results, Report), status bar (tool hint, cursor, counts, drawing scale), keys, start-up and recovery |
+| `ui/src/console.tsx` | The bottom panel (0.9.1): Messages, the Solver monitor (follows `solver` events: increments, iterations, cut-backs, time; residual graph; Stop → `stop_solve`) and the Log; `beginRun`/`endRun` around each solve and meshing |
+| `ui/src/resinsp.tsx` | The results card (0.9.1): what was solved, the balance, each field's extremes (click to show), the ways to tables, graphs and report |
+| `ui/src/resultspage.tsx` | The Results tables page, loaded on demand (split from results.tsx in 0.9.1 for the startup budget) |
+| `crates/core/src/progress.rs` | A solve's progress (0.9.1): `Event`s (stage, increment, iteration, converged, cut, time, note) to whoever `watch`es on that thread, and a per-solve stop flag the loops check with `halted`/`stopping` |
+| `ui/src/main.tsx` | Window layout (0.9.1: workflow bar, tree, view, pop-up card, bottom panel; was a sidebar of Model, Mesh, Results, Report), status bar (tool hint, cursor, counts, drawing scale), keys, start-up and recovery |
 | `ui/src/store.ts` | Window state: the model (`out().m`), selection, picked edge, canvas tool, menus, dialogs |
 | `ui/src/api.ts` | Shell calls and the model's shapes in TypeScript |
 | `ui/src/units.ts` | Display units (SI/US) and conversions |
@@ -153,6 +161,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 
 | Version | Decision | Why |
 | --- | --- | --- |
+| 0.9.1 | The window: the six workflow steps on a bar at the far left; the right panel becomes a card that pops up over the view when something is picked (or opened from the model's name, or step 6 for results) and closes with ×; a bottom panel keeps every message (each edit, solve, warning, error) and follows each solve (Solver monitor, Log, Stop). Loads stay before the mesh (on faces, carried over by name when meshed again); frames skip Mesh | The user, after comparing with the established FE workbenches (their workflow strip, model/results tree, terminal): the same features, the Datum way; a bigger workspace; every step seen |
+| 0.9.1 | Progress is reported by the engine through a thread-local sink (`progress::watch`) with a per-solve `Arc<AtomicBool>` stop flag; the shell batches events to the window about ten a second; loops end at the next increment when stopped, keeping what converged | No solver signatures change; a global flag would let one solve (or test) stop another; the window never computes |
 | 0.9.0 | Explicit dynamics lives in the tetrahedral solver (`Nl::Explicit`, `integrate`, `solve_explicit`); masses lumped by HRZ (each element's consistent diagonal scaled to its mass) so quadratic elements have positive masses; the stable step 2/ω_max by 80 power iterations on M⁻¹K, 5 % margin, then 90 %; the results shown are at the moment of the largest movement, with the inertia forces counted as loads in the balance | Quadratic tetrahedra's row-sum masses are negative at the corners; the power iteration comes from below; a dynamic solve has no static balance without the inertia |
 | 0.8.0 | Contact is node to surface with a penalty (1000 × the mean diagonal, scaled by each node's share of the face's area), the gap along the master facet's outward normal at rest (small movements); `a` (slave) is kept out of `b` (master) | Simple, robust, and accurate in force: Wriggers ch. 5; the overlap is about a thousandth of the movement |
 | 0.8.0 | Friction is a return mapping: a sticking node has a stiff tangential spring; a sliding one a soft spring (1/1000) whose rest point is set so it pulls μ pn along the whole slide; pressing is settled first without friction, then friction comes in (or friction from the start if the solids cannot be held without it); a 1 % dead band on opening and closing | Found in the benchmarks and the real app: a node sticking against where it was before loading tipped a dragged block; lagged friction forces cycled; all nodes sliding with forces alone left a block held by friction free (a mechanism); edge nodes flip-flopped |
@@ -357,7 +367,9 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 | 0.7.7 | Remote force and moment through a distributing coupling (benchmark 35); finer mesh near chosen faces; graph along a line; section view labelled Z up; the report on modelled solids. (Touching solids were already meshed joined; bolt pretension moved to 0.8 with contact) | ✅ |
 | 0.8.0 | Contact between solids: node to surface, penalty, Coulomb friction (return mapping), active set; Contact dialog (meshed apart, touching faces found); contact pressure and table; benchmark 36. (With yielding, large movements and crushing, and bolt pretension: later) | ✅ |
 | 0.9.0 | Explicit dynamics of meshed solids: central differences, HRZ lumped masses, stable step by power iteration, starting velocities, d'Alembert balance at the moment of the largest movement, In Time graph; benchmark 37. (Contact, yielding and large movements in time: later) | ✅ |
-| 1.0 | Crash: contact and yielding in time; contact with large movements; bolt pretension | ⬜ |
+| 0.9.1 | The window laid out for the work: workflow bar, pop-up card, bottom panel (Messages, Solver monitor, Log, Stop), engine progress (`progress.rs`); 3D Mesh view fix; examples meshed off the window's thread | ✅ |
+| 0.9.2 | The tube crush's first increment settling (seen in the monitor); result tools as pop-ups; legend and solve details in the view; background choice | ⬜ |
+| 1.0 | Crash: contact and yielding in time; contact with large movements; bolt pretension; Johnson–Cook, damage, kinematic hardening, Mooney–Rivlin; nonlinear buckling with imperfections; Python scripting | ⬜ |
 | 0.6.5 | (replaced by 0.7) Modelling that works as students expect from CAD: workspace laid out Sketch · Create · Modify · Arrange · Inspect, a history timeline, line and arc chains with trim and typed dimensions, extrude by dragging, Join/Cut/New chosen for you, shortcuts and a right-click menu | ⬜ |
 | 0.6.6 | Easier on the eyes: calmer layout and colours, collapsible panels, a first-run walkthrough | ⬜ |
 | 0.6.7–0.6.8 | Explicit dynamics; contact (tube crushing) | ⬜ |
@@ -501,6 +513,13 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 - **0.9.0 built (2026-11-07), released (setup 52.3 MB).** 0.8.0 released. `StepKind::Explicit`, `LoadKind::Velocity`, `tet::{Ex, solve_explicit, integrate, factor_at}`, `History` in `SolidResults`, steps routing, benchmark 37 (`explicit`); window: Impact analysis and step settings, Velocity (body or face), In Time dialog, help `explicit`, units `vel`. Real app: a 200 × 20 × 20 mm steel bar fixed at one end, the rest at 10 m/s toward it, 0.2 ms: 6 s in a debug build, the free end 0.375 mm (1D 0.40), stress about 400 MPa (ρcv 396), energy kept 100 %, total 31.2 J (½mv² 31.4 J less the held end). Found there: switching a step to Impact kept 2 s and 5 ms (millions of steps); the tree showed "explicit"; the energy graph's "blue" was the crimson accent.
 
 - **CI fix (2026-11-07, after 0.9.0).** The CI `check` job had failed since 0.8 on the window's size budget (startup 484 kB against 480 kB), so its clippy, Rust tests and UI tests never ran there. The analysis-steps dialogs moved to `ui/src/stepdialogs.tsx`, loaded when first opened (`steps.tsx` keeps the helpers and thin wrappers): startup 458 kB. The budget was not raised. No new features: the user is reviewing the program and will list issues to solve one by one.
+
+- **0.9.1 built (2026-11-07).** After 0.9.0 the user compared Datum Mesh with the commercial programs and an open solver (comparison kept in chat, not in the repo), asked for a UI audit (published privately: three jobs in the real app, 16 findings), then for steps 1–3 of it, then (with two marked screenshots) for the workflow bar, a pop-up card and a terminal. Built: `progress.rs` and its reports from `path.rs` (Newton and arc length), plane and solid plasticity, large-strain solids, contact, explicit and time history; shell `watched`, `stop_solve`, async `new_model`; window `console.tsx`, `resinsp.tsx`, `resultspage.tsx`, `Flow`/`flowSteps`/`goStep`, the pop-up card, `note`/`describeOp`; 3D Mesh view fix. UI checks 391 (17 new; old ones that clicked the side bar now go the way a person does). Real app (Xvfb, Gmsh): the tube crush's monitor showed increment 1 stuck near an out-of-balance of 1 for 100+ iterations, five cut-backs; Stop at 1:11 ended it cleanly (results kept at 0 % of the movement, said in Messages). Found on the way: a CSS class (`.cbody`) already taken; the card covering the sketch bar and the bar above the view (now placed below them); the card opening empty for a selection of nothing.
+
+## 5. Known limits (0.9.1)
+
+- The tube crush's first increment does not settle (see the session log); stopped or finished, the solve shows what it reached.
+- Gmsh meshing and the frames' linear solves report only their start and end (no increments to show).
 
 ## 5. Known limits (0.9.0)
 
