@@ -214,6 +214,14 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
     // The sliding nodes' spring: soft, so the friction it gives hardly changes as the node moves
     // in a round (no overshoot), yet the node is never free.
     let ks = 1e-3 * eps;
+    // Each node's spring in proportion to its share of the face (so an even overlap is an even
+    // pressure; on quadratic faces the corners stand for much less area than the mid-edge nodes).
+    let mut mean = vec![(0.0, 0usize); m.contacts.len()];
+    for s in &sl {
+        mean[s.pair].0 += s.area;
+        mean[s.pair].1 += 1;
+    }
+    let wn: Vec<f64> = sl.iter().map(|s| (s.area / (mean[s.pair].0 / mean[s.pair].1.max(1) as f64).max(1e-300)).max(0.05)).collect();
     let tang = |s: &Slave, u: &[f64]| -> [f64; 3] { std::array::from_fn(|c| s.t[0][c] * along(s, u, s.t[0]) + s.t[1][c] * along(s, u, s.t[1])) };
     let mut last = None;
     // Friction comes in a second phase: first where the faces press, without it (phase 0); then
@@ -228,11 +236,12 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
             if state[i] == State::Open {
                 continue;
             }
-            spring(&mut s2, s, s.n, eps);
-            push(&mut s2.f, s, s.n.map(|v| -eps * s.g0 * v));
+            let ei = eps * wn[i];
+            spring(&mut s2, s, s.n, ei);
+            push(&mut s2.f, s, s.n.map(|v| -ei * s.g0 * v));
             if mu_of(s) > 0.0 {
                 // Sticking, the stiff spring; sliding, a soft one set to pull μ pn (see below).
-                let k = if state[i] == State::Slide { ks } else { eps };
+                let k = wn[i] * if state[i] == State::Slide { ks } else { eps };
                 for t in s.t {
                     spring(&mut s2, s, t, k);
                 }
@@ -273,12 +282,13 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
                 continue;
             }
             // Inside the band a node may pull a very little; it is counted as it is.
-            let pn = -eps * g;
+            let ei = eps * wn[i];
+            let pn = -ei * g;
             fn_[i] = pn;
             let mut f = s.n.map(|v| pn * v);
             if mu_of(s) > 0.0 {
                 let el = sub(stv, sp[i]);
-                let trial = el.map(|v| -eps * v);
+                let trial = el.map(|v| -ei * v);
                 let tn = dot(trial, trial).sqrt();
                 let lim = s.mu * pn.max(0.0);
                 if state[i] == State::Stick && tn <= lim * (1.0 + 1e-9) {
@@ -294,7 +304,7 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
                     // moved along the face), or along this round's pull if it has not moved.
                     let w = if dot(stv, stv).sqrt() > 1e-12 * scale { stv } else { el };
                     let d = w.map(|v| v / dot(w, w).sqrt().max(1e-300));
-                    nsp[i] = std::array::from_fn(|c| stv[c] - lim / ks * d[c]);
+                    nsp[i] = std::array::from_fn(|c| stv[c] - lim / (ks * wn[i]) * d[c]);
                     for c in 0..3 {
                         f[c] -= lim * d[c];
                     }
@@ -324,7 +334,7 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
                 let l = dot(stv, stv).sqrt();
                 if l > 1e-12 * scale && fn0[i] > 0.0 {
                     state[i] = State::Slide;
-                    sp[i] = std::array::from_fn(|c| stv[c] - s.mu * fn0[i] / ks * stv[c] / l);
+                    sp[i] = std::array::from_fn(|c| stv[c] - s.mu * fn0[i] / (ks * wn[i]) * stv[c] / l);
                 } else {
                     state[i] = State::Stick;
                     sp[i] = stv;
@@ -366,7 +376,7 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
         let p = fn_[i].max(0.0) / s.area.max(1e-300);
         cp[s.q] = cp[s.q].max(p);
         o.max_pressure = o.max_pressure.max(p);
-        o.max_overlap = o.max_overlap.max(fn_[i] / eps);
+        o.max_overlap = o.max_overlap.max(fn_[i] / (eps * wn[i]));
     }
     Ok((u, st, fnode, outs, cp))
 }

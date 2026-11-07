@@ -54,7 +54,7 @@ export const fieldsFor = (a: string) => {
   if (a === "solid") { const s = solidRes(); return [...SOLID, ...(s?.kind === "solid" && s.fields.some(f => f.key === "peeq") ? ["peeq"] : []), ...(s?.kind === "solid" && s.fields.some(f => f.key === "cp") ? ["cp"] : [])].map(k => FIELDS.find(f => f.key === k)!).map(f => f.key === "sz" ? { ...f, name: "Stress σz" } : f); }
   const r = partRes(), warm = a !== "heat" && r?.kind === "plane" && r.fields.some(f => f.key === "t");
   const plastic = r?.kind === "plane" && r.fields.some(f => f.key === "peeq");
-  return FIELDS.filter(f => !["s3", "tyz", "tzx", "uz", "qz"].includes(f.key) && (f.key !== "peeq" || plastic) && (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));
+  return FIELDS.filter(f => !["s3", "tyz", "tzx", "uz", "qz", "cp"].includes(f.key) && (f.key !== "peeq" || plastic) && (a === "heat" ? f.heat : (!f.heat || (warm && f.key === "t")) && (!f.strain || a === "strain" || a === "axi"))).map(f => named(f, a));
 };
 /** The field being shown: the one picked, if the analysis has it, else the first. */
 export const curField = (): FieldDef => { const list = fieldsFor(partRes()?.kind === "heat" ? "heat" : model()?.analysis ?? "stress"); return list.find(f => f.key === show().field) ?? list[0]; };

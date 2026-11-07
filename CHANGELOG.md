@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 — 2026-11-07
+
+Contact: solids that touch can press on each other and slide, held back by friction.
+
+**Contact between solids**
+- Supports & Loads › Contact: pick two solids that touch and a friction coefficient. They are meshed apart (before, touching solids were always joined) and every pair of faces where they meet gets a contact, listed under Contacts in the tree; the Inspector sets the friction and which face is kept out of which.
+- Where the faces press they push each other apart; where they would pull they part; along each other they hold until the friction reaches μ times the pressing force, then slide (Coulomb). A solid held only by friction stays held; one held only by frictionless contact is reported as free.
+- Results › Contact pressure, and a Contact table under Tables (the force through each contact, its friction, how many nodes touch and slide, the largest pressure and overlap).
+- Our own solver: node to surface with a penalty (the faces may overlap by about a thousandth of the movement), friction as a return mapping, found by solving again until which nodes touch and slide stops changing.
+- New benchmark 36: a block pressed onto another through meshes that do not match (the force through the contact exact, the stress in both within 2 %), a block dragged over another (friction μN within 0.2 %), and one pushed by less than μN (it holds; the friction is the push).
+- Help › Contact between solids.
+
+**Not yet**
+- Contact is solved in one linear step: not yet with yielding, large movements or crushing (the folds of a crushed tube pressing on each other), nor bolt pretension; those come with the next steps.
+
 ## 0.7.7 — 2026-11-07
 
 Loads off the part, a finer mesh where it matters, and more ways to read the results.

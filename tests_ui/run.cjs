@@ -49,6 +49,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           window.__calls.push([c, a]);
           if (c === "new_model" || c === "open") window.__cad = null;
           if (c === "cad_scene") return window.__cad ?? f.cad.empty;
+          if (c === "cad_contacts") return { m: { ...f.cad.meshed_model, contacts: [{ id: 901, a: { on: "face", face: 0 }, b: { on: "face", face: 1 }, friction: 0.2 }] }, path: null, dirty: true, undo: true, redo: false, created: [901], warnings: [] };
           if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
           if (c === "cad_auto_size") return 5;
           if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
@@ -1329,6 +1330,17 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("a modelled solid has no 3D/Section switch in the analysis steps either", !(await p.$('.planebar button:text-is("Section")')));
   check("Supports & Loads on a solid offers Move a Face and Face Force (crushing, 0.7.3)", (await p.$$('.ribbon button:has-text("Move a Face")')).length === 1 && (await p.$$('.ribbon button:has-text("Face Force")')).length === 1);
   check("Supports & Loads on a solid offers Remote Force (0.7.7)", (await p.$$('.ribbon button:has-text("Remote Force")')).length === 1);
+  check("with one solid there is no Contact (it is between two solids, 0.8.0)", (await p.$$('.ribbon button[title^="Let two touching solids press"]')).length === 0);
+  await p.evaluate(() => { const b = window.__cad.bodies[0]; window.__cad = { ...window.__cad, bodies: [b, { ...b, name: "Body2" }] }; window.dispatchEvent(new Event("cad-reload")); });
+  await p.waitForTimeout(300);
+  check("with two solids Supports & Loads offers Contact, and the tree a Contacts branch (0.8.0)", (await p.$$('.ribbon button[title^="Let two touching solids press"]')).length === 1 && (await p.textContent(".tree")).includes("Contacts"));
+  await p.click('.ribbon button[title^="Let two touching solids press"]'); await p.waitForTimeout(200);
+  check("Contact asks for the two solids and the friction", (await p.textContent(".dlg")).includes("Friction coefficient") && (await p.$$(".dlg select")).length === 2);
+  await p.selectOption(".dlg tr:has-text('Touching') select", "Body2"); await p.click(".dlg footer .btn.pri"); await p.waitForTimeout(300);
+  const cc = await p.evaluate(() => window.__calls.filter(c => c[0] === "cad_contacts").slice(-1)[0]?.[1]);
+  check("Make sends the two solids and μ to be meshed apart and paired", cc && cc.a !== cc.b && cc.b === "Body2" && cc.friction === 0.2, JSON.stringify(cc));
+  await p.evaluate(() => { window.__cad = { ...window.__cad, bodies: [window.__cad.bodies[0]] }; window.dispatchEvent(new Event("cad-reload")); });
+  await p.waitForTimeout(200);
   await p.click('.ribbon button:has-text("Remote Force")'); await p.waitForTimeout(100);
   check("Remote Force waits for a face", (await p.textContent("body")).includes("Click a face of the mesh"));
   await p.click('.tree .step:nth-of-type(4) > .sthead'); await p.waitForTimeout(200);
