@@ -97,19 +97,9 @@
   ],
   "roadmap": [
     {
-      "v": "0.10.1",
-      "title": "Every module's screens",
-      "when": "Next",
-      "items": [
-        "Each module's screens wired to what exists: frames, 3D frames, plates, solids, assembly, materials, mesh, steps, results, report",
-        "Everything still to come present and greyed, its dialog shown",
-        "About 100 planned features in their place"
-      ]
-    },
-    {
       "v": "0.10.2",
       "title": "Tables and managers",
-      "when": "Soon",
+      "when": "Next",
       "items": [
         "Node and member tables, pasted from a sheet",
         "Load cases and combinations, the step manager, the material manager with its curve",

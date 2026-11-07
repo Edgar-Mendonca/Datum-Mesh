@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.10.1 — 2026-11-07
+
+Every module has its place: the tabs and the bar above the view of the approved mock-ups, and the whole map of features still to come, now over a hundred.
+
+**New tabs**
+- Assembly (3D solids): New Part, Move or Copy, Turn or Pattern, and what the assembly is made of; coming: repeating a part, checking overlaps, an exploded view, placing one part against another.
+- Interactions (3D solids): Contact (two solids pressing and sliding with friction); coming: tie, coupling, rigid body, connectors, finding contact pairs by themselves, self-contact, friction by pair of materials.
+- Animate (every model but heat): Play, To the Start, Loop, Speed, the player bar and the deformed shape.
+
+**The bar above the view follows the tab**
+- Materials: how many, and the Materials dialog; coming: colour by material or by section.
+- Analysis: the steps and whether they are linear, and the Steps dialog; coming: show only the loads of a step.
+- A frame's Geometry: snapping to the grid; coming: numbers, sections, releases and local axes drawn, snapping to nodes and midpoints.
+- A 3D frame's results: coming: plate results on the top or bottom face.
+
+**The whole map**
+- 46 more planned features, each with its greyed dialog: paste from a sheet, node and member tables, splitting a member, portal frame, truss and building generators, rigid ends, sweep, loft, parameters, the material manager and assignments, rate dependence, creep, plate thickness by region, a loads table, inclined supports, water pressure, a force at a point away, seeds and element types, mesh statistics, the step manager, line search, damping, steady and random vibration, graphs of any result, results along a path, energies, storey drift, plate reinforcement, a report builder, video, your own units, templates and running many models.
+- Every planned feature now carries the release of the agreed roadmap (0.10.2 tables and managers, 0.11 results tools, 0.12 materials, 0.13 setup, 0.14 harder analyses, 0.15 mesh, jobs and Python, 1.0 design checks); File › Roadmap lists them by release.
+- The bottom panel shows Tables (0.10.2) beside Jobs and Python, dimmed.
+
 ## 0.10.0 — 2026-11-07
 
 A new look, and the whole program laid out: every module has its place in the window, and the features still to come are already there, dimmed, with the release that brings them.
