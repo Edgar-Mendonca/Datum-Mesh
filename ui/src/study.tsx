@@ -8,6 +8,7 @@ import { model, setOut, tab, toast, setStale, results } from "./store";
 import { invoke as _i, Out } from "./api";
 import { cad, activeSketch, meshOld, setMeshOld } from "./cad";
 import { isSolidA } from "./api";
+import { beginRun, endRun } from "./console";
 
 /** The model's solid is a mesh of the modelled solids. */
 export const geoMesh = () => model()?.volume?.source === "geometry";
@@ -24,7 +25,9 @@ export const meshSolids = (quiet = false): Promise<boolean> => {
   busy = (async () => {
     try {
       const t0 = performance.now();
-      const o = await _i<Out>("cad_mesh", { size: (m.mesh.size || 0) * 1e3 });
+      beginRun("Meshing the solids (Gmsh)");
+      const o = await _i<Out>("cad_mesh", { size: (m.mesh.size || 0) * 1e3 }).catch(e => { endRun(false, String(e)); throw e; });
+      endRun(true);
       setOut(o); setMeshOld(false); if (results()) setStale(true);
       const v = o.m.volume;
       if (o.warnings.length) toast(o.warnings.join(" "));

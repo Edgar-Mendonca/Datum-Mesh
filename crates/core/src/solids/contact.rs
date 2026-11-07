@@ -230,6 +230,9 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
     let any_mu = sl.iter().any(|s| s.mu > 0.0);
     let mut phase = if any_mu { 0 } else { 1 };
     for it in 0..120 {
+        if crate::progress::stopping() {
+            return Err("Stopped at your request while finding where the solids touch.".into());
+        }
         let mu_of = |s: &Slave| if phase == 0 { 0.0 } else { s.mu };
         let mut s2 = System { n: sys.n, k: sys.k.clone(), f: sys.f.clone(), half: sys.half, general: sys.general };
         for (i, s) in sl.iter().enumerate() {
@@ -316,6 +319,7 @@ pub(crate) fn solve(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], presc:
             fs[i] = f;
         }
         let changed = next.iter().zip(&state).any(|(a, b)| (*a == State::Open) != (*b == State::Open));
+        crate::progress::stage(format!("Contact, pass {}{}: {} of {} nodes touching{}", it + 1, if phase == 0 { " (without friction)" } else { "" }, next.iter().filter(|x| **x != State::Open).count(), next.len(), if changed { ", still changing" } else { "" }));
         let moved = nsp.iter().zip(&sp).map(|(a, b)| dot(sub(*a, *b), sub(*a, *b)).sqrt()).fold(0.0, f64::max);
         let big = sl.iter().zip(&nsp).map(|(_, a)| dot(*a, *a).sqrt()).fold(0.0, f64::max);
         let tiny = 1e-9 * u.iter().fold(0.0f64, |a, v| a.max(v.abs())).max(1e-300);

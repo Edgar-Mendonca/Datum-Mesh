@@ -1,7 +1,7 @@
 // Commands: what the ribbon, menus, keys and Tell Me run.
 import { batch } from "solid-js";
 import { Out, Analysis, Mesh, invoke, fromWire, unwire, modesFromWire, num, isFrame, isBuckle, isSolidA } from "./api";
-import { setOut, act, call, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn , active, whichName, setSolvedFor } from "./store";
+import { setOut, act, call, note, sel, setSel, edgeSel, setBackstage, loadOut, toast, setView, view, setTool, tool, model, setEdgeSel, results, setResults, setStale, solving, setSolving, setTab, show, setShow, Show, meshed, setMeshed, setMeshStale, setModes, setModesStale, setModeSel, setModeOn , active, whichName, setSolvedFor } from "./store";
 import { fieldAfterSolve } from "./parts";
 import { fit, zoomBy, cancelDraft } from "./canvas";
 import { defaultLoad } from "./panels";
@@ -9,6 +9,7 @@ import * as D from "./dialogs";
 import * as K from "./sketch";
 import { niceGrid } from "./units";
 import { mapFields } from "./axes";
+import { beginRun, endRun } from "./console";
 
 /** A model just opened or made (0.6.1): a 3D one opens in the 3D view, with nothing being drawn. */
 const fresh3d = () => import("./plane3").then(p => { p.setPlane("3d"); setTool("select"); });
@@ -22,7 +23,12 @@ export const C = {
    * file's length unit in metres. */
   importMesh: (unit: number, path: string | null = null) => D.keepChanges(() => loadOut("import_mesh", { path, unit }).then(o => { if (o) { import("./plane3").then(p => p.setPlane("3d")); toast(`Imported ${o.m.volume?.elements.toLocaleString()} tetrahedra; ${o.m.volume?.faces.length} faces found. Put supports and loads on them (Loads tab, then click a face).`, true); setTimeout(fit, 60); } })),
   openPath: (path: string) => D.keepChanges(() => loadOut("open", { path }).then(o => { if (o) { fresh3d(); setTimeout(fit, 60); } })),
-  newModel: (example: string | null, analysis: Analysis = "frame") => D.keepChanges(() => loadOut("new_model", { example, analysis }).then(o => { if (o) { fresh3d(); setTimeout(fit, 60); } })),
+  newModel: (example: string | null, analysis: Analysis = "frame") => D.keepChanges(() => {
+    // A modelled example is meshed by Gmsh as it opens (0.9.1: followed in the bottom panel).
+    const gm = !!example?.startsWith("m-");
+    if (gm) { beginRun("Opening the example (meshing with Gmsh)"); toast("Opening the example: meshing it with Gmsh…", true); }
+    return loadOut("new_model", { example, analysis }).then(o => { if (gm) endRun(!!o); if (o) { fresh3d(); setTimeout(fit, 60); } });
+  }),
   print: () => setBackstage("print"),
   undo: async () => { const o = await call<Out>("history", { redo: false }); if (o) { setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
   redo: async () => { const o = await call<Out>("history", { redo: true }); if (o) { setOut(o); if (results()) setStale(true); if (meshed()) setMeshStale(true); } },
@@ -34,6 +40,7 @@ export const C = {
     // Modelled solids (0.7.3): meshed first, if not yet or changed since.
     if (isSolidA(m.analysis) && !(await import("./study").then(k => k.ensureMesh()))) return;
     setSolving(true);
+    beginRun(`Solve${m.steps?.length ? `: ${m.steps.map(x => x.name).join(", ")}` : ""}`);
     try {
       const w = active(), r0 = fromWire(await invoke("solve", { which: w })), first = !results();
       // 3D solids (0.6.1): component fields as shown, Z up.
@@ -50,41 +57,58 @@ export const C = {
       const what = r.kind === "frame" || r.kind === "space" ? `${r.stats.equations} equations` : r.kind === "solid" || r.kind === "solidheat" ? `${r.elements.toLocaleString()} ${r.layers ? `elements in ${r.layers} ${r.layers === 1 ? "layer" : "layers"}` : "tetrahedra"}, ${r.stats.equations.toLocaleString()} equations` : `${r.mesh.tris.length.toLocaleString()} elements, ${r.stats.equations.toLocaleString()} equations`;
       const dy = (r.kind === "frame" || r.kind === "space") ? r.dynamic : undefined;
       const bal = dy?.kind === "spectrum" ? `${dy.modes.length} modes combined by ${dy.combined} (${(dy.share * 100).toPrecision(3)} % of the mass): see Results › Dynamics.` : r.kind === "heat" || r.kind === "solidheat" ? (bad ? "Heat in and out do not balance: see Results." : "Heat in balances heat out.") : bad ? "The reactions do not balance the loads: see Results." : dy ? `Shown at t = ${dy.peak_t.toPrecision(4)} s; reactions balance the loads with the inertia.` : "Reactions balance the loads.";
-      toast(r.warnings.length ? r.warnings.join(" ") : `Solved${w ? ` (${whichName(m, w)})` : ""}: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
-    } catch (e) { setResults(null); toast(String(e)); }
+      endRun(true);
+      // Each warning is its own line in Messages; the summary shows briefly.
+      for (const x of r.warnings.slice(0, -1)) note(x, "warn");
+      toast(r.warnings.length ? r.warnings[r.warnings.length - 1] : `Solved${w ? ` (${whichName(m, w)})` : ""}: ${what} in ${ms}. ${bal}`, !r.warnings.length && !bad);
+      if (r.warnings.length) note(`Solved${w ? ` (${whichName(m, w)})` : ""}: ${what} in ${ms}. ${bal}`);
+    } catch (e) { endRun(false, String(e)); setResults(null); toast(String(e)); }
     finally { setSolving(false); }
   },
   /** The lowest natural frequencies and their mode shapes (0.2.2). */
   modes: async (count = 6) => {
     const m = model(); if (!m || solving()) return;
     setSolving(true);
+    beginRun("Natural frequencies");
     try {
       const r = modesFromWire(await invoke("modes", { count }));
-      if (isBuckle(r)) return;
+      if (isBuckle(r)) { endRun(true); return; }
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
       if (r.kind === "solid") import("./plane3").then(p => p.setPlane("3d"));
       toast(`${r.modes.length} natural frequencies: the lowest is ${num(r.modes[0].f, 4)} Hz.`, true);
-    } catch (e) { toast(String(e)); }
+      endRun(true);
+    } catch (e) { endRun(false, String(e)); toast(String(e)); }
     finally { setSolving(false); }
   },
   /** The lowest buckling load factors of a frame and their shapes (0.2.3). */
   buckling: async (count = 6) => {
     const m = model(); if (!m || solving()) return;
     setSolving(true);
+    beginRun("Buckling");
     try {
       const r = modesFromWire(await invoke("buckling", { count, which: active() }));
-      if (!isBuckle(r)) return;
+      if (!isBuckle(r)) { endRun(true); return; }
       batch(() => { setModes(r); setModesStale(false); setModeSel(0); setModeOn(true); setView("model"); setTab("results"); });
       const low = Math.min(r.modes[0]?.lambda ?? Infinity, ...r.bars.map(b => b.lambda));
       toast(r.modes.length ? `The lowest buckling load factor is ${num(low, 4)}.` : r.bars.length ? `No frame buckling; the weakest truss bar buckles at a load factor of ${num(low, 4)}.` : "Nothing buckles under these loads.", true);
       for (const w of r.warnings) toast(w);
-    } catch (e) { toast(String(e)); }
+      endRun(true);
+    } catch (e) { endRun(false, String(e)); toast(String(e)); }
     finally { setSolving(false); }
   },
   /** Mesh the part without solving, and show it (the Mesh view). */
   mesh: async () => {
     const m = model(); if (!m) return;
     if (isFrame(m.analysis)) return toast("Frames and trusses are not meshed: each member is one element. Meshing is for parts (plane stress, plane strain, heat).");
+    // A 3D mesh (modelled solids or an imported mesh) is shown in the 3D view, its elements'
+    // edges drawn on it (0.9.1: the Mesh view opened the flat drawing and said there was nothing to mesh).
+    if (m.volume || (isSolidA(m.analysis) && !m.shapes.length && !m.parts?.length)) {
+      batch(() => { setShow({ ...show(), mesh: true }); if (view() === "mesh") setView("model"); });
+      const k = await import("./study");
+      if (k.hasSolids() && (!k.geoMesh() || (await import("./cad")).meshOld())) await k.meshSolids();
+      else if (!m.volume) toast("There is nothing to mesh yet: model a solid first (Geometry › New Sketch, then Extrude).");
+      return;
+    }
     if (solving()) return;
     setSolving(true);
     try {

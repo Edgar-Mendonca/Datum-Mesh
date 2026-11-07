@@ -1533,7 +1533,12 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
     };
     let mut snaps = vec![];
     while lam < 1.0 - 1e-12 {
+        if let Some(w) = crate::progress::halted(lam) {
+            warnings.push(w);
+            break;
+        }
         let target = (lam + step).min(1.0);
+        crate::progress::increment(target);
         let mut ut = u.clone();
         let mut done = None;
         let mut best = f64::INFINITY;
@@ -1545,6 +1550,7 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
             if !rn.is_finite() {
                 break;
             }
+            crate::progress::iteration(it, rn / fnorm.max(f64::MIN_POSITIVE));
             // Converged; or as near as round-off lets it (stiff supports on sloping faces leave a
             // floor): small and no longer falling.
             if rn <= 1e-8 * fnorm || (rn <= 1e-6 * fnorm && rn > 0.5 * best) {
@@ -1586,6 +1592,7 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
                 sig_last = sig;
                 lam = target;
                 path.iterations += it;
+                crate::progress::converged(lam, it);
                 let peeq = hist.iter().map(|s| s.alpha).fold(0.0, f64::max);
                 if peeq > 0.0 && path.first_yield.is_none() {
                     path.first_yield = Some(lam);
@@ -1600,6 +1607,7 @@ pub(super) fn plastic3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], inc: 
             }
             None => {
                 step /= 2.0;
+                crate::progress::cut((lam + step).min(1.0), "it would not settle; the increment is halved");
                 if step < first * 1e-3 {
                     warnings.push(format!("The part cannot carry the whole load: it collapses (yields right through) at about {:.1} % of it. The results shown are at the last load it carried.", lam * 100.0));
                     break;
@@ -1795,7 +1803,12 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
     };
     let mut snaps = vec![];
     while lam < 1.0 - 1e-12 {
+        if let Some(w) = crate::progress::halted(lam) {
+            warnings.push(w);
+            break;
+        }
         let target = (lam + step).min(1.0);
+        crate::progress::increment(target);
         let mut ut = u.clone();
         let mut done = None;
         let mut best = f64::INFINITY;
@@ -1806,6 +1819,7 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
             if !rn.is_finite() {
                 break;
             }
+            crate::progress::iteration(it, rn / fnorm.max(f64::MIN_POSITIVE));
             if rn <= 1e-8 * fnorm || (rn <= 1e-6 * fnorm && rn > 0.5 * best) {
                 done = Some(it);
                 break;
@@ -1839,6 +1853,7 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
                 u = ut;
                 lam = target;
                 path.iterations += it;
+                crate::progress::converged(lam, it);
                 path.load.push(lam);
                 path.umax.push((0..nn).map(|q| (u[3 * q].powi(2) + u[3 * q + 1].powi(2) + u[3 * q + 2].powi(2)).sqrt()).fold(0.0, f64::max));
                 path.peeq.push(0.0);
@@ -1849,6 +1864,7 @@ pub(super) fn large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool], penalti
             }
             None => {
                 step /= 2.0;
+                crate::progress::cut((lam + step).min(1.0), "it would not settle; the increment is halved");
                 if step < first * 1e-3 {
                     warnings.push(format!("The solid would not settle beyond about {:.1} % of the load: it may buckle, snap through or be squeezed inside out there. The results shown are at the last load it carried.", lam * 100.0));
                     break;
@@ -2116,7 +2132,12 @@ pub(super) fn plastic_large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool],
         (acc.iter().zip(&ws).map(|(a, w)| a.map(|x| x / w.max(1e-300))).collect(), pe.iter().zip(&ws).map(|(a, w)| a / w.max(1e-300)).collect())
     };
     while lam < 1.0 - 1e-12 {
+        if let Some(w) = crate::progress::halted(lam) {
+            warnings.push(w);
+            break;
+        }
         let target = (lam + step).min(1.0);
+        crate::progress::increment(target);
         // Start from the path so far carried on (the last two converged states), the moved
         // unknowns set where they go.
         let mut ut = match &u_prev {
@@ -2150,6 +2171,7 @@ pub(super) fn plastic_large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool],
             if !rn.is_finite() {
                 break;
             }
+            crate::progress::iteration(it, rn / tol_ref.max(f64::MIN_POSITIVE));
             if rn <= 1e-8 * tol_ref || (rn <= 1e-6 * tol_ref && rn > 0.5 * best) {
                 done = Some(it);
                 break;
@@ -2185,6 +2207,7 @@ pub(super) fn plastic_large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool],
                 u = ut;
                 lam = target;
                 path.iterations += it;
+                crate::progress::converged(lam, it);
                 let (st, pe) = nodal(&u, &hist);
                 let f_now = if moved { reaction(&fi).abs() } else { lam };
                 force.push(f_now);
@@ -2205,6 +2228,7 @@ pub(super) fn plastic_large3(m: &Model, cl: &Cloud, sys: &System, held: &[bool],
             }
             None => {
                 step /= 2.0;
+                crate::progress::cut((lam + step).min(1.0), "it would not settle; the increment is halved");
                 if std::env::var_os("DATUM_TRACE").is_some() {
                     eprintln!("increment to {:.4} would not settle; step halved to {:.2e}", target, step);
                 }

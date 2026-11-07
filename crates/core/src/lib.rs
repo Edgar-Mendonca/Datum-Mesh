@@ -13,6 +13,7 @@ pub mod frames;
 pub mod link;
 mod hardening;
 pub mod model;
+pub mod progress;
 pub mod sketch;
 pub mod solids;
 pub mod steps;

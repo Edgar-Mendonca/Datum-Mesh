@@ -383,7 +383,7 @@ export const MeshBar = (p: { remesh: () => void }) => {
           <span class="muted">size {fmt("len", m().size)} · smallest angle {num(m().quality.min_angle, 3)}° · worst aspect {num(m().quality.max_aspect, 3)} · {num(m().quality.good * 100, 3)} % over 30°</span></div>
         <div class="lrow small"><label class="chk"><input type="checkbox" checked={show().quality} onChange={e => setShow({ ...show(), quality: e.currentTarget.checked })} />Colour by quality</label>
           <Show when={show().quality && mp()}><span class="ukey"><i style={{ background: "rgba(31,122,77,0.35)" }} />over 30° ({mp()!.count[0]})<i style={{ background: "rgba(196,138,22,0.75)" }} />20–30° ({mp()!.count[1]})<i style={{ background: "rgba(200,40,40,0.8)" }} />under 20° ({mp()!.count[2]})</span></Show>
-          <span class="grow" /><button class="btn sm" onClick={p.remesh}>Mesh again</button></div>
+          <span class="grow" /><button class="btn sm" onClick={p.remesh}>Mesh again</button><button class="btn sm" onClick={() => setView("model")}>Back to the part</button></div>
       </>}</Show>
     </div>
   );

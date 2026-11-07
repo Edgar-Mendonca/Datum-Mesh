@@ -106,6 +106,7 @@ pub fn follow(p: &dyn Problem, base: &[f64], load: &[f64], u0: &[f64], ctl: &Con
 
 /// Newton iterations at a fixed λ from `u`; Some((u, iterations, stable)) when converged.
 fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, lambda: f64, mut u: Vec<f64>, max_iter: usize) -> Result<Option<(Vec<f64>, usize, bool)>, String> {
+    let scale = (norm_free(base, held).max(norm_free(load, held))).max(f64::MIN_POSITIVE);
     for it in 0..=max_iter {
         let (fint, k) = p.state(&u)?;
         let r = residual(base, load, lambda, &fint, held);
@@ -113,6 +114,7 @@ fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64,
         if !rn.is_finite() {
             return Ok(None);
         }
+        crate::progress::iteration(it, rn / scale);
         let (x, stable) = match k.solve_many(held, &[&r]) {
             Ok(x) => x,
             Err(_) => return Ok(None),
@@ -137,18 +139,25 @@ fn newton(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, 
     let mut lambda = 0.0;
     let mut u = path.points[0].u.clone();
     while lambda < 1.0 - 1e-12 {
+        if let Some(w) = crate::progress::halted(lambda) {
+            path.note = Some(w);
+            return Ok(());
+        }
         let target = (lambda + step).min(1.0);
+        crate::progress::increment(target);
         match correct(p, base, load, held, tol, target, u.clone(), ctl.max_iter)? {
             // A loaded structure follows its stable path: an unstable balance reached from a stable
             // one (a straight column past buckling) means the increment jumped a bifurcation, so
             // it is cut until the stable branch is found, or no smaller step helps.
             Some((_, _, false)) if path.points.last().is_some_and(|p| p.stable) && step > first * 1e-3 => {
                 step /= 2.0;
+                crate::progress::cut((lambda + step).min(1.0), "it jumped past a buckling point; the increment is halved to find the stable path");
             }
             Some((un, it, stable)) => {
                 lambda = target;
                 u = un;
                 path.iterations += it;
+                crate::progress::converged(lambda, it);
                 path.points.push(Point { lambda, u: u.clone(), iterations: it, stable });
                 if it <= 4 {
                     step = (step * 1.5).min(first);
@@ -156,6 +165,7 @@ fn newton(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, 
             }
             None => {
                 step /= 2.0;
+                crate::progress::cut((lambda + step).min(1.0), format!("it did not converge in {} iterations; the increment is halved", ctl.max_iter));
                 if step < first * 1e-4 {
                     let last = path.points.last().map_or(0.0, |x| x.lambda);
                     path.note = Some(format!("The solution stopped at {:.1} % of the load: it would not converge beyond. The structure may have reached its limit load (snap-through or collapse); try arc length to follow it further.", last * 100.0));
@@ -183,7 +193,13 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
     let mut dl = dl0;
     let mut prev: Option<(Vec<f64>, f64)> = None;
     let target_iter = 6.0;
+    let scale = norm_free(base, held).max(norm_free(load, held)).max(f64::MIN_POSITIVE);
     for _ in 0..ctl.max_increments {
+        if let Some(w) = crate::progress::halted(lambda) {
+            path.note = Some(w);
+            return Ok(());
+        }
+        crate::progress::increment(lambda);
         let (_, k) = p.state(&u)?;
         let (t, _) = k.solve_many(held, &[load])?;
         let t = &t[0];
@@ -204,6 +220,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
             let guess = p.add(&u, &t.iter().map(|x| (1.0 - lambda) * x).collect::<Vec<f64>>());
             if let Some((un, it, stable)) = correct(p, base, load, held, tol, 1.0, guess, ctl.max_iter)? {
                 path.iterations += it;
+                crate::progress::converged(1.0, it);
                 path.points.push(Point { lambda: 1.0, u: un, iterations: it, stable });
                 path.reached = true;
                 return Ok(());
@@ -220,6 +237,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
             if !rn.is_finite() {
                 break;
             }
+            crate::progress::iteration(it, rn / scale);
             let Ok((x, stable)) = k.solve_many(held, &[&r, load]) else { break };
             if rn <= tol {
                 done = Some((ut, it, stable));
@@ -257,6 +275,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
                 path.iterations += it;
                 path.points.push(Point { lambda, u: u.clone(), iterations: it, stable });
                 prev = Some((step, dlam));
+                crate::progress::converged(lambda, it);
                 dl = (dl * (target_iter / it.max(1) as f64).sqrt().clamp(0.5, 2.0)).min(dl0 * 10.0);
                 if lambda >= 1.0 - 1e-12 {
                     path.reached = true;
@@ -265,6 +284,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
             }
             None => {
                 dl /= 2.0;
+                crate::progress::cut(lambda, format!("it did not converge in {} iterations; the arc length is halved", ctl.max_iter));
                 if dl < dl0 * 1e-5 {
                     path.note = Some(format!("The arc-length solution would not converge beyond a load factor of {:.3}.", lambda));
                     return Ok(());

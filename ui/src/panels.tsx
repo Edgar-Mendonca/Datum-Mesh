@@ -3,7 +3,7 @@
 import { cad, cadRun, meshOld, setMeshOld } from "./cad";
 import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
-import { For, Show, JSX, createMemo } from "solid-js";
+import { For, Show, JSX, createMemo, createSignal } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
 import { stepsDialog } from "./steps";
@@ -12,6 +12,9 @@ import { Help } from "./help";
 import { zUp, toD, fromD, AX, engineAxis, V3 } from "./axes";
 import { edgeCount, edgePts, outline, area } from "./geom";
 import { C } from "./cmds";
+import { ResultsInsp } from "./resinsp";
+/** The right panel is shown, or folded to a thin edge (0.9.1). */
+export const [inspOpen, setInspOpen] = createSignal(true);
 import * as D from "./dialogs";
 import { sharpCorners, corners } from "./sketch";
 
@@ -532,11 +535,14 @@ export const Inspector = () => {
     if (sel().length === 1) return itemName(mm, sel()[0]).split(" · ")[0];
     if (edgeSel()) return `Edge ${edgeSel()!.edge + 1}`;
     const ft = cad()?.features.find(x => x.id === selFeature()); if (ft) return ft.name;
-    return "Model";
+    return resultsShown() ? "Results" : "Model";
   };
+  // 0.9.1: after a solve, with nothing selected, the panel shows the results; the model's
+  // settings fold away below them.
+  const resultsShown = () => !!results() && !sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature());
   return (
     <aside class="insp">
-      <header><b>{title()}</b><span class="grow" /><Help k="inspector" /></header>
+      <header><b>{title()}</b><span class="grow" /><Help k="inspector" /><button class="ifold" title="Hide this panel (it comes back from the edge)" aria-label="Hide the panel" onClick={() => setInspOpen(false)}>»</button></header>
       <div class="ibody">
         <Show when={m()}>{mm => <>
           <Show when={sel().length > 1}><p class="muted">Drag any of them to move them together, or press Delete.</p><p class="ibtns"><button class="btn sm" onClick={C.del}>Delete</button><button class="btn sm" onClick={() => setSel([])}>Clear selection</button></p></Show>
@@ -549,7 +555,12 @@ export const Inspector = () => {
           <Show when={one()?.contact}>{c => <ContactInsp c={c()} m={mm()} />}</Show>
           <Show when={!sel().length && edgeSel()}>{e => <EdgeInsp m={mm()} e={e()} />}</Show>
           <Show when={!sel().length && !edgeSel() && cad()?.features.some(x => x.id === selFeature())}><FeatureInsp id={selFeature()!} /></Show>
-          <Show when={!sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature())}><ModelInsp m={mm()} /></Show>
+          <Show when={!sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature())}>
+            <Show when={resultsShown()} fallback={<ModelInsp m={mm()} />}>
+              <ResultsInsp m={mm()} />
+              <details class="isub"><summary>Model settings</summary><ModelInsp m={mm()} /></details>
+            </Show>
+          </Show>
           <Show when={sel().length === 1}><p class="ibtns"><button class="btn sm" onClick={C.del}>Delete</button></p></Show>
         </>}</Show>
       </div>

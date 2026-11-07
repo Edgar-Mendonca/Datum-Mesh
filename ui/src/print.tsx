@@ -7,7 +7,7 @@ import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
 import { Portal } from "solid-js/web";
 import { createStore } from "solid-js/store";
 import { Model, Pt, num, isFrame, isSolidA } from "./api";
-import { SolidResultsPage, SolidHeatResultsPage } from "./results";
+import { SolidResultsPage, SolidHeatResultsPage } from "./resultspage";
 import { out, opts, call, toast, model, frameRes as results, partRes, spaceRes, solidRes, stale, setBackstage, modes, modesStale } from "./store";
 import { fieldDef, fieldsFor, curField, contourImage, palette, rangeOf, ColourBar, EqTable, deformOf } from "./parts";
 import { Help } from "./help";

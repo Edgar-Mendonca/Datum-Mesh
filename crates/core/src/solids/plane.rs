@@ -946,7 +946,12 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
     let mut snaps = vec![];
     let mut sig_last = vec![[0.0; 4]; pts.len()];
     while lam < 1.0 - 1e-12 {
+        if let Some(w) = crate::progress::halted(lam) {
+            warnings.push(w);
+            break;
+        }
         let target = (lam + step).min(1.0);
+        crate::progress::increment(target);
         let mut ut = u.clone();
         let mut done = None;
         for it in 1..=25 {
@@ -957,6 +962,7 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
             if !rn.is_finite() {
                 break;
             }
+            crate::progress::iteration(it, rn / fnorm.max(f64::MIN_POSITIVE));
             if rn <= 1e-8 * fnorm {
                 done = Some((h2, sig, it));
                 break;
@@ -984,6 +990,7 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
                 sig_last = sig;
                 lam = target;
                 path.iterations += it;
+                crate::progress::converged(lam, it);
                 let peeq = hist.iter().map(|s| s.alpha).fold(0.0, f64::max);
                 if peeq > 0.0 && path.first_yield.is_none() {
                     path.first_yield = Some(lam);
@@ -1014,6 +1021,7 @@ fn plastic_solve(m: &Model, ms: &Mesh, sys: &System, held: &[bool], inc: usize, 
             }
             None => {
                 step /= 2.0;
+                crate::progress::cut((lam + step).min(1.0), "it did not converge in 25 iterations; the increment is halved");
                 if step < first * 1e-3 {
                     warnings.push(format!("The part cannot carry the whole load: it collapses (yields right through) at about {:.1} % of it. The results shown are at the last load it carried.", lam * 100.0));
                     break;

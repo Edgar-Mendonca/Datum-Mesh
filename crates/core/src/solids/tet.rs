@@ -1189,8 +1189,17 @@ fn integrate(m: &Model, ms: &TetMesh, sys: &System, held: &[bool], el_props: &[[
     hist.strain.push(s0);
     hist.work.push(0.0);
     let (mut best, mut best_u, mut best_a, mut best_t) = (0.0f64, u.clone(), a.clone(), 0.0);
+    let report = (steps / 200).max(1);
     for s in 1..=steps {
         let t = s as f64 * dt;
+        if s % report == 0 || s == steps {
+            crate::progress::time(t, ex.duration, s);
+        }
+        if crate::progress::stopping() {
+            warnings.push(format!("Stopped at your request at {:.4} ms of {:.4} ms: the results shown are up to then.", (t - dt) * 1e3, ex.duration * 1e3));
+            crate::progress::note("Stopped at your request.");
+            break;
+        }
         let fa_prev = factor_at(&ex.curve, t - dt);
         let fa_now = factor_at(&ex.curve, t);
         let du: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { dt * vh[i] }).collect();

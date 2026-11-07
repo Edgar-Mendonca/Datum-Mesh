@@ -28,6 +28,15 @@ const srv = http.createServer((q, r) => {
 let failed = 0;
 const num3 = v => String(+v.toPrecision(3));
 const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${name}${ok ? "" : "  " + info}`); if (!ok) failed++; };
+// 0.9.1: no side bar; the views are reached as a person reaches them (the bar above a page, the
+// tree's Results rows, the results panel, the ribbon), or directly where nothing leads.
+const go = async (p, v) => {
+  const first = async (...sel) => { for (const q of sel) { const b = await p.$(q); if (b && await b.isVisible()) return b; } return null; };
+  const b = v === "Model" ? await first('.pagebar button:has-text("Back to the model")', '.legend button:has-text("Back to the part")')
+    : v === "Results" ? await first('.pagebar button:has-text("Tables")', '.rinsp button:has-text("Tables and equilibrium")', '.tree button.ti:has-text("Tables and equilibrium")')
+    : v === "Report" ? await first('.pagebar button:has-text("Report")', '.rinsp button:has-text("Report")', '.tree button.ti:has-text("Report")') : null;
+  if (b) await b.click(); else await p.evaluate(x => window.__setView(x), v.toLowerCase());
+};
 
 (async () => {
   await new Promise(ok => srv.listen(0, ok));
@@ -63,6 +72,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
           if (c === "new_model") { window.__cur = { blank: f.frame, "blank-frame": f.frame, portal: f.portal, truss: f.truss, bracket: f.bracket, lug: f.lug, fin: f.fin, hotplate: f.hotplate, vessel: f.vessel, platform: f.platform, "blank-space": f.space, bracket3d: f.bracket3d, "blank-solid": f.solid, vessel3d: f.vessel3d, braced: f.braced, fin3d: f.fin3d, lee: f.lee, slab: f.slab, quake: f.quake, xbrace: f.xbrace, building: f.building, tube: f.tube, yield3d: f.yield3d, rubber: f.rubber, elbow: f.elbow, elbowheat: f.elbowheat, bend45: f.bend45, tubeplates: f.tubeplates }[a.example] ?? f.frame; return window.__cur; }
           if (c === "apply") { window.__cur = { ...window.__cur, dirty: true, undo: true, created: [999] }; return window.__cur; }
           if (c === "history") return window.__cur;
+          if (c === "solve" && window.__hold) await window.__hold;
           if (c === "solve") { if (window.__solveKey) return f[window.__solveKey]; if (window.__cur === f.portal) return f.portal_results; if (window.__cur === f.noload) return f.noload_results; if (window.__cur === f.truss) return f.truss_results; if (window.__cur === f.bracket) return f.bracket_results; if (window.__cur === f.fin) return f.fin_results; if (window.__cur === f.hotplate) return f.hotplate_results; if (window.__cur === f.vessel) return f.vessel_results; if (window.__cur === f.platform) return f.platform_results; if (window.__cur === f.bracket3d) return f.bracket3d_results; if (window.__cur === f.vessel3d) return f.vessel3d_results; if (window.__cur === f.braced) return f.braced_results; if (window.__cur === f.lee) return f.lee_results; if (window.__cur === f.fin3d) return f.fin3d_results; throw "There is nothing to mesh."; }
           if (c === "mesh") return f.bracket_mesh;
           if (c === "buckling") { if (window.__cur === f.platform || window.__cur?.m?.analysis === "space") return f.platform_buckle; if (window.__cur === f.portal) return f.portal_buckle; if (window.__cur === f.truss) return f.truss_buckle; throw "Buckling is for frames and trusses in this release; parts come later."; }
@@ -274,9 +284,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const col = await p.$eval(`.mem[data-id="${pf.members[0].id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
   await p.mouse.move(col[0], col[1]); await p.waitForTimeout(150);
   check("hovering a member shows the probe", (await p.$$(".probe")).length === 1 && (await p.textContent(".probe")).includes("Member 1"));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(150);
+  await go(p, "Results"); await p.waitForTimeout(150);
   check("the Results page lists reactions and members", (await p.$$(".page .tbl tbody tr")).length >= pr2.reactions.length + pr2.members.length + 3 && (await p.textContent(".page")).includes("balance the loads"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   await p.mouse.click(col[0], col[1]); await p.keyboard.press("ArrowUp"); await p.waitForTimeout(150);
   check("an edit marks the results out of date", (await p.$$(".legend .stalebar")).length === 1);
   await p.click('.tabs > button:text-is("Help")'); await p.click('.ribbon button[title="Verification"]'); await p.waitForTimeout(250);
@@ -309,14 +319,14 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click(".legend .seg button:has-text('Per element')"); await p.waitForTimeout(200);
   check("stresses can be shown per element", await p.$eval(".legend .seg button:nth-child(2)", el => el.classList.contains("on")));
   await p.click(".legend .seg button:has-text('Smoothed')");
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   check("the Results page of a part shows equilibrium, reactions and extremes", (await p.textContent(".page")).includes("Largest and smallest values") && (await p.textContent(".page")).includes("balance the loads") && (await p.textContent(".page")).includes("Fixed"), (await p.textContent(".page")).slice(0, 200));
-  await p.click('.side button[title="Mesh"]'); await p.waitForTimeout(200);
+  await go(p, "Mesh"); await p.waitForTimeout(200);
   check("results arrive packed small and are unpacked by the window", typeof fix.bracket_results.mesh.nodes.$f32 === "string" && typeof fix.bracket_results.mesh.tris.$u32 === "string");
   check("the Mesh view shows the elements and their quality", (await p.textContent(".legend")).includes(`${br.mesh.tris.length.toLocaleString()} 6-node triangles`) && (await p.textContent(".legend")).includes("smallest angle"));
-  await p.click('.side button[title="Report"]'); await p.waitForTimeout(400);
+  await go(p, "Report"); await p.waitForTimeout(400);
   check("the Report view has the mesh, a contour picture with its scale, and the equilibrium check", (await p.textContent(".page")).includes("Mesh") && (await p.$$(".page .rpic img")).length >= 1 && (await p.$$(".page .rpic .cbar")).length >= 1 && (await p.textContent(".page")).includes("Equilibrium check"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   // Refine near an edge: a local size in the mesh settings.
   await p.click('.tree .step:nth-of-type(4) > .sthead'); await p.click('.ribbon button[title^="Click an edge or a point"]'); await p.waitForTimeout(100);
   const edgeAt = await p.evaluate(() => { const r = document.querySelector('.shape').getBoundingClientRect(); return [r.left + 2, r.top + r.height * 0.5]; });
@@ -358,9 +368,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the static diagrams are hidden while a mode is shown", (await p.$$(".diag")).length === 0);
   await p.click(".legend .modelist button:nth-child(2)"); await p.waitForTimeout(100);
   check("another mode can be picked", await p.$eval(".legend .modelist button:nth-child(2)", el => el.classList.contains("on")));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   check("the Results page lists the natural frequencies", (await p.textContent(".page")).includes("Natural frequencies") && (await p.$$(".page .tbl tbody tr")).length >= pmo.modes.length);
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   await p.click(".legend button:has-text('Back to the static results')"); await p.waitForTimeout(100);
   check("Back to the static results hides the modes", (await p.$$(".modeline")).length === 0);
   await open("bracket");
@@ -374,16 +384,16 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("Buckling lists the load factors under the canvas", (await p.$$(".legend .modelist button")).length === pbk.modes.length && (await p.textContent(".legend")).includes("Buckling load factors") && (await p.textContent(".legend .modelist")).includes("λ"));
   check("a buckled shape is drawn along every member", (await p.$$(".modeline")).length === fix.portal.m.members.length);
   check("the ribbon offers Buckled Shapes", (await p.$$('.ribbon button[title^="Show the buckled shapes"]')).length === 1);
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   check("the Results page lists the load factors", (await p.textContent(".page")).includes("Load factor λ") && (await p.textContent(".page")).includes(String(pbk.modes[0].lambda.toPrecision(3)).slice(0, 3)));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   await open("truss");
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.click('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]'); await p.waitForTimeout(400);
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   const tbk = unpack(fix.truss_buckle);
   check("a truss's squeezed bars are checked on their own, weakest first", (await p.textContent(".page")).includes("Truss bars in compression") && (await p.$eval(".page", el => [...el.querySelectorAll("h3 + .tbl tbody tr td:first-child")].map(td => td.textContent)))[0] === `Member ${fix.truss.m.members.findIndex(x => x.id === [...tbk.bars].sort((a, b) => a.lambda - b.lambda)[0].id) + 1}`);
   check("the bar that buckles first is named as the tree names it", /Member \d+, a truss bar, buckles on its own/.test(await p.textContent(".page")));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   await open("bracket");
   await p.click('.tree .step:nth-of-type(5) > .sthead');
   check("Buckling is off for parts", await p.$eval('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]', el => el.disabled || el.classList.contains("off")));
@@ -453,11 +463,11 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("once solved, the 3D view colours the members and checks equilibrium", (await p.textContent(".legend")).includes("Colour by") && (await p.textContent(".legend")).includes("Equilibrium"));
   await p.click('.tree .step:nth-of-type(6) > .sthead');
   check("Results offers colouring by a result in 3D", (await p.$$('.ribbon button:has-text("Moment My")')).length === 1);
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   const pg3 = await p.textContent(".page");
   check("the 3D Results page sums six ways and lists six reactions per support", pg3.includes("Σ Fz") && pg3.includes("Σ My about the origin") && (await p.$$eval(".page h2 + table thead tr", rs => rs.map(r => r.children.length))).includes(7), pg3.slice(0, 200));
   check("the 3D Results page lists every member with torque and both moments", (await p.$$(".page .tbl tbody tr.link")).length === pm.members.length && pg3.includes("|Mz| · |My|"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
+  await go(p, "Model"); await p.waitForTimeout(200);
   check("the 3D view's code is loaded once a 3D frame is shown", await p.evaluate(() => performance.getEntriesByType("resource").some(e => e.name.includes("view3d"))));
   // 3D frames vibrate and buckle (0.2.6).
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.click('.ribbon button[title="The lowest natural frequencies and their mode shapes"]'); await p.waitForTimeout(400);
@@ -466,9 +476,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.click('.ribbon button[title="The lowest buckling load factors of a frame and their shapes"]'); await p.waitForTimeout(400);
   const p3b = unpack(fix.platform_buckle);
   check("a 3D frame's buckling load factors are listed", (await p.$$(".legend .modelist button")).length === p3b.modes.length && (await p.textContent(".legend .modelist")).includes("λ"));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   check("the Results page says 3D buckling is by bending only", (await p.textContent(".page")).includes("twisting and lateral-torsional buckling of open sections"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   await p.click(".legend button:has-text('Back to the static results')"); await p.waitForTimeout(100);
   // 3D solids (0.3.0): the L-bracket extruded, its faces, the solve, the Results page.
   await open("bracket3d");
@@ -492,10 +502,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("the tree shows the solved solid's mesh, not 'not meshed' (0.3.0 real-app bug)", (await p.textContent(".tree")).includes("wedges"));
   await p.click('.tree .step:nth-of-type(6) > .sthead');
   check("the Results tab offers the solid's results", !(await p.$eval('.ribbon button:has-text("Von Mises")', el => el.disabled)));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   const sp3 = await p.textContent(".page");
   check("the 3D solid's Results page has the extremes, six sums and the reactions", sp3.includes("Largest and smallest values") && sp3.includes("Σ Fz") && sp3.includes("Σ Mx about the origin") && sp3.includes("Displacement in z"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(200);
+  await go(p, "Model"); await p.waitForTimeout(200);
   await open("blank-solid");
   check("a blank 3D solid opens in 3D and says to click a plane to sketch on (0.7.2)", (await p.textContent(".view3d")).includes("Build a part") && (await p.textContent(".view3d .empty")).includes("three planes"));
   // 0.3.5: DXF import and export.
@@ -526,10 +536,10 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("F5"); await p.waitForTimeout(500);
   const hl = await p.textContent(".legend");
   check("a solved 3D heat model shows temperatures and its heat balance", hl.includes("Temperature") && hl.includes("Heat balance") && !hl.includes("Deformed shape"), hl.slice(0, 200));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   const hp = await p.textContent(".page");
   check("its Results page lists the heat flowing through each face and the sum", hp.includes("Heat balance") && hp.includes("Fixed temperature") && hp.includes("Convection") && hp.includes("Heat flux in z"), hp.slice(0, 200));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   await open("bracket3d"); await p.waitForTimeout(200);
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.waitForTimeout(100);
   check("Natural Frequencies works for 3D solids", !(await p.$eval('.ribbon button[title^="The lowest natural frequencies"]', el => el.disabled)));
@@ -604,8 +614,9 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   const bmem = bm.members.find(x => x.hinge?.[0]);
   check("hinged beam ends are drawn as small circles", (await p.$$(".dsvg circle.hinge")).length === bm.members.filter(x => x.hinge?.[0]).length * 2);
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(100);
-  await p.click(`.dsvg [data-id="${bmem.id}"] line`, { force: true }).catch(() => {}); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(100);
+  // Picked in the tree: on the drawing its middle is under the distributed load's arrows.
+  await p.evaluate(n => [...document.querySelectorAll(".tree button.ti")].find(b => b.querySelector("span")?.textContent === n)?.click(), `Member ${bm.members.indexOf(bmem) + 1}`); await p.waitForTimeout(150);
   const ih = await p.textContent(".insp");
   check("a beam's Inspector has its hinges", ih.includes("Hinge at the start") && ih.includes("Hinge at the end"));
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title="Sections"]'); await p.waitForTimeout(200);
@@ -760,7 +771,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   // 0.4.4: rigid floors, on the building in an earthquake.
   await open("building"); await p.waitForTimeout(400);
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(80);
+  await go(p, "Model"); await p.waitForTimeout(80);
   await p.evaluate(() => window.__setSel?.([]));
   const rigidBox = await p.$('.insp label.chk:has-text("Rigid floors") input');
   check("a 3D frame's Model panel has Rigid floors, ticked for the building", !!rigidBox && await rigidBox.isChecked());
@@ -778,7 +789,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await open("xbrace"); await p.waitForTimeout(250);
   const xm = fix.xbrace.m, rod = xm.members.find(b => b.only === "tension");
   check("a settlement is drawn at its support", (await p.$$(".dsvg .la.settle")).length === 1);
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(80);
+  await go(p, "Model"); await p.waitForTimeout(80);
   await p.click(`.dsvg [data-id="${rod.id}"] line`, { force: true }).catch(() => {}); await p.waitForTimeout(150);
   check("a member's Inspector says what it carries", (await p.$eval(".insp select >> nth=2", s => s.value).catch(() => "")) === "tension" || (await p.textContent(".insp")).includes("Tension only"));
   await p.evaluate(() => { window.__solveKey = "xbrace_results"; document.activeElement?.blur?.(); });
@@ -799,7 +810,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const qm = fix.quake.m, qs = qm.steps[0];
   check("rigid end zones are drawn thick at the beams' ends", (await p.$$(".dsvg line.rigidz")).length === 2 * qm.members.filter(b => b.offset).length && qm.members.some(b => b.offset));
   const qb = qm.members.find(b => b.offset);
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(80);
+  await go(p, "Model"); await p.waitForTimeout(80);
   await p.click(`.dsvg [data-id="${qb.id}"] line >> nth=0`, { force: true }).catch(() => {}); await p.waitForTimeout(150);
   check("a beam's Inspector has its rigid ends", (await p.textContent(".insp")).includes("Rigid end at the start") && (await p.textContent(".insp")).includes("Rigid end at the end"));
   await p.keyboard.press("Escape");
@@ -862,7 +873,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   const plp = await lastOp();
   check("Plate Pressure clicked inside a plate puts a pressure on the whole plate", plp?.Add?.item?.Load?.at?.on === "plate" && plp.Add.item.Load.at.shape === slabId && plp.Add.item.Load.kind.kind === "pressure", JSON.stringify(plp));
   await p.keyboard.press("Escape"); await p.keyboard.press("Escape");
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(100);
+  await go(p, "Model"); await p.waitForTimeout(100);
   await p.click(`.tree :text-is("Slab")`); await p.waitForTimeout(150);
   check("a plate's Inspector has its thickness and plane", (await p.textContent(".insp")).includes("Thickness") && (await p.textContent(".insp")).includes("Plan plane"));
   await p.click('.sketchbar button:has-text("Finish Sketch")'); await p.waitForTimeout(250);
@@ -877,7 +888,7 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.click('.tree .step:nth-of-type(6) > .sthead'); await p.click('.ribbon button:has-text("Tables and Equilibrium")'); await p.waitForTimeout(250);
   const slabPage = await p.textContent(".page");
   check("the Results page lists the plates' extremes and the reactions balance", slabPage.includes("Plates") && slabPage.includes("Von Mises stress") && slabPage.includes("Membrane force Nx") && slabPage.includes("Discrete Kirchhoff"), slabPage.slice(0, 300));
-  await p.click('.side button[title="Model"]').catch(() => {}); await p.waitForTimeout(100);
+  await go(p, "Model"); await p.waitForTimeout(100);
   await p.evaluate(() => { window.__modesKey = "slab_modes"; });
   await p.click('.tree .step:nth-of-type(5) > .sthead'); await p.click('.ribbon button:has-text("Natural Frequencies")'); await p.waitForTimeout(500);
   await p.evaluate(() => { window.__modesKey = null; });
@@ -1089,15 +1100,15 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("F5"); await p.waitForTimeout(400);
   const vo = await p.$$eval(".legend .fpick option", os => os.map(o => o.textContent));
   check("a turned solid's results are radial, axial and hoop", vo.includes("Hoop stress σθ") && vo.includes("Radial stress σr") && vo.includes("Axial displacement"), vo.join(", "));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   check("its equilibrium check sums the forces along the axis only", (await p.textContent(".page")).includes("Σ F along the axis") && !(await p.textContent(".page")).includes("Σ M about the origin"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   // Heat sink: temperature contours and the heat balance.
   await open("fin"); await p.keyboard.press("F5"); await p.waitForTimeout(400);
   check("a heat model shows temperatures in °C and the heat balance", (await p.$eval(".legend .fpick", el => el.value)) === "t" && (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".legend")).includes("Heat balance"));
-  await p.click('.side button[title="Results"]'); await p.waitForTimeout(200);
+  await go(p, "Results"); await p.waitForTimeout(200);
   check("the heat Results page lists the heat flows and their sum", (await p.textContent(".page")).includes("Heat into the part") && (await p.textContent(".page")).includes("Sum"));
-  await p.click('.side button[title="Model"]'); await p.waitForTimeout(150);
+  await go(p, "Model"); await p.waitForTimeout(150);
   // The materials library.
   await p.click('.tree .step:nth-of-type(1) > .sthead'); await p.click('.ribbon button[title="Materials"]'); await p.waitForTimeout(150);
   await p.click(".dlg button:has-text('From the library')"); await p.waitForTimeout(250);
@@ -1236,8 +1247,8 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   await p.keyboard.press("Escape");
   await p.click('.ribbon button[title="Materials"]'); await p.waitForTimeout(150);
   check("the Materials dialog shows E in GPa", (await p.textContent(".dlg")).includes("GPa"));
-  await p.keyboard.press("Escape");
-  for (const v of ["Mesh", "Results", "Report", "Model"]) { await p.click(`.side button[title="${v}"]`); await p.waitForTimeout(100); }
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  for (const v of ["Mesh", "Results", "Report", "Model"]) { await go(p, v); await p.waitForTimeout(100); }
   for (const k of ["Print", "Options", "Roadmap", "Updates", "Export", "Home"]) { await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100); await p.click(`.bs aside button:has-text("${k}")`); await p.waitForTimeout(200); }
   check("print preview draws the model", true);
   // 0.7.1: sketch and 3D tools by the geometry engine, in the Datum window.
@@ -1360,6 +1371,52 @@ const check = (name, ok, info = "") => { console.log(`${ok ? "ok  " : "FAIL"} ${
   check("Solve after the solids changed meshes them again first", (await meshCalls()) === 2);
   check("the File page's Roadmap icon follows the text colour like the others (0.7.3, the user)", await p.evaluate(() => document.querySelector("#i-roadmap path")?.getAttribute("stroke") === "currentColor" && [...document.querySelectorAll(".bs aside button use, .tabs use")].length >= 0));
   await open("portal");
+  {
+    // 0.9.1 (the user): no side bar; the bottom panel (Messages, Solver monitor, Log) with Stop;
+    // the results in the right panel; the side panels widen; a 3D mesh's Mesh view stays in 3D.
+    check("there is no side bar, and no view icons in the status bar (0.9.1, the user)", (await p.$$("nav.side, .status .vsc")).length === 0 && (await p.$$(".console header button")).length >= 3);
+    await p.keyboard.press("F5"); await p.waitForTimeout(300);
+    check("after a solve, with nothing selected, the right panel shows the results, the model's settings folded below (0.9.1)", (await p.textContent(".insp header")).includes("Results") && (await p.$$(".insp .rinsp")).length === 1 && (await p.$$(".insp details.isub")).length === 1);
+    await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(150);
+    check("Messages keeps what the window said, with its time (0.9.1)", (await p.$$(".console .cmsg")).length >= 1 && (await p.textContent(".console .cmsgs")).includes("Solved"), await p.textContent(".console").catch(() => ""));
+    await p.click('.console header button:has-text("Log")'); await p.waitForTimeout(100);
+    check("the Log says when the solve started and finished (0.9.1)", /Solve.*started/.test(await p.textContent(".console .clog")) && /finished after/.test(await p.textContent(".console .clog")));
+    // A solve that runs a while: its progress arrives as solver events; Stop asks the shell to stop.
+    await p.click('.console header .cchev'); await p.waitForTimeout(100);
+    await p.evaluate(() => { window.__hold = new Promise(ok => { window.__release = ok; }); });
+    await p.keyboard.press("F5"); await p.waitForTimeout(150);
+    await p.evaluate(() => window.__emit("solver", [{ e: "increment", lambda: 0.25 }, { e: "iteration", it: 1, residual: 0.3 }, { e: "iteration", it: 2, residual: 2e-4 }, { e: "iteration", it: 3, residual: 4e-10 }, { e: "converged", lambda: 0.25, iterations: 3 }, { e: "increment", lambda: 0.5 }, { e: "cut", lambda: 0.375, why: "it did not converge in 30 iterations; the increment is halved" }, { e: "increment", lambda: 0.375 }, { e: "iteration", it: 1, residual: 0.02 }]));
+    await p.waitForTimeout(1200);
+    const mon = await p.textContent(".console .conbody").catch(() => "");
+    check("a solve that takes a while opens the Solver monitor by itself (0.9.1)", (await p.$eval(".console header button.on", el => el.textContent).catch(() => "")) === "Solver monitor", mon.slice(0, 200));
+    check("the monitor shows the increment, the load reached, the out-of-balance force and the cut-backs (0.9.1)", mon.includes("Solving") && mon.includes("Load reached") && mon.includes("25 %") && mon.includes("2.00e-2") && mon.includes("1 time") && (await p.$$(".console .cres polyline")).length === 1, mon.slice(0, 400));
+    check("the status bar says how far the solve is (0.9.1)", (await p.textContent(".status")).includes("increment 2"), await p.textContent(".status"));
+    await p.click('.console header button:has-text("Stop")'); await p.waitForTimeout(100);
+    check("Stop asks the solve to stop (0.9.1)", await p.evaluate(() => window.__calls.some(c => c[0] === "stop_solve")));
+    await p.evaluate(() => { window.__release(); window.__hold = null; }); await p.waitForTimeout(300);
+    check("a stopped solve says so in the monitor (0.9.1)", (await p.textContent(".console .conbody")).includes("Stopped"));
+    // The panels widen by dragging their edge, and the right one folds away.
+    const tw0 = await p.$eval(".tree", el => el.getBoundingClientRect().width);
+    const g = await p.$eval(".modelview > .vgrip", el => { const r = el.getBoundingClientRect(); return [r.left + 2, r.top + 200]; });
+    await p.mouse.move(g[0], g[1]); await p.mouse.down(); await p.mouse.move(g[0] + 60, g[1], { steps: 4 }); await p.mouse.up(); await p.waitForTimeout(100);
+    const tw1 = await p.$eval(".tree", el => el.getBoundingClientRect().width);
+    check("the steps panel widens by dragging its edge (0.9.1)", Math.abs(tw1 - tw0 - 60) < 4, `${tw0} → ${tw1}`);
+    await p.click(".insp header .ifold"); await p.waitForTimeout(100);
+    check("the right panel folds to a thin edge and comes back (0.9.1)", (await p.$$(".insp")).length === 0 && (await p.$$(".iunfold")).length === 1);
+    await p.click(".iunfold"); await p.waitForTimeout(100);
+    check("the right panel is back after unfolding", (await p.$$(".insp")).length === 1);
+    // The Results page has its way back.
+    await p.click('.insp .rinsp button:has-text("Tables and equilibrium")'); await p.waitForTimeout(250);
+    check("the Results page has a bar with the way back to the model (0.9.1)", (await p.$$('.pagebar button:has-text("Back to the model")')).length === 1);
+    await p.click('.pagebar button:has-text("Back to the model")'); await p.waitForTimeout(150);
+    // A 3D mesh's Mesh view: the elements drawn in 3D, not the flat drawing sheet (0.9.1, found in the audit).
+    await p.evaluate(f => { window.__next = f.elbow; }, fix);
+    await open("bracket");
+    const nm = await p.evaluate(() => window.__calls.filter(c => c[0] === "mesh").length);
+    await p.evaluate(() => window.__setView("mesh")); await p.waitForTimeout(400);
+    check("the Mesh view of a 3D mesh stays in 3D with the elements drawn, and says nothing about meshing a drawing (0.9.1)", (await p.$$(".view3d")).length >= 1 && (await p.$$(".dsvg")).length === 0 && (await p.evaluate(() => window.__calls.filter(c => c[0] === "mesh").length)) === nm && !(await p.textContent("body")).includes("nothing to mesh"));
+    await open("portal");
+  }
 
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(100);
   await p.click('.bs aside button:has-text("Print")'); await p.waitForTimeout(300);

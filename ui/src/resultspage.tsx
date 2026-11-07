@@ -1,0 +1,194 @@
+// The Results page (split from results.tsx in 0.9.1, loaded when first opened): the equilibrium
+// check, reactions, members and each kind's tables. The engine computes every number.
+import { For, Show } from "solid-js";
+import { Model, FrameResults, SpaceResults, SolidResults, SolidHeatResults, num, clean, isFrame } from "./api";
+import { fieldsFor } from "./parts";
+import { frameRes as results, partRes, spaceRes, solidRes, stale, model, setView, sel, setSel } from "./store";
+import { comp, utilColour, big } from "./results";
+import { fmt, unit } from "./units";
+import { C, imbalanceOf } from "./cmds";
+import { Help } from "./help";
+import { toD } from "./axes";
+import { Icon } from "./ui";
+import { faceLabel } from "./study";
+import type { Target } from "./api";
+/** A contact face's name (results.tsx stays clear of the tree's module, which imports it). */
+const faceName = (m: Model, t: Target) => { if (t.on !== "face") return "A face"; const n = m.volume?.faces[t.face]?.name; return n ? (m.volume?.source === "geometry" ? faceLabel(n) : n) : `Face ${t.face + 1}`; };
+import { PartResultsPage } from "./parts";
+import { ModesTable } from "./modes";
+
+
+const Eq = (p: { r: FrameResults }) => {
+  const rows: [string, number, number, "force" | "moment", number][] = [["Σ Fx", p.r.applied[0], p.r.reacted[0], "force", p.r.scale[0]], ["Σ Fy", p.r.applied[1], p.r.reacted[1], "force", p.r.scale[0]], ["Σ M about the origin", p.r.applied[2], p.r.reacted[2], "moment", p.r.scale[1]]];
+  return <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
+    <For each={rows}>{([l, a, b, q, sc]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(a, sc))}</td><td class="r">{fmt(q, clean(b, sc))}</td><td class="r">{fmt(q, clean(a + b, sc))}</td></tr>}</For></tbody></table>;
+};
+
+/** View › Results: the tables behind the pictures. */
+export const ResultsPage = () => {
+  const r = () => results(), m = () => model()!;
+  const nodeName = (id: number) => `Node ${m().nodes.findIndex(n => n.id === id) + 1}`;
+  return (
+    <div class="page">
+      <h1>Results <Help k="results" /></h1>
+      <ModesTable />
+      <Show when={partRes()}>{pr => <>
+        <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+        <Show when={pr().warnings.length}><For each={pr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+        <PartResultsPage r={pr()} />
+      </>}</Show>
+      <Show when={spaceRes()}>{sr => <SpaceResultsPage r={sr()} />}</Show>
+      <Show when={solidRes()}>{sr => { const x = sr(); return x.kind === "solid" ? <SolidResultsPage r={x} /> : <SolidHeatResultsPage r={x} />; }}</Show>
+      <Show when={(r() || !partRes()) && !spaceRes() && !solidRes()} fallback={null}><Show when={r()} fallback={<div class="emptypage"><Icon n="solve" size={34} /><b>Solve the model to see its results</b><p class="muted">{isFrame(m().analysis) ? "Deflections, reactions, the equilibrium check and the forces in every member." : m().analysis === "heat" ? "Temperatures, heat flux, the heat balance and the largest and smallest values." : "Stresses, displacements, reactions, the equilibrium check and the largest and smallest values."}</p><p><button class="btn pri" onClick={C.solve}>Solve (F5)</button></p></div>}>{rr => <>
+        <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+        <Show when={rr().warnings.length}><For each={rr().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+        <h2>Equilibrium check <Help k="equilibrium" /></h2>
+        <p classList={{ okline: imbalanceOf(rr()) <= 1e-6, badline: imbalanceOf(rr()) > 1e-6 }}><Icon n={imbalanceOf(rr()) > 1e-6 ? "info" : "check"} /> {imbalanceOf(rr()) > 1e-6 ? `The reactions miss the loads by ${num(imbalanceOf(rr()) * 100, 2)} %.` : `The reactions balance the loads (difference ${num(imbalanceOf(rr()) * 100, 2)} % of the load).`}</p>
+        <Eq r={rr()} />
+        <h2>Reactions</h2>
+        <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy ({unit("force")})</th><th class="r">M ({unit("moment")})</th></tr></thead><tbody>
+          <For each={rr().reactions}>{x => <tr><td>{nodeName(x.node)}</td><td class="r">{fmt("force", clean(x.fx, rr().scale[0])).split(" ")[0]}</td><td class="r">{fmt("force", clean(x.fy, rr().scale[0])).split(" ")[0]}</td><td class="r">{fmt("moment", clean(x.m, rr().scale[1])).split(" ")[0]}</td></tr>}</For></tbody></table>
+        <h2>Members</h2>
+        <table class="tbl"><thead><tr><th>Member</th><th class="r">Length ({unit("coord")})</th><th class="r">N max / min ({unit("force")})</th><th class="r">|V| max ({unit("force")})</th><th class="r">|M| max ({unit("moment")})</th><th class="r">Deflection max ({unit("len")})</th><th class="r">Stress ({unit("stress")})</th><th class="r">Utilisation</th></tr></thead><tbody>
+          <For each={rr().members}>{(mr, i) => <tr class="link" classList={{ on: sel().includes(mr.id) }} onClick={() => { setSel([mr.id]); setView("model"); }}>
+            <td>Member {i() + 1} · {m().members.find(x => x.id === mr.id)?.kind}</td><td class="r">{fmt("coord", mr.length).split(" ")[0]}</td>
+            <td class="r">{fmt("force", clean(Math.max(...mr.n), big("n"))).split(" ")[0]} / {fmt("force", clean(Math.min(...mr.n), big("n"))).split(" ")[0]}</td>
+            <td class="r">{fmt("force", clean(Math.max(...mr.v.map(Math.abs)), big("v"))).split(" ")[0]}</td><td class="r">{fmt("moment", clean(Math.max(...mr.m.map(Math.abs)), big("m"))).split(" ")[0]}</td>
+            <td class="r">{fmt("len", Math.max(...mr.d.map(d => Math.hypot(d[0], d[1])))).split(" ")[0]}</td><td class="r">{fmt("stress", mr.stress).split(" ")[0]}</td>
+            <td class="r"><span class="upill" style={{ background: utilColour(mr.util) }}>{mr.util ? `${num(mr.util * 100, 3)} %` : "—"}</span></td></tr>}</For></tbody></table>
+        <p class="muted small">Stress is |N|/A + |M|/Z, the largest along the member; utilisation is that over the yield strength. Buckling of members in compression is not in these numbers: see Solve › Buckling.</p>
+        <h2>Solver</h2>
+        <table class="tbl"><tbody>
+          <tr><td>Equations</td><td class="r">{rr().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{rr().stats.nonzeros.toLocaleString()}</td></tr>
+          <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{rr().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(rr().stats.ms, 3)} ms</td></tr>
+          <Show when={rr().path}>{c => <tr><td>Path</td><td class="r">{c().load.length - 1} increments, {c().iterations} Newton iterations</td></tr>}</Show>
+          <tr><td>Method</td><td>{rr().path ? "Large deflection: corotational 2D beam and truss elements, every beam cut into pieces; Newton or arc-length path; sparse Cholesky, or LU past a limit load" : "2D Euler–Bernoulli beam and truss elements; sparse Cholesky with a fill-reducing ordering"}</td></tr></tbody></table>
+      </>}</Show></Show>
+    </div>
+  );
+};
+
+/** The Results page of a 3D frame (0.2.4): equilibrium in six sums, reactions, members. */
+export const SpaceResultsPage = (p: { r: SpaceResults }) => {
+  const m = () => model()!, r = () => p.r;
+  const nodeName = (id: number) => `Node ${m().nodes.findIndex(n => n.id === id) + 1}`;
+  /** A support on a plate's edge (0.4.1): its forces summed, moments about the edge's middle. */
+  const supName = (id: number) => { const s = m().supports.find(x => x.id === id), at = s?.at; return at?.on === "edge" ? `${m().shapes.find(x => x.id === at.shape)?.name ?? "Plate"}, edge ${at.edge + 1}` : "Support"; };
+  const pf = (k: string) => r().plates?.fields.find(f => f.key === k);
+  const top = (k: "n" | "vy" | "vz" | "t" | "my" | "mz") => Math.max(0, ...r().members.flatMap(mr => mr[k].map(Math.abs)));
+  const absMax = (v: number[]) => Math.max(0, ...v.map(Math.abs));
+  const rows: [string, number, "force" | "moment"][] = [["Σ Fx", 0, "force"], ["Σ Fy", 1, "force"], ["Σ Fz", 2, "force"], ["Σ Mx about the origin", 3, "moment"], ["Σ My about the origin", 4, "moment"], ["Σ Mz about the origin", 5, "moment"]];
+  const sc = (k: number) => r().scale[k < 3 ? 0 : 1];
+  const cell = (q: "force" | "moment", v: number, s: number) => fmt(q, clean(v, s)).split(" ")[0];
+  return <>
+    <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+    <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+    <h2>Equilibrium check <Help k="equilibrium" /></h2>
+    <p classList={{ okline: imbalanceOf(r()) <= 1e-6, badline: imbalanceOf(r()) > 1e-6 }}><Icon n={imbalanceOf(r()) > 1e-6 ? "info" : "check"} /> {imbalanceOf(r()) > 1e-6 ? `The reactions miss the loads by ${num(imbalanceOf(r()) * 100, 2)} %.` : `The reactions balance the loads (difference ${num(imbalanceOf(r()) * 100, 2)} % of the load).`}</p>
+    <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
+      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(comp(r().applied, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().reacted, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().applied, k) + comp(r().reacted, k), sc(k)))}</td></tr>}</For></tbody></table>
+    <h2>Reactions</h2>
+    <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th><th class="r">Mx ({unit("moment")})</th><th class="r">My</th><th class="r">Mz</th></tr></thead><tbody>
+      <For each={r().reactions}>{x => <tr><td>{x.node ? nodeName(x.node) : supName(x.support ?? 0)}</td><For each={[0, 1, 2, 3, 4, 5]}>{k => <td class="r">{cell(k < 3 ? "force" : "moment", comp(x.f, k), sc(k))}</td>}</For></tr>}</For></tbody></table>
+    <Show when={r().plates}>{pl => <>
+      <h2>Plates <Help k="plates" /></h2>
+      <p class="muted small">{pl().tris.length.toLocaleString()} triangles, {pl().nodes.length.toLocaleString()} nodes. Moments and membrane forces are per length, in each plate's own axes (u across its plane, v up it).</p>
+      <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>Where (x, y, z)</th><th class="r">Largest</th><th>Where (x, y, z)</th></tr></thead><tbody>
+        <For each={[["umag", "Movement", "len"], ["uy", "Movement in y", "len"], ["vm", "Von Mises stress (worse face)", "stress"], ["mx", "Moment Mx", "force"], ["my", "Moment My", "force"], ["mxy", "Twisting moment Mxy", "force"], ["nx", "Membrane force Nx", "dist"], ["ny", "Membrane force Ny", "dist"], ["nxy", "Membrane shear Nxy", "dist"]] as const}>{([k, l, q]) => <Show when={pf(k)}>{f => <tr><td>{l}{q === "force" ? ` (${unit("moment")}/${unit("coord")})` : ""}</td><td class="r">{fmt(q, f().min)}</td><td class="small">{f().at_min.map(v => fmt("coord", v).split(" ")[0]).join(", ")}</td><td class="r">{fmt(q, f().max)}</td><td class="small">{f().at_max.map(v => fmt("coord", v).split(" ")[0]).join(", ")}</td></tr>}</Show>}</For>
+      </tbody></table></>}</Show>
+    <h2>Members</h2>
+    <table class="tbl"><thead><tr><th>Member</th><th class="r">Length ({unit("coord")})</th><th class="r">N max / min ({unit("force")})</th><th class="r">|Vy| · |Vz|</th><th class="r">|T| ({unit("moment")})</th><th class="r">|Mz| · |My|</th><th class="r">Deflection ({unit("len")})</th><th class="r">Stress ({unit("stress")})</th><th class="r">Utilisation</th></tr></thead><tbody>
+      <For each={r().members}>{(mr, i) => <tr class="link" classList={{ on: sel().includes(mr.id) }} onClick={() => { setSel([mr.id]); setView("model"); }}>
+        <td>Member {i() + 1} · {m().members.find(x => x.id === mr.id)?.kind}</td><td class="r">{fmt("coord", mr.length).split(" ")[0]}</td>
+        <td class="r">{cell("force", Math.max(...mr.n), top("n"))} / {cell("force", Math.min(...mr.n), top("n"))}</td>
+        <td class="r">{cell("force", absMax(mr.vy), top("vy"))} · {cell("force", absMax(mr.vz), top("vz"))}</td>
+        <td class="r">{cell("moment", absMax(mr.t), top("t"))}</td>
+        <td class="r">{cell("moment", absMax(mr.mz), top("mz"))} · {cell("moment", absMax(mr.my), top("my"))}</td>
+        <td class="r">{fmt("len", Math.max(...mr.d.map(d => Math.hypot(d[0], d[1], d[2])))).split(" ")[0]}</td><td class="r">{fmt("stress", mr.stress).split(" ")[0]}</td>
+        <td class="r"><span class="upill" style={{ background: utilColour(mr.util) }}>{mr.util ? `${num(mr.util * 100, 3)} %` : "—"}</span></td></tr>}</For></tbody></table>
+    <p class="muted small">Mz bends about the section's strong axis (across its depth h), My about the other; T twists the member. Stress is |N|/A + |Mz|/Z + |My|/Zy, the largest along the member, and utilisation is that over the yield strength; the shear stress of twisting is not in it. Buckling of 3D frames is not checked yet.</p>
+    <h2>Solver</h2>
+    <table class="tbl"><tbody>
+      <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
+      <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
+      <Show when={r().path}>{c => <tr><td>Path</td><td class="r">{c().load.length - 1} increments, {c().iterations} Newton iterations</td></tr>}</Show>
+      <tr><td>Method</td><td>{r().path ? "Large rotations: corotational 3D beams (every beam cut into pieces that turn as rigid bodies in space) and truss bars; Newton or arc-length path; sparse LU" : "3D beam elements (axial, torsion, bending about both axes) and truss bars"}{r().plates ? "; flat shell triangles for the plates (Allman's membrane with drilling rotations, Discrete Kirchhoff bending)" : ""}; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+  </>;
+};
+
+/** The Results page of 3D heat conduction (0.3.4): the mesh, the largest and smallest values with
+ * where they are, and the heat balance by fixed temperature and load. */
+export const SolidHeatResultsPage = (p: { r: SolidHeatResults }) => {
+  const m = () => model()!, r = () => p.r;
+  const at = (q: number[]) => toD(q as [number, number, number]).map(c => fmt("coord", c).split(" ")[0]).join(", ");
+  const where = (t: any) => !t ? "" : t.on === "end" ? (t.front ? "front face" : "back face") : t.on === "body" ? "the whole part" : t.on === "edge" || t.on === "line" ? `${m().shapes.find(x => x.id === t.shape)?.name ?? "Shape"}, edge ${t.edge + 1}` : "";
+  const supName = (id: number) => { const s = m().supports.find(x => x.id === id); return s ? `Fixed temperature, ${where(s.at)}` : "A fixed temperature"; };
+  const loadName = (id: number) => { const l = m().loads.find(x => x.id === id); return l ? `${({ flux: "Heat flux", convection: "Convection", heat: "Heat generation" } as Record<string, string>)[l.kind.kind] ?? "A load"}, ${where(l.at)}` : "A load"; };
+  const flows = () => [...r().supports.map(f => [supName(f.id), f.q] as [string, number]), ...r().loads.map(f => [loadName(f.id), f.q] as [string, number])];
+  return <>
+    <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+    <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+    <h2>Mesh</h2>
+    <table class="tbl"><tbody>
+      <Show when={m().volume} fallback={<>
+      <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} {m().revolve ? `round ${num(m().revolve! * 180 / Math.PI, 4)}°` : `through ${fmt("len", m().thickness)}`}; {r().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></>}>{v => <>
+      <tr><td>Elements</td><td>{v().elements.toLocaleString()} {v().order === 2 ? "10-node (quadratic)" : "4-node (linear)"} tetrahedra; {v().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Mesh</td><td>{v().source === "geometry" ? `From the modelled solids, by Gmsh${m().mesh.size > 0 ? `, element size ${fmt("len", m().mesh.size)}` : ", automatic element size"}${m().mesh.refine.length ? `, finer near ${m().mesh.refine.length} ${m().mesh.refine.length === 1 ? "face" : "faces"}` : ""}` : `Imported (${v().source})`}</td></tr></>}</Show></tbody></table>
+    <h2>Largest and smallest values</h2>
+    <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at ({unit("coord")})</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
+      <For each={fieldsFor("solidheat")}>{d => { const f = r().fields.find(x => x.key === d.key)!; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For></tbody></table>
+    <h2>Heat balance <Help k="equilibrium" /></h2>
+    <p classList={{ okline: r().imbalance <= 1e-6, badline: r().imbalance > 1e-6 }}><Icon n={r().imbalance > 1e-6 ? "info" : "check"} /> {r().imbalance > 1e-6 ? `Heat in and out differ by ${num(r().imbalance * 100, 2)} %.` : `Heat in equals heat out (difference ${num(r().imbalance * 100, 2)} % of the flow).`}</p>
+    <table class="tbl"><thead><tr><th>Where</th><th class="r">Heat into the part ({unit("power")})</th></tr></thead><tbody>
+      <For each={flows()}>{([n, q]) => <tr><td>{n}</td><td class="r">{fmt("power", q).split(" ")[0]}</td></tr>}</For>
+      <tr><td><b>Sum</b></td><td class="r"><b>{fmt("power", flows().reduce((a, f) => a + f[1], 0)).split(" ")[0]}</b></td></tr></tbody></table>
+    <p class="muted small">Heat flux is −k ∇T, averaged at the nodes from the elements round them. Negative flows leave the part.</p>
+    <h2>Solver</h2>
+    <table class="tbl"><tbody>
+      <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
+      <tr><td>Method</td><td>The section's triangle mesh swept through the thickness (or round the turn) into wedges, steady conduction; sparse Cholesky with a fill-reducing ordering</td></tr></tbody></table>
+  </>;
+};
+
+/** The Results page of a 3D solid (0.3.0): the mesh, the largest and smallest values with where
+ * they are, the reactions and the equilibrium check in six sums. */
+export const SolidResultsPage = (p: { r: SolidResults }) => {
+  const m = () => model()!, r = () => p.r;
+  const sc = (k: number) => r().scale[k < 3 ? 0 : 1];
+  const at = (q: number[]) => toD(q as [number, number, number]).map(c => fmt("coord", c).split(" ")[0]).join(", ");
+  const rows: [string, number, "force" | "moment"][] = [["Σ Fx", 0, "force"], ["Σ Fy", 1, "force"], ["Σ Fz", 2, "force"], ["Σ Mx about the origin", 3, "moment"], ["Σ My about the origin", 4, "moment"], ["Σ Mz about the origin", 5, "moment"]];
+  const supName = (id: number) => { const s = m().supports.find(x => x.id === id); if (!s) return "A support"; return s.at.on === "end" ? (s.at.front ? "Front face" : "Back face") : s.at.on === "edge" || s.at.on === "line" ? `${m().shapes.find(x => x.id === (s.at as any).shape)?.name ?? "Shape"}, edge ${(s.at as any).edge + 1}${s.at.on === "line" ? `, line at ${num(s.at.at * 100, 3)} %` : ""}` : "A support"; };
+  return <>
+    <Show when={stale()}><p class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again</button></p></Show>
+    <Show when={r().warnings.length}><For each={r().warnings}>{w => <p class="issue warn">{w}</p>}</For></Show>
+    <h2>Mesh</h2>
+    <table class="tbl"><tbody>
+      <Show when={m().volume} fallback={<>
+      <tr><td>Elements</td><td>{r().elements.toLocaleString()} {r().order === 2 ? "18-node (quadratic)" : "6-node (linear)"} wedges in {r().layers} {r().layers === 1 ? "layer" : "layers"} {m().revolve ? `round ${num(m().revolve! * 180 / Math.PI, 4)}°` : `through ${fmt("len", m().thickness)}`}; {r().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Section mesh</td><td>element size {fmt("len", r().size)}; smallest angle {num(r().quality.min_angle, 3)}°</td></tr></>}>{v => <>
+      <tr><td>Elements</td><td>{v().elements.toLocaleString()} {v().order === 2 ? "10-node (quadratic)" : "4-node (linear)"} tetrahedra; {v().nodes.toLocaleString()} nodes</td></tr>
+      <tr><td>Mesh</td><td>{v().source === "geometry" ? `From the modelled solids, by Gmsh${m().mesh.size > 0 ? `, element size ${fmt("len", m().mesh.size)}` : ", automatic element size"}${m().mesh.refine.length ? `, finer near ${m().mesh.refine.length} ${m().mesh.refine.length === 1 ? "face" : "faces"}` : ""}` : `Imported (${v().source})`}</td></tr></>}</Show></tbody></table>
+    <h2>Largest and smallest values</h2>
+    <table class="tbl"><thead><tr><th>Result</th><th class="r">Smallest</th><th>at ({unit("coord")})</th><th class="r">Largest</th><th>at</th></tr></thead><tbody>
+      <For each={fieldsFor("solid").filter(d => d.key !== "sf")}>{d => { const f = r().fields.find(x => x.key === d.key)!; return <tr><td>{d.name}</td><td class="r">{fmt(d.q, f.min)}</td><td>{at(f.at_min)}</td><td class="r">{fmt(d.q, f.max)}</td><td>{at(f.at_max)}</td></tr>; }}</For>
+      <Show when={r().fields.find(f => f.key === "sf")!.max > 0}><tr><td>Smallest safety factor against yield</td><td class="r">{num(r().fields.find(f => f.key === "sf")!.min || Math.min(...r().fields.find(f => f.key === "sf")!.v.filter(v => v > 0)), 3)}</td><td colSpan={3} /></tr></Show></tbody></table>
+    <h2>Equilibrium check <Help k="equilibrium" /></h2>
+    <p classList={{ okline: imbalanceOf(r()) <= 1e-6, badline: imbalanceOf(r()) > 1e-6 }}><Icon n={imbalanceOf(r()) > 1e-6 ? "info" : "check"} /> {imbalanceOf(r()) > 1e-6 ? `The reactions miss the loads by ${num(imbalanceOf(r()) * 100, 2)} %.` : `The reactions balance the loads (difference ${num(imbalanceOf(r()) * 100, 2)} % of the load).`}</p>
+    <table class="tbl"><thead><tr><th /><th class="r">Loads</th><th class="r">Reactions</th><th class="r">Sum</th></tr></thead><tbody>
+      <For each={rows}>{([l, k, q]) => <tr><td>{l}</td><td class="r">{fmt(q, clean(comp(r().applied, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().reacted, k), sc(k)))}</td><td class="r">{fmt(q, clean(comp(r().applied, k) + comp(r().reacted, k), sc(k)))}</td></tr>}</For></tbody></table>
+    <h2>Reactions</h2>
+    <table class="tbl"><thead><tr><th>Support</th><th class="r">Fx ({unit("force")})</th><th class="r">Fy</th><th class="r">Fz</th></tr></thead><tbody>
+      <For each={r().reactions}>{x => <tr><td>{supName(x.support)}</td><For each={[0, 1, 2]}>{k => <td class="r">{fmt("force", clean(comp(x.f, k), sc(0))).split(" ")[0]}</td>}</For></tr>}</For></tbody></table>
+    <Show when={r().contact?.length}><h2>Contact <Help k="contact" /></h2>
+    <table class="tbl"><thead><tr><th>Contact</th><th class="r">Pressing ({unit("force")})</th><th class="r">Friction</th><th class="r">Touching</th><th class="r">Sliding</th><th class="r">Largest pressure ({unit("stress")})</th></tr></thead><tbody>
+      <For each={r().contact!}>{c => { const k = (m().contacts ?? []).find(x => x.id === c.id); return <tr><td>{k ? `${faceName(m(), k.a)} on ${faceName(m(), k.b)}` : "A contact"}</td><td class="r">{fmt("force", c.normal).split(" ")[0]}</td><td class="r">{fmt("force", c.friction).split(" ")[0]}</td><td class="r">{c.touching} of {c.nodes}</td><td class="r">{c.sliding}</td><td class="r">{fmt("stress", c.max_pressure).split(" ")[0]}</td></tr>; }}</For></tbody></table>
+    <p class="muted small">Pressing: the force across the faces; friction: its size along them. Touching and sliding count the nodes of the first face over the second. The faces overlap by at most {fmt("len", Math.max(0, ...r().contact!.map(c => c.max_overlap)))} (the penalty).</p></Show>
+    <p class="muted small">Stresses are averaged at the nodes from the elements round them. Where a fixed face meets a free one, or at a sharp inside corner, the stress keeps rising as the mesh gets finer (a singularity): read the stress a little away from it.</p>
+    <h2>Solver</h2>
+    <table class="tbl"><tbody>
+      <tr><td>Equations</td><td class="r">{r().stats.equations.toLocaleString()}</td></tr><tr><td>Stored stiffness entries</td><td class="r">{r().stats.nonzeros.toLocaleString()}</td></tr>
+      <tr><td>Residual ‖Ku − f‖ / ‖f‖</td><td class="r">{r().stats.residual.toExponential(1)}</td></tr><tr><td>Time</td><td class="r">{num(r().stats.ms, 3)} ms</td></tr>
+      <tr><td>Method</td><td>{model()?.parts?.length ? "An assembly of parts: each part's sketch swept into prisms cut into 4- or 10-node tetrahedra, placed and joined, parts tied where they touch (penalty); linear elastic, stresses averaged at the nodes, sparse Cholesky" : model()?.volume?.source === "geometry" ? "The modelled solids meshed by Gmsh into 10-node tetrahedra (isoparametric, volume coordinates; 4 Gauss points), linear elastic, stresses averaged at the nodes, sparse Cholesky" : model()?.volume ? "An imported mesh of 4- or 10-node tetrahedra (isoparametric, volume coordinates; 1 and 4 Gauss points), linear elastic, stresses averaged at the nodes, sparse Cholesky" : <>The section's triangle mesh swept through the thickness (or round the turn) into wedges (triangle × line), linear elasticity; sparse Cholesky with a fill-reducing ordering, on every core</>}</td></tr></tbody></table>
+  </>;
+};

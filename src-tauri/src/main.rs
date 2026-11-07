@@ -8,7 +8,8 @@ use datum_core::model::{self, Analysis, Model, SectionShape};
 use datum_core::{bench, examples, materials, mesh, sections};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
@@ -339,14 +340,20 @@ fn examples_list() -> Vec<examples::Example> {
 
 /// A new model: a worked example by id, or a blank one of a kind (frame, stress, strain, heat).
 #[tauri::command]
-fn new_model(st: State<St>, cad: State<CadSt>, example: Option<String>, analysis: Option<Analysis>) -> R<Out> {
+async fn new_model(st: State<'_, St>, cad: State<'_, CadSt>, example: Option<String>, analysis: Option<Analysis>) -> R<Out> {
     // A modelled example (0.7.4): its design, meshed by Gmsh, with its supports, loads and steps.
-    if let Some(id) = example.as_deref().filter(|id| id.starts_with("m-")) {
-        let (c, setup) = datum_cad::examples::build(id)?;
-        let work = std::env::temp_dir().join(format!("datum-mesh-{}", std::process::id()));
-        let ms = c.mesh(setup.size, &gmsh_path(), &work)?;
-        let _ = std::fs::remove_dir_all(&work);
-        let m = datum_cad::examples::place(&setup, ms)?;
+    // Meshed off the window's thread (0.9.1: the window froze while Gmsh ran).
+    if let Some(id) = example.clone().filter(|id| id.starts_with("m-")) {
+        let (c, m) = tauri::async_runtime::spawn_blocking(move || -> R<_> {
+            let (c, setup) = datum_cad::examples::build(&id)?;
+            let work = std::env::temp_dir().join(format!("datum-mesh-{}-{id}", std::process::id()));
+            let ms = c.mesh(setup.size, &gmsh_path(), &work);
+            let _ = std::fs::remove_dir_all(&work);
+            let ms = ms.map_err(|e| format!("This example is meshed by Gmsh when it opens, and meshing failed: {e}"))?;
+            Ok((c, datum_cad::examples::place(&setup, ms)?))
+        })
+        .await
+        .map_err(|e| e.to_string())??;
         *cad.lock() = c;
         let mut a = st.lock();
         let m = fresh(&a, m);
@@ -387,12 +394,63 @@ async fn import_mesh(app: AppHandle, st: State<'_, St>, path: Option<String>, un
     Ok(Some(out(&a)))
 }
 
-/// Solve the open model: frames and trusses, plane stress or strain, or heat conduction. Parts are
-/// meshed first. Runs off the window's thread.
+/// The flag the solve running now watches (0.9.1): Solve › Stop sets it.
+static RUNNING: Mutex<Option<Arc<AtomicBool>>> = Mutex::new(None);
+
+/// Run `f` off the window's thread, its progress sent to the window as `solver` events: batches of
+/// `datum_core::progress::Event`, about ten a second (the latest time only, of a time-stepped solve).
+async fn watched<T: Send + 'static>(app: AppHandle, f: impl FnOnce() -> T + Send + 'static) -> R<T> {
+    use datum_core::progress::{watch, Event};
+    use std::{cell::RefCell, rc::Rc, time::Instant};
+    let flag = Arc::new(AtomicBool::new(false));
+    *RUNNING.lock().unwrap_or_else(|e| e.into_inner()) = Some(flag.clone());
+    let r = tauri::async_runtime::spawn_blocking(move || {
+        let buf = Rc::new(RefCell::new((Vec::<Event>::new(), Instant::now())));
+        let (b2, a2) = (buf.clone(), app.clone());
+        let sink = move |e: &Event| {
+            let mut b = b2.borrow_mut();
+            if matches!(e, Event::Time { .. }) && matches!(b.0.last(), Some(Event::Time { .. })) {
+                b.0.pop();
+            }
+            b.0.push(e.clone());
+            if b.1.elapsed().as_millis() >= 100 || b.0.len() >= 500 {
+                let _ = a2.emit("solver", &b.0);
+                b.0.clear();
+                b.1 = Instant::now();
+            }
+        };
+        let out = watch(sink, flag, f);
+        let rest = std::mem::take(&mut buf.borrow_mut().0);
+        if !rest.is_empty() {
+            let _ = app.emit("solver", &rest);
+        }
+        out
+    })
+    .await
+    .map_err(|e| e.to_string());
+    *RUNNING.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    r
+}
+
+/// Solve › Stop (0.9.1): the solve running ends at its next increment or time step, keeping what
+/// it has reached.
 #[tauri::command]
-async fn solve(st: State<'_, St>, which: Option<datum_core::cases::Which>) -> R<serde_json::Value> {
+fn stop_solve() -> bool {
+    match RUNNING.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
+        Some(f) => {
+            f.store(true, Ordering::SeqCst);
+            true
+        }
+        None => false,
+    }
+}
+
+/// Solve the open model: frames and trusses, plane stress or strain, or heat conduction. Parts are
+/// meshed first. Runs off the window's thread, its progress shown in the solver monitor.
+#[tauri::command]
+async fn solve(app: AppHandle, st: State<'_, St>, which: Option<datum_core::cases::Which>) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::solve_for(&m, which).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+    watched(app, move || datum_core::solve_for(&m, which).map(|r| small(&r))).await?
 }
 
 /// The largest and smallest member forces and reactions over every combination (0.3.3).
@@ -415,16 +473,16 @@ fn small<T: Serialize>(r: &T) -> serde_json::Value {
 
 /// The lowest natural frequencies and mode shapes of the open model (0.2.2).
 #[tauri::command]
-async fn modes(st: State<'_, St>, count: usize) -> R<serde_json::Value> {
+async fn modes(app: AppHandle, st: State<'_, St>, count: usize) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::modes(&m, count).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+    watched(app, move || datum_core::modes(&m, count).map(|r| small(&r))).await?
 }
 
 /// The lowest buckling load factors and shapes of the open frame (0.2.3; 3D frames 0.2.6), sent as modes.
 #[tauri::command]
-async fn buckling(st: State<'_, St>, count: usize, which: Option<datum_core::cases::Which>) -> R<serde_json::Value> {
+async fn buckling(app: AppHandle, st: State<'_, St>, count: usize, which: Option<datum_core::cases::Which>) -> R<serde_json::Value> {
     let m = st.lock().doc.m.clone();
-    tauri::async_runtime::spawn_blocking(move || datum_core::buckling_for(&m, count, which).map(|r| small(&r))).await.map_err(|e| e.to_string())?
+    watched(app, move || datum_core::buckling_for(&m, count, which).map(|r| small(&r))).await?
 }
 
 /// Mesh the open part without solving it (the Mesh view and its statistics).
@@ -793,6 +851,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            stop_solve,
             cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])

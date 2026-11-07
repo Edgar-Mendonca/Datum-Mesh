@@ -209,8 +209,12 @@ pub fn history<S: Structure>(s: &S, damping: (f64, f64), dt: f64, steps: usize, 
         let (mx, kx) = (mul(s.mass(), x), s.k().mul(x));
         (0..n).map(|i| alpha * mx[i] + beta * kx[i]).collect()
     };
+    let every = (steps / 200).max(1);
     for step in 1..=steps {
         let t = step as f64 * dt;
+        if step % every == 0 || step == steps {
+            crate::progress::time(t, steps as f64 * dt, step);
+        }
         let f = load(t);
         let mterm: Vec<f64> = (0..n).map(|i| c0 * u[i] + 4.0 / dt * v[i] + a[i]).collect();
         let cterm: Vec<f64> = (0..n).map(|i| c1 * u[i] + v[i]).collect();

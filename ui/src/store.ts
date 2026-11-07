@@ -174,7 +174,11 @@ export const loadOut = async (cmd: string, args?: object) => {
 // ---------- messages, menus, dialogs ----------
 export const [msg, setMsg] = createSignal<{ text: string; ok: boolean } | null>(null);
 let timer = 0;
-export const toast = (text: string, ok = false) => { setMsg({ text, ok }); clearTimeout(timer); timer = window.setTimeout(() => setMsg(null), ok ? 3000 : 7000); };
+/** Messages (0.9.1): everything said to the person is kept, with its time, in the bottom panel. */
+export type Note = { at: number; level: "info" | "warn" | "error"; text: string };
+export const [notes, setNotes] = createSignal<Note[]>([]);
+export const note = (text: string, level: Note["level"] = "info") => setNotes(v => [...v.slice(-499), { at: Date.now(), level, text }]);
+export const toast = (text: string, ok = false) => { note(text, ok ? "info" : "warn"); setMsg({ text, ok }); clearTimeout(timer); timer = window.setTimeout(() => setMsg(null), ok ? 3000 : 7000); };
 export type Item = { label: string; run?: () => void; keys?: string; off?: boolean; on?: boolean; sub?: Item[]; icon?: string } | "-";
 export const [menu, setMenu] = createSignal<{ x: number; y: number; items: Item[] } | null>(null);
 export const openMenu = (e: MouseEvent | { x: number; y: number }, items: Item[]) => {
