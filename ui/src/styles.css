@@ -267,7 +267,7 @@ tr.link:hover td { background: var(--pale); }
 .tile:hover { border-color: var(--blue); box-shadow: 0 3px 12px rgba(20,50,94,.12); }
 .tile .pic { height: 90px; background: var(--panel); border-radius: 4px; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; color: var(--blue); position: relative; overflow: hidden; }
 .tile .pic svg { width: 100%; height: 100%; }
-.tile .pic svg.ic { width: 26px; height: 26px; }
+.tile .pic svg.ic { width: 54px; height: 54px; stroke-width: 1.4; }
 .tile .pic small { position: absolute; right: 6px; top: 3px; font-size: 10px; color: var(--muted); }
 .tile b { font-size: 12.5px; }
 .tile span { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
@@ -1263,3 +1263,13 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .exsearch { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--bg2); padding: 0 8px; height: 26px; width: 280px; }
 .exsearch svg { width: 15px; height: 15px; color: var(--muted); }
 .exsearch input { border: 0; outline: 0; background: transparent; flex: 1; font-size: 12px; }
+
+/* 0.10.0 File › Home: recent models as cards. */
+.recentc { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.rcard { display: flex; gap: 10px; align-items: center; text-align: left; padding: 8px 10px; background: var(--panel); border: 1px solid var(--line); cursor: pointer; min-width: 0; }
+.rcard:hover { border-color: var(--blue); background: var(--pale); }
+.rcard img { width: 34px; height: 34px; flex: none; }
+.rcard span { display: flex; flex-direction: column; min-width: 0; }
+.rcard b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rcard small { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recentnone { padding: 8px 10px; border: 1px solid var(--line); background: var(--panel); margin: 0; }

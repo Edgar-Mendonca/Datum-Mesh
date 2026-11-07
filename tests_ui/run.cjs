@@ -117,6 +117,14 @@ let __page = null;
   // 1. File page: every worked example, crimson sidebar.
   const tiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent));
   check("Home shows the blank models and a way to the examples (0.6.1)", fix.examples_list.filter(e => e.group === "Blank").every(e => tiles.includes(e.name)) && tiles.includes("Examples") && !tiles.includes("Portal frame"), JSON.stringify(tiles));
+  check("Home has a blank heat part and the Roadmap among its tiles (0.10.0, the user's mock-up)", tiles.includes("Blank heat part") && tiles.includes("Roadmap"), JSON.stringify(tiles));
+  check("an empty Recent says where models will appear (0.10.0)", (await p.textContent(".recentnone")).includes("appear here"));
+  await p.click('.home .tile:has(b:text-is("Roadmap"))'); await p.waitForTimeout(150);
+  check("the Roadmap tile opens File › Roadmap (0.10.0)", (await p.$$(".bs .roadmap")).length === 1);
+  await p.click('.bs aside button:has-text("Home")'); await p.waitForTimeout(150);
+  await p.click('.home .tile[data-blank="heat"]'); await p.waitForTimeout(250);
+  check("the blank heat tile starts a heat model (0.10.0)", await p.evaluate(() => window.__calls.some(c => c[0] === "new_model" && c[1].example === null && c[1].analysis === "heat")));
+  await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
   await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(200);
   // 0.10.0: the examples are in folders; every folder's tiles together are every example.
   const exHeads = await p.$$eval(".exfolders button[data-group]", els => els.map(e => e.dataset.group)); const exTiles = [];
