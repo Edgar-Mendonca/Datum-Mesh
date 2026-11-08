@@ -617,7 +617,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
   await p.click('.bs aside button:has-text("Roadmap")'); await p.waitForTimeout(200);
   const rmv = await p.$$eval(".rmfeats h3", els => els.map(e => e.textContent));
-  check("File › Roadmap lists the whole map: 100 or more planned features, by release in the agreed order (0.10.1)", (await p.$$(".rmfeats li")).length >= 100 && JSON.stringify(rmv) === JSON.stringify(["0.10.2", "0.11", "0.12", "0.13", "0.14", "0.15", "1.0"]), JSON.stringify(rmv) + " " + (await p.$$(".rmfeats li")).length);
+  check("File › Roadmap lists the whole map: 100 or more planned features, by release in the agreed order (0.10.1)", (await p.$$(".rmfeats li")).length >= 100 && JSON.stringify(rmv) === JSON.stringify(["0.10.3", "0.10.4", "0.11", "0.12", "0.13", "0.14", "0.15", "1.0"]), JSON.stringify(rmv) + " " + (await p.$$(".rmfeats li")).length);
   await p.keyboard.press("Escape"); await p.waitForTimeout(150);
   await stepHead(5); await p.waitForTimeout(100);
   check("Natural Frequencies works for 3D solids", !(await p.$eval('.ribbon button[title^="The lowest natural frequencies"]', el => el.disabled)));

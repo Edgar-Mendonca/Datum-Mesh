@@ -529,6 +529,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 
 - **How releases go from 0.10.3 (the user, 2026-11-08).** No release until the user says so: build, show screenshots, the user approves each piece, then everything collected goes out as one release. (0.10.2's installer download failed with 504 during a GitHub outage; the user installed the .exe by hand. release.yml now caches the NSIS tools and retries bundling.)
 
+- **0.10.3 in progress (2026-11-08, not released).** The user's two specifications read in full and set against the code (docs/PLAN-SPECS.md: Batches 1–4 as 0.10.3, 0.10.4, 0.13, 0.14). From the user's notes: origin and eyes in the tree (`hidden` in store.ts; view3d honours it), an icon for each drawing way (`w-*` symbols) in the ▾ menus, the view cube's edge and corner zones and petrol look, the workflow bar without ticks plus Tools, standard parts (`stdparts.tsx`: metric bolts, nuts, washers, pins from the engine's cylinders and combine; drag onto the view), and 126 planned features with their releases. Built items taken off the register (Sweep, Loft, Parameters, material and step managers).
+
 ## 5. Known limits (0.10.1)
 - Everything dimmed in the window is planned, not built: its dialog shows what it will ask, and nothing in it runs.
 - Recent models on File › Home show the app's mark, not a picture of the model (the recent list keeps a name, a path and a date).

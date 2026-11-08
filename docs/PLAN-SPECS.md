@@ -29,7 +29,7 @@ Everything a small team can build in our own solver and with our own geometry en
 
 ## Batches
 
-**Batch 1: model care, frames and checks.**
+**Batch 1 (0.10.3): model care, frames and checks.**
 - The origin and show/hide eyes in the tree (the user, first).
 - Split, reverse and merge members and nodes.
 - Point and part-length loads on members, along the member or projected.
@@ -38,23 +38,32 @@ Everything a small team can build in our own solver and with our own geometry en
 - New benchmark rows from the specifications: axial bar, prescribed movement, offset force, round shaft in torsion, CQC with close modes, and block, hole and tube volumes.
 - The icon distinctions and the status badges.
 
-**Batch 2: geometry the engine already has.**
+**Batch 2 (0.10.4): geometry the engine already has.**
 - Split a face; datum planes, axes and points.
 - Check overlaps and clearances; exploded view.
 - Linked copies of a part; place a part against another.
 - Sketch: project edges, find open ends, tangent arcs and circles, driven dimensions, the remaining freedom shown.
 - Repairing an imported STEP: repair, delete or replace a face, stitch.
 
-**Batch 3: setup.**
+**Batch 3 (0.13): setup.**
 - Named sets that report when an edit breaks them.
 - Area springs, with compression-only.
 - Six-direction end releases and partial springs; inclined supports; eccentric offsets, rigid links, ties and couplings.
 - A mass ledger; temperature gradients; equipment loads; Rayleigh damping with its curve.
 
-**Batch 4: analyses.**
+**Batch 4 (0.14): analyses.**
 - Steady vibration.
 - Missing mass and scaling for spectra.
 - Line search.
 - Nonlinear buckling with an imperfection.
 
 **Then:** results tools (0.11), meshing (0.15), design checks (1.0).
+
+## Done from the user's notes so far (on the branch, not released)
+
+- The origin (point, axes, planes) in the tree, with show/hide eyes; eyes on sketches and bodies.
+- Each way of drawing a shape has its own icon in the ▾ menus.
+- The view cube: light and see-through; its edges and corners pick the views between faces (a corner is isometric).
+- The workflow bar: a done step has a light green ground (no ticks); a Tools group with Parts, Library, Python (planned) and Options.
+- Standard parts: hexagon bolts, nuts, plain washers and dowel pins in metric sizes, by click or drag onto the view.
+- Every feature of Batches 1–4 is in the window as planned, with its release (126 in the register).
