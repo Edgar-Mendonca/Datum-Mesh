@@ -5,7 +5,7 @@ import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
 import { For, Show, JSX, createMemo, createSignal, createEffect, createRoot } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
-import { setBackstage, tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart } from "./store";
+import { setBackstage, tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart, isShown, toggleShown } from "./store";
 import { stepsDialog } from "./steps";
 import { Q, toU, fromU, unit, fmt } from "./units";
 import { Help } from "./help";
@@ -106,6 +106,17 @@ const Branch = (p: { t: string; icon: string; n?: number; note?: string; mark?: 
     <div class="tlist">{p.children}<Show when={p.add && p.addText && !p.n}><button class="ti ghost" onClick={() => p.add!()}><Ic n="new" /><span>{p.addText}</span></button></Show></div>
   </details>
 );
+/** The eye at the end of a row (0.10.3, the user): shows or hides it in 3D, nothing else. */
+const Eye = (p: { keys: string[]; what: string }) => {
+  const on = () => p.keys.some(isShown);
+  return <span class="teye" role="button" tabindex="0" classList={{ off: !on() }} title={on() ? `Hide ${p.what}` : `Show ${p.what}`} aria-label={on() ? `Hide ${p.what}` : `Show ${p.what}`}
+    onClick={e => { e.stopPropagation(); e.preventDefault(); toggleShown(...p.keys); }} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleShown(...p.keys); } }}>
+    <svg class="tic"><use href={on() ? "#i-eye" : "#i-eyeoff"} /></svg></span>;
+};
+/** The origin of a 3D model (0.10.3, the user): its point, axes and planes, each with its eye. */
+const ORIGIN: [string, string, string][] = [["o", "O", "point"], ["ax:x", "X", "axis"], ["ax:y", "Y", "axis"], ["ax:z", "Z", "axis"], ["pl:xy", "XY", "plane"], ["pl:xz", "XZ", "plane"], ["pl:yz", "YZ", "plane"]];
+const OriginBranch = () => <details class="tgrp torigin"><summary><Ic n="origin" /><span class="tt">Origin</span><Eye keys={ORIGIN.map(o => o[0])} what="the origin" /></summary>
+  <div class="tlist"><For each={ORIGIN}>{([k, l, ic]) => <div class="ti" classList={{ dim: !isShown(k) }} data-origin={k}><Ic n={ic} /><span>{l}</span><Eye keys={[k]} what={ic === "point" ? "the origin point" : ic === "axis" ? `the ${l} axis` : `the ${l} plane`} /></div>}</For></div></details>;
 const Leaf = (p: { id: number; label: string; sub?: string; icon: string; menu?: [string, () => void][] }) => (
   <button class="ti" classList={{ on: sel().includes(p.id) }} onClick={e => setSel(e.ctrlKey || e.shiftKey ? [...new Set([...sel(), p.id])] : [p.id])}
     onContextMenu={e => { setSel([p.id]); openMenu(e, [...(p.menu ?? []).map(([label, run]) => ({ label, run })), { label: "Delete", run: () => act({ Delete: { ids: [p.id] } }) }]); }}>
@@ -205,13 +216,14 @@ export const Tree = () => {
         <Show when={m()}>{mm => <>
           <div class="troot" title="The model's name, analysis, units and notes" onClick={() => { setSel([]); setPopWhat("model"); setInspOpen(true); }}><img src="logo.svg" alt="" /><b>{mm().name}</b><small>{ANALYSES.find(a => a[0] === mm().analysis)?.[1]}</small></div>
           <Step n={1} t={fs()[0].t} done={fs()[0].done} why={fs()[0].why}>
+          <Show when={zUp()}><OriginBranch /></Show>
           <Show when={isSolidA(mm().analysis) && (cad()?.features.length || cad()?.bodies.length)}>
             <Branch t="History" icon="list" n={cad()!.features.length} help="modelling">
               <For each={cad()!.features}>{(f, i) => <button class="ti" classList={{ on: selFeature() === f.id || f.id === cad()!.active, dim: f.suppressed || rolledBack(i()) }}
                 onClick={() => setSelFeature(f.id)} onDblClick={() => editFeature(f)} onContextMenu={e => featureMenu(e, f, i())}>
-                <Ic n={kindIcon(f.kind)} /><span>{f.name}</span><small>{f.id === cad()!.active ? "open" : f.suppressed ? "suppressed" : f.kind === "Sketch" ? `${cad()!.sketches.find(x => x.id === f.id)?.curves.length ?? 0} curves` : f.kind}</small></button>}</For></Branch>
+                <Ic n={kindIcon(f.kind)} /><span>{f.name}</span><small>{f.id === cad()!.active ? "open" : f.suppressed ? "suppressed" : f.kind === "Sketch" ? `${cad()!.sketches.find(x => x.id === f.id)?.curves.length ?? 0} curves` : f.kind}</small><Show when={f.kind === "Sketch"}><Eye keys={[`sk:${f.id}`]} what={f.name} /></Show></button>}</For></Branch>
             <Branch t="Solids" icon="solid" n={cad()!.bodies.length} mark={{ ok: cad()!.bodies.every(b => b.closed), why: "A body is not closed: it cannot be meshed as a solid" }}>
-              <For each={cad()!.bodies}>{b => <button class="ti" title="Right-click for more" onContextMenu={e => bodyMenu(e, b.name)}><Ic n="solid" /><span>{b.name}</span><small>{`${new Set(b.face).size} faces${b.closed ? "" : " · open"}`}</small></button>}</For></Branch>
+              <For each={cad()!.bodies}>{b => <button class="ti" title="Right-click for more" onContextMenu={e => bodyMenu(e, b.name)}><Ic n="solid" /><span>{b.name}</span><small>{`${new Set(b.face).size} faces${b.closed ? "" : " · open"}`}</small><Eye keys={[`body:${b.name}`]} what={b.name} /></button>}</For></Branch>
           </Show>
           <Show when={!mm().volume} fallback={<Branch t={geoMesh() ? "Faces of the mesh" : "Imported mesh"} icon="solid" n={mm().volume!.faces.length} help="meshimport" mark={{ ok: true }} open={!geoMesh()}>
             <For each={mm().volume!.faces}>{(f, i) => <Row2 icon="rect" label={geoMesh() ? faceLabel(f.name) : f.name} sub={fmt("area", f.area)} on={mm().supports.concat(mm().loads as any).some((x: any) => sel().includes(x.id) && x.at.on === "face" && x.at.face === i())} />}</For></Branch>}>

@@ -1495,3 +1495,14 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .gpanel svg .peak { stroke: var(--muted); stroke-dasharray: 3 3; }
 .gpanel .gbox { flex: 1; min-height: 0; position: relative; overflow: hidden; }
 .gpanel .gbox svg { position: absolute; inset: 0; }
+
+/* 0.10.3 (the user): eyes to show or hide the origin, sketches and bodies in 3D. */
+.tree .teye { margin-left: auto; flex: none; display: inline-grid; place-items: center; width: 20px; height: 18px; color: var(--muted); cursor: pointer; border-radius: 2px; }
+.tree .ti small + .teye, .tree .ti .teye { margin-left: 6px; }
+.tree .ti > span:not(.teye) + .teye { margin-left: auto; }
+.tree .teye:hover { color: var(--blue); background: var(--pale); }
+.tree .teye .tic { width: 14px; height: 14px; }
+.tree .teye.off { color: var(--line3); }
+.tree .torigin > summary .teye { margin-left: auto; }
+.tree .ti.dim > span:not(.teye), .tree .ti.dim > .tic { opacity: .45; }
+.tree div.ti { cursor: default; }

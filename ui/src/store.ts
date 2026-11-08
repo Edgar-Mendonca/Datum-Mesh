@@ -183,6 +183,8 @@ export const loadOut = async (cmd: string, args?: object) => {
   if (o) note(`${cmd === "open" ? "Opened" : cmd === "new_model" ? "Started" : "Loaded"} “${o.m.name}”${o.path ? ` (${o.path})` : ""}`, "info", "action");
   // A model opened or started afresh brings its own geometry (0.7.1): cad.tsx reloads it.
   if (o) window.dispatchEvent(new Event("cad-reload"));
+  // What was hidden belonged to the last model (0.10.3).
+  if (o) setHidden(new Set(ORIGIN_HIDDEN_AT_START));
   return o;
 };
 
@@ -211,3 +213,19 @@ export const closeDialog = () => setDialogs(v => v.slice(0, -1));
 
 /** The results legend card folded to its head (0.10.2): it floats over the view. */
 export const [legendFolded, setLegendFolded] = createSignal(false);
+
+/** Show and hide in 3D (0.10.3, the user): the origin's point, axes and planes, sketches and bodies,
+ *  each with an eye in the tree. Keys: "o", "ax:x|y|z", "pl:xy|xz|yz" (as shown, Z up), "sk:<id>",
+ *  "body:<name>". The origin's planes start hidden (shown by themselves while a plane is to be
+ *  picked or the model is empty); everything else starts shown. Display only: nothing is solved or
+ *  saved differently. */
+const ORIGIN_HIDDEN_AT_START = ["pl:xy", "pl:xz", "pl:yz"];
+export const [hidden, setHidden] = createSignal<Set<string>>(new Set(ORIGIN_HIDDEN_AT_START));
+export const isShown = (k: string) => !hidden().has(k);
+export const toggleShown = (...ks: string[]) => {
+  const h = new Set(hidden()), show = ks.some(k => h.has(k));
+  for (const k of ks) { if (show) h.delete(k); else h.add(k); }
+  setHidden(h);
+};
+/** The origin's planes asked for by their eyes (rather than shown only while picking). */
+export const planesAsked = () => ["pl:xy", "pl:xz", "pl:yz"].some(isShown);

@@ -534,6 +534,23 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("the 3D solid's Results page has the extremes, six sums and the reactions", sp3.includes("Largest and smallest values") && sp3.includes("Σ Fz") && sp3.includes("Σ Mx about the origin") && sp3.includes("Displacement in z"));
   await go(p, "Model"); await p.waitForTimeout(200);
   await open("blank-solid");
+  {
+    // 0.10.3 (the user): the origin's point, axes and planes in the tree, each with an eye; sketches and bodies too.
+    const orows = await p.$$eval(".tree .torigin .ti[data-origin]", els => els.map(e => e.textContent.trim()));
+    check("a 3D model's tree has its Origin: the point, three axes and three planes (0.10.3, the user)", JSON.stringify(orows) === JSON.stringify(["O", "X", "Y", "Z", "XY", "XZ", "YZ"]), JSON.stringify(orows));
+    check("…the planes start hidden, the point and axes shown", await p.$$eval(".tree .torigin .ti[data-origin] .teye", els => els.map(e => e.classList.contains("off")).join()) === "false,false,false,false,true,true,true");
+    await p.click('.tree .torigin > summary .tt'); await p.waitForTimeout(80);
+    await p.click('.tree .ti[data-origin="ax:x"] .teye'); await p.waitForTimeout(80);
+    check("an eye hides one item and says so", await p.$eval('.tree .ti[data-origin="ax:x"]', el => el.classList.contains("dim") && el.querySelector(".teye").classList.contains("off")));
+    await p.click('.tree .torigin > summary .teye'); await p.waitForTimeout(80);
+    check("the Origin's own eye shows or hides all of it at once", await p.$$eval(".tree .torigin .ti[data-origin] .teye", els => els.every(e => !e.classList.contains("off"))));
+    await p.evaluate(f => { window.__cad = f.cad.extruded; window.dispatchEvent(new Event("cad-reload")); }, fix); await p.waitForTimeout(500);
+    const beye = await p.$('.tree .ti:has-text("faces") .teye');
+    check("bodies and sketches have their eyes too", !!beye && (await p.$$('.tree .ti:has-text("curves") .teye')).length >= 1);
+    if (beye) { await beye.click(); await p.waitForTimeout(80); }
+    check("…a hidden body says so in the tree; what is hidden is forgotten when another model opens", beye ? await p.$eval('.tree .ti:has-text("faces") .teye', el => el.classList.contains("off")) : false);
+    await open("blank-solid");
+  }
   check("a blank 3D solid opens in 3D and says to click a plane to sketch on (0.7.2)", (await p.textContent(".view3d")).includes("Build a part") && (await p.textContent(".view3d .empty")).includes("three planes"));
   // 0.3.5: DXF import and export.
   await open("lug"); await p.waitForTimeout(200);
@@ -733,7 +750,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   // 0.5.5: imported tetrahedral meshes: the faces in the tree and the 3D view, picking a face, solving.
   await open("elbow"); await p.waitForTimeout(400);
   const ef = fix.elbow.m.volume;
-  check("an imported mesh is listed in the tree with its faces", (await p.textContent(".tree")).includes("Imported mesh") && (await p.$$(".tree .step:first-of-type .tgrp:not(.tplan) .ti")).length === ef.faces.length && (await p.textContent(".tree")).includes("10-node tetrahedra"), await p.textContent(".tree"));
+  check("an imported mesh is listed in the tree with its faces", (await p.textContent(".tree")).includes("Imported mesh") && (await p.$$(".tree .step:first-of-type .tgrp:not(.tplan):not(.torigin) .ti")).length === ef.faces.length && (await p.textContent(".tree")).includes("10-node tetrahedra"), await p.textContent(".tree"));
   check("the bar above the view says what the mesh is, with no Section view", (await p.textContent(".planebar")).includes("tetrahedra") && !(await p.textContent(".planebar")).includes("Section"));
   await modelCard(); check("a mesh's material is chosen in the Inspector", (await p.textContent(".insp")).includes("Material of the mesh"));
   await stepHead(3); await p.click('.ribbon button:has-text("Pressure")'); await p.waitForTimeout(100);
@@ -1373,7 +1390,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     check("Draft shows its angle under Sizes", (await p.textContent(".ribbon")).includes("Draft angle"));
     await p.keyboard.press("Escape");
   }
-  check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti span', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
+  check("the tree lists the history in order", JSON.stringify(await p.$$eval('.tree .tgrp:has(.tt:text-is("History")) .ti > span:not(.teye)', els => els.map(e => e.textContent))) === JSON.stringify(fix.cad.extruded.features.map(f => f.name)));
   await modelCard(); check("a modelled solid has no 3D/Section bar and no section settings (0.7.2, the user)", !(await p.$('.planebar button:text-is("Section")')) && !(await p.textContent(".insp")).includes("Thickness (extruded") && !(await p.textContent(".insp")).includes("Layers through"));
   await p.click('.tree .tgrp:has(.tt:text-is("History")) .ti:has(span:text-is("Extrude1"))'); await p.waitForTimeout(150);
   check("a feature picked in the history shows in the inspector", (await p.textContent(".insp header")).includes("Extrude1") && (await p.textContent(".insp")).includes("Place in the history"));
