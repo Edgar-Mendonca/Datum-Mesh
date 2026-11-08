@@ -1,7 +1,7 @@
 // The analysis-steps dialogs (split from steps.tsx in 0.9.0, loaded on demand).
 import { For, Show, createSignal } from "solid-js";
 import { Step, StepKind, Curve, num } from "./api";
-import { openDialog, act, model, frameRes, spaceRes, results } from "./store";
+import { openDialog, act, model, frameRes, spaceRes, results, stale } from "./store";
 import { numIn } from "./panels";
 import { Dialog } from "./ui";
 import { fmt, unit, toU } from "./units";
@@ -62,8 +62,11 @@ export const stepsDialog = () => openDialog(() => {
   const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["largeplastic", "Crushing and collapse (yielding with large movements)"] as [StepKind, string], ["large", "Large deformation (rubber, large movements)"] as [StepKind, string], ["explicit", "Impact (explicit dynamics)"] as [StepKind, string]] : [])] : KINDS;
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
-      <table class="tbl cases steps"><thead><tr><th>Name</th><th>How</th><th>Load</th><th class="r">Factor</th><th class="r">Increments</th><th class="r">Pieces</th><th>Curve follows</th><th /></tr></thead><tbody>
-        <For each={sts()}>{s => <tr>
+      {/* 0.10.2 (the mock-ups): the step manager: the starting state, then each step in order with its status; every cell typed into in place. */}
+      <table class="tbl cases steps smgr"><thead><tr><th class="r">#</th><th>Name</th><th>How</th><th>Load</th><th class="r">Factor</th><th class="r">Increments</th><th class="r">Pieces</th><th>Curve follows</th><th>Status</th><th /></tr></thead><tbody>
+        <tr class="sinit"><td class="r">—</td><td>Initial</td><td colspan="6" class="muted">Supports{(m().contacts?.length ?? 0) ? " and contact" : ""}, as set on the model</td><td>Ready</td><td /></tr>
+        <For each={sts()}>{(s, i) => <tr>
+          <td class="r mono">{i() + 1}</td>
           <td><input value={s.name} onChange={e => e.currentTarget.value.trim() && set(s, { name: e.currentTarget.value.trim() })} /></td>
           <td><select value={s.kind} onChange={e => { const k = e.currentTarget.value as StepKind, d = stepOf(k); set(s, (k === "explicit") !== (s.kind === "explicit") ? { kind: k, duration: d.duration, dt: d.dt, time: d.time } : { kind: k }); }}><For each={kinds()}>{([k, l]) => <option value={k} selected={s.kind === k}>{l}</option>}</For></select></td>
           <td><select value={key(s.load)} onChange={e => set(s, { load: unkey(e.currentTarget.value) })}>
@@ -78,6 +81,7 @@ export const stepsDialog = () => openDialog(() => {
             <option value="" selected={s.monitor === null}>The node that moves most</option>
             <For each={m().nodes}>{(n, i) => <option value={n.id} selected={s.monitor === n.id}>Node {i() + 1}</option>}</For>
           </select></td>
+          <td class="sstat">{results() && !stale() ? "Solved" : "Ready"}</td>
           <td><button class="x" title="Delete this step" onClick={() => act({ Delete: { ids: [s.id] } })}>×</button></td>
         </tr>}</For></tbody></table>
     </Show>

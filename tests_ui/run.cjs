@@ -953,7 +953,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("Solve › Steps shows on when the model has a large-deflection step", await p.$eval('.ribbon button:has-text("Steps")', b => b.classList.contains("on")));
   await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   const stD = await p.textContent(".dlg");
-  check("the steps dialog lists the step, how it is solved and the node it follows", (await p.$eval(".dlg table.steps input", i => i.value)) === "Past the limit" && (await p.$eval(".dlg table.steps select", s => s.value)) === "arc" && (await p.$$eval(".dlg table.steps tbody tr", r => r.length)) === 1, stD.slice(0, 300) + " | " + (await p.$$eval(".dlg table.steps select", ss => ss.map(s => s.value).join())));
+  check("the steps dialog lists the step, how it is solved and the node it follows", (await p.$eval(".dlg table.steps input", i => i.value)) === "Past the limit" && (await p.$eval(".dlg table.steps select", s => s.value)) === "arc" && (await p.$$eval(".dlg table.steps tbody tr:not(.sinit)", r => r.length)) === 1 && (await p.$$(".dlg table.steps tr.sinit")).length === 1, stD.slice(0, 300) + " | " + (await p.$$eval(".dlg table.steps select", ss => ss.map(s => s.value).join())));
   await p.selectOption(".dlg table.steps select >> nth=0", "newton"); await p.waitForTimeout(150);
   const stO = await lastOp();
   check("changing how a step is solved sets the step", stO?.Set?.item?.Step?.kind === "newton" && stO.Set.item.Step.id === leeM.steps[0].id, JSON.stringify(stO));

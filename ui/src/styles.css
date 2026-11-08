@@ -1455,3 +1455,14 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .ipop .ibody .ibtns { padding: 8px 10px 0; display: flex; justify-content: flex-end; gap: 6px; }
 .ipop .ibody table.kv tr td:first-child { padding-left: 10px; color: var(--text2); }
 .ipop .ibody table.kv tr td:last-child { padding-right: 10px; }
+
+/* 0.10.2: the step manager's table as a sheet (the mock-ups): its cells read as text until clicked. */
+.dlg table.smgr { width: 100%; font-size: 12px; border-collapse: collapse; }
+.dlg table.smgr th { font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); background: var(--panel); }
+.dlg table.smgr td { padding: 1px 4px; border-bottom: 1px solid var(--line2); }
+.dlg table.smgr tr.sinit td { padding: 5px 6px; color: var(--text2); }
+.dlg table.smgr input:not([type=checkbox]), .dlg table.smgr select { border-color: transparent; background: transparent; height: 24px; font-size: 12px; }
+.dlg table.smgr input:not([type=checkbox]):hover, .dlg table.smgr select:hover { border-color: var(--line3); background: var(--bg2); }
+.dlg table.smgr input:focus, .dlg table.smgr select:focus { border-color: var(--blue); background: var(--bg2); }
+.dlg table.smgr tbody tr:hover td { background: var(--pale); }
+.dlg table.smgr .sstat { color: var(--ok-fg); white-space: nowrap; }
