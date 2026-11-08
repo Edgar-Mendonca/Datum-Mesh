@@ -1493,3 +1493,5 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .gpanel svg .grid { stroke: var(--line2); }
 .gpanel svg .ax { stroke: var(--line3); }
 .gpanel svg .peak { stroke: var(--muted); stroke-dasharray: 3 3; }
+.gpanel .gbox { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.gpanel .gbox svg { position: absolute; inset: 0; }

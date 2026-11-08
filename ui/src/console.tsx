@@ -28,7 +28,7 @@ const FrameTables = lazy(() => import("./tables").then(k => ({ default: k.FrameT
 const GraphsPanel = lazy(() => import("./graphspanel").then(k => ({ default: k.GraphsPanel })));
 /** Opens the bottom panel on its Tables (Geometry › Nodes and Members). */
 let hadHistory = false;
-createRoot(() => createEffect(() => { const h = (results() as { dynamic?: { kind: string } } | null)?.dynamic?.kind === "history"; if (h && !hadHistory) { setTab("graphs"); setOpen(true); } hadHistory = h; }));
+createRoot(() => createEffect(() => { const h = (results() as { dynamic?: { kind: string } } | null)?.dynamic?.kind === "history"; if (h && !hadHistory) { setTab("graphs"); setOpen(true); } if (!h && tab() === "graphs") setTab("messages"); hadHistory = h; }));
 export const showTables = () => { setTab("tables"); setOpen(true); window.dispatchEvent(new Event("resize")); };
 const store = (k: string, v?: string) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* private window */ } return null; };
 const [height, setHeight] = createSignal(Math.min(480, Math.max(120, +(store("dm.console.h") ?? 200) || 200)));
