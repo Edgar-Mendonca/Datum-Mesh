@@ -55,10 +55,23 @@ jobs:
           d=$(dirname "$exe")
           for f in LICENSE.txt CREDITS.txt; do [ -f "$d/$f" ] && cp "$d/$f" "src-tauri/gmsh/$f"; done
           echo "Gmsh $ok from gmsh.info, run by Datum Mesh as a separate program (GPL). Source: https://gitlab.onelab.info/gmsh/gmsh" > src-tauri/gmsh/README.txt
+      # The installer maker (NSIS) and its plugin, which Tauri downloads from GitHub's releases, kept
+      # between runs (0.10.2: the download failed with 504 twice during a GitHub outage).
+      - uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/tauri
+          key: tauri-bundler-tools-nsis-3.13
       - name: Installer
         shell: bash
         run: |
-          npx tauri build --bundles nsis --config '{"bundle":{"resources":{"gmsh/":"gmsh/"}}}'
+          # Retried with growing waits when the tools' download fails (the program itself is built
+          # once; a retry only bundles again).
+          ok=""
+          for i in 1 2 3 4 5 6; do
+            if npx tauri build --bundles nsis --config '{"bundle":{"resources":{"gmsh/":"gmsh/"}}}'; then ok=1; break; fi
+            echo "Bundling failed (try $i of 6); waiting $((i * 90)) s"; sleep $((i * 90))
+          done
+          test -n "$ok" || { echo "The installer could not be made"; exit 1; }
           mkdir -p out
           cp target/release/bundle/nsis/*-setup.exe "out/DatumMesh-$V-setup.exe"
           cd out && sha256sum "DatumMesh-$V-setup.exe" > SHA256SUMS.txt && cat SHA256SUMS.txt && ls -la
