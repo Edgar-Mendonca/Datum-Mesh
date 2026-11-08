@@ -2,7 +2,7 @@
 // solved, the deflected shape coloured by a result, with a probe that reads the values under the
 // pointer. Turn with the left button, pan with the right, zoom with the wheel. Clicking picks
 // nodes and members (and places supports and loads); drawing happens on a working plane.
-import { sectionsOn, isShown, planesAsked } from "./store";
+import { sectionsOn, isShown, planesAsked, localAxes } from "./store";
 import type { SectionShape } from "./api";
 import { cad, activeSketch, SketchCanvas, newSketch, cad3Tool, cad3Click, CadHit, sheetView, planePick, setPlanePick, turnBack, pick3, setMeshOld } from "./cad";
 import { Timeline, bodyMenu } from "./history";
@@ -684,6 +684,18 @@ export const View3D = () => {
           arrow([a[0] + (c[0] - a[0]) * t, a[1] + (c[1] - a[1]) * t, a[2] + (c[2] - a[2]) * t], dir.map(x => x * Math.sign(w)) as P3, L * 0.5 * Math.abs(w) / wmax, colour);
         }
       }
+    }
+    // 0.10.3: each member's local axes at its middle, x red along it, y green (the section's depth),
+    // z blue, as the solver takes them (the roll turns y and z about x).
+    if (localAxes()) for (const b of m.members) {
+      const a = P.get(b.a), c = P.get(b.b); if (!a || !c) continue;
+      const un = (v: P3): P3 => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+      const cr = (p: P3, q: P3): P3 => [p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0]];
+      const ex = un([c[0] - a[0], c[1] - a[1], c[2] - a[2]]), zx = cr([0, 0, 1], ex);
+      const ey0 = Math.hypot(...zx) < 1e-9 ? [0, 1, 0] as P3 : un(zx), ez0 = cr(ex, ey0), r = b.roll ?? 0;
+      const ey: P3 = [0, 1, 2].map(k => Math.cos(r) * ey0[k] + Math.sin(r) * ez0[k]) as P3, ez = cr(ex, ey);
+      const mid: P3 = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2, (a[2] + c[2]) / 2], len = L * 0.55;
+      for (const [d, col] of [[ex, "#D64545"], [ey, "#2E9E5B"], [ez, "#2F6FD6"]] as [P3, string][]) arrow([mid[0] + d[0] * len, mid[1] + d[1] * len, mid[2] + d[2] * len], d, len, col);
     }
     draw();
   };

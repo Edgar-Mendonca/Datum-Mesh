@@ -251,6 +251,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.click(".mctable tbody tr:nth-child(1)"); await p.waitForTimeout(150);
   check("a Model Check row selects what it is about (0.10.3)", (await p.textContent(".status")).includes("2 selected"), await p.textContent(".status"));
   check("the Model Check sits in the panel under the view, so the selection stays in sight (0.10.3)", (await p.$$(".console.open .mcheck")).length === 1 && !(await p.$(".dlg")));
+  await p.click(".console header .cchev"); await p.waitForTimeout(100);
   await stepHead(3); await p.waitForTimeout(100);
 
   // 8. A part: arcs, edges, edge loads and drawing shapes.
@@ -466,6 +467,17 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("a 3D frame opens in the 3D view, with no plane bar (0.6.2: sketching replaces it)", (await p.$$(".view3d canvas")).length === 1 && (await p.$$(".planebar .seg")).length === 0);
   await p.click('.tabs > button:text-is("Home")');
   check("Home shows 3D Frame chosen", await p.$eval('.ribbon button[title^="3D frames and trusses"]', el => el.classList.contains("on")));
+  // 0.10.3: member orientation turns the picked members so their depth faces a direction; their
+  // local axes are drawn meanwhile.
+  await stepHead(1); await p.waitForTimeout(100);
+  await p.$eval(`.tree .ti:has(span:text-is("Member 1"))`, el => el.click()); await p.waitForTimeout(150);
+  await p.click('.ribbon button[title^="Turn the selected members\' sections"]'); await p.waitForTimeout(250);
+  await p.selectOption('.dlg select', "along"); await p.waitForTimeout(100);
+  await p.click('.dlg button:text-is("Turn")'); await p.waitForTimeout(200);
+  const orop = await p.evaluate(() => window.__calls.filter(c => c[0] === "apply").map(c => c[1].op).pop());
+  check("Orientation turns the picked member so its depth faces up (Z, the engine's y) (0.10.3)", JSON.stringify(orop?.Orient?.ids) === JSON.stringify([pm.members[0].id]) && JSON.stringify(orop.Orient.along) === JSON.stringify([0, 1, 0]), JSON.stringify(orop));
+  check("…and turns on Local Axes, to see each member's x, y and z (0.10.3)", await p.$eval('.ribbon button[title^="Draw each member\'s local axes"]', b => b.classList.contains("on")));
+  await p.click('.ribbon button[title^="Draw each member\'s local axes"]'); await p.click(".ipop button.ifold").catch(() => {}); await p.waitForTimeout(100);
   // 0.7.5: New Sketch draws the frame with the modelling sketch tools; Finish Sketch makes members.
   await stepHead(1); await p.waitForTimeout(150);
   await p.click('.ribbon button[title^="A closed outline drawn on its own"]'); await p.waitForTimeout(100);
@@ -638,13 +650,11 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const tabs3 = await p.$$eval(".tabs > button:not(.file)", els => els.map(e => e.textContent));
   check("a 3D solid has Assembly and Interactions tabs, in the order of the work (0.10.1)", JSON.stringify(tabs3) === JSON.stringify(["Home", "Geometry", "Assembly", "Materials", "Loads & BCs", "Interactions", "Mesh", "Analysis", "Results", "Animate", "View", "Tools", "Help"]), JSON.stringify(tabs3));
   await p.click('.tabs > button:text-is("Assembly")'); await p.waitForTimeout(100);
-  check("Assembly: New Part works, its planned tools under Coming (0.10.1)", (await p.$$('.ribbon button:has-text("New Part")')).length === 1 && (await p.$$(".ribbon .grp.planned")).length === 1);
+  check("Assembly: New Part works, its planned tools beside it, dimmed (0.10.1, 0.10.3)", (await p.$$('.ribbon button:has-text("New Part")')).length === 1 && (await p.$$(".ribbon .grp.planned")).length >= 1);
   await p.click('.tabs > button:text-is("Interactions")'); await p.waitForTimeout(100);
-  check("Interactions: Contact needs two solids, so it is off for one (0.10.1)", await p.$eval('.ribbon button[title^="Let two touching solids"]', el => el.disabled) && (await p.$$(".ribbon .grp.planned")).length === 1);
-  await p.click('.ribbon .grp.planned button.rb.planned'); await p.waitForTimeout(100);
-  const icoming = await p.$$eval(".menu button", els => els.map(e => e.textContent));
-  check("Interactions' Coming lists tie, coupling and contact pairs (0.10.1)", ["Tie", "Coupling", "Find Contact Pairs"].every(x => icoming.some(t => t.startsWith(x))), JSON.stringify(icoming));
-  await p.keyboard.press("Escape"); await p.waitForTimeout(80);
+  check("Interactions: Contact needs two solids, so it is off for one (0.10.1)", await p.$eval('.ribbon button[title^="Let two touching solids"]', el => el.disabled) && (await p.$$(".ribbon .grp.planned")).length >= 1);
+  const icoming = await p.$$eval(".ribbon .grp.planned button.rb.planned", els => els.map(e => e.textContent));
+  check("Interactions shows tie, coupling and contact pairs as planned buttons (0.10.1, 0.10.3)", ["Tie", "Coupling", "Find Contact Pairs"].every(x => icoming.some(t => t.startsWith(x))), JSON.stringify(icoming));
   await p.click('.tabs > button:text-is("Materials")'); await p.waitForTimeout(100);
   check("the bar above the view follows the tab: the materials on Materials (0.10.1)", (await p.$$('.ctxbar [data-ctx="materials"]')).length === 1 && (await p.$$('.ctxbar [data-ctx="steps"]')).length === 0);
   await p.click('.tabs > button:text-is("Analysis")'); await p.waitForTimeout(100);
@@ -1499,14 +1509,11 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     // their dialogs greyed, behind View › Show planned features.
     await p.waitForTimeout(300);
     await p.click('.flow button:has-text("Loads")'); await p.waitForTimeout(150);
-    const coming = await p.$('.ribbon .grp.planned button.rb.planned');
-    check("a tab's planned features are behind one Coming button after its working tools (0.10.0)", !!coming && /Coming/.test(await coming.textContent()));
-    await coming.click(); await p.waitForTimeout(150);
-    const items = await p.$$eval(".menu button, .menu .mi", els => els.map(e => e.textContent));
-    check("its menu lists them by kind, each with its release (0.10.0)", items.some(t => /Load Curves.*0\.13/.test(t)), JSON.stringify(items).slice(0, 300));
-    await p.click('.menu :text("Load Curves")'); await p.waitForTimeout(200);
+    const items = await p.$$eval(".ribbon .grp.planned button.rb.planned", els => els.map(e => e.textContent));
+    check("a tab's planned features show after its working tools, by group, each with its release (0.10.3, the user)", items.some(t => /Load Curves.*0\.13/.test(t)) && (await p.$$(".ribbon .pdiv")).length === 1, JSON.stringify(items).slice(0, 300));
+    await p.$eval('.ribbon button.rb.planned[data-planned="curves"]', b => b.click()); await p.waitForTimeout(200);
     const dlg = await p.textContent(".dlg");
-    check("a planned feature opens its dialog, every field there and disabled, with its release (0.10.0, the user)", /Planned for 0\.13/.test(dlg) && (await p.$$eval(".dlg fieldset.pform", f => f.length === 1 && f[0].disabled)) && (await p.$$(".dlg .pform select, .dlg .pform input")).length >= 3);
+    check("a planned feature opens its dialog, every field there and disabled, with its release (0.10.0, the user)", /Available in 0\.13/.test(dlg) && (await p.$$eval(".dlg fieldset.pform", f => f.length === 1 && f[0].disabled)) && (await p.$$(".dlg .pform select, .dlg .pform input")).length >= 3);
     check("a planned dialog has no OK: nothing in it can run", (await p.$$(".dlg footer .btn.pri")).length === 0);
     await p.keyboard.press("Escape"); await p.waitForTimeout(100);
     await p.click('.console header .cplanned[data-planned="script"]'); await p.waitForTimeout(150);
@@ -1625,6 +1632,19 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     const batch = await p.evaluate(() => window.__calls.filter(c => c[0] === "apply").map(c => c[1].op).pop()?.Batch ?? []);
     check("Paste from a sheet: rows of x, y become nodes, x, y to x, y a member, N3 N10 a member between nodes; headings and other rows left out (0.10.2)",
       batch.length === 4 && batch.filter(o => o.Add?.item?.Node).length === 2 && batch.filter(o => o.AddMember).length === 1 && batch.filter(o => o.Add?.item?.Member).length === 1 && batch.find(o => o.Add?.item?.Node)?.Add.item.Node.y === 9, JSON.stringify(batch));
+    // 0.10.3: the loads table and the assignments table, typed into as the others are.
+    await p.click('.cttabs button[data-ttab="loads"]'); await p.waitForTimeout(200);
+    check("Tables › Loads lists every load with its case, place, kind and values (0.10.3)", (await p.$$('.ttab[data-table="loads"] tbody tr')).length === pm.loads.length && (await p.$$('.ttab[data-table="loads"] td.lvals input')).length >= pm.loads.length, String((await p.$$('.ttab[data-table="loads"] tbody tr')).length));
+    const lcell = await p.$('.ttab[data-table="loads"] tbody tr:nth-child(1) td.lvals input');
+    await lcell.fill("-12"); await lcell.press("Enter"); await p.waitForTimeout(150);
+    const lop = await p.evaluate(() => window.__calls.filter(c => c[0] === "apply").map(c => c[1].op).pop());
+    check("…a value typed there changes that load, in kN shown and N kept (0.10.3)", lop?.Set?.item?.Load?.id === pm.loads[0].id && Object.values(lop.Set.item.Load.kind).some(v => v === -12000), JSON.stringify(lop));
+    await p.click('.cttabs button[data-ttab="assign"]'); await p.waitForTimeout(200);
+    check("Tables › Assignments has a row per member with kind, section, material, hinges and rigid ends (0.10.3)", (await p.$$('.ttab[data-table="assignments"] tbody tr')).length === pm.members.length && (await p.$$('.ttab[data-table="assignments"] thead th')).length >= 9);
+    await p.click('.ttab[data-table="assignments"] tbody tr:nth-child(2) td.c input'); await p.waitForTimeout(150);
+    const hop = await p.evaluate(() => window.__calls.filter(c => c[0] === "apply").map(c => c[1].op).pop());
+    check("…ticking a hinge there hinges that member's start (0.10.3)", hop?.Set?.item?.Member?.id === pm.members[1].id && hop.Set.item.Member.hinge?.[0] === true, JSON.stringify(hop));
+    await p.click('.cttabs button[data-ttab="geo"]'); await p.waitForTimeout(100);
     await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(150);
     check("…and says what it did in Messages, with the rows it left out", await p.evaluate(() => [...document.querySelectorAll(".cmsg span")].some(e => /Pasted from a sheet: 2 nodes and 2 members; 2 rows not understood/.test(e.textContent))));
     await p.click('.console header .cchev'); await p.waitForTimeout(100);

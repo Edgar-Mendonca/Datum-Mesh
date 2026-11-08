@@ -3,7 +3,7 @@
 // tree and in Help › Roadmap, dimmed, with the release that brings it. Clicked, it opens the dialog
 // it will have, every field shown and disabled. View › Show planned features hides them all.
 import { For, Show, createSignal, createMemo } from "solid-js";
-import { model, openDialog, openMenu, Item } from "./store";
+import { model, openDialog, openMenu } from "./store";
 import { Dialog, Icon } from "./ui";
 import type { Feat, PField } from "./features";
 
@@ -45,29 +45,33 @@ const Fld = (p: { f: PField }) => {
 
 /** The dialog a planned feature will have, every field disabled. */
 export const plannedDialog = (f: Feat) => openDialog(() => <Dialog title={f.label} wide cancel="Close">
-  <div class="pband"><Icon n="roadmap" /><div><b>Planned for {f.v}</b><span>{f.what}</span></div></div>
+  <div class="pband"><Icon n="roadmap" /><div><b>Available in {f.v}</b><span>{f.what}</span></div></div>
   <fieldset class="pform form" disabled><For each={f.fields}>{x => <Fld f={x} />}</For></fieldset>
   <p class="muted small">This is the dialog it will have. Nothing here works yet: it shows what you will set. Hide planned features in View › Show planned features.</p>
 </Dialog>);
 
-/** A ribbon tab's planned features: one Coming ▾ button after the working tools, its menu the
- *  features by group, each with its release (a tab can have fifteen: inline they crowd it out). */
+/** A ribbon tab's planned features (0.10.3, the user: "so I can see what we are going to have"):
+ *  after the working tools, each planned group with its features as dimmed buttons, three to a
+ *  column, each tagged with the release that brings it. Clicked, one opens the dialog it will have. */
 export const PlannedGroups = (p: { tab: string }) => {
   const list = plannedFor({ tab: p.tab });
-  const menu = (e: MouseEvent) => {
-    const g = new Map<string, Feat[]>(); for (const f of list()) g.set(f.group, [...(g.get(f.group) ?? []), f]);
-    const items: Item[] = [];
-    for (const [name, fs] of g) { if (items.length) items.push("-"); items.push({ label: name, off: true }); for (const f of fs) items.push({ label: `${f.label}  ·  ${f.v}`, icon: f.icon, run: () => plannedDialog(f) }); }
-    openMenu(e, items);
-  };
-  return <Show when={list().length}><div class="grp planned"><div class="items"><div class="rbw big"><button class="rb big planned" title={`${list().length} features still to come on this tab, dimmed: click one to see the dialog it will have`} onClick={menu}><Icon n="roadmap" /><span>Coming ▾</span><i class="pv">{list().length}</i></button></div></div><div class="cap">Planned</div></div></Show>;
+  const groups = createMemo(() => { const g = new Map<string, Feat[]>(); for (const f of list()) g.set(f.group === "Planned" ? "More" : f.group, [...(g.get(f.group === "Planned" ? "More" : f.group) ?? []), f]); return [...g.entries()]; });
+  const cols = (fs: Feat[]) => Array.from({ length: Math.ceil(fs.length / 3) }, (_, k) => fs.slice(3 * k, 3 * k + 3));
+  return <Show when={list().length}><div class="pdiv" title="Planned: not built yet. Each shows the release that brings it." /><For each={groups()}>{([name, fs]) =>
+    <div class="grp planned"><div class="items"><For each={cols(fs)}>{c => <div class="stack"><For each={c}>{f =>
+      <div class="rbw"><button class="rb planned" data-planned={f.id} title={`${f.label}: available in ${f.v}. ${f.what} Click to see the dialog it will have.`} onClick={() => plannedDialog(f)}><Icon n={f.icon} /><span>{f.label}</span><i class="pv">{f.v}</i></button></div>}</For></div>}</For></div>
+      <div class="cap">{name} · planned</div></div>}</For>
+    <div class="grp planned pmore" data-hide=""><div class="items"><div class="rbw big"><button class="rb big planned" title="More planned features that do not fit here: click to list them" onClick={e => {
+      const hid = [...document.querySelectorAll<HTMLButtonElement>(".ribbon .grp.planned[data-hide] button[data-planned]")];
+      openMenu(e, hid.map(b => ({ label: b.textContent ?? "", run: () => b.click() })));
+    }}><Icon n="roadmap" /><span>More ▾</span><i class="pv">0</i></button></div></div><div class="cap">Planned</div></div></Show>;
 };
 
 /** A step's planned features in the tree, folded under "Coming". */
 export const PlannedRows = (p: { step: number }) => {
   const list = plannedFor({ step: p.step });
-  return <Show when={list().length}><details class="tgrp tplan"><summary><Icon n="roadmap" /><span class="tt">Coming</span><span class="pill">{list().length}</span></summary>
-    <div class="tlist"><For each={list()}>{f => <button class="ti planned" title={`Planned for ${f.v}`} onClick={() => plannedDialog(f)}><svg class="tic"><use href={`#i-${f.icon}`} /></svg><span>{f.label}</span><small>{f.v}</small></button>}</For></div>
+  return <Show when={list().length}><details class="tgrp tplan"><summary><Icon n="roadmap" /><span class="tt">Planned</span><span class="pill">{list().length}</span></summary>
+    <div class="tlist"><For each={list()}>{f => <button class="ti planned" title={`Available in ${f.v}: ${f.what}`} onClick={() => plannedDialog(f)}><svg class="tic"><use href={`#i-${f.icon}`} /></svg><span>{f.label}</span><small>{f.v}</small></button>}</For></div>
   </details></Show>;
 };
 

@@ -57,11 +57,6 @@ export const FEATS: Feat[] = [
   { id: "springel", label: "Spring or Damper", icon: "spring", step: 1, tab: "geometry", group: "Members", v: "0.13", for: STRUCT,
     what: "A spring (stiffness) or a damper (viscous) between two points, or from a point to the ground.",
     fields: [{ k: "choice", l: "Kind", o: ["Spring", "Damper", "Spring and damper"] }, { k: "pick", l: "Between", what: "two points, or a point and the ground" }, { k: "num", l: "Stiffness", u: "kN/m" }, { k: "num", l: "Damping", u: "kN·s/m" }, { k: "choice", l: "Direction", o: ["Along the line", "x", "y", "z"] }] },
-  { id: "beta", label: "Member Orientation", icon: "section", step: 1, tab: "geometry", group: "Members", v: "0.10.3", for: ["space"],
-    what: "Turn a member's section about its own axis (the beta angle), so a beam's strong axis lies where it should.",
-    fields: [{ k: "pick", l: "Members", what: "members" }, { k: "num", l: "Angle", u: "°", v: "0" }, { k: "choice", l: "Or towards", o: ["An angle", "A point", "A direction"] }] },
-
-  // ---------- 2. Materials and sections ----------
   { id: "ortho", label: "Orthotropic", icon: "material", step: 2, tab: "properties", group: "Material models", v: "0.12", for: [...PARTS, "heat"],
     what: "A material stiffer one way than another: wood, rolled sheet, fibre layers; and heat conducted more one way.",
     fields: [{ k: "num", l: "E₁", u: "MPa" }, { k: "num", l: "E₂", u: "MPa" }, { k: "num", l: "E₃", u: "MPa" }, { k: "num", l: "ν₁₂" }, { k: "num", l: "ν₁₃" }, { k: "num", l: "ν₂₃" }, { k: "num", l: "G₁₂", u: "MPa" }, { k: "num", l: "G₁₃", u: "MPa" }, { k: "num", l: "G₂₃", u: "MPa" }, { k: "choice", l: "Directions", o: ["The model's axes", "A part's own axes", "Along a picked edge"] }] },
@@ -275,9 +270,6 @@ export const FEATS: Feat[] = [
     what: "Pull the parts apart in the view to see how they go together; the model itself does not move.",
     fields: [{ k: "num", l: "How far", u: "%", v: "50" }, { k: "check", l: "Along the parts' contact faces", on: true }] },
   // Materials
-  { id: "assignments", label: "Assignments", icon: "table", step: 2, tab: "properties", group: "Assign", v: "0.10.3", for: ALL,
-    what: "Which material and section each part, member or region has, in one table.",
-    fields: [{ k: "table", l: "Assigned", cols: ["Part or member", "Material", "Section or thickness"] }] },
   { id: "rate", label: "Rate Dependence", icon: "curve", step: 2, tab: "properties", group: "Material models", v: "0.12", for: SOLID,
     what: "Strength that rises with the rate of straining, for impact and crash.",
     fields: [{ k: "choice", l: "Law", o: ["Cowper–Symonds", "Johnson–Cook rate term"] }, { k: "num", l: "D", u: "1/s", v: "40" }, { k: "num", l: "q", v: "5" }] },
@@ -288,9 +280,6 @@ export const FEATS: Feat[] = [
     what: "Different thicknesses (and materials) for parts of a slab or wall: drops, thickenings, edges of openings.",
     fields: [{ k: "pick", l: "Region", what: "plates" }, { k: "num", l: "Thickness", u: "mm", v: "250" }, { k: "num", l: "Offset from the middle", u: "mm", v: "0" }] },
   // Loads
-  { id: "loadtable", label: "Loads Table", icon: "table", step: 3, tab: "loads", group: "Load cases", v: "0.10.3", for: STRUCT,
-    what: "Every load of every case in one table: change values, move loads between cases, paste from a sheet.",
-    fields: [{ k: "table", l: "Loads", cols: ["Case", "Kind", "On", "Value", "Direction"], rows: [["Dead", "Distributed", "M1", "6 kN/m", "−y"]] }] },
   { id: "inclined", label: "Inclined Support", icon: "roller", step: 3, tab: "loads", group: "Supports", v: "0.13", for: FRAMES,
     what: "A roller that slides along a slope, or a support turned to its own axes.",
     fields: [{ k: "pick", l: "Node", what: "a node" }, { k: "num", l: "Angle", u: "°", v: "30" }, { k: "choice", l: "Held", o: ["Across the slope", "Along the slope"] }] },

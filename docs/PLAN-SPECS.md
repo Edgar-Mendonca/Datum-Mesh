@@ -36,8 +36,8 @@ Everything a small team can build in our own solver and with our own geometry en
 ## The roadmap from 0.10.2
 
 **0.10.3 · Model care and frames** (one release when the user has approved every piece)
-- Done on the branch: origin and eyes in the tree; an icon for each drawing way; the view cube; the workflow bar and Tools; standard parts; every planned feature in the window; point and part-length loads on members (benchmark 38); the four starting points; split, reverse and merge members, merge nodes; the model check (in the panel under the view).
-- To do: member orientation; loads table and assignments table; combinations by rule; mesh statistics and quality; solver settings; the icon distinctions and status badges; benchmark rows (axial bar, prescribed movement, offset force, round shaft in torsion, close modes, block, hole and tube volumes).
+- Done on the branch: origin and eyes in the tree; an icon for each drawing way; the view cube; the workflow bar and Tools; standard parts; every planned feature in the window; point and part-length loads on members (benchmark 38); the four starting points; split, reverse and merge members, merge nodes; the model check (in the panel under the view); member orientation with local axes; loads and assignments tables; every planned feature shown on its ribbon tab with its release.
+- To do: combinations by rule; mesh statistics and quality; solver settings; the icon distinctions and status badges; benchmark rows (axial bar, prescribed movement, offset force, round shaft in torsion, close modes, block, hole and tube volumes).
 
 **0.10.4 · Design foundations, from mechanics formulas** (from the third specification)
 - Design members: form one from a chain of members, dissolve it, inspect it; a selection mode for them.

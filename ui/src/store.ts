@@ -213,6 +213,8 @@ export const closeDialog = () => setDialogs(v => v.slice(0, -1));
 
 /** The results legend card folded to its head (0.10.2): it floats over the view. */
 export const [legendFolded, setLegendFolded] = createSignal(false);
+/** 3D frames (0.10.3): draw each member's local axes (x along it, y the section's depth, z). */
+export const [localAxes, setLocalAxes] = createSignal(false);
 
 /** Show and hide in 3D (0.10.3, the user): the origin's point, axes and planes, sketches and bodies,
  *  each with an eye in the tree. Keys: "o", "ax:x|y|z", "pl:xy|xz|yz" (as shown, Z up), "sk:<id>",

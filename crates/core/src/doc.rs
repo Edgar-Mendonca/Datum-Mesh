@@ -143,6 +143,18 @@ pub enum Op {
     ReverseMember { ids: Vec<u32> },
     /// Frames (0.10.3): join two members in line that meet at a node nothing else uses into one.
     MergeMembers { ids: Vec<u32> },
+    /// 3D frames (0.10.3): turn members' sections about their own axes. `angle` (radians) sets the
+    /// roll; `towards` (a point) or `along` (a direction) turns each so its local y (the section's
+    /// depth) faces it, as near as the member's own direction allows.
+    Orient {
+        ids: Vec<u32>,
+        #[serde(default)]
+        angle: Option<f64>,
+        #[serde(default)]
+        towards: Option<[f64; 3]>,
+        #[serde(default)]
+        along: Option<[f64; 3]>,
+    },
     /// Frames (0.10.3): bring nodes closer than `tol` (m) together, onto the first of each group
     /// (a supported one first); members, supports and loads follow it.
     MergeNodes { ids: Vec<u32>, tol: f64 },
@@ -530,6 +542,39 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let k = m.members.iter().position(|b| b.id == p.id).unwrap();
             m.members[k] = nb;
             m.nodes.retain(|n| n.id != shared);
+        }
+        Op::Orient { ids, angle, towards, along } => {
+            let picked = [angle.is_some(), towards.is_some(), along.is_some()].iter().filter(|x| **x).count();
+            if picked != 1 {
+                return Err("Give the members an angle, a point to face or a direction to face: one of them.".into());
+            }
+            let fin = |v: [f64; 3]| v.iter().all(|x| x.is_finite());
+            if angle.is_some_and(|a| !a.is_finite()) || towards.is_some_and(|v| !fin(v)) || along.is_some_and(|v| !fin(v)) {
+                return Err("The angle, point or direction must be numbers.".into());
+            }
+            for id in ids {
+                let Some(i) = m.members.iter().position(|b| b.id == id) else { continue };
+                let (Some(a), Some(b)) = (m.node(m.members[i].a).map(|n| n.at()), m.node(m.members[i].b).map(|n| n.at())) else { continue };
+                let roll = if let Some(r) = angle {
+                    r
+                } else {
+                    // The direction to face, square to the member: roll it from its zero-roll axes.
+                    let [ex, ey0, ez0] = crate::space::axes(a, b, 0.0);
+                    let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
+                    let v = towards.map(|p| [p[0] - mid[0], p[1] - mid[1], p[2] - mid[2]]).or(along).unwrap();
+                    let dot = |p: [f64; 3], q: [f64; 3]| p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+                    let vx = dot(v, ex);
+                    let w = [v[0] - vx * ex[0], v[1] - vx * ex[1], v[2] - vx * ex[2]];
+                    if dot(w, w).sqrt() < 1e-9 * dot(v, v).sqrt().max(1e-300) {
+                        // It points straight at it: no way to face it, so it stays as it is.
+                        continue;
+                    }
+                    dot(w, ez0).atan2(dot(w, ey0))
+                };
+                // Kept between −180° and 180°.
+                let t = std::f64::consts::TAU;
+                m.members[i].roll = roll - t * ((roll + std::f64::consts::PI) / t).floor();
+            }
         }
         Op::MergeNodes { ids, tol } => {
             if !(tol.is_finite() && tol >= 0.0) {
@@ -1507,6 +1552,27 @@ mod tests {
         d.apply(Op::Add { item: Item::Support(crate::model::Support { id: 0, at: Target::Node { id: mid }, kind: SupportKind::Pinned }) }).unwrap();
         let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).collect();
         assert!(d.apply(Op::MergeMembers { ids }).unwrap_err().contains("has to stay"));
+    }
+
+    #[test]
+    fn members_turn_to_an_angle_a_point_or_a_direction() {
+        let mut d = Doc::new(Model::new(Analysis::Space));
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [4.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        let id = d.m.members[0].id;
+        let ly = |d: &Doc| { let b = &d.m.members[0]; crate::space::axes(d.m.node(b.a).unwrap().at(), d.m.node(b.b).unwrap().at(), b.roll)[1] };
+        // Facing along +z (the depth): local y turns to +z.
+        d.apply(Op::Orient { ids: vec![id], angle: None, towards: None, along: Some([0.0, 0.0, 1.0]) }).unwrap();
+        let y = ly(&d);
+        assert!((y[2] - 1.0).abs() < 1e-12, "{y:?}");
+        // Facing a point below and behind the middle: local y points at it, square to the member.
+        d.apply(Op::Orient { ids: vec![id], angle: None, towards: Some([2.0, -3.0, -3.0]), along: None }).unwrap();
+        let y = ly(&d);
+        let s = 1.0 / 2.0f64.sqrt();
+        assert!((y[0]).abs() < 1e-12 && (y[1] + s).abs() < 1e-12 && (y[2] + s).abs() < 1e-12, "{y:?}");
+        // An angle, kept between −180° and 180°.
+        d.apply(Op::Orient { ids: vec![id], angle: Some(3.0 * std::f64::consts::PI), towards: None, along: None }).unwrap();
+        assert!((d.m.members[0].roll.abs() - std::f64::consts::PI).abs() < 1e-12);
+        assert!(d.apply(Op::Orient { ids: vec![id], angle: Some(1.0), towards: Some([0.0; 3]), along: None }).is_err());
     }
 
     #[test]

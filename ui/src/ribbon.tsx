@@ -1,7 +1,7 @@
 // Title bar, quick access toolbar, Tell Me and the ribbon (Home · Geometry · Mesh · Loads · Solve ·
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
-import { sectionsOn, setSectionsOn, animate, setAnimate } from "./store";
+import { localAxes, setLocalAxes, sectionsOn, setSectionsOn, animate, setAnimate } from "./store";
 import { memberTruss, setMemberTruss, memberPlates, setMemberPlates } from "./cad";
 import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
@@ -317,9 +317,18 @@ const fmtKind = () => {
 /** Shrinks the ribbon in steps instead of scrolling sideways (FAMILY §6). */
 const fitRibbon = (el: HTMLElement) => {
   const fit = () => {
-    const gs = [...el.querySelectorAll<HTMLElement>(":scope > .grp")];
-    el.dataset.fit = "0"; gs.forEach(g => delete g.dataset.fit);
+    // 0.10.3: planned groups never shrink: those that do not fit go, from the right, into More
+    // planned ▾; the working tools then shrink as before.
+    const gs = [...el.querySelectorAll<HTMLElement>(":scope > .grp:not(.planned)")];
+    const ps = [...el.querySelectorAll<HTMLElement>(":scope > .grp.planned:not(.pmore)")], more = el.querySelector<HTMLElement>(":scope > .grp.pmore");
+    el.dataset.fit = "0"; gs.forEach(g => delete g.dataset.fit); ps.forEach(g => delete g.dataset.hide);
+    if (more) more.dataset.hide = "";
     const over = () => el.scrollWidth > el.clientWidth + 1;
+    if (!over()) return;
+    if (more) delete more.dataset.hide;
+    let hidden = 0;
+    for (let i = ps.length - 1; i >= 0 && over(); i--) { ps[i].dataset.hide = ""; hidden += ps[i].querySelectorAll("button[data-planned]").length; }
+    if (more) { if (!hidden) more.dataset.hide = ""; const n = more.querySelector(".pv"); if (n) n.textContent = String(hidden); }
     if (!over()) return;
     el.dataset.fit = "1";
     for (const lvl of ["2", "3"]) for (let i = gs.length - 1; i >= 0 && over(); i--) gs[i].dataset.fit = lvl;
@@ -418,6 +427,8 @@ export const Ribbon = () => {
           <G l="Draw" h="members"><T big i="beam" l="Beam" t="beam" title="Draw beams: click two points; it continues from the last" /><T big i="truss" l="Truss Bar" t="truss" /><S><T i="node" l="Node" t="node" /><B i="node" l="Node at…" run={() => D.nodeAt()} /></S></G>
           <G l="Edit" h="members"><B big i="splitm" l="Split" run={() => import("./frameedit").then(k => k.splitDialog())} title="Split the selected members into equal pieces, or at a distance; their loads go with the pieces" />
             <S><B i="reversem" l="Reverse" run={() => import("./frameedit").then(k => k.reverseMembers())} title="Turn the selected members end for end; hinges, offsets and loads follow" /><B i="mergem" l="Merge Members" run={() => import("./frameedit").then(k => k.mergeMembers())} title="Join two selected members in line into one" /><B i="mergen" l="Merge Nodes…" run={() => import("./frameedit").then(k => k.mergeNodesDialog())} title="Make nodes closer than a tolerance into one" /></S></G>
+          <Show when={sp()}><G l="Orientation" h="space"><B big i="orient" l="Orientation" run={() => import("./frameedit").then(k => k.orientDialog())} title="Turn the selected members' sections about their own axes: to an angle, or so the depth faces a point or a direction" />
+            <S><B i="axis" l="Local Axes" on={localAxes()} run={() => setLocalAxes(!localAxes())} title="Draw each member's local axes: x along it, y the section's depth, z" /></S></G></Show>
           <Show when={sp() && onPlane()}><FramePlates /></Show>
           <Show when={sp()}><G l="3D" h="space"><B big i="repeat" l="Repeat" run={() => D.repeat()} title="Copy the selected members along the depth and join the copies (bays of a building)" /></G></Show>
           <G l="Properties" h="sections"><B big i="section" l="Sections" run={() => D.sections()} /><B big i="material" l="Materials" run={() => D.materials()} /></G>
