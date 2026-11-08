@@ -50,7 +50,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const b = await chromium.launch(process.env.CHROMIUM ? { executablePath: process.env.CHROMIUM } : {});
   const p = await b.newPage({ viewport: { width: 1440, height: 900 } }); __page = p;
   // 0.10.2: a solve opens the tree's Results tab; a click on a row of the model goes to its Model tab first, as a person would.
-  { const click = p.click.bind(p); p.click = async (sel, o) => { if (typeof sel === "string" && /^\.tree /.test(sel) && !/ttabs|tres|tfilter|rinsp/.test(sel)) { const t = await p.$('.tree .ttabs button:has-text("Model"):not(.on)'); if (t) { await click('.tree .ttabs button:has-text("Model")'); await p.waitForTimeout(60); } } return click(sel, o); }; }
+  { const click = p.click.bind(p); p.click = async (sel, o) => { if (typeof sel === "string" && /^\.tree /.test(sel) && !/ttabs|tres|tfilter|rinsp|rtree/.test(sel)) { const t = await p.$('.tree .ttabs button:has-text("Model"):not(.on)'); if (t) { await click('.tree .ttabs button:has-text("Model")'); await p.waitForTimeout(60); } } return click(sel, o); }; }
   const errors = [];
   p.on("pageerror", e => errors.push(e.message));
   await p.addInitScript(f => {
@@ -1527,6 +1527,11 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     check("the tree's counts are plain grey numbers on the right, the ? and + only under the pointer", await p.$eval(".tree .tgrp summary .pill", el => getComputedStyle(el).borderTopStyle === "none") && await p.$eval(".tree .tgrp summary .help", el => getComputedStyle(el).display === "none"));
     await p.keyboard.press("F5"); await p.waitForTimeout(400);
     check("a finished solve opens the tree's Results tab (0.10.2, the mock-ups)", (await p.textContent(".tree .ttabs button.on")) === "Results");
+    const rrows = await p.$$eval(".tree .rtree .ti", els => els.map(e => e.textContent));
+    check("the Results tab is a tree: each result with its largest value, the checks, the tables (0.10.2, the mock-ups)", ["Bending moment", "Shear force", "Deflection", "Equilibrium · balanced", "Tables and equilibrium"].every(x => rrows.some(t => t.startsWith(x))) && rrows.some(t => /^Equilibrium · balanced0\.0 %$/.test(t)), JSON.stringify(rrows));
+    await p.click('.tree .rtree .ti:has-text("Shear force")'); await p.waitForTimeout(100);
+    check("…a click on a result shows it in the view", (await p.$$('.tree .rtree .ti.on:has-text("Shear force")')).length === 1);
+    await p.click('.tree .rtree .ti:has-text("Bending moment")'); await p.waitForTimeout(100);
     check("the results legend is a dark card floating in the view (0.10.2, the mock-ups)", await p.$eval(".legend.rleg", el => getComputedStyle(el).position === "absolute" && el.closest(".center") !== null));
     await p.click(".legend.rleg .lfold"); await p.waitForTimeout(80);
     check("…that folds to one line and opens again", await p.$eval(".legend.rleg", el => el.classList.contains("folded") && el.offsetHeight < 40));

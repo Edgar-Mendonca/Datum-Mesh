@@ -1424,3 +1424,13 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .legend.rleg.folded { width: auto; padding: 4px 10px; }
 .legend.rleg.folded > :not(.lfold) { display: none; }
 .legend.rleg.folded .lfold { position: static; }
+
+/* 0.10.2: the Results tab as a tree (the mock-ups). */
+.tree .rtree { padding: 0; }
+.tree .rtree .rhead { cursor: default; }
+.tree .rtree .rhead .tic { width: 14px; height: 14px; }
+.tree .rtree .rcase { margin: 0 0 2px 22px; }
+.tree .rtree > details.tgrp { margin-left: 13px; }
+.tree .rtree .ti.okline small, .tree .rtree .ti.okline .tic { color: var(--ok-fg); }
+.tree .rtree .ti.badline, .tree .rtree .ti.badline small { color: var(--err-fg); }
+.tree .rtree .stalebar { margin: 2px 8px; }
