@@ -252,9 +252,6 @@ export const FEATS: Feat[] = [
     fields: [{ k: "text", l: ">>>", v: "model.add_support('Fixed', face='Body1/F2')" }, { k: "check", l: "Record what I do as a script", on: false }] },
   // ---------- 0.10.1: the rest of the map, from the mock-ups ----------
   // Geometry
-  { id: "splitmember", label: "Split a Member", icon: "cut", step: 1, tab: "geometry", group: "Edit", v: "0.10.3", for: FRAMES,
-    what: "Split a member at a point, at its middle, or into equal pieces, with nodes where it splits.",
-    fields: [{ k: "pick", l: "Member", what: "a member" }, { k: "choice", l: "Where", o: ["At a distance", "At the middle", "Into equal pieces"] }, { k: "num", l: "Distance or pieces", v: "2" }] },
   { id: "portalgen", label: "Portal Frame", icon: "frame", step: 1, tab: "geometry", group: "Generate", v: "0.13", for: FRAMES,
     what: "A whole portal frame from its span, eaves height and roof pitch: columns, rafters, supports and the usual loads.",
     fields: [{ k: "num", l: "Span", u: "m", v: "12" }, { k: "num", l: "Eaves height", u: "m", v: "5" }, { k: "num", l: "Roof pitch", u: "°", v: "10" }, { k: "num", l: "Bays (3D)", v: "1" }, { k: "choice", l: "Feet", o: ["Pinned", "Fixed"] }] },
@@ -379,15 +376,6 @@ export const FEATS: Feat[] = [
     what: "Solve a folder of models one after another and collect a summary table of their results.",
     fields: [{ k: "pick", l: "Folder", what: "a folder" }, { k: "table", l: "Collect", cols: ["Result", "Where"], rows: [["Largest displacement", "anywhere"]] }] },
   // ---------- 0.10.3 onwards: the plan from the user's specifications (docs/PLAN-SPECS.md) ----------
-  { id: "reversemember", label: "Reverse a Member", icon: "repeat", step: 1, tab: "geometry", group: "Edit", v: "0.10.3", for: FRAMES,
-    what: "Swap a member's start and end: its loads, releases and local axes follow, and the results are the same.",
-    fields: [{ k: "pick", l: "Members", what: "members" }, { k: "check", l: "Keep the loads where they are on the frame", on: true }] },
-  { id: "mergenodes", label: "Merge Nodes", icon: "node", step: 1, tab: "geometry", group: "Edit", v: "0.10.3", for: FRAMES,
-    what: "Join nodes closer than a tolerance into one, with a report of supports and loads that disagree.",
-    fields: [{ k: "num", l: "Tolerance", u: "mm", v: "1" }, { k: "table", l: "Merged", cols: ["Kept", "Removed", "Distance", "Conflict"] }] },
-  { id: "modelcheck", label: "Model Check", icon: "verify", step: 5, tab: "solve", group: "Check", v: "0.10.3", for: ALL,
-    what: "Looks for what would spoil a solve: loose and near-missing nodes, duplicate members, ends released all round, missing properties; each found is a row that goes to it.",
-    fields: [{ k: "table", l: "Found", cols: ["What", "Where", "Why it matters"], rows: [["Loose node", "N12", "Nothing joins it"], ["Released all round", "M4", "It would spin"]] }, { k: "num", l: "Near-miss tolerance", u: "mm", v: "5" }] },
   { id: "projectedges", label: "Project Edges", icon: "w-line", step: 1, tab: "geometry", group: "Sketch", v: "0.10.5", for: SOLID,
     what: "Bring a solid's edges into the sketch, linked to them, to draw against.",
     fields: [{ k: "pick", l: "Edges or faces", what: "edges or a face" }, { k: "check", l: "Keep linked to the solid", on: true }] },

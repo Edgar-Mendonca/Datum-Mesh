@@ -35,10 +35,11 @@ pub fn list() -> Vec<Example> {
     // Blank models first, then each heading of File › Examples in order (a stable sort keeps the
     // order within each heading, simple to harder).
     let mut v = vec![
-        e("blank-frame", "Blank frame", "Nodes and members: beams and trusses in 2D.", Analysis::Frame),
-        e("blank-stress", "Blank part", "Plane stress: a thin plate loaded in its plane.", Analysis::Stress),
-        e("blank-space", "Blank 3D frame", "Nodes and members in 3D: beams that bend both ways and twist, and truss bars.", Analysis::Space),
-        e("blank-solid", "Blank 3D solid", "Sketch on a plane, then extrude, revolve, drill, round and pattern it into a 3D solid.", Analysis::Solid),
+        // 0.10.3: four starting points (the user); heat is a choice inside the 2D part and the 3D solid.
+        e("blank-frame", "2D frame", "Beams and trusses in a plane: a beam, a portal frame, a bridge, a roof truss.", Analysis::Frame),
+        e("blank-space", "3D frame", "Beams, trusses and plates in space: buildings, towers, platforms.", Analysis::Space),
+        e("blank-stress", "2D part", "A flat slice of a solid: a plate with a hole, a bracket, a vessel wall. Stress or heat.", Analysis::Stress),
+        e("blank-solid", "3D solid", "Model a part in 3D, mesh it and solve: stress, heat, vibration, impact.", Analysis::Solid),
         e("portal", "Portal frame", "A pitched portal frame with wind on one side and load on the roof.", Analysis::Frame),
         e("truss", "Roof truss", "A 12 m roof truss of pinned bars carrying purlin loads.", Analysis::Frame),
         e("braced", "Braced frame", "A two-storey steel frame: HEB columns, IPE beams pinned at their ends, one braced bay, and dead, imposed and wind load cases with combinations.", Analysis::Frame),

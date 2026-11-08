@@ -242,17 +242,17 @@ export const gettingStarted = () => openDialog(() => (
       <p>Datum Mesh finds the stresses, deflections and temperatures in parts and structures by the finite-element method: it splits the model into small pieces, solves the equations of each, and puts them back together.</p>
       <h4>A frame in a minute</h4>
       <ol>
-        <li>File › Home › <b>Blank frame</b>. Geometry › <b>Beam</b>, then click two points on the grid for each member (it continues from the last point; Esc stops).</li>
+        <li>File › Home › <b>2D frame</b>. Geometry › <b>Beam</b>, then click two points on the grid for each member (it continues from the last point; Esc stops).</li>
         <li>Loads › <b>Fixed</b> or <b>Pinned</b>, then click the nodes at the bottom.</li>
         <li>Loads › <b>Force</b> or <b>Distributed</b>, then click a node or a member; set the value in the Inspector on the right.</li>
         <li><b>Solve</b> (F5) shows the deflected shape, the moment, shear and axial diagrams and the reactions; hover a member to read the values there.</li>
       </ol>
       <h4>A part</h4>
       <ol>
-        <li>File › Home › <b>Blank part</b>. Draw the outline with Rectangle, Circle or Polygon; cut holes with the hole tools.</li>
+        <li>File › Home › <b>2D part</b>. Draw the outline with Rectangle, Circle or Polygon; cut holes with the hole tools.</li>
         <li>Click an edge, then put a support or a load on it from the Loads tab.</li>
         <li><b>Solve</b> (F5) meshes the part and colours it by von Mises stress; pick another result under the canvas, and hover to read values. The Mesh view shows the triangles and their quality.</li>
-        <li>For heat, choose Home › <b>Heat conduction</b>: fix a temperature on an edge, add convection or a heat flux, and solve for temperatures.</li>
+        <li>For heat, choose <b>Heat</b> on the 2D part tile, or Home › <b>Heat conduction</b>: fix a temperature on an edge, add convection or a heat flux, and solve for temperatures.</li>
       </ol>
       <h4>Good to know</h4>
       <ul>

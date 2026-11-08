@@ -39,6 +39,21 @@ fn main() {
         d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Member { id: mb }, kind }) }).unwrap();
     }
     let beamloads = d.m;
+    // A frame with faults for the model check (0.10.3): a loose node, two nodes 3 mm apart, a
+    // piece on its own, two members on the same nodes.
+    let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
+    for (a, b) in [([0.0, 0.0], [0.0, 4.0]), ([0.0, 4.0], [6.0, 4.0]), ([6.0, 4.0], [6.0, 0.0]), ([6.003, 4.0], [9.0, 4.0])] {
+        d.apply(Op::AddMember { from: a, to: b, kind: datum_core::model::MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+    }
+    for p in [[0.0, 0.0], [6.0, 0.0]] {
+        let n = d.m.nodes.iter().find(|n| n.x == p[0] && n.y == p[1]).unwrap().id;
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: SupportKind::Fixed }) }).unwrap();
+    }
+    d.apply(Op::Add { item: Item::Node(datum_core::model::Node { id: 0, x: 3.0, y: 6.5, z: 0.0 }) }).unwrap();
+    let mut dup = d.m.members[1].clone();
+    dup.id = 900;
+    d.m.members.push(dup);
+    let checkdemo = d.m;
     // A part with the sample DXF imported (0.3.5), as the shell sends it back.
     let imp = datum_core::dxf::read(datum_core::dxf::SAMPLE_PUB, None).unwrap();
     let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Stress));
@@ -126,6 +141,8 @@ fn main() {
         "offgrid": out_m(&offgrid),
         "noload_results": sent(&datum_core::solve(&noload).unwrap()),
         "beamloads": out_m(&beamloads),
+        "checkdemo": out_m(&checkdemo),
+        "checkdemo_findings": datum_core::frames::check::model_check(&checkdemo, 0.005),
         "beamloads_results": sent(&datum_core::solve(&beamloads).unwrap()),
     });
     println!("{}", serde_json::to_string(&fix).unwrap());

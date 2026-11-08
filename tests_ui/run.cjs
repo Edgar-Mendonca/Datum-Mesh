@@ -69,6 +69,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
           if (c === "cad_contacts") return { m: { ...f.cad.meshed_model, contacts: [{ id: 901, a: { on: "face", face: 0 }, b: { on: "face", face: 1 }, friction: 0.2 }] }, path: null, dirty: true, undo: true, redo: false, created: [901], warnings: [] };
           if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
           if (c === "cad_auto_size") return 5;
+          if (c === "model_check") return f.checkdemo_findings;
           if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
           if (c === "cad_import_step") { window.__cad = f.cad.extruded; return f.cad.extruded; }
           if (c === "cad_export") return "/tmp/model." + a.format;
@@ -112,7 +113,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     // Blank models are on Home; the worked examples on File › Examples (0.6.1).
     const ex = fix.examples_list.find(e => e.id === id);
     if ((ex.group ?? "Blank") !== "Blank") { await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(150); await p.click(`.exfolders button[data-group="${ex.group}"]`); await p.waitForTimeout(100); }
-    await p.click(`.home .tile:has(b:text-is("${ex.name}"))`); await p.waitForTimeout(250);
+    await p.click(`.home .tile.blank:has(b:text-is("${ex.name}")) .tmain, .home button.tile:has(b:text-is("${ex.name}"))`); await p.waitForTimeout(250);
     // Unsaved changes are offered for saving first (0.1.2): drop them.
     if (await p.$('.dlg header:has-text("Save changes?")')) { await p.click('.dlg button:has-text("Don\'t save")'); await p.waitForTimeout(300); }
     await p.waitForTimeout(150);
@@ -121,13 +122,13 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   // 1. File page: every worked example, crimson sidebar.
   const tiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent));
   check("Home shows the blank models and a way to the examples (0.6.1)", fix.examples_list.filter(e => e.group === "Blank").every(e => tiles.includes(e.name)) && tiles.includes("Examples") && !tiles.includes("Portal frame"), JSON.stringify(tiles));
-  check("Home has a blank heat part and the Roadmap among its tiles (0.10.0, the user's mock-up)", tiles.includes("Blank heat part") && tiles.includes("Roadmap"), JSON.stringify(tiles));
+  check("Home has four starting points, in order, and the Roadmap among its tiles (0.10.3, the user)", JSON.stringify(tiles.slice(0, 4)) === JSON.stringify(["2D frame", "3D frame", "2D part", "3D solid"]) && !tiles.some(t => /heat part/i.test(t)) && tiles.includes("Roadmap"), JSON.stringify(tiles));
   check("an empty Recent says where models will appear (0.10.0)", (await p.textContent(".recentnone")).includes("appear here"));
   await p.click('.home .tile:has(b:text-is("Roadmap"))'); await p.waitForTimeout(150);
   check("the Roadmap tile opens File › Roadmap (0.10.0)", (await p.$$(".bs .roadmap")).length === 1);
   await p.click('.bs aside button:has-text("Home")'); await p.waitForTimeout(150);
-  await p.click('.home .tile[data-blank="heat"]'); await p.waitForTimeout(250);
-  check("the blank heat tile starts a heat model (0.10.0)", await p.evaluate(() => window.__calls.some(c => c[0] === "new_model" && c[1].example === null && c[1].analysis === "heat")));
+  await p.click('.home .tile[data-blank="blank-stress"] button[data-heat]'); await p.waitForTimeout(250);
+  check("Heat on the 2D part tile starts a heat model (0.10.3)", await p.evaluate(() => window.__calls.some(c => c[0] === "new_model" && c[1].example === null && c[1].analysis === "heat")));
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
   await p.click('.bs aside button:has-text("Examples")'); await p.waitForTimeout(200);
   // 0.10.0: the examples are in folders; every folder's tiles together are every example.
@@ -225,6 +226,32 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const mpp = await lastOp(), ppk = mpp?.Add?.item?.Load?.kind;
   check("Part of Member puts a load over half the member, centred where it was clicked", ppk?.kind === "patch" && ppk.from >= 0 && ppk.to > ppk.from && Math.abs((ppk.from + ppk.to) / 2 - plk?.at) < 0.01, JSON.stringify(mpp));
   await p.keyboard.press("Escape");
+  // 0.10.3: split, reverse and merge members from Geometry › Edit.
+  await stepHead(1);
+  await p.keyboard.press("Escape");
+  await p.mouse.click(mc[0], mc[1]); await p.waitForTimeout(150);
+  await p.click('.ribbon button[title^="Turn the selected members end for end"]'); await p.waitForTimeout(150);
+  const rv = await lastOp();
+  check("Reverse turns the selected member end for end (0.10.3)", JSON.stringify(rv?.ReverseMember?.ids) === JSON.stringify([m0.id]), JSON.stringify(rv));
+  await p.click('.ribbon button[title^="Split the selected members"]'); await p.waitForTimeout(200);
+  await p.click('.dlg button:text-is("Split")'); await p.waitForTimeout(150);
+  const spl = await lastOp();
+  check("Split cuts the selected member into two equal pieces (0.10.3)", JSON.stringify(spl?.SplitMember) === JSON.stringify({ ids: [m0.id], at: [0.5] }), JSON.stringify(spl));
+  await p.click('.ribbon button[title^="Join two selected members"]'); await p.waitForTimeout(150);
+  check("Merge Members asks for two members when one is selected (0.10.3)", JSON.stringify(await lastOp()) === JSON.stringify(spl));
+  await p.click('.ribbon button[title^="Make nodes closer than a tolerance"]'); await p.waitForTimeout(200);
+  await p.click('.dlg button:text-is("Merge")'); await p.waitForTimeout(150);
+  const mn = await lastOp();
+  check("Merge Nodes sends a tolerance of 5 mm (0.10.3)", mn?.MergeNodes && Math.abs(mn.MergeNodes.tol - 0.005) < 1e-12, JSON.stringify(mn));
+  // The model check: the engine's findings, worst first; a row selects what it is about.
+  await stepHead(5);
+  await p.click('.ribbon button[title^="Look for what would spoil the solve"]'); await p.waitForTimeout(300);
+  const mrows = await p.$$eval(".mctable tbody tr", rs => rs.map(r => r.className));
+  check("Model Check lists the engine's findings, errors first (0.10.3)", mrows.length === fix.checkdemo_findings.length && mrows[0] === "error", JSON.stringify(mrows));
+  await p.click(".mctable tbody tr:nth-child(1)"); await p.waitForTimeout(150);
+  check("a Model Check row selects what it is about (0.10.3)", (await p.textContent(".status")).includes("2 selected"), await p.textContent(".status"));
+  check("the Model Check sits in the panel under the view, so the selection stays in sight (0.10.3)", (await p.$$(".console.open .mcheck")).length === 1 && !(await p.$(".dlg")));
+  await stepHead(3); await p.waitForTimeout(100);
 
   // 8. A part: arcs, edges, edge loads and drawing shapes.
   await open("bracket");

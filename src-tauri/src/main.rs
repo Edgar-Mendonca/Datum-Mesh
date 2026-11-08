@@ -513,6 +513,12 @@ fn section_props(shape: SectionShape) -> R<sections::Props> {
     sections::props(&shape)
 }
 
+/// Solve › Model Check (0.10.3): what would spoil a frame's solve, each with the items to go to.
+#[tauri::command]
+fn model_check(st: State<'_, St>, near: f64) -> Vec<datum_core::frames::check::Finding> {
+    datum_core::frames::check::model_check(&st.lock().doc.m, near)
+}
+
 // ---------------------------------------------------------------- files
 
 /// The model as written to a .dmesh file, with the geometry engine's design (0.7.1) under
@@ -852,7 +858,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             stop_solve,
-            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, model_check, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

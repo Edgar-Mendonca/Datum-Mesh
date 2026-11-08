@@ -1267,7 +1267,12 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 
 /* 0.10.0 File › Home (the user's mock-up): five blank tiles in a row, Examples and Roadmap as wide
    links, recent models as rows with a picture. */
-.tiles.blanks { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.tiles.blanks { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.tile.blank { display: flex; flex-direction: column; padding: 0; }
+.tile.blank .tmain { display: flex; flex-direction: column; align-items: stretch; text-align: left; background: none; border: 0; padding: 10px 12px; flex: 1; font: inherit; color: inherit; cursor: pointer; gap: 4px; }
+.tile.blank .tchoice { display: flex; gap: 6px; padding: 0 12px 10px; }
+.tile.blank .tchoice button { flex: 1; font: 500 11px/1.2 var(--mono, monospace); letter-spacing: .04em; text-transform: uppercase; padding: 5px 0; border: 1px solid var(--line); border-radius: 3px; background: var(--paper, transparent); color: var(--ink2, inherit); cursor: pointer; }
+.tile.blank .tchoice button:hover { border-color: var(--accent); color: var(--accent); }
 .tiles.blanks .tile .pic { height: 78px; }
 .tiles.links { grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
 .tile.wide { flex-direction: row; align-items: center; gap: 14px; padding: 10px 14px; cursor: pointer; }
@@ -1566,3 +1571,17 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .stdparts .sprow small { color: var(--muted); font: 10.5px var(--mono); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .stdparts .sprow .btn.sm { height: 20px; padding: 0 7px; font: inherit; font-size: 11px; text-transform: none; letter-spacing: 0; }
 .stdparts .spnote { padding: 6px 10px; margin: 0; }
+
+/* 0.10.3: the model check */
+.mcheck { padding: 6px 12px 10px; overflow: auto; height: 100%; box-sizing: border-box; }
+.mchead { display: flex; align-items: center; gap: 12px; margin: 2px 0 6px; font-size: 12.5px; }
+.mcnear { font-size: 12px; color: var(--ink2, #555); white-space: nowrap; }
+.mcnear input { width: 56px; margin: 0 4px; }
+.mctable { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.mctable th { text-align: left; font: 500 10.5px/1 var(--mono, monospace); letter-spacing: .06em; text-transform: uppercase; color: var(--ink3, #777); padding: 6px 8px; border-bottom: 1px solid var(--line); }
+.mctable td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.mctable tr:hover td { background: var(--hover, rgba(15,110,140,.06)); cursor: pointer; }
+.badge { display: inline-block; font: 500 10.5px/1 var(--mono, monospace); letter-spacing: .04em; text-transform: uppercase; padding: 3px 6px; border-radius: 3px; border: 1px solid; }
+.badge.error { color: #B3261E; border-color: #E6A19C; background: #FCEEEE; }
+.badge.warning { color: #8A5A00; border-color: #E7C77A; background: #FFF6DF; }
+.badge.note { color: #3F5560; border-color: #C3D0D6; background: #F1F5F7; }

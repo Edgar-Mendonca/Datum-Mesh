@@ -80,8 +80,9 @@ const Home = () => {
         <button class="startnew" onClick={() => setBackstage("new")}><Icon n="new" size={28} /><span><b>Start a new study</b><small>Choose what you are analysing (a truss, a frame, a part, a 3D solid or heat) and what you want to know: the model is set up for it.</small></span></button>
         <h2>Or start from a blank model</h2>
         <div class="tiles blanks">
-          <For each={(ex() ?? []).filter(t => (t.group ?? "Blank") === "Blank")}>{t => <button class="tile" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>}</For>
-          <button class="tile" data-blank="heat" onClick={() => C.newModel(null, "heat")}><div class="pic"><svg viewBox="0 0 100 60" class="exart"><path d="M8 52H92V44H84V12H78V44H64V12H58V44H44V12H38V44H24V12H18V44H8z" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round" /></svg></div><b>Blank heat part</b><span>Temperatures and heat flow through a 2D part: fins, walls, plates.</span></button>
+          {/* 0.10.3: four starting points; the 2D part offers stress or heat (the user). */}
+          <For each={(ex() ?? []).filter(t => (t.group ?? "Blank") === "Blank")}>{t => <div class="tile blank" data-blank={t.id}><button class="tmain" onClick={() => C.newModel(t.id)}><div class="pic"><ExampleArt id={t.id} /></div><b>{t.name}</b><span>{t.what}</span></button>
+            <Show when={t.id === "blank-stress"}><div class="tchoice"><button onClick={() => C.newModel(t.id)} title="Stresses and deflections: plane stress (change to plane strain or axisymmetric on Home)">Stress</button><button data-heat onClick={() => C.newModel(null, "heat")} title="Temperatures and heat flow: fins, walls, plates">Heat</button></div></Show></div>}</For>
         </div>
         <div class="tiles links">
           <button class="tile wide" onClick={() => setBackstage("examples")}><svg class="ic"><use href="#i-folder" /></svg><div><b>Examples</b><span>{(ex() ?? []).filter(t => t.group && t.group !== "Blank").length} worked examples, by kind: frames, 3D frames, parts, 3D solids and assemblies, nonlinear, dynamics.</span></div></button>

@@ -135,6 +135,17 @@ pub enum Op {
     /// Round (radius `size`) or bevel (`size` off each side) the part's edge along its sweep
     /// nearest the point `near`: the sketch corner under it.
     PartEdge { part: u32, near: [f64; 3], size: f64, round: bool },
+    /// Frames (0.10.3): cut each member at these fractions of its length (0 < t < 1); its
+    /// loads, hinges and offsets go with the pieces.
+    SplitMember { ids: Vec<u32>, at: Vec<f64> },
+    /// Frames (0.10.3): turn members end for end; their hinges, offsets and member loads follow,
+    /// so the structure and its loads are unchanged.
+    ReverseMember { ids: Vec<u32> },
+    /// Frames (0.10.3): join two members in line that meet at a node nothing else uses into one.
+    MergeMembers { ids: Vec<u32> },
+    /// Frames (0.10.3): bring nodes closer than `tol` (m) together, onto the first of each group
+    /// (a supported one first); members, supports and loads follow it.
+    MergeNodes { ids: Vec<u32>, tol: f64 },
     Batch(Vec<Op>),
 }
 
@@ -395,6 +406,159 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let id = fresh(m);
             m.members.push(Member { id, a, b, kind, section, material, roll: 0.0, hinge: [false; 2], only: Default::default(), offset: [0.0; 2] });
             created.push(id);
+        }
+        Op::SplitMember { ids, at } => {
+            if at.is_empty() || !at.iter().all(|t| t.is_finite() && *t > 0.0 && *t < 1.0) {
+                return Err("Split a member at places between its ends (more than 0 and less than 1 of its length).".into());
+            }
+            let pos: std::collections::HashMap<u32, [f64; 3]> = m.nodes.iter().map(|n| (n.id, n.at())).collect();
+            let ends: Vec<([f64; 3], [f64; 3])> = m.members.iter().filter(|b| ids.contains(&b.id)).filter_map(|b| Some((*pos.get(&b.a)?, *pos.get(&b.b)?))).collect();
+            if ends.is_empty() {
+                return Err("Pick the members to split.".into());
+            }
+            // New nodes along each member; `apply` then cuts the member at them, loads and all.
+            for (a, b) in ends {
+                for &t in &at {
+                    node_at(m, [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t], created);
+                }
+            }
+        }
+        Op::ReverseMember { ids } => {
+            let space = m.analysis == crate::model::Analysis::Space;
+            for id in ids {
+                let Some(i) = m.members.iter().position(|b| b.id == id) else { continue };
+                let len = m.member_length(id).unwrap_or(0.0);
+                let b = m.members[i].clone();
+                let (Some(na), Some(nb)) = (m.node(b.a).map(|n| n.at()), m.node(b.b).map(|n| n.at())) else { continue };
+                let roll = if space { b.roll } else { 0.0 };
+                // A load across the member keeps its side in the world: its sign follows its local y.
+                let (y0, y1) = (crate::space::axes(na, nb, roll)[1], crate::space::axes(nb, na, roll)[1]);
+                let flip = if y0[0] * y1[0] + y0[1] * y1[1] + y0[2] * y1[2] < 0.0 { -1.0 } else { 1.0 };
+                let mb = &mut m.members[i];
+                (mb.a, mb.b) = (b.b, b.a);
+                mb.hinge = [b.hinge[1], b.hinge[0]];
+                mb.offset = [b.offset[1], b.offset[0]];
+                for l in m.loads.iter_mut().filter(|l| l.at == Target::Member { id }) {
+                    let s = |d: &crate::model::Dir| if *d == crate::model::Dir::Local { flip } else { 1.0 };
+                    l.kind = match l.kind {
+                        LoadKind::Dist { w1, w2, dir } => LoadKind::Dist { w1: w2 * s(&dir), w2: w1 * s(&dir), dir },
+                        LoadKind::Patch { w1, w2, dir, from, to, projected } => LoadKind::Patch { w1: w2 * s(&dir), w2: w1 * s(&dir), dir, from: (len - to).max(0.0), to: len - from, projected },
+                        LoadKind::Concentrated { f, dir, at } => LoadKind::Concentrated { f: f * s(&dir), dir, at: (len - at).max(0.0) },
+                        ref k => k.clone(),
+                    };
+                }
+            }
+        }
+        Op::MergeMembers { ids } => {
+            let [i, j] = match ids.as_slice() {
+                [a, b] => [m.members.iter().position(|x| x.id == *a), m.members.iter().position(|x| x.id == *b)].map(|x| x.ok_or("Pick two members to merge.")),
+                _ => return Err("Pick two members to merge.".into()),
+            };
+            let (i, j) = (i?, j?);
+            let (p, q) = (m.members[i].clone(), m.members[j].clone());
+            let shared = [p.a, p.b].into_iter().find(|n| *n == q.a || *n == q.b).ok_or("These two members do not meet: pick two that share a node.")?;
+            if p.kind != q.kind || p.section != q.section || p.material != q.material || p.only != q.only || p.roll != q.roll {
+                return Err("These members differ (kind, section, material, orientation or tension/compression only): make them alike first.".into());
+            }
+            let far_p = if p.a == shared { p.b } else { p.a };
+            let far_q = if q.a == shared { q.b } else { q.a };
+            let (Some(a), Some(c), Some(o)) = (m.node(far_p).map(|n| n.at()), m.node(far_q).map(|n| n.at()), m.node(shared).map(|n| n.at())) else { return Err("A member's node is missing.".into()) };
+            let (u, v) = ([o[0] - a[0], o[1] - a[1], o[2] - a[2]], [c[0] - o[0], c[1] - o[1], c[2] - o[2]]);
+            let cr = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let (lu, lv) = (dist3(a, o), dist3(o, c));
+            if (cr[0] * cr[0] + cr[1] * cr[1] + cr[2] * cr[2]).sqrt() > 1e-9 * lu * lv || u[0] * v[0] + u[1] * v[1] + u[2] * v[2] <= 0.0 {
+                return Err("These members are not in line: only members along one straight line merge.".into());
+            }
+            let others = m.members.iter().filter(|b| b.id != p.id && b.id != q.id && (b.a == shared || b.b == shared)).count();
+            let held = m.supports.iter().any(|s| s.at == Target::Node { id: shared }) || m.loads.iter().any(|l| l.at == Target::Node { id: shared });
+            if others > 0 || held {
+                return Err("The node between them carries another member, a support or a load: it has to stay.".into());
+            }
+            let hinged_mid = (if p.a == shared { p.hinge[0] } else { p.hinge[1] }) || (if q.a == shared { q.hinge[0] } else { q.hinge[1] });
+            if hinged_mid {
+                return Err("There is a hinge at the node between them: it would be lost. Remove it first.".into());
+            }
+            // The merged member runs from p's far end to q's far end; each piece's loads move onto
+            // it as loads over its part (a whole-length uniform pair stays one uniform load).
+            let total = lu + lv;
+            let mut nb = p.clone();
+            nb.a = far_p;
+            nb.b = far_q;
+            nb.hinge = [if p.a == far_p { p.hinge[0] } else { p.hinge[1] }, if q.a == far_q { q.hinge[0] } else { q.hinge[1] }];
+            nb.offset = [if p.a == far_p { p.offset[0] } else { p.offset[1] }, if q.a == far_q { q.offset[0] } else { q.offset[1] }];
+            let space = m.analysis == crate::model::Analysis::Space;
+            let ly = |x: [f64; 3], y: [f64; 3]| crate::space::axes(x, y, if space { p.roll } else { 0.0 })[1];
+            let ny = ly(a, c);
+            for (old, start, rev) in [(p.id, 0.0, p.a != far_p), (q.id, lu, q.a != shared)] {
+                let len = if old == p.id { lu } else { lv };
+                let (oa, ob) = if old == p.id { if rev { (o, a) } else { (a, o) } } else if rev { (c, o) } else { (o, c) };
+                let oy = ly(oa, ob);
+                let flip = if oy[0] * ny[0] + oy[1] * ny[1] + oy[2] * ny[2] < 0.0 { -1.0 } else { 1.0 };
+                for l in m.loads.iter_mut().filter(|l| l.at == Target::Member { id: old }) {
+                    let sg = |d: &crate::model::Dir| if *d == crate::model::Dir::Local { flip } else { 1.0 };
+                    // Along the new member: a place s from the old member's start.
+                    let at = |s: f64| if rev { start + len - s } else { start + s };
+                    l.kind = match l.kind {
+                        LoadKind::Dist { w1, w2, dir } => {
+                            let (f, t) = (at(0.0).min(at(len)), at(0.0).max(at(len)));
+                            let (ws, we) = if rev { (w2, w1) } else { (w1, w2) };
+                            LoadKind::Patch { w1: ws * sg(&dir), w2: we * sg(&dir), dir, from: f, to: t, projected: false }
+                        }
+                        LoadKind::Patch { w1, w2, dir, from, to, projected } => {
+                            let (ws, we) = if rev { (w2, w1) } else { (w1, w2) };
+                            LoadKind::Patch { w1: ws * sg(&dir), w2: we * sg(&dir), dir, from: at(from).min(at(to)), to: at(from).max(at(to)), projected }
+                        }
+                        LoadKind::Concentrated { f, dir, at: x } => LoadKind::Concentrated { f: f * sg(&dir), dir, at: at(x).clamp(0.0, total) },
+                        ref k => k.clone(),
+                    };
+                    l.at = Target::Member { id: nb.id };
+                }
+            }
+            // Two halves of one uniform load over the whole member are one load again.
+            let whole: Vec<usize> = m.loads.iter().enumerate().filter(|(_, l)| l.at == Target::Member { id: nb.id } && matches!(l.kind, LoadKind::Patch { projected: false, .. })).map(|(k, _)| k).collect();
+            if let [x, y] = whole[..] {
+                if let (LoadKind::Patch { w1, w2, dir, from, to, .. }, LoadKind::Patch { w1: v1, w2: v2, dir: d2, from: f2, to: t2, .. }) = (m.loads[x].kind.clone(), m.loads[y].kind.clone()) {
+                    let near = |a: f64, b: f64| (a - b).abs() <= 1e-9 * total.max(1.0);
+                    let joined = m.loads[x].case == m.loads[y].case && dir == d2 && w1 == w2 && v1 == v2 && w1 == v1 && ((near(from, 0.0) && near(to, f2) && near(t2, total)) || (near(f2, 0.0) && near(t2, from) && near(to, total)));
+                    if joined {
+                        m.loads[x].kind = LoadKind::Dist { w1, w2: w1, dir };
+                        m.loads.remove(y);
+                    }
+                }
+            }
+            m.members.retain(|b| b.id != q.id);
+            let k = m.members.iter().position(|b| b.id == p.id).unwrap();
+            m.members[k] = nb;
+            m.nodes.retain(|n| n.id != shared);
+        }
+        Op::MergeNodes { ids, tol } => {
+            if !(tol.is_finite() && tol >= 0.0) {
+                return Err("The tolerance must be a length of zero or more.".into());
+            }
+            let pick: Vec<u32> = if ids.is_empty() { m.nodes.iter().map(|n| n.id).collect() } else { ids };
+            let supported = |m: &Model, id: u32| m.supports.iter().any(|s| s.at == Target::Node { id });
+            let mut order: Vec<u32> = pick.clone();
+            order.sort_by_key(|id| (!supported(m, *id), *id));
+            let mut moved = std::collections::HashSet::new();
+            for &keep in &order {
+                if moved.contains(&keep) {
+                    continue;
+                }
+                let Some(p) = m.node(keep).map(|n| n.at()) else { continue };
+                for &other in &order {
+                    if other == keep || moved.contains(&other) {
+                        continue;
+                    }
+                    if let Some(n) = m.nodes.iter_mut().find(|n| n.id == other) {
+                        let d = dist3(n.at(), p);
+                        if d <= tol.max(SAME) && d > 0.0 {
+                            (n.x, n.y, n.z) = (p[0], p[1], p[2]);
+                            moved.insert(other);
+                        }
+                    }
+                }
+                moved.insert(keep);
+            }
         }
         Op::JoinCrossings { ids } => {
             // New nodes where two members meet (closest points of the two lines closer than SAME);
@@ -1261,7 +1425,101 @@ fn prune(m: &mut Model) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::SupportKind;
+    use crate::model::{Dir, SupportKind};
+
+    /// A 6 m beam on a pin and a roller with a tapering load, a point load and a part load, and
+    /// (for `local`) a load across the member; what a solve says about it.
+    fn loaded_beam(local: bool) -> Doc {
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [6.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        let (n0, n1, id) = (d.m.nodes[0].id, d.m.nodes[1].id, d.m.members[0].id);
+        for (n, kind) in [(n0, SupportKind::Pinned), (n1, SupportKind::RollerX)] {
+            d.apply(Op::Add { item: Item::Support(crate::model::Support { id: 0, at: Target::Node { id: n }, kind }) }).unwrap();
+        }
+        let dir = if local { Dir::Local } else { Dir::Y };
+        for kind in [LoadKind::Dist { w1: -2e3, w2: -5e3, dir }, LoadKind::Concentrated { f: -8e3, dir, at: 4.0 }, LoadKind::Patch { w1: -1e3, w2: -3e3, dir, from: 1.0, to: 2.5, projected: false }] {
+            d.apply(Op::Add { item: Item::Load(crate::model::Load { case: 0, id: 0, at: Target::Member { id }, kind }) }).unwrap();
+        }
+        d
+    }
+    fn answer(d: &Doc) -> (f64, f64, f64) {
+        let r = crate::frame::solve(&d.m).unwrap();
+        let ra = r.reactions.iter().find(|x| d.m.node(x.node).is_some_and(|n| n.x == 0.0)).unwrap().fy;
+        // The deflection under the point load, 4 m along: a station in every piece layout.
+        let dmax = r.members.iter().zip(&d.m.members).find_map(|(mr, b)| {
+            let (xa, xb) = (d.m.node(b.a)?.x, d.m.node(b.b)?.x);
+            mr.x.iter().position(|s| (xa + (xb - xa) * s / mr.length - 4.0).abs() < 1e-9).map(|i| mr.d[i][1])
+        }).unwrap();
+        let mmax = r.members.iter().flat_map(|m| m.m.iter().copied()).fold(0.0f64, |a, v| a.max(v.abs()));
+        (ra, dmax, mmax)
+    }
+    fn same(a: (f64, f64, f64), b: (f64, f64, f64)) -> bool {
+        let c = |x: f64, y: f64| (x - y).abs() <= 1e-6 * x.abs().max(y.abs()).max(1e-12);
+        c(a.0, b.0) && c(a.1, b.1)
+    }
+
+    #[test]
+    fn splitting_reversing_and_merging_members_keep_the_answer() {
+        for local in [false, true] {
+            let d0 = loaded_beam(local);
+            let a0 = answer(&d0);
+            let id = d0.m.members[0].id;
+            // Split in three: the loads follow the pieces.
+            let mut d = d0.clone();
+            d.apply(Op::SplitMember { ids: vec![id], at: vec![1.0 / 3.0, 2.0 / 3.0] }).unwrap();
+            assert_eq!(d.m.members.len(), 3);
+            assert!(same(a0, answer(&d)), "split, local {local}: {a0:?} vs {:?}", answer(&d));
+            // Reverse the middle piece and the first: still the same structure and loads.
+            let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).take(2).collect();
+            d.apply(Op::ReverseMember { ids }).unwrap();
+            assert!(same(a0, answer(&d)), "reversed, local {local}: {a0:?} vs {:?}", answer(&d));
+            // Merge them back into one member, two at a time.
+            for _ in 0..2 {
+                let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).take(2).collect();
+                let ok = d.apply(Op::MergeMembers { ids: ids.clone() });
+                if ok.is_err() {
+                    let ids = vec![d.m.members[0].id, d.m.members[2].id];
+                    d.apply(Op::MergeMembers { ids }).unwrap();
+                }
+            }
+            assert_eq!((d.m.members.len(), d.m.nodes.len()), (1, 2));
+            assert!(same(a0, answer(&d)), "merged, local {local}: {a0:?} vs {:?}", answer(&d));
+            // Reversing the whole member twice is no change at all.
+            let mut e = d0.clone();
+            e.apply(Op::ReverseMember { ids: vec![id] }).unwrap();
+            assert!(same(a0, answer(&e)));
+            e.apply(Op::ReverseMember { ids: vec![id] }).unwrap();
+            assert_eq!(e.m.loads, d0.m.loads);
+        }
+    }
+
+    #[test]
+    fn merging_refuses_what_would_change_the_structure() {
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [3.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        d.apply(Op::AddMember { from: [3.0, 0.0], to: [5.0, 2.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).collect();
+        assert!(d.apply(Op::MergeMembers { ids: ids.clone() }).unwrap_err().contains("not in line"));
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [3.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        d.apply(Op::AddMember { from: [3.0, 0.0], to: [6.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        let mid = d.m.nodes.iter().find(|n| n.x == 3.0).unwrap().id;
+        d.apply(Op::Add { item: Item::Support(crate::model::Support { id: 0, at: Target::Node { id: mid }, kind: SupportKind::Pinned }) }).unwrap();
+        let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).collect();
+        assert!(d.apply(Op::MergeMembers { ids }).unwrap_err().contains("has to stay"));
+    }
+
+    #[test]
+    fn nodes_closer_than_the_tolerance_merge() {
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [3.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        d.apply(Op::AddMember { from: [3.003, 0.0], to: [3.0, 2.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        assert_eq!(d.m.nodes.len(), 4);
+        assert!(d.apply(Op::MergeNodes { ids: vec![], tol: 0.001 }).is_err() || d.m.nodes.len() == 4);
+        d.apply(Op::MergeNodes { ids: vec![], tol: 0.005 }).unwrap();
+        assert_eq!(d.m.nodes.len(), 3);
+        assert!(d.m.members.iter().all(|b| d.m.node(b.a).is_some() && d.m.node(b.b).is_some()));
+    }
 
     #[test]
     fn members_share_nodes_and_delete_cascades() {

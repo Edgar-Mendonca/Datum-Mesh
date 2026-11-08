@@ -78,7 +78,15 @@ mod tests {
             6 => Op::Add { item: Item::Load(Load { case: 0, id: 0, at: target(r, m), kind: [LoadKind::Force { fx: 1.0, fy: -2.0, fz: 0.0 }, LoadKind::Moment { m: 3.0, mx: 0.0, my: 0.0 }, LoadKind::Dist { w1: 1.0, w2: 2.0, dir: Dir::Local }, LoadKind::Pressure { p: 1e5 }, LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: 0.0 }, LoadKind::Convection { h: r.f(-5.0, 50.0), t_inf: 290.0 }][r.below(6)].clone() }) },
             7 => Op::Move { ids: vec![r.id(m), r.id(m)], dx: r.f(-1.0, 1.0).round(), dy: 0.5, dz: 0.0 },
             8 => Op::Delete { ids: vec![r.id(m)] },
-            9 => if r.below(2) == 0 { Op::Delete { ids: vec![r.id(m)] } } else { Op::JoinCrossings { ids: m.members.iter().map(|b| b.id).collect() } },
+            9 => match r.below(6) {
+                0 => Op::Delete { ids: vec![r.id(m)] },
+                1 => Op::JoinCrossings { ids: m.members.iter().map(|b| b.id).collect() },
+                // 0.10.3: the member edits, with silly values now and then.
+                2 => Op::SplitMember { ids: vec![r.id(m)], at: vec![r.f(-0.2, 1.2), r.f(0.0, 1.0)] },
+                3 => Op::ReverseMember { ids: vec![r.id(m), r.id(m)] },
+                4 => Op::MergeMembers { ids: vec![r.id(m), r.id(m)] },
+                _ => Op::MergeNodes { ids: vec![], tol: r.f(-0.1, 0.6) },
+            },
             10 => {
                 let mut n = m.nodes.first().cloned().unwrap_or(Node { id: 1, x: 0.0, y: 0.0, z: 0.0 });
                 n.x = if r.below(4) == 0 { f64::NAN } else { r.f(-3.0, 3.0) };
