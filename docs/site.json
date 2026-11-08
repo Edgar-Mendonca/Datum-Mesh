@@ -97,15 +97,42 @@
   ],
   "roadmap": [
     {
-      "v": "0.11–0.15",
-      "title": "Filling in the map",
+      "v": "0.10.3",
+      "title": "Model care and frames",
       "when": "Next",
       "items": [
-        "Results tools: results tree, colour bands, display groups, export; the tube crush settling",
-        "Johnson–Cook, damage, kinematic hardening, rubber models, fitting to test data",
-        "Load curves, tie, coupling, connectors, bolt pretension",
-        "Nonlinear buckling with imperfections, transient heat, crash",
-        "Hexahedra and mesh refinement by itself; job queue and scripting in Python"
+        "Four starting points: 2D frame, 3D frame, 2D part (with heat as a choice) and 3D solid",
+        "Point and part-length loads on members",
+        "Split, reverse and merge members; a model check that goes to each problem",
+        "Loads and assignments tables, combinations by rule, status badges"
+      ]
+    },
+    {
+      "v": "0.10.4",
+      "title": "Design foundations",
+      "when": "Next",
+      "items": [
+        "Design members from a chain of members, with restraints and segments",
+        "Values at any point along a member; section properties",
+        "Mechanics checks: stress, Euler buckling, deflection and storey drift, with the working shown and what was not checked"
+      ]
+    },
+    {
+      "v": "0.10.5",
+      "title": "Geometry tools",
+      "when": "Next",
+      "items": [
+        "Datum planes, axes and points; split a face; overlaps and exploded view",
+        "Sketch: project edges, tangent arcs, driven dimensions; repairing imported STEP"
+      ]
+    },
+    {
+      "v": "0.11–0.15",
+      "title": "Filling in the map",
+      "when": "Later",
+      "items": [
+        "Results tools, materials, setup (releases, links, springs, damping), more analyses",
+        "Hexahedra, refinement by itself, job queue and Python"
       ]
     },
     {
@@ -113,7 +140,7 @@
       "title": "Complete",
       "when": "Later",
       "items": [
-        "Design checks of members and plate reinforcement",
+        "Design checks to a standard that is free to use",
         "Several models in one file",
         "Every planned feature working"
       ]

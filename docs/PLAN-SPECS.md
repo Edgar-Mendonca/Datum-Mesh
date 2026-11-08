@@ -27,37 +27,41 @@ Everything a small team can build in our own solver and with our own geometry en
 4. **Honest results:** say whether values are averaged at nodes or per element; always show the deformation scale. Combinations are solved together, which stays correct for tension-only members.
 5. **Load regions survive edits:** when a geometry edit makes a loaded face ambiguous, the window says so rather than guessing.
 
-## Batches
+## Decisions of 2026-11-08 (after the third specification)
 
-**Batch 1 (0.10.3): model care, frames and checks.**
-- The origin and show/hide eyes in the tree (the user, first).
-- Split, reverse and merge members and nodes.
-- Point and part-length loads on members, along the member or projected.
-- A model check that finds duplicates, loose ends and over-released members, and goes to each.
-- Loads table, assignments table, mesh statistics and quality, combinations by rule, and solver settings in the step manager.
-- New benchmark rows from the specifications: axial bar, prescribed movement, offset force, round shaft in torsion, CQC with close modes, and block, hole and tube volumes.
-- The icon distinctions and the status badges.
+- **Four starting points:** 2D frame (beams and trusses), 3D frame (frames, trusses and plates in space), 2D part (a flat slice: plane stress, plane strain, axisymmetric) and 3D solid. Heat becomes a choice inside the 2D part, as it already is in the 3D solid; the separate "Blank heat part" tile goes.
+- **Open formulas only.** Datum Mesh calculates from published mechanics and methods we may use; no licensed standard, its tables or factors enter the code. The third specification (Structural Analysis and Design v2) asks for steel checks to one national standard; we take from it everything that is plain mechanics and the honest way of reporting, and leave its code tables out. A design standard comes at 1.0, and only one that is free to use.
+- Checks are labelled "mechanics checks, not a design code" until then.
 
-**Batch 2 (0.10.4): geometry the engine already has.**
-- Split a face; datum planes, axes and points.
-- Check overlaps and clearances; exploded view.
-- Linked copies of a part; place a part against another.
-- Sketch: project edges, find open ends, tangent arcs and circles, driven dimensions, the remaining freedom shown.
-- Repairing an imported STEP: repair, delete or replace a face, stitch.
+## The roadmap from 0.10.2
 
-**Batch 3 (0.13): setup.**
-- Named sets that report when an edit breaks them.
-- Area springs, with compression-only.
-- Six-direction end releases and partial springs; inclined supports; eccentric offsets, rigid links, ties and couplings.
-- A mass ledger; temperature gradients; equipment loads; Rayleigh damping with its curve.
+**0.10.3 · Model care and frames** (one release when the user has approved every piece)
+- Done on the branch: origin and eyes in the tree; an icon for each drawing way; the view cube; the workflow bar and Tools; standard parts; every planned feature in the window; point and part-length loads on members (benchmark 38).
+- To do: the four starting points (heat into the 2D part); split, reverse and merge members, merge nodes; member orientation; a model check that goes to each problem; loads table and assignments table; combinations by rule; mesh statistics and quality; solver settings; the icon distinctions and status badges; benchmark rows (axial bar, prescribed movement, offset force, round shaft in torsion, close modes, block, hole and tube volumes).
 
-**Batch 4 (0.14): analyses.**
-- Steady vibration.
-- Missing mass and scaling for spectra.
-- Line search.
-- Nonlinear buckling with an imperfection.
+**0.10.4 · Design foundations, from mechanics formulas** (from the third specification)
+- Design members: form one from a chain of members, dissolve it, inspect it; a selection mode for them.
+- Restraints and segments: where a member is braced; segments that extra mesh nodes never change.
+- Values at any distance along a design member, with both values at a jump.
+- Section properties: A, I, Z (elastic), S (plastic), r and J, from the shape.
+- Mechanics checks: stress against yield; axial force against the Euler load with a given effective length; deflection from the line between the ends against span over a chosen ratio; storey drift.
+- Honest statuses (pass, fail, not checked, not supported, missing data), a calculation trace for every check and a report that lists what was not checked.
+- Tests from the specification: F01 section properties, F07 segments under remeshing, F08 values at stations and jumps, F09 relative deflection with moving ends, F11 combined actions kept together, F12 unlike sections refused.
 
-**Then:** results tools (0.11), meshing (0.15), design checks (1.0).
+**0.10.5 · Geometry the engine already has** (the old Batch 2)
+- Split a face; datum planes, axes and points; overlaps and clearances; exploded view; linked copies; place a part against another; sketch: project edges, open ends, tangent arcs, driven dimensions, freedom left; repairing an imported STEP; section view.
+
+**0.11 · Results tools:** results tree and exact colour bands, several cuts, display groups, free-body forces, stress through a wall, compare analyses, export, graphs of any result and along a path, energies, the forces of the governing case, CSV in and out, report builder, video.
+
+**0.12 · Materials:** orthotropic, kinematic hardening, Johnson–Cook, damage, rubber models, properties with temperature, fitting to test data, rate dependence.
+
+**0.13 · Setup** (the old Batch 3): sets, area springs, six-direction releases and partial springs, inclined supports, eccentric offsets, rigid links, ties and couplings, connectors, bolt pretension, load curves, mass ledger, temperature gradients, equipment loads, Rayleigh damping, frame generators (portal, truss, building grid).
+
+**0.14 · Analyses** (the old Batch 4): steady vibration, missing mass, line search, buckling with an imperfection, notional loads, heat in time, heat and stress together, sliding and self-contact, crash.
+
+**0.15 · Meshing and jobs:** hexahedra, refinement by itself, convergence study, seeds, element types, job queue, restarts, all cores, input files, building in stages, Python console, templates.
+
+**1.0 · Complete:** design checks to a standard that is free to use, plate reinforcement, wind, earthquake and moving loads, concrete and composites, several models in one file, every planned feature working.
 
 ## Done from the user's notes so far (on the branch, not released)
 
