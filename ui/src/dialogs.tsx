@@ -25,11 +25,15 @@ export const materials = (focus?: number) => openDialog(() => {
   const add = async () => { const base = m() ?? list()[0]; const o = await act({ Add: { item: { Material: { ...base, id: 0, name: `${base.name} (copy)`, source: "Your own values" } } } }); if (o?.created.length) setCur(o.created[0]); };
   const del = async () => { const o = await act({ Delete: { ids: [cur()] } }); if (o) setCur(list()[0]?.id ?? 0); };
   const [mtab, setMtab] = createSignal<"general" | "elastic" | "yield" | "heat">("general");
+  const [mq, setMq] = createSignal("");
   const usedBy = (id: number) => { const mm = model()!; const n = mm.members.filter(x => x.material === id).length + mm.shapes.filter(x => (x as { material?: number }).material === id).length + (mm.parts ?? []).filter(x => (x as { material?: number }).material === id).length; return n ? `${n} ${mm.members.length ? (n === 1 ? "member" : "members") : n === 1 ? "part or shape" : "parts or shapes"}` : "nothing yet"; };
   return (
     <Dialog title="Materials" wide help="materials">
       <div class="mgr">
-        <div class="mlist"><For each={list()}>{x => <button classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)}>{x.name}</button>}</For>
+        <div class="mlist">
+          {/* 0.10.2 (the mock-ups): a search over the model's materials, each with its mark and what kind it is. */}
+          <label class="msearch"><Icon n="search" /><input type="search" placeholder={`Search ${list().length} material${list().length === 1 ? "" : "s"}`} value={mq()} onInput={e => setMq(e.currentTarget.value)} /></label>
+          <For each={list().filter(x => x.name.toLowerCase().includes(mq().trim().toLowerCase()))}>{x => <button class="mrow" classList={{ on: x.id === cur() }} onClick={() => setCur(x.id)}><Icon n="material" /><span>{x.name}</span><small>{x.fy > 0 ? ((x.hardening ?? 0) > 0 ? "yielding, hardening" : "yielding") : "elastic"}</small></button>}</For>
           <p class="ibtns"><button class="btn sm pri" onClick={() => library(id => setCur(id))}>From the library…</button> <button class="btn sm" title="A material sent from Datum Atlas (a .dlink file)" onClick={() => import("./link").then(k => k.readLink())}>From Datum Atlas…</button></p>
           <p class="ibtns"><button class="btn sm" onClick={add}>Add a copy</button><button class="btn sm" onClick={del} disabled={list().length < 2}>Delete</button></p>
           <p class="muted small">The library: metals and plastics from Datum Atlas, each with its source.</p></div>

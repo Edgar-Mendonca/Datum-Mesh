@@ -1469,3 +1469,13 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .dlg table.tbl.smgr { width: 100% !important; display: table; }
 .dlg table.smgr td:nth-child(2) input { min-width: 190px; }
 .dlg table.smgr td select { min-width: 150px; max-width: 230px; }
+
+/* 0.10.2: the materials list as the mock-ups draw it: a search, then rows with the material's mark. */
+.mlist .msearch { display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 8px; border: 1px solid var(--line); background: var(--bg2); margin-bottom: 6px; }
+.mlist .msearch svg { width: 13px; height: 13px; color: var(--muted); flex: none; }
+.mlist .msearch input:not([type=checkbox]) { border: 0; outline: 0; background: none; flex: 1; min-width: 0; height: 24px; padding: 0; font-size: 12px; }
+.mlist .mrow { display: flex; align-items: center; gap: 7px; width: 100%; padding: 4px 8px; text-align: left; border: 0; border-left: 2px solid transparent; background: none; font: inherit; font-size: 12.5px; text-transform: none; letter-spacing: 0; color: var(--text); }
+.mlist .mrow svg { width: 14px; height: 14px; color: var(--amber, #C88A16); flex: none; }
+.mlist .mrow small { margin-left: auto; color: var(--muted); font: 10.5px var(--mono); white-space: nowrap; }
+.mlist .mrow:hover { background: var(--pale); }
+.mlist .mrow.on { background: var(--sel); border-left-color: var(--blue); }
