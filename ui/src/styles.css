@@ -1466,3 +1466,6 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .dlg table.smgr input:focus, .dlg table.smgr select:focus { border-color: var(--blue); background: var(--bg2); }
 .dlg table.smgr tbody tr:hover td { background: var(--pale); }
 .dlg table.smgr .sstat { color: var(--ok-fg); white-space: nowrap; }
+.dlg table.tbl.smgr { width: 100% !important; display: table; }
+.dlg table.smgr td:nth-child(2) input { min-width: 190px; }
+.dlg table.smgr td select { min-width: 150px; max-width: 230px; }
