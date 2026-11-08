@@ -97,19 +97,9 @@
   ],
   "roadmap": [
     {
-      "v": "0.10.2",
-      "title": "Tables and managers",
-      "when": "Next",
-      "items": [
-        "Node and member tables, pasted from a sheet",
-        "Load cases and combinations, the step manager, the material manager with its curve",
-        "Interactions, mesh statistics, the job queue"
-      ]
-    },
-    {
       "v": "0.11–0.15",
       "title": "Filling in the map",
-      "when": "Later",
+      "when": "Next",
       "items": [
         "Results tools: results tree, colour bands, display groups, export; the tube crush settling",
         "Johnson–Cook, damage, kinematic hardening, rubber models, fitting to test data",

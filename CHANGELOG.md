@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.2 — unreleased
+## 0.10.2 — 2026-11-08
 
 The window brought to the approved mock-ups, screen by screen, and the first tables and managers.
 
