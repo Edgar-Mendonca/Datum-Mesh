@@ -143,6 +143,9 @@ pub enum Op {
     ReverseMember { ids: Vec<u32> },
     /// Frames (0.10.3): join two members in line that meet at a node nothing else uses into one.
     MergeMembers { ids: Vec<u32> },
+    /// Combinations by rule (0.10.3, `cases::by_rule`): replace the combinations made by a rule
+    /// before (never the user's own) with those of this one, and remember it.
+    CombosByRule { rule: crate::model::ComboRule },
     /// 3D frames (0.10.3): turn members' sections about their own axes. `angle` (radians) sets the
     /// roll; `towards` (a point) or `along` (a direction) turns each so its local y (the section's
     /// depth) faces it, as near as the member's own direction allows.
@@ -542,6 +545,16 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let k = m.members.iter().position(|b| b.id == p.id).unwrap();
             m.members[k] = nb;
             m.nodes.retain(|n| n.id != shared);
+        }
+        Op::CombosByRule { rule } => {
+            let made = crate::cases::by_rule(m, &rule)?;
+            m.combos.retain(|c| !c.auto);
+            for mut c in made {
+                c.id = fresh(m);
+                created.push(c.id);
+                m.combos.push(c);
+            }
+            m.combo_rule = Some(rule);
         }
         Op::Orient { ids, angle, towards, along } => {
             let picked = [angle.is_some(), towards.is_some(), along.is_some()].iter().filter(|x| **x).count();
@@ -1573,6 +1586,26 @@ mod tests {
         d.apply(Op::Orient { ids: vec![id], angle: Some(3.0 * std::f64::consts::PI), towards: None, along: None }).unwrap();
         assert!((d.m.members[0].roll.abs() - std::f64::consts::PI).abs() < 1e-12);
         assert!(d.apply(Op::Orient { ids: vec![id], angle: Some(1.0), towards: Some([0.0; 3]), along: None }).is_err());
+    }
+
+    #[test]
+    fn making_combinations_again_replaces_the_made_ones_and_keeps_the_users() {
+        use crate::model::{Case, CaseKind, Combo, ComboRule, Factor};
+        let mut d = Doc::new(Model::new(Analysis::Frame));
+        let g = d.apply(Op::Add { item: Item::Case(Case { name: "Dead".into(), ..Default::default() }) }).unwrap()[0];
+        let q = d.apply(Op::Add { item: Item::Case(Case { name: "Imposed".into(), kind: CaseKind::Variable, ..Default::default() }) }).unwrap()[0];
+        d.apply(Op::Add { item: Item::Combo(Combo { id: 0, name: "Mine".into(), parts: vec![Factor { case: g, f: 2.0 }], auto: false }) }).unwrap();
+        let rule = ComboRule { g_unfav: 1.2, q: 1.5, ..Default::default() };
+        let made = d.apply(Op::CombosByRule { rule: rule.clone() }).unwrap();
+        assert_eq!(made.len(), 2, "strength and service, one variable case each");
+        assert_eq!(d.m.combos.len(), 3);
+        let again = d.apply(Op::CombosByRule { rule: ComboRule { long_term: true, ..rule } }).unwrap();
+        assert_eq!(again.len(), 3);
+        assert_eq!(d.m.combos.len(), 4, "the first made ones went; Mine stays");
+        assert!(d.m.combos.iter().any(|c| c.name == "Mine" && !c.auto));
+        assert!(d.m.combo_rule.as_ref().is_some_and(|r| r.long_term));
+        let s = d.m.combos.iter().find(|c| c.name == "Strength: Imposed leading").unwrap();
+        assert!(s.parts.iter().any(|p| p.case == q && (p.f - 1.5).abs() < 1e-12));
     }
 
     #[test]

@@ -45,10 +45,10 @@ mod tests {
         };
         let shape = |r: &mut Rng, m: &Model| if m.shapes.is_empty() || r.below(8) == 0 { r.id(m) } else { m.shapes[r.below(m.shapes.len())].id };
         match r.below(18) {
-            16 => Op::Add { item: Item::Case(crate::model::Case { id: 0, name: if r.below(4) == 0 { " ".into() } else { "Dead".into() } }) },
+            16 => Op::Add { item: Item::Case(crate::model::Case { id: 0, name: if r.below(4) == 0 { " ".into() } else { "Dead".into() }, ..Default::default() }) },
             17 => {
                 let parts = (0..r.below(3)).map(|_| crate::model::Factor { case: if m.cases.is_empty() || r.below(5) == 0 { r.below(500) as u32 } else { m.cases[r.below(m.cases.len())].id }, f: r.f(-1.0, 2.0) }).collect();
-                Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: "ULS".into(), parts }) }
+                Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: "ULS".into(), parts, auto: false }) }
             }
             12 => {
                 let (s, cs) = (shape(r, m), (0..r.below(4)).map(|_| r.below(7) as u32).collect());
@@ -84,7 +84,7 @@ mod tests {
                 // 0.10.3: the member edits, with silly values now and then.
                 2 => Op::SplitMember { ids: vec![r.id(m)], at: vec![r.f(-0.2, 1.2), r.f(0.0, 1.0)] },
                 3 => Op::ReverseMember { ids: vec![r.id(m), r.id(m)] },
-                4 => Op::MergeMembers { ids: vec![r.id(m), r.id(m)] },
+                4 => if r.below(2) == 0 { Op::MergeMembers { ids: vec![r.id(m), r.id(m)] } } else { Op::CombosByRule { rule: crate::model::ComboRule { g_unfav: r.f(-0.5, 2.0), g_fav: 1.0, q: r.f(0.0, 2.0), strength: r.below(2) == 0, strength_fav: r.below(2) == 0, service: r.below(2) == 0, long_term: r.below(2) == 0 } } },
                 _ => Op::MergeNodes { ids: vec![], tol: r.f(-0.1, 0.6) },
             },
             10 => {
@@ -694,7 +694,7 @@ mod tests {
             for &id in [ids[0], *ids.last().unwrap()].iter() {
                 let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id }, kind: SupportKind::Fixed }) });
             }
-            let cases: Vec<u32> = (0..2 + r.below(2)).map(|_| d.apply(Op::Add { item: Item::Case(crate::model::Case { id: 0, name: String::new() }) }).unwrap()[0]).collect();
+            let cases: Vec<u32> = (0..2 + r.below(2)).map(|_| d.apply(Op::Add { item: Item::Case(crate::model::Case { id: 0, name: String::new(), ..Default::default() }) }).unwrap()[0]).collect();
             for &c in &cases {
                 for _ in 0..1 + r.below(3) {
                     let at = Target::Node { id: ids[r.below(ids.len())] };
@@ -702,7 +702,7 @@ mod tests {
                 }
             }
             let factors: Vec<f64> = cases.iter().map(|_| r.f(-1.0, 2.0)).collect();
-            let combo = d.apply(Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: String::new(), parts: cases.iter().zip(&factors).map(|(c, f)| crate::model::Factor { case: *c, f: *f }).collect() }) }).unwrap()[0];
+            let combo = d.apply(Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: String::new(), parts: cases.iter().zip(&factors).map(|(c, f)| crate::model::Factor { case: *c, f: *f }).collect(), auto: false }) }).unwrap()[0];
             let disp = |w: Which| -> Option<Vec<f64>> {
                 match crate::solve_for(&d.m, Some(w)).ok()? {
                     crate::Results::Frame(x) => Some(x.disp.iter().flat_map(|v| v.to_vec()).collect()),

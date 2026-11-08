@@ -428,7 +428,7 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             d.apply(Op::Batch(beams.into_iter().map(|b| Op::Set { item: Item::Member(crate::model::Member { hinge: [true, true], ..b }) }).collect()))?;
             let mut ops: Vec<Op> = xs.iter().map(|x| sup(node(d, *x, ys[0]), SupportKind::Pinned)).collect();
             d.apply(Op::Batch(std::mem::take(&mut ops)))?;
-            let case = |d: &mut Doc, name: &str| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Case(crate::model::Case { id: 0, name: name.into() }) })?[0]) };
+            let case = |d: &mut Doc, name: &str| -> Result<u32, String> { Ok(d.apply(Op::Add { item: Item::Case(crate::model::Case { id: 0, name: name.into(), ..Default::default() }) })?[0]) };
             let (g, q, w) = (case(d, "Dead")?, case(d, "Imposed")?, case(d, "Wind")?);
             let mut on = |c: u32, at: Target, kind: LoadKind| ops.push(Op::Add { item: Item::Load(Load { case: c, id: 0, at, kind }) });
             for (y, dead, imposed) in [(3.5, 8e3, 10e3), (7.0, 5e3, 3e3)] {
@@ -441,7 +441,7 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             on(w, node(d, 0.0, 3.5), LoadKind::Force { fx: 12e3, fy: 0.0, fz: 0.0 });
             on(w, node(d, 0.0, 7.0), LoadKind::Force { fx: 6e3, fy: 0.0, fz: 0.0 });
             d.apply(Op::Batch(ops))?;
-            let combo = |name: &str, parts: &[(u32, f64)]| Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: name.into(), parts: parts.iter().map(|&(case, f)| crate::model::Factor { case, f }).collect() }) };
+            let combo = |name: &str, parts: &[(u32, f64)]| Op::Add { item: Item::Combo(crate::model::Combo { id: 0, name: name.into(), parts: parts.iter().map(|&(case, f)| crate::model::Factor { case, f }).collect(), auto: false }) };
             d.apply(Op::Batch(vec![combo("Combination 1", &[(g, 1.35), (q, 1.5)]), combo("Combination 2", &[(g, 1.0), (w, 1.5)]), combo("Combination 3", &[(g, 1.35), (q, 1.5), (w, 0.9)])]))?;
         }
         "truss" => {

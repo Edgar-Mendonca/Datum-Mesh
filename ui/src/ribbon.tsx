@@ -466,7 +466,7 @@ export const Ribbon = () => {
         </Show>
         <Show when={!heat()}><G l="Thermal" h="thermal"><B big i="tchange" l="Temperature Change" run={() => C.body("warming")} title="A uniform change of temperature: thermal stress" />
           <Show when={!frame()}><S><T i="tedge" l="Edge Temperature" t="sup:temperature" title="Hold an edge at a temperature; the temperatures inside are solved first, then the thermal stress" /><T i="convection" l="Convection" t="load:convection" /></S></Show></G></Show>
-        <G l="Load Cases" h="cases"><S><CasePicker /><B i="table" l="Cases and Combinations…" run={casesDialog} title="Name the load cases and give each combination its factors" /></S></G>
+        <G l="Load Cases" h="cases"><S><CasePicker /><B i="table" l="Cases and Combinations…" run={casesDialog} title="Name the load cases and give each combination its factors" /><B i="combogen" l="Combinations by Rule…" off={!m()?.cases?.length} run={() => import("./cases").then(k => k.combosByRule())} title="Make the combinations from the load cases: each variable case leading in turn, with your factors" /></S></G>
       </Show>
       <Show when={tab() === "properties"}>
         <G l="Materials" h="materials"><B big i="material" l="Materials" run={() => D.materials()} title="The materials of the model: pick from the library or type your own" />

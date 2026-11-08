@@ -453,6 +453,13 @@ async fn solve(app: AppHandle, st: State<'_, St>, which: Option<datum_core::case
     watched(app, move || datum_core::solve_for(&m, which).map(|r| small(&r))).await?
 }
 
+/// Combinations by rule (0.10.3): what the rule would make from the model's cases, before it is
+/// applied (the dialog's preview).
+#[tauri::command]
+fn combos_preview(st: State<'_, St>, rule: datum_core::model::ComboRule) -> R<Vec<datum_core::model::Combo>> {
+    datum_core::cases::by_rule(&st.lock().doc.m, &rule)
+}
+
 /// The largest and smallest member forces and reactions over every combination (0.3.3).
 #[tauri::command]
 async fn envelope(st: State<'_, St>) -> R<datum_core::cases::Envelope> {
@@ -858,7 +865,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             stop_solve,
-            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, model_check, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

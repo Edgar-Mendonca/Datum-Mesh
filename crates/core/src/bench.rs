@@ -982,14 +982,14 @@ fn frames_more() -> Vec<Check> {
     let mut k = frame(e, SectionShape::Rect { b, h });
     member(&mut k, [0.0, 0.0], [lc, 0.0], MemberKind::Beam);
     support(&mut k, 0.0, 0.0, SupportKind::Fixed);
-    let gid = k.apply(Op::Add { item: Item::Case(Case { id: 0, name: "Dead".into() }) }).expect("case")[0];
-    let qid = k.apply(Op::Add { item: Item::Case(Case { id: 0, name: "Imposed".into() }) }).expect("case")[0];
+    let gid = k.apply(Op::Add { item: Item::Case(Case { id: 0, name: "Dead".into(), ..Default::default() }) }).expect("case")[0];
+    let qid = k.apply(Op::Add { item: Item::Case(Case { id: 0, name: "Imposed".into(), ..Default::default() }) }).expect("case")[0];
     let tip = node(&k, lc, 0.0);
     for (case, p) in [(gid, pg), (qid, pq)] {
         add(&mut k, Op::Add { item: Item::Load(Load { case, id: 0, at: Target::Node { id: tip }, kind: LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 } }) });
     }
-    let uls = k.apply(Op::Add { item: Item::Combo(Combo { id: 0, name: "ULS".into(), parts: vec![Factor { case: gid, f: 1.35 }, Factor { case: qid, f: 1.5 }] }) }).expect("combo")[0];
-    add(&mut k, Op::Add { item: Item::Combo(Combo { id: 0, name: "SLS".into(), parts: vec![Factor { case: gid, f: 1.0 }, Factor { case: qid, f: 1.0 }] }) });
+    let uls = k.apply(Op::Add { item: Item::Combo(Combo { id: 0, name: "ULS".into(), parts: vec![Factor { case: gid, f: 1.35 }, Factor { case: qid, f: 1.5 }], auto: false }) }).expect("combo")[0];
+    add(&mut k, Op::Add { item: Item::Combo(Combo { id: 0, name: "SLS".into(), parts: vec![Factor { case: gid, f: 1.0 }, Factor { case: qid, f: 1.0 }], auto: false }) });
     let Ok(crate::Results::Frame(r)) = crate::solve_for(&k.m, Some(Which::Combo { id: uls })) else { panic!("combination") };
     let ti = k.m.nodes.iter().position(|n| n.id == tip).unwrap();
     let pu = 1.35 * pg + 1.5 * pq;

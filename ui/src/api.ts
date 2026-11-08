@@ -42,8 +42,10 @@ export interface Load { id: number; at: Target; kind: LoadKind; case?: number }
 export interface Contact { id: number; a: Target; b: Target; friction: number }
 export interface ContactOut { id: number; force: P3; normal: number; friction: number; touching: number; sliding: number; nodes: number; max_pressure: number; max_overlap: number }
 /** Load cases and combinations (0.3.3). */
-export interface Case { id: number; name: string }
-export interface Combo { id: number; name: string; parts: { case: number; f: number }[] }
+export interface Case { id: number; name: string; kind?: "permanent" | "variable" | "excluded"; psi0?: number; psi2?: number }
+/** Combinations by rule (0.10.3): the user's own factors, no design code's. */
+export interface ComboRule { g_unfav: number; g_fav: number; q: number; strength: boolean; strength_fav: boolean; service: boolean; long_term: boolean }
+export interface Combo { id: number; name: string; parts: { case: number; f: number }[]; auto?: boolean }
 export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
 /** An analysis step (0.4.0). */
 export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large" | "largeplastic" | "explicit";
@@ -60,7 +62,7 @@ export interface MeshSettings { size: number; order: number; min_angle: number; 
  * drawn triangle, and its faces' names and sizes (the mesh itself stays in the engine). */
 export interface VolPreview { order: number; elements: number; nodes: number; material: number; source: string; faces: { name: string; facets: number; area: number }[]; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; tface: number[] }
 export interface Model {
-  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; parts?: Part[]; contacts?: Contact[]; assembly?: VolPreview & { targets: (Target | null)[]; face_part: number[]; ties: number }; assembly_error?: string; /** Each part's exact volume, m³ (0.6.3). */ part_volume?: Record<string, number>; cases?: Case[]; combos?: Combo[]; steps?: Step[];
+  format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; parts?: Part[]; contacts?: Contact[]; assembly?: VolPreview & { targets: (Target | null)[]; face_part: number[]; ties: number }; assembly_error?: string; /** Each part's exact volume, m³ (0.6.3). */ part_volume?: Record<string, number>; cases?: Case[]; combos?: Combo[]; combo_rule?: ComboRule; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
   mesh: MeshSettings; next: number;
 }

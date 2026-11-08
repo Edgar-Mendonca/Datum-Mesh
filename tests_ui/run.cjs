@@ -70,6 +70,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
           if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
           if (c === "cad_auto_size") return 5;
           if (c === "model_check") return f.checkdemo_findings;
+          if (c === "combos_preview") return f.braced_rule_preview;
           if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
           if (c === "cad_import_step") { window.__cad = f.cad.extruded; return f.cad.extruded; }
           if (c === "cad_export") return "/tmp/model." + a.format;
@@ -737,6 +738,15 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.fill(`.dlg .tbl.cases >> nth=1 >> tbody tr >> nth=0 >> input.fac >> nth=2`, "0.6"); await p.keyboard.press("Tab"); await p.waitForTimeout(150);
   const cf = (await ops()).reverse().find(o => o.Set?.item?.Combo);
   check("typing a factor puts that case into the combination", cf?.Set?.item?.Combo?.parts.some(x => x.case === cw.id && x.f === 0.6), JSON.stringify(cf));
+  // 0.10.3: combinations by rule, from the cases dialog: the engine's preview, then Make.
+  await p.click('.dlg button:has-text("Combinations by rule")'); await p.waitForTimeout(300);
+  const prev = await p.$$eval(".dlg .cprev tbody tr", rs => rs.map(r => r.children[0].textContent));
+  check("Combinations by Rule shows what the rule will make, worked out by the engine (0.10.3)", JSON.stringify(prev) === JSON.stringify(fix.braced_rule_preview.map(c => c.name)) && prev.length > 0, JSON.stringify(prev));
+  check("…each case can be made permanent, variable or left out, with its ψ factors (0.10.3)", (await p.$$(".dlg .crule section:first-child tbody tr select")).length === bm.cases.length);
+  await p.click(`.dlg footer button:has-text("Make ${fix.braced_rule_preview.length} combinations")`); await p.waitForTimeout(200);
+  const rop = (await ops()).reverse().find(o => o.CombosByRule);
+  check("…and Make sends the rule with the factors typed (0.10.3)", !!rop && rop.CombosByRule.rule.strength === true && rop.CombosByRule.rule.g_unfav === 1, JSON.stringify(rop));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await p.keyboard.press("Escape");
   const bmem = bm.members.find(x => x.hinge?.[0]);
   check("hinged beam ends are drawn as small circles", (await p.$$(".dsvg circle.hinge")).length === bm.members.filter(x => x.hinge?.[0]).length * 2);

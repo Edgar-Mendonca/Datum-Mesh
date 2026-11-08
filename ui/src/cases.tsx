@@ -2,8 +2,8 @@
 // and gives combinations their factors, and the envelope over every combination. Also the steel
 // section tables. The engine solves and checks everything (crates/core/src/cases.rs, steel.rs).
 import { For, Show, createSignal, createResource } from "solid-js";
-import { Envelope, LibSection, Which, num, isFrame } from "./api";
-import { openDialog, act, call, model, active, setActive, caseOf } from "./store";
+import { Envelope, LibSection, Which, Combo, ComboRule, Case, num, isFrame } from "./api";
+import { openDialog, act, call, model, active, setActive, caseOf, toast } from "./store";
 import { numIn } from "./panels";
 import { Dialog } from "./ui";
 import { fmt, unit, toU, Q } from "./units";
@@ -56,7 +56,7 @@ export const casesDialog = () => openDialog(() => {
           <td><button class="btn sm" onClick={() => setActive({ on: "case", id: c.id })}>Show</button> <button class="x" title="Delete this case and its loads" onClick={() => act({ Delete: { ids: [c.id] } })}>×</button></td>
         </tr>}</For></tbody></table>
     </Show>
-    <p class="ibtns"><button class="btn sm" onClick={addCase}>Add a load case</button></p>
+    <p class="ibtns"><button class="btn sm" onClick={addCase}>Add a load case</button> <Show when={cs().length}><button class="btn sm" onClick={() => combosByRule()}>Combinations by rule…</button></Show></p>
     <h4>Combinations</h4>
     <Show when={cs().length} fallback={<p class="muted small">Add load cases first; a combination adds them up, each times a factor.</p>}>
       <Show when={cbs().length} fallback={<p class="muted small">No combinations yet. Each one adds the load cases up, each times its factor (an empty factor leaves the case out).</p>}>
@@ -135,6 +135,52 @@ export const sectionTables = (added?: (id: number) => void) => openDialog(() => 
         </tbody></table>
         <p class="muted small">The properties are worked out from the dimensions, root fillets included (Help › Verification checks them against the tables). J leaves the fillets out, so it is a little below the tables' value.</p>
       </div>; }}</Show>
+    </div>
+  </Dialog>;
+});
+
+/** Loads › Combinations by Rule (0.10.3): mark each case permanent or variable, type the factors,
+ *  and the engine makes the combinations: each variable case leading in turn, the others reduced
+ *  by their ψ0. Every factor is the user's; no design code's numbers are built in. */
+export const combosByRule = () => openDialog(() => {
+  const m = () => model()!;
+  const cs = () => m().cases ?? [];
+  const [r, setR] = createSignal<ComboRule>(m().combo_rule ?? { g_unfav: 1, g_fav: 1, q: 1, strength: true, strength_fav: false, service: true, long_term: false });
+  const [preview] = createResource(() => [r(), m()] as const, ([rule]) => call<Combo[]>("combos_preview", { rule }).catch((e: unknown) => String(e)));
+  const setCase = (c: Case, f: Partial<Case>) => act({ Set: { item: { Case: { ...c, ...f } } } });
+  const kind = (c: Case) => c.kind ?? "permanent";
+  const fac = (k: "g_unfav" | "g_fav" | "q", l: string, hint: string) => <><label>{l}</label><div class="pf"><input class="mono" value={r()[k]} onChange={numIn(v => v >= 0 ? setR({ ...r(), [k]: v }) : false, () => r()[k])} /><span class="hint small muted">{hint}</span></div></>;
+  const tick = (k: "strength" | "strength_fav" | "service" | "long_term", l: string) => <label class="chk"><input type="checkbox" checked={r()[k]} onChange={e => setR({ ...r(), [k]: e.currentTarget.checked })} />{l}</label>;
+  const made = () => { const p = preview(); return Array.isArray(p) ? p : []; };
+  const kept = () => (m().combos ?? []).filter(c => !c.auto).length;
+  return <Dialog title="Combinations by rule" wide help="cases" okText={`Make ${made().length} combinations`} ok={async () => {
+    if (!made().length) { toast(typeof preview() === "string" ? String(preview()) : "Nothing to make yet.", false); return false; }
+    const o = await act({ CombosByRule: { rule: r() } });
+    if (!o) return false;
+    toast(`Made ${o.created.length} combinations${kept() ? `; your own ${kept()} kept` : ""}. Pick one on the Loads tab, or see them all in Results › Envelope.`, true);
+  }}>
+    <div class="crule">
+      <section>
+        <h4>1 · The load cases</h4>
+        <table class="tbl cases"><thead><tr><th>Case</th><th>Kind</th><th class="r" title="When it accompanies another variable case">ψ0 accompanying</th><th class="r" title="The share that is there for a long time">ψ2 long-term</th></tr></thead><tbody>
+          <For each={cs()}>{c => <tr><td>{c.name}</td>
+            <td><select value={kind(c)} onChange={e => setCase(c, { kind: e.currentTarget.value as Case["kind"] })}><option value="permanent">Permanent</option><option value="variable">Variable</option><option value="excluded">Left out</option></select></td>
+            <td class="r"><input class="mono fac" disabled={kind(c) !== "variable"} value={kind(c) === "variable" ? c.psi0 ?? 1 : "–"} onChange={numIn(v => v >= 0 ? setCase(c, { psi0: v }) : false, () => c.psi0 ?? 1)} /></td>
+            <td class="r"><input class="mono fac" disabled={kind(c) !== "variable"} value={kind(c) === "variable" ? c.psi2 ?? 1 : "–"} onChange={numIn(v => v >= 0 ? setCase(c, { psi2: v }) : false, () => c.psi2 ?? 1)} /></td></tr>}</For></tbody></table>
+        <h4>2 · The factors</h4>
+        <div class="form">{fac("g_unfav", "Permanent, against safety (γG)", "self-weight that adds to the load")}{fac("g_fav", "Permanent, helping (γG,fav)", "self-weight that holds a frame down")}{fac("q", "Variable (γQ)", "the leading and accompanying variable loads")}</div>
+        <h4>3 · Which combinations</h4>
+        <div class="csets">{tick("strength", "Strength: each variable case leading in turn")}{tick("strength_fav", "Strength with permanent loads helping (uplift, overturning)")}{tick("service", "Service: permanent plus each variable case leading")}{tick("long_term", "Service, long-term: permanent plus every variable load × ψ2")}</div>
+        <p class="muted small">Every factor here is yours: Datum Mesh applies no design code. Combinations made by a rule before are replaced; the ones you wrote yourself are kept.</p>
+      </section>
+      <section class="cprev">
+        <h4>What it will make <span class="pill">{made().length}</span></h4>
+        <Show when={typeof preview() !== "string"} fallback={<p class="warn small">{String(preview())}</p>}>
+          <table class="tbl cases"><thead><tr><th>Combination</th><For each={cs().filter(c => kind(c) !== "excluded")}>{c => <th class="r">{c.name}</th>}</For></tr></thead><tbody>
+            <For each={made()}>{cb => <tr><td>{cb.name}</td><For each={cs().filter(c => kind(c) !== "excluded")}>{c => { const f = cb.parts.find(p => p.case === c.id)?.f; return <td class="r mono">{f === undefined ? "–" : num(f, 4)}</td>; }}</For></tr>}</For></tbody></table>
+        </Show>
+        <p class="muted small">{made().length ? `${made().filter(c => c.name.startsWith("Strength")).length} for strength, ${made().filter(c => c.name.startsWith("Service")).length} for service.` : ""}</p>
+      </section>
     </div>
   </Dialog>;
 });

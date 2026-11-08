@@ -631,6 +631,58 @@ pub struct Load {
 pub struct Case {
     pub id: u32,
     pub name: String,
+    /// For combinations by rule (0.10.3): permanent, variable, or left out.
+    #[serde(default)]
+    pub kind: CaseKind,
+    /// A variable case's reduction factors, typed by the user (no design code's values are built
+    /// in): ψ0 when it accompanies another variable case, ψ2 for its long-term part.
+    #[serde(default = "one")]
+    pub psi0: f64,
+    #[serde(default = "one")]
+    pub psi2: f64,
+}
+fn one() -> f64 {
+    1.0
+}
+impl Default for Case {
+    fn default() -> Self {
+        Case { id: 0, name: String::new(), kind: CaseKind::Permanent, psi0: 1.0, psi2: 1.0 }
+    }
+}
+
+/// How a load case enters combinations by rule (0.10.3).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CaseKind {
+    /// Always there (self-weight, finishes): γG in strength combinations.
+    #[default]
+    Permanent,
+    /// Comes and goes (imposed, wind, snow): each leads in turn, the others accompany at ψ0.
+    Variable,
+    /// Not in generated combinations.
+    Excluded,
+}
+
+/// The factors of combinations by rule (0.10.3), all typed by the user: the general
+/// limit-state way of combining, without any design code's numbers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ComboRule {
+    /// Strength: permanent loads where they act against safety, and where they help it.
+    pub g_unfav: f64,
+    pub g_fav: f64,
+    /// Strength: variable loads.
+    pub q: f64,
+    /// Which sets to make: strength, strength with the permanent loads favourable, service
+    /// (characteristic), service (long-term).
+    pub strength: bool,
+    pub strength_fav: bool,
+    pub service: bool,
+    pub long_term: bool,
+}
+impl Default for ComboRule {
+    fn default() -> Self {
+        ComboRule { g_unfav: 1.0, g_fav: 1.0, q: 1.0, strength: true, strength_fav: false, service: true, long_term: false }
+    }
 }
 
 /// A load combination (0.3.3): load cases times factors, added up.
@@ -639,6 +691,9 @@ pub struct Combo {
     pub id: u32,
     pub name: String,
     pub parts: Vec<Factor>,
+    /// Made by a rule (0.10.3): making them again replaces these, never the user's own.
+    #[serde(default)]
+    pub auto: bool,
 }
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Factor {
@@ -806,6 +861,9 @@ pub struct Model {
     /// Load cases and combinations (0.3.3). No cases: every load is in one case.
     pub cases: Vec<Case>,
     pub combos: Vec<Combo>,
+    /// The last rule combinations were made by (0.10.3), for the dialog to start from.
+    #[serde(default)]
+    pub combo_rule: Option<ComboRule>,
     /// Analysis steps (0.4.0), run in order. None: one linear static step.
     #[serde(default)]
     pub steps: Vec<Step>,
@@ -852,6 +910,7 @@ impl Default for Model {
             mesh: MeshSettings::default(),
             cases: vec![],
             combos: vec![],
+            combo_rule: None,
             steps: vec![],
             rigid_floors: false,
             study: String::new(),

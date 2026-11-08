@@ -3,7 +3,7 @@
 //! loads are the cases' loads scaled by their factors (the same answer as adding the cases'
 //! results), and the envelope solves each combination in turn.
 
-use crate::model::{Analysis, LoadKind, Model};
+use crate::model::{Analysis, CaseKind, Combo, ComboRule, Factor, LoadKind, Model};
 use serde::{Deserialize, Serialize};
 
 /// What to solve: one load case or one combination.
@@ -204,4 +204,101 @@ pub fn envelope(m: &Model) -> Result<Envelope, String> {
     }
     warnings.dedup();
     Ok(Envelope { over, members, reactions, warnings })
+}
+
+/// Combinations by rule (0.10.3): the general limit-state way of combining load cases, with the
+/// user's own factors (no design code's numbers are built in). With permanent cases G and
+/// variable cases Q₁…Qₙ:
+/// - strength, each Qᵢ leading in turn: γG,unfav·ΣG + γQ·Qᵢ + Σⱼ≠ᵢ γQ·ψ0ⱼ·Qⱼ (and, if asked, the same
+///   with γG,fav for permanent loads that help, such as against uplift);
+/// - service, characteristic: ΣG + Qᵢ + Σⱼ≠ᵢ ψ0ⱼ·Qⱼ;
+/// - service, long-term (quasi-permanent): ΣG + Σⱼ ψ2ⱼ·Qⱼ.
+///
+/// With no variable case each set is one combination of the permanent cases.
+pub fn by_rule(m: &Model, r: &ComboRule) -> Result<Vec<Combo>, String> {
+    let fin = |v: f64| v.is_finite() && v >= 0.0;
+    if ![r.g_unfav, r.g_fav, r.q].into_iter().all(fin) || !m.cases.iter().all(|c| fin(c.psi0) && fin(c.psi2)) {
+        return Err("Factors must be numbers of zero or more.".into());
+    }
+    let g: Vec<u32> = m.cases.iter().filter(|c| c.kind == CaseKind::Permanent).map(|c| c.id).collect();
+    let q: Vec<&crate::model::Case> = m.cases.iter().filter(|c| c.kind == CaseKind::Variable).collect();
+    if g.is_empty() && q.is_empty() {
+        return Err("Mark the load cases permanent or variable first: none would be combined.".into());
+    }
+    if !(r.strength || r.strength_fav || r.service || r.long_term) {
+        return Err("Pick at least one set of combinations to make.".into());
+    }
+    let mut out = vec![];
+    let mut push = |name: String, parts: Vec<(u32, f64)>| {
+        let parts: Vec<Factor> = parts.into_iter().filter(|p| p.1 != 0.0).map(|(case, f)| Factor { case, f }).collect();
+        if !parts.is_empty() {
+            out.push(Combo { id: 0, name, parts, auto: true });
+        }
+    };
+    let short = |c: &crate::model::Case| c.name.clone();
+    // One set: the permanent cases at `gf`, then each variable case leading at `lead` with the
+    // others at `acc`·ψ0, or (with no variable case) the permanent cases alone.
+    let mut set = |tag: &str, gf: f64, lead: f64, acc: f64| {
+        if q.is_empty() {
+            push(format!("{tag}: permanent"), g.iter().map(|c| (*c, gf)).collect());
+        }
+        for (i, qi) in q.iter().enumerate() {
+            let mut parts: Vec<(u32, f64)> = g.iter().map(|c| (*c, gf)).collect();
+            for (j, qj) in q.iter().enumerate() {
+                parts.push((qj.id, if i == j { lead } else { acc * qj.psi0 }));
+            }
+            push(format!("{tag}: {} leading", short(qi)), parts);
+        }
+    };
+    if r.strength {
+        set("Strength", r.g_unfav, r.q, r.q);
+    }
+    if r.strength_fav {
+        set("Strength, permanent helping", r.g_fav, r.q, r.q);
+    }
+    if r.service {
+        set("Service", 1.0, 1.0, 1.0);
+    }
+    if r.long_term {
+        let mut parts: Vec<(u32, f64)> = g.iter().map(|c| (*c, 1.0)).collect();
+        parts.extend(q.iter().map(|c| (c.id, c.psi2)));
+        push("Service, long-term".into(), parts);
+    }
+    if out.is_empty() {
+        return Err("Every factor came out zero: no combination to make.".into());
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod rule_tests {
+    use super::*;
+    use crate::model::{Analysis, Case};
+
+    fn case(id: u32, name: &str, kind: CaseKind, psi0: f64, psi2: f64) -> Case {
+        Case { id, name: name.into(), kind, psi0, psi2 }
+    }
+
+    #[test]
+    fn each_variable_case_leads_in_turn_with_the_others_reduced() {
+        let mut m = Model::new(Analysis::Frame);
+        m.cases = vec![case(1, "Dead", CaseKind::Permanent, 1.0, 1.0), case(2, "Imposed", CaseKind::Variable, 0.7, 0.3), case(3, "Wind", CaseKind::Variable, 0.6, 0.0), case(4, "Test", CaseKind::Excluded, 1.0, 1.0)];
+        let r = ComboRule { g_unfav: 1.35, g_fav: 1.0, q: 1.5, strength: true, strength_fav: true, service: true, long_term: true };
+        let c = by_rule(&m, &r).unwrap();
+        // Two strength sets of two, the service set of two, one long-term.
+        assert_eq!(c.len(), 7);
+        let f = |c: &Combo, id: u32| c.parts.iter().find(|p| p.case == id).map_or(0.0, |p| p.f);
+        let s1 = c.iter().find(|x| x.name == "Strength: Imposed leading").unwrap();
+        assert!((f(s1, 1) - 1.35).abs() < 1e-12 && (f(s1, 2) - 1.5).abs() < 1e-12 && (f(s1, 3) - 0.9).abs() < 1e-12 && f(s1, 4) == 0.0);
+        let s2 = c.iter().find(|x| x.name == "Strength, permanent helping: Wind leading").unwrap();
+        assert!((f(s2, 1) - 1.0).abs() < 1e-12 && (f(s2, 3) - 1.5).abs() < 1e-12 && (f(s2, 2) - 1.05).abs() < 1e-12);
+        let sv = c.iter().find(|x| x.name == "Service: Wind leading").unwrap();
+        assert!((f(sv, 1) - 1.0).abs() < 1e-12 && (f(sv, 2) - 0.7).abs() < 1e-12 && (f(sv, 3) - 1.0).abs() < 1e-12);
+        let lt = c.iter().find(|x| x.name == "Service, long-term").unwrap();
+        assert!((f(lt, 2) - 0.3).abs() < 1e-12 && f(lt, 3) == 0.0, "a zero factor leaves the case out");
+        assert!(c.iter().all(|x| x.auto));
+        // Nothing to combine, or no set asked for, says so.
+        m.cases.iter_mut().for_each(|c| c.kind = CaseKind::Excluded);
+        assert!(by_rule(&m, &r).is_err());
+    }
 }

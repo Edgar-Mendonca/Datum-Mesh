@@ -1610,3 +1610,14 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .ttab td.lvals .tcell { width: 74px; }
 .ttab td.lvals .unit { font-size: 10.5px; }
 .ttab td.c { text-align: center; }
+
+/* 0.10.3: combinations by rule */
+.crule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 20px; }
+.crule h4 { margin: 4px 0 6px; }
+.crule .form { grid-template-columns: 210px 1fr; }
+.crule .pf { display: flex; align-items: center; gap: 8px; }
+.crule .pf input { width: 70px; }
+.csets { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+.cprev { border-left: 1px solid var(--line); padding-left: 16px; max-height: 420px; overflow: auto; }
+.cprev .pill { font: 500 10px var(--mono); border: 1px solid var(--line); border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
+.crule .tbl input.fac { width: 56px; }

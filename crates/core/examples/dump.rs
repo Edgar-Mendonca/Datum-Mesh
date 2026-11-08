@@ -54,6 +54,19 @@ fn main() {
     dup.id = 900;
     d.m.members.push(dup);
     let checkdemo = d.m;
+    // The braced frame with its cases marked for combinations by rule (0.10.3): demonstration
+    // factors typed as a user would, not any design code's.
+    let mut braced_rule = examples::get("braced").unwrap();
+    for c in braced_rule.cases.iter_mut() {
+        match c.name.as_str() {
+            "Imposed" => { c.kind = datum_core::model::CaseKind::Variable; c.psi0 = 0.7; c.psi2 = 0.3; }
+            "Wind" => { c.kind = datum_core::model::CaseKind::Variable; c.psi0 = 0.6; c.psi2 = 0.0; }
+            _ => {}
+        }
+    }
+    let rule = datum_core::model::ComboRule { g_unfav: 1.35, g_fav: 1.0, q: 1.5, strength: true, strength_fav: true, service: true, long_term: true };
+    let braced_rule_preview = datum_core::cases::by_rule(&braced_rule, &rule).unwrap();
+    braced_rule.combo_rule = Some(rule);
     // A part with the sample DXF imported (0.3.5), as the shell sends it back.
     let imp = datum_core::dxf::read(datum_core::dxf::SAMPLE_PUB, None).unwrap();
     let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Stress));
@@ -142,6 +155,8 @@ fn main() {
         "noload_results": sent(&datum_core::solve(&noload).unwrap()),
         "beamloads": out_m(&beamloads),
         "checkdemo": out_m(&checkdemo),
+        "braced_rule": out_m(&braced_rule),
+        "braced_rule_preview": braced_rule_preview,
         "checkdemo_findings": datum_core::frames::check::model_check(&checkdemo, 0.005),
         "beamloads_results": sent(&datum_core::solve(&beamloads).unwrap()),
     });
