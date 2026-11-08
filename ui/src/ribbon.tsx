@@ -199,8 +199,9 @@ const CadGroups = () => {
   const inSk = () => !!activeSketch();
   const fam = (f: [string, string, string[]]) => {
     const [name, icon, list] = f, cur = () => ways()[name] ?? list[0];
-    return <B big i={icon} l={name} on={list.includes(cadTool() ?? "")} title={`${TOOLS[cur()].label}${list.length > 1 ? " (▾ for the other ways)" : ""}`} run={() => pickTool(cur())}
-      dd={list.length > 1 ? (e: MouseEvent) => openMenu(e, list.map(k => ({ label: TOOLS[k].label, on: k === cur(), run: () => { setWays({ ...ways(), [name]: k }); pickTool(k); } }))) : undefined} />;
+    // 0.10.3 (the user): the button shows the way it will draw; the ▾ lists every way with its own icon.
+    return <B big i={TOOLS[cur()].icon || icon} l={name} on={list.includes(cadTool() ?? "")} title={`${TOOLS[cur()].label}${list.length > 1 ? " (▾ for the other ways)" : ""}`} run={() => pickTool(cur())}
+      dd={list.length > 1 ? (e: MouseEvent) => openMenu(e, list.map(k => ({ label: TOOLS[k].label, icon: TOOLS[k].icon, on: k === cur(), run: () => { setWays({ ...ways(), [name]: k }); pickTool(k); } }))) : undefined} />;
   };
   return <>
     <Show when={inSk()} fallback={<>

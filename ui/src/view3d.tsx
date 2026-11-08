@@ -160,11 +160,38 @@ export const View3D = () => {
   // The orientation cube and the axes key (0.6.1), turned with the view.
   let cubeEl: SVGSVGElement | undefined, keyEl: SVGSVGElement | undefined;
   /** The cube's faces as last drawn: outline in the view box, depth (nearer is larger), shown. */
-  let cubePolys: { k: number; pts: [number, number][]; depth: number }[] = [];
+  let cubePolys: { k: number; pts: [number, number][]; depth: number; a: number; u: number; w: number }[] = [];
+  /** The zone of the cube under the pointer (0.10.3, the user): a face's middle, an edge or a corner. */
+  const [cubeZone, setCubeZone] = createSignal<{ pts: string; dir: P3; name: string } | null>(null);
   /** The cube's faces: name, outward normal (engine axes), and the view direction to look from. */
   /** Look at the model from along a face's normal (a little off straight up or down, to keep the
    * camera's up direction defined). */
   const lookFrom = (d: P3) => fit(false, [d[0], d[1], d[2] + (d[1] ? 0.001 : 0)]);
+  /** The cube's zone under a pointer: the face it is on, and whether near an edge or a corner. */
+  /** Set while a press on the cube has turned the view, so a face's own click does not undo it. */
+  let cubeDone = false;
+  const zoneAt = (e: PointerEvent): { pts: string; dir: P3; name: string } | null => {
+    if (!cubeEl) return null;
+    const b = cubeEl.getBoundingClientRect(), x = (e.clientX - b.left) * 64 / b.width, y = (e.clientY - b.top) * 64 / b.height;
+    const inside = (p: [number, number][]) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) c = !c; return c; };
+    const hit = [...cubePolys].sort((a, c) => c.depth - a.depth).find(f => inside(f.pts));
+    if (!hit) return null;
+    // Where on the face: p = p0 + s(p1 − p0) + t(p3 − p0), the face seen as a parallelogram.
+    const [p0, p1, , p3] = hit.pts, ex = [p1[0] - p0[0], p1[1] - p0[1]], ey = [p3[0] - p0[0], p3[1] - p0[1]], det = ex[0] * ey[1] - ex[1] * ey[0];
+    if (Math.abs(det) < 1e-9) return null;
+    const dx = x - p0[0], dy = y - p0[1], s = (dx * ey[1] - dy * ey[0]) / det * 2 - 1, t = (ex[0] * dy - ex[1] * dx) / det * 2 - 1;
+    const su = Math.abs(s) > 0.62 ? Math.sign(s) : 0, sw = Math.abs(t) > 0.62 ? Math.sign(t) : 0;
+    const n = FACES[hit.k][1], dir: P3 = [n[0], n[1], n[2]]; dir[hit.u] += su; dir[hit.w] += sw;
+    // The zone's outline, drawn over the cube (the face's middle, a strip along an edge, or a corner square).
+    const rng = (c: number): [number, number] => (c === 0 ? [-0.62, 0.62] : c > 0 ? [0.62, 1] : [-1, -0.62]);
+    const [u0, u1] = rng(su), [w0, w1] = rng(sw);
+    const at = (p: number, q: number) => { const v = [0, 0, 0]; v[hit.a] = n[hit.a]; v[hit.u] = p; v[hit.w] = q; return v; };
+    const e2 = (cam() as THREE.Camera).matrixWorldInverse.elements, Rm = (i: number, j: number) => e2[j * 4 + i];
+    const pr = (v: number[]) => [0, 1].map(i => Rm(i, 0) * v[0] + Rm(i, 1) * v[1] + Rm(i, 2) * v[2]);
+    const pts = [at(u0, w0), at(u1, w0), at(u1, w1), at(u0, w1)].map(v => { const r = pr(v); return `${(32 + 17 * r[0]).toFixed(1)},${(32 - 17 * r[1]).toFixed(1)}`; }).join(" ");
+    const name = su === 0 && sw === 0 ? FACES[hit.k][0] : su !== 0 && sw !== 0 ? "Corner (isometric)" : "Edge";
+    return { pts, dir, name };
+  };
   const FACES: [string, P3][] = [["Front", [0, 0, 1]], ["Back", [0, 0, -1]], ["Right", [1, 0, 0]], ["Left", [-1, 0, 0]], ["Top", [0, 1, 0]], ["Bottom", [0, -1, 0]]];
   const gizmo = () => {
     const e = (cam() as THREE.Camera).matrixWorldInverse.elements, R = (i: number, j: number) => e[j * 4 + i], S = [1, -1, 1];
@@ -180,8 +207,11 @@ export const View3D = () => {
         const g = gs[k], depth = rot(n)[2];
         g.style.display = depth > 0.02 ? "" : "none";
         const xy = pts.map(p => [32 + 17 * p[0], 32 - 17 * p[1]] as [number, number]);
-        g.querySelector("polygon")!.setAttribute("points", xy.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" "));
-        if (depth > 0.02) cubePolys.push({ k, pts: xy, depth });
+        g.querySelector("polygon.outer")!.setAttribute("points", xy.map(p => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" "));
+        if (depth > 0.02) cubePolys.push({ k, pts: xy, depth, a, u, w });
+        // The middle third outlined: the edges and corners round it pick the views between faces.
+        const inner = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([p, q]) => { const v = [0, 0, 0]; v[a] = n[a]; v[u] = p * 0.62; v[w] = q * 0.62; const r = rot(v); return `${(32 + 17 * r[0]).toFixed(1)},${(32 - 17 * r[1]).toFixed(1)}`; });
+        g.querySelector("polygon.inner")?.setAttribute("points", inner.join(" "));
         const t = g.querySelector("text")!; t.setAttribute("x", (32 + 17 * rot(n)[0]).toFixed(1)); t.setAttribute("y", (35 - 17 * rot(n)[1]).toFixed(1));
         t.style.opacity = String(Math.min(1, depth * 1.6));
         order.push([depth, k]);
@@ -1098,19 +1128,18 @@ export const View3D = () => {
         <g><line x1="26" y1="26" x2="26" y2="26" stroke="#2E9D57" stroke-width="2.2" /><text fill="#2E9D57">Y</text></g>
         <g><line x1="26" y1="26" x2="26" y2="6" stroke="#2F6FD0" stroke-width="2.2" /><text fill="#2F6FD0">Z</text></g>
       </svg>
-      <div class="vcube" on:pointerdown={e => e.stopPropagation()} on:pointermove={e => e.stopPropagation()} on:pointerup={(e: PointerEvent) => {
-        // The face under the pointer, found here from the faces' outlines as drawn (some web views
-        // do not hit-test the cube's SVG shapes).
+      <div class="vcube" on:pointerdown={e => e.stopPropagation()} on:pointermove={(e: PointerEvent) => { e.stopPropagation(); setCubeZone(zoneAt(e)); }} on:pointerleave={() => setCubeZone(null)} on:pointerup={(e: PointerEvent) => {
+        // The face, edge or corner under the pointer, found from the faces' outlines as drawn (some
+        // web views do not hit-test the cube's SVG shapes). A face looks straight at it; an edge from
+        // between its two faces; a corner from the three (an isometric view).
         e.stopPropagation();
-        if (!cubeEl) return;
-        const b = cubeEl.getBoundingClientRect(), x = (e.clientX - b.left) * 64 / b.width, y = (e.clientY - b.top) * 64 / b.height;
-        const inside = (p: [number, number][]) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) if ((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) c = !c; return c; };
-        const hit = [...cubePolys].sort((a, c) => c.depth - a.depth).find(f => inside(f.pts));
-        if (hit) lookFrom(FACES[hit.k][1]);
+        const z = zoneAt(e);
+        if (z) { cubeDone = true; lookFrom(z.dir); setTimeout(() => { cubeDone = false; }, 0); }
       }}>
         <button class="vhome" aria-label="Home: the corner view of the whole model" onClick={() => fit()}><svg class="ic"><use href="#i-home" /></svg></button>
         <svg class="cube" ref={cubeEl} viewBox="0 0 64 64" width="84" height="84">
-          {FACES.map(([n, d]) => <g class={`cf cf-${n.toLowerCase()}`} data-face={n} aria-label={`Look from the ${n.toLowerCase()}`} onClick={() => lookFrom(d)}><polygon /><text text-anchor="middle">{n}</text></g>)}
+          {FACES.map(([n, d]) => <g class={`cf cf-${n.toLowerCase()}`} data-face={n} aria-label={`Look from the ${n.toLowerCase()}`} tabindex="0" onKeyDown={e => { if (e.key === "Enter") lookFrom(d); }} onClick={() => { if (cubeDone) { cubeDone = false; return; } lookFrom(d); }}><polygon class="outer" /><polygon class="inner" /><text text-anchor="middle">{n}</text></g>)}
+          <Show when={cubeZone()}>{z => <polygon class="zone" points={z().pts}><title>{z().name}</title></polygon>}</Show>
         </svg>
       </div>
       <div class="zoomctl"><button title="Fit the whole model in view (F)" onClick={() => fit(true)}>Fit</button></div>

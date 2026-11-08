@@ -1506,3 +1506,62 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .tree .torigin > summary .teye { margin-left: auto; }
 .tree .ti.dim > span:not(.teye), .tree .ti.dim > .tic { opacity: .45; }
 .tree div.ti { cursor: default; }
+
+/* 0.10.3 (the user): menus with an icon for each way; the current way highlighted rather than ticked. */
+.menu .tick { width: 22px; display: inline-grid; place-items: center; }
+.menu .tick svg { width: 20px; height: 20px; color: var(--text); }
+.menu button.on { background: var(--sel); font-weight: 600; }
+.menu button { min-height: 28px; }
+
+/* 0.10.3 (the user): the view cube light and see-through in the app's petrol; its edges and corners
+   pick the views between the faces (a corner: isometric), the zone under the pointer lit. */
+.view3d .cube polygon.outer { fill: rgba(15, 110, 140, .10); stroke: rgba(15, 110, 140, .55); stroke-width: .8; }
+.view3d .cube .cf-top polygon.outer, .view3d .cube .cf-bottom polygon.outer { fill: rgba(15, 110, 140, .17); }
+.view3d .cube polygon.inner { fill: none; stroke: rgba(15, 110, 140, .22); stroke-width: .5; pointer-events: none; }
+.view3d .cube .cf:hover polygon.outer { fill: rgba(15, 110, 140, .10); stroke: rgba(15, 110, 140, .55); }
+.view3d .cube polygon.zone { fill: rgba(15, 110, 140, .42); stroke: #0F6E8C; stroke-width: .8; pointer-events: none; }
+.view3d .cube text { fill: #0D5C76; font-weight: 600; }
+:root[data-theme="dark"] .view3d .cube text { fill: #9CD3E3; }
+:root[data-theme="dark"] .view3d .cube polygon.outer { fill: rgba(99, 161, 180, .14); stroke: rgba(130, 182, 198, .6); }
+
+/* 0.10.3 (the user): the workflow bar without tick marks: a step done has a very light green ground,
+   the open one the accent's edge; the tools under their own heading. */
+.flow { gap: 1px; padding: 4px 0; }
+.flow .fcap { font: 500 8.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); text-align: center; padding: 6px 0 3px; }
+.flow button .fn { position: absolute; top: 4px; left: 6px; width: auto; height: auto; background: none !important; color: var(--muted) !important; font: 500 9px var(--mono); line-height: 1; }
+.flow button.done { background: rgba(31, 122, 77, .09); }
+.flow button.done svg, .flow button.done span { color: var(--text); }
+.flow button.done:hover { background: rgba(31, 122, 77, .16); }
+.flow button.on { background: var(--bg2); }
+.flow button.done.on { background: rgba(31, 122, 77, .13); }
+.flow button:not(:last-child)::after { display: none; }
+.flow .fextra { border-top: 0; }
+.flow .fextra.on { background: var(--bg2); color: var(--blue); border-left-color: var(--blue); }
+:root[data-theme="dark"] .flow button.done { background: rgba(80, 200, 140, .10); }
+
+/* 0.10.3 (the user): the standard parts panel beside the tree. */
+.stdparts { width: 250px; flex: none; display: flex; flex-direction: column; background: var(--bg2); border-right: 1px solid var(--line); min-height: 0; font-size: 12px; }
+.stdparts header { display: flex; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.stdparts header b { font-size: 12.5px; }
+.stdparts header .x { margin-left: auto; border: 0; background: none; font-size: 16px; color: var(--muted); cursor: pointer; }
+.stdparts .msearch { display: flex; align-items: center; gap: 6px; margin: 8px 10px 4px; height: 26px; padding: 0 8px; border: 1px solid var(--line); }
+.stdparts .msearch .ic { width: 13px; height: 13px; color: var(--muted); }
+.stdparts .msearch input:not([type=checkbox]) { border: 0; outline: 0; background: none; flex: 1; min-width: 0; height: 24px; padding: 0; font-size: 12px; }
+.stdparts .spcats { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px 10px; }
+.stdparts .spcat { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 4px 6px; border: 1px solid var(--line); background: var(--panel); font: inherit; font-size: 11px; text-transform: none; letter-spacing: 0; color: var(--text); cursor: pointer; position: relative; }
+.stdparts .spcat .ic { width: 24px; height: 24px; color: var(--blue); }
+.stdparts .spcat:hover { border-color: var(--blue); }
+.stdparts .spcat.on { background: var(--sel); border-color: var(--blue); font-weight: 600; }
+.stdparts .spcat.planned { opacity: .5; font-style: italic; }
+.stdparts .spcat.planned i { position: absolute; top: 2px; right: 3px; font: normal 9px var(--mono); }
+.stdparts .spsizes { flex: 1; overflow: auto; border-top: 1px solid var(--line2); min-height: 0; }
+.stdparts .sphead { display: flex; align-items: center; gap: 8px; padding: 5px 10px; font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); position: sticky; top: 0; background: var(--bg2); }
+.stdparts .sphead label { margin-left: auto; text-transform: none; letter-spacing: 0; font: 11px var(--sans); color: var(--text2); display: flex; gap: 4px; align-items: center; }
+.stdparts .sphead select { height: 22px; font-size: 11.5px; }
+.stdparts .sprow { display: flex; align-items: center; gap: 8px; padding: 3px 10px; border-bottom: 1px solid var(--line2); cursor: grab; }
+.stdparts .sprow:hover { background: var(--pale); }
+.stdparts .sprow.on { background: var(--sel); }
+.stdparts .sprow .spname { font-weight: 600; min-width: 34px; }
+.stdparts .sprow small { color: var(--muted); font: 10.5px var(--mono); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stdparts .sprow .btn.sm { height: 20px; padding: 0 7px; font: inherit; font-size: 11px; text-transform: none; letter-spacing: 0; }
+.stdparts .spnote { padding: 6px 10px; margin: 0; }

@@ -1,4 +1,5 @@
 // Datum Mesh window: layout, sidebar, status bar, keyboard shortcuts, startup and recovery.
+import { partsOpen } from "./panels";
 import { historyKey } from "./history";
 import { cadLoad } from "./cad";
 import { render } from "solid-js/web";
@@ -30,6 +31,8 @@ import { in3d, plane, onPlane, unproj } from "./plane3";
 import { Menu, Toast } from "./ui";
 import { fmt } from "./units";
 import * as D from "./dialogs";
+/** The standard parts panel (0.10.3), loaded when first opened. */
+const StdParts = lazy(() => import("./stdparts").then(k => ({ default: k.StdParts })));
 
 
 const TOOL_HINT: Record<string, string> = {
@@ -120,7 +123,7 @@ const App = () => {
         <Show when={out()}><Flow /></Show>
         <div class="content" style={{ "--tree-w": `${treeW()}px`, "--insp-w": `${inspW()}px` }}>
           <Show when={out()}>
-            <Switch fallback={<div class="modelview"><Tree /><div class="vgrip" onPointerDown={e => grip(e, "tree")} title="Drag to widen or narrow the steps" /><ToolStrip /><div class="center"><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
+            <Switch fallback={<div class="modelview"><Tree /><div class="vgrip" onPointerDown={e => grip(e, "tree")} title="Drag to widen or narrow the steps" /><ToolStrip /><Show when={partsOpen()}><Suspense><StdParts /></Suspense></Show><div class="center" onDragOver={e => { if (e.dataTransfer?.types.includes("application/x-datum-part")) { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; } }} onDrop={e => import("./stdparts").then(k => k.dropPart(e))}><Show when={!sketch()}><PlaneBar /></Show><Show when={!(sketch() && view() !== "mesh")} fallback={
                 // Sketching (0.6.2): the 3D view behind, square to the plane, the sketch canvas over it.
                 <div class="sketchstage"><Suspense fallback={<div class="canvas" />}><View3D /></Suspense><Show when={sketch()?.facing}><div class="sketchover"><Canvas /></div></Show><Suspense><SketchBar /></Suspense></div>}><Show when={in3d() && plane() === "3d" && view() !== "mesh"} fallback={<Canvas />}><Suspense fallback={<div class="canvas" />}><View3D /></Suspense></Show></Show><Show when={(rawResults() || (modeOn() && modes())) && !sketch() && view() !== "mesh"}><div class="playwrap"><Suspense><Player /></Suspense></div></Show><Show when={view() === "mesh"} fallback={<Show when={modeOn() && modes()} fallback={<><ResultsLegend /><PartLegend /><SpaceLegend /><SolidLegend /></>}><ModesBar /></Show>}><Show when={!isFrame(model()?.analysis)} fallback={<FrameNoMesh />}><MeshBar remesh={C.mesh} /></Show></Show></div><Show when={popShown()}><div class="ipop" classList={{ low: !!sketch() }}><div class="vgrip" onPointerDown={e => grip(e, "insp")} title="Drag to widen or narrow this panel" /><Inspector /></div></Show></div>}>
               <Match when={view() === "results"}><div class="pagewrap"><PageBar t="Results: tables and equilibrium" /><Suspense><ResultsPage /></Suspense></div></Match>

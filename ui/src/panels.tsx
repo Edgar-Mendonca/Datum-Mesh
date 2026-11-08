@@ -159,14 +159,23 @@ export const goStep = (i: number) => {
   requestAnimationFrame(() => document.querySelectorAll(".tree .step")[i]?.scrollIntoView({ block: "start", behavior: "smooth" }));
 };
 /** The workflow bar at the far left (0.9.1, the user): the steps in order, each done, to do, or not needed. */
-export const Flow = () => <nav class="flow" aria-label="Steps of the work"><For each={flowSteps()}>{(f, i) =>
+/** The workflow bar (0.9.1; 0.10.3, the user): the six steps, a step done shown by a light green
+ *  ground (no tick marks), the one open marked by the accent; then the tools any step may need: the
+ *  standard parts, the materials library, Python (planned), and Options. */
+export const Flow = () => <nav class="flow" aria-label="Steps of the work">
+  <span class="fcap">Steps</span>
+  <For each={flowSteps()}>{(f, i) =>
   <button classList={{ on: tab() === STEP_TABS[i()], done: f.done && !f.skip, skip: !!f.skip }} onClick={() => goStep(i())} title={`${f.n}. ${f.t}${f.skip ? ": not needed" : f.done ? ": done" : f.why ? `: ${f.why}` : ""}`}>
-    <i class="fn">{f.done && !f.skip ? "✓" : f.n}</i><Ic n={f.icon} /><span>{f.short}</span>
+    <i class="fn">{f.n}</i><Ic n={f.icon} /><span>{f.short}</span>
   </button>}</For>
-  {/* 0.10.2 (the mock-ups): Python (planned, 0.15) and Options at the foot of the bar. */}
   <span class="fgrow" />
+  <span class="fcap">Tools</span>
+  <button class="fextra" data-tool="parts" classList={{ on: partsOpen() }} title="Standard parts: bolts, nuts, washers and pins, ready to drop into a 3D model" onClick={() => setPartsOpen(!partsOpen())}><Ic n="bolt" /><span>Parts</span></button>
+  <button class="fextra" data-tool="library" title="The materials library: metals and plastics, each with its source" onClick={() => import("./dialogs").then(k => k.library())}><Ic n="material" /><span>Library</span></button>
   <Show when={showPlanned()}><button class="fextra planned" title="Python: planned for 0.15. Click to see what it will do." onClick={() => import("./planned").then(k => k.openPlanned("script"))}><Ic n="fx" /><span>Python</span></button></Show>
   <button class="fextra" title="Options" onClick={() => setBackstage("options")}><Ic n="opts" /><span>Options</span></button></nav>;
+/** The standard parts panel, open beside the tree (0.10.3, the user). */
+export const [partsOpen, setPartsOpen] = createSignal(false);
 /** Each step's icon in the tree (0.10.2, the mock-ups: the tree's branches have icons, not numbers). */
 const STEP_ICONS = ["model", "material", "fixed", "mesh", "solve", "contour"];
 /** A new result opens the tree's Results tab (0.10.2, the mock-ups); going back to set up the model returns to Model. */

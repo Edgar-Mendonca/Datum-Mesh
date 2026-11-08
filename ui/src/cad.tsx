@@ -42,24 +42,24 @@ export const [roundR, setRoundR] = createSignal(5);
 /** The ellipse through centre c, major-axis end m and a point q: its minor radius, q's distance from the major axis. */
 const minorR = (c: P2, m: P2, q: P2) => { const L = d(c, m) || 1, u = [(m[0] - c[0]) / L, (m[1] - c[1]) / L]; return Math.abs(-u[1] * (q[0] - c[0]) + u[0] * (q[1] - c[1])); };
 export const TOOLS: Record<string, Tool> = {
-  line: { label: "Line", icon: "beam", hint: ["Click where the line starts", "Click the next point (double-click or Esc to end the chain)"], cmd: p => ["sketch.line", { points: p }] },
-  arc3: { label: "Arc · 3 points", icon: "curve", hint: ["Click where the arc starts", "Click where it ends", "Click a point it passes through"], cmd: p => ["sketch.arc.three_point", { start: p[0], end: p[1], through: p[2] }] },
-  arcc: { label: "Arc · centre and ends", icon: "curve", hint: ["Click the centre", "Click where the arc starts", "Click where it ends (anticlockwise)"], cmd: p => ["sketch.arc.center_point", { center: p[0], start: p[1], end: p[2] }] },
-  circle: { label: "Circle · centre and radius", icon: "circle", hint: ["Click the centre", "Click a point on the circle"], cmd: p => ["sketch.circle.center", { center: p[0], radius: d(p[0], p[1]) }] },
-  circle2: { label: "Circle · 2 points", icon: "circle", hint: ["Click one end of a diameter", "Click the other end"], cmd: p => ["sketch.circle.two_point", { p0: p[0], p1: p[1] }] },
-  circle3: { label: "Circle · 3 points", icon: "circle", hint: ["Click a point on the circle", "Click a second point", "Click a third point"], cmd: p => ["sketch.circle.three_point", { p0: p[0], p1: p[1], p2: p[2] }] },
-  rect: { label: "Rectangle · 2 corners", icon: "rect", hint: ["Click one corner", "Click the opposite corner"], cmd: p => ["sketch.rectangle.two_point", { p0: p[0], p1: p[1] }] },
-  rectc: { label: "Rectangle · centre and corner", icon: "rect", hint: ["Click the centre", "Click a corner"], cmd: p => ["sketch.rectangle.center", { center: p[0], corner: p[1] }] },
-  rect3: { label: "Rectangle · 3 points", icon: "rect", hint: ["Click where the first side starts", "Click where it ends", "Click a point on the opposite side"], cmd: p => ["sketch.rectangle.three_point", { p0: p[0], p1: p[1], p2: p[2] }] },
-  polyin: { label: "Polygon · inside a circle", icon: "ngon", hint: ["Click the centre", "Click a corner"], cmd: p => ["sketch.polygon.inscribed", { center: p[0], radius: d(p[0], p[1]), sides: sides(), angle: ang(p[0], p[1]) }] },
-  polyout: { label: "Polygon · around a circle", icon: "ngon", hint: ["Click the centre", "Click the middle of a side"], cmd: p => ["sketch.polygon.circumscribed", { center: p[0], radius: d(p[0], p[1]), sides: sides(), angle: ang(p[0], p[1]) }] },
-  polyedge: { label: "Polygon · by one side", icon: "ngon", hint: ["Click where a side starts", "Click where it ends"], cmd: p => ["sketch.polygon.edge", { p0: p[0], p1: p[1], sides: sides() }] },
-  slotc: { label: "Slot · centre to centre", icon: "slot", hint: ["Click the centre of one end", "Click the centre of the other end"], cmd: p => ["sketch.slot.center_to_center", { p0: p[0], p1: p[1], width: slotW() }] },
-  slot: { label: "Slot · overall", icon: "slot", hint: ["Click one end", "Click the other end"], cmd: p => ["sketch.slot.overall", { p0: p[0], p1: p[1], width: slotW() }] },
+  line: { label: "Line", icon: "w-line", hint: ["Click where the line starts", "Click the next point (double-click or Esc to end the chain)"], cmd: p => ["sketch.line", { points: p }] },
+  arc3: { label: "Arc · 3 points", icon: "w-arc3", hint: ["Click where the arc starts", "Click where it ends", "Click a point it passes through"], cmd: p => ["sketch.arc.three_point", { start: p[0], end: p[1], through: p[2] }] },
+  arcc: { label: "Arc · centre and ends", icon: "w-arcc", hint: ["Click the centre", "Click where the arc starts", "Click where it ends (anticlockwise)"], cmd: p => ["sketch.arc.center_point", { center: p[0], start: p[1], end: p[2] }] },
+  circle: { label: "Circle · centre and radius", icon: "w-circle", hint: ["Click the centre", "Click a point on the circle"], cmd: p => ["sketch.circle.center", { center: p[0], radius: d(p[0], p[1]) }] },
+  circle2: { label: "Circle · 2 points", icon: "w-circle2", hint: ["Click one end of a diameter", "Click the other end"], cmd: p => ["sketch.circle.two_point", { p0: p[0], p1: p[1] }] },
+  circle3: { label: "Circle · 3 points", icon: "w-circle3", hint: ["Click a point on the circle", "Click a second point", "Click a third point"], cmd: p => ["sketch.circle.three_point", { p0: p[0], p1: p[1], p2: p[2] }] },
+  rect: { label: "Rectangle · 2 corners", icon: "w-rect", hint: ["Click one corner", "Click the opposite corner"], cmd: p => ["sketch.rectangle.two_point", { p0: p[0], p1: p[1] }] },
+  rectc: { label: "Rectangle · centre and corner", icon: "w-rectc", hint: ["Click the centre", "Click a corner"], cmd: p => ["sketch.rectangle.center", { center: p[0], corner: p[1] }] },
+  rect3: { label: "Rectangle · 3 points", icon: "w-rect3", hint: ["Click where the first side starts", "Click where it ends", "Click a point on the opposite side"], cmd: p => ["sketch.rectangle.three_point", { p0: p[0], p1: p[1], p2: p[2] }] },
+  polyin: { label: "Polygon · inside a circle", icon: "w-polyin", hint: ["Click the centre", "Click a corner"], cmd: p => ["sketch.polygon.inscribed", { center: p[0], radius: d(p[0], p[1]), sides: sides(), angle: ang(p[0], p[1]) }] },
+  polyout: { label: "Polygon · around a circle", icon: "w-polyout", hint: ["Click the centre", "Click the middle of a side"], cmd: p => ["sketch.polygon.circumscribed", { center: p[0], radius: d(p[0], p[1]), sides: sides(), angle: ang(p[0], p[1]) }] },
+  polyedge: { label: "Polygon · by one side", icon: "w-polyedge", hint: ["Click where a side starts", "Click where it ends"], cmd: p => ["sketch.polygon.edge", { p0: p[0], p1: p[1], sides: sides() }] },
+  slotc: { label: "Slot · centre to centre", icon: "w-slotc", hint: ["Click the centre of one end", "Click the centre of the other end"], cmd: p => ["sketch.slot.center_to_center", { p0: p[0], p1: p[1], width: slotW() }] },
+  slot: { label: "Slot · overall", icon: "w-slot", hint: ["Click one end", "Click the other end"], cmd: p => ["sketch.slot.overall", { p0: p[0], p1: p[1], width: slotW() }] },
   // 0.7.6: more shapes the engine draws.
-  rectr: { label: "Rectangle · rounded corners", icon: "rect", hint: ["Click one corner", "Click the opposite corner (the corner radius is set beside the button)"], cmd: p => ["sketch.rectangle.rounded", { p0: p[0], p1: p[1], radius: roundR() }] },
-  ellipse: { label: "Ellipse", icon: "circle", hint: ["Click the centre", "Click the end of the long axis", "Click a point the ellipse passes through across it"], cmd: p => ["sketch.ellipse", { center: p[0], major: p[1], minor_radius: Math.max(minorR(p[0], p[1], p[2]), 1e-3) }] },
-  spline: { label: "Spline", icon: "curve", hint: ["Click where the curve starts", "Click the points it passes through: double-click or Enter on the last one"], cmd: p => ["sketch.spline.fit_point", { points: p }] },
+  rectr: { label: "Rectangle · rounded corners", icon: "w-rectr", hint: ["Click one corner", "Click the opposite corner (the corner radius is set beside the button)"], cmd: p => ["sketch.rectangle.rounded", { p0: p[0], p1: p[1], radius: roundR() }] },
+  ellipse: { label: "Ellipse", icon: "w-ellipse", hint: ["Click the centre", "Click the end of the long axis", "Click a point the ellipse passes through across it"], cmd: p => ["sketch.ellipse", { center: p[0], major: p[1], minor_radius: Math.max(minorR(p[0], p[1], p[2]), 1e-3) }] },
+  spline: { label: "Spline", icon: "w-spline", hint: ["Click where the curve starts", "Click the points it passes through: double-click or Enter on the last one"], cmd: p => ["sketch.spline.fit_point", { points: p }] },
 };
 const NEED: Record<string, number> = { rectr: 2, ellipse: 3, spline: 1e9, line: 2, arc3: 3, arcc: 3, circle: 2, circle2: 2, circle3: 3, rect: 2, rectc: 2, rect3: 3, polyin: 2, polyout: 2, polyedge: 2, slotc: 2, slot: 2 };
 /** Each shape's ways of drawing, in the order its ▾ lists them. */

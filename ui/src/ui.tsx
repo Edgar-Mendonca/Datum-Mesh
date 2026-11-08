@@ -24,7 +24,7 @@ export const Menu = () => {
           <button disabled={it.off} classList={{ on: it.on }}
             onMouseEnter={e => { const r = e.currentTarget.getBoundingClientRect(); setSubs([...subs().slice(0, depth), ...(it.sub ? [{ x: r.right, y: r.top - 4, px: r.left, items: it.sub }] : [])]); }}
             onClick={() => { if (it.sub) return; close(); it.run?.(); }}>
-            <i class="tick">{it.on ? "✓" : it.icon ? <Icon n={it.icon} /> : ""}</i><span>{it.label}</span>{it.keys && <kbd>{it.keys}</kbd>}{it.sub && <b class="more">›</b>}
+            <i class="tick" classList={{ cur: !!it.on && !!it.icon }}>{it.icon ? <Icon n={it.icon} /> : it.on ? "✓" : ""}</i><span>{it.label}</span>{it.keys && <kbd>{it.keys}</kbd>}{it.sub && <b class="more">›</b>}
           </button>
         )}</For>
       </div>

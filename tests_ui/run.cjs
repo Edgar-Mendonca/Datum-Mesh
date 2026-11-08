@@ -549,6 +549,17 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     check("bodies and sketches have their eyes too", !!beye && (await p.$$('.tree .ti:has-text("curves") .teye')).length >= 1);
     if (beye) { await beye.click(); await p.waitForTimeout(80); }
     check("…a hidden body says so in the tree; what is hidden is forgotten when another model opens", beye ? await p.$eval('.tree .ti:has-text("faces") .teye', el => el.classList.contains("off")) : false);
+    // 0.10.3 (the user): the workflow bar without ticks; its tools; the standard parts; the cube's zones.
+    check("the workflow bar marks a done step by its ground, not a tick, and has its tools", (await p.$$eval(".flow button .fn", els => els.every(e => /^\d$/.test(e.textContent)))) && (await p.$$('.flow button[data-tool="parts"]')).length === 1);
+    await p.click('.flow button[data-tool="parts"]'); await p.waitForTimeout(400);
+    check("Parts opens the standard parts: bolts, nuts, washers and pins in metric sizes", (await p.$$(".stdparts .spcat:not(.planned)")).length === 4 && (await p.$$(".stdparts .sprow")).length === 7);
+    const before = await p.evaluate(() => window.__calls.length);
+    await p.click('.stdparts .sprow:has(.spname:text-is("M10")) .btn'); await p.waitForTimeout(400);
+    const made = await p.evaluate(n => window.__calls.slice(n).filter(c => c[0] === "cad_run").map(c => [c[1].id, c[1].params]), before);
+    // (The checks' engine answers with the same scene each time, so the join, which needs the new solids' names, is the engine's to test.)
+    check("Insert makes an M10 bolt from the engine's solids: a shank of 10 mm × 40, a head of 16 mm × 6.4 on top", made.length >= 2 && made[0][0] === "solid.cylinder" && made[0][1].radius === 5 && made[0][1].height === 40 && made[1][1].radius === 8 && made[1][1].base[2] === 40 && made[1][1].height === 6.4, JSON.stringify(made));
+    await p.click('.flow button[data-tool="parts"]'); await p.waitForTimeout(100);
+    check("the view cube draws its middle thirds: edges and corners pick the views between faces", (await p.$$(".view3d .cube polygon.inner")).length === 6);
     await open("blank-solid");
   }
   check("a blank 3D solid opens in 3D and says to click a plane to sketch on (0.7.2)", (await p.textContent(".view3d")).includes("Build a part") && (await p.textContent(".view3d .empty")).includes("three planes"));
@@ -1486,7 +1497,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     const fl = await p.$$eval(".flow button:not(.fextra)", bs => bs.map(b => ({ t: b.textContent, done: b.classList.contains("done"), skip: b.classList.contains("skip") })));
     check("the workflow bar lists the six steps in order, a frame's Mesh not needed (0.9.1, the user)", fl.length === 6 && /Geometry/.test(fl[0].t) && /Materials/.test(fl[1].t) && /Loads/.test(fl[2].t) && /Mesh/.test(fl[3].t) && fl[3].skip && /Solve/.test(fl[4].t) && /Results/.test(fl[5].t) && fl[0].done, JSON.stringify(fl));
     await p.click('.flow button:has-text("Loads")'); await p.waitForTimeout(150);
-    check("a step on the workflow bar opens its tools and its place in the tree (0.9.1)", (await p.$$('.ribbon button[title="Fixed"], .ribbon button:has-text("Fixed")')).length >= 1 && await p.$eval(".flow button:nth-child(3)", el => el.classList.contains("on")) && await p.$eval(".tree .step:nth-of-type(3)", el => el.classList.contains("here")));
+    check("a step on the workflow bar opens its tools and its place in the tree (0.9.1)", (await p.$$('.ribbon button[title="Fixed"], .ribbon button:has-text("Fixed")')).length >= 1 && await p.$$eval(".flow button:not(.fextra)", els => els[2].classList.contains("on")) && await p.$eval(".tree .step:nth-of-type(3)", el => el.classList.contains("here")));
     // Every edit is kept in Messages (0.9.1, the user: each step seen).
     // (the edits made by the checks above, and the models opened)
     await p.click('.console header button:has-text("Messages")'); await p.waitForTimeout(100);
