@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.10.3 — 2026-11-08
+
+Model care and frames: the user's specifications turned into tools, every piece shown and approved before this release. Calculations stay on open, published formulas; no design code's numbers are built in.
+
+**Starting and modelling**
+- Four starting points: 2D frame, 3D frame, 2D part (Stress or Heat) and 3D solid.
+- The origin (point, axes and planes) in the tree, with show/hide eyes on it, on sketches and on bodies.
+- Each way of drawing a shape has its own icon in the ▾ menus; the view cube is light and see-through, and its edges and corners pick the views between faces (a corner is isometric).
+- The workflow bar: a done step has a light green ground; a Tools group with Parts, Library, Python (planned) and Options.
+- Standard parts: metric hexagon bolts, nuts, plain washers and dowel pins, by click or drag onto the view.
+
+**Frames**
+- Point loads and loads over part of a member, even or tapering, along the member or per length of its projection; the shear drops straight down under a point load.
+- Split, reverse and merge members, and merge nodes closer than a tolerance; loads, hinges and offsets go with them.
+- Member orientation in 3D: an angle, or the section's depth facing a point or a direction, with each member's local axes drawn.
+- A model check in the panel under the view: loose and nearly meeting nodes, overlapping members, pieces nothing holds, very short members; a row selects what it is about.
+- Tables: loads (case, place, kind, direction, values) and assignments (kind, section, material, hinges, rigid ends, roll), typed into in place.
+- Combinations by rule: cases marked permanent, variable or left out with their ψ factors, and your own γ factors; strength with each variable case leading, service and long-term, previewed before they are made.
+
+**Solving and checking**
+- Mesh statistics: elements, sizes, how many are good, fair, poor or bad, and the worst ones with where they are.
+- Solver settings for frames' large-deflection steps: tolerance, iterations, smallest and most increments, growth.
+- Status badges in words, kept apart: the model, the solve and the balance; none claims a design check.
+- Things that must never be confused have their own icons (releases and pins, rigid links and members, uniform and gradient temperature, each kind of analysis step).
+- Every planned feature shows on its ribbon tab, dimmed, with the release that brings it.
+
+**Fixed**
+- A 2D frame loaded only inside its members said it had no loads, and its balance check was skipped.
+- A frame free to spin could be answered with huge movements when rounding hid the mechanism; it now says it can move without resistance.
+
+**Verification**
+- Benchmark 38: point and part-length member loads (16 rows); benchmark 39: an axial bar, a fixed–fixed beam with a sinking end, a force on an arm, a round shaft in torsion, CQC with close and far modes and a tube's volume (15 rows). All pass.
+
 ## 0.10.2 — 2026-11-08
 
 The window brought to the approved mock-ups, screen by screen, and the first tables and managers.
