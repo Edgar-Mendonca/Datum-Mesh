@@ -535,6 +535,20 @@ export const Canvas = () => {
         <Show when={edgeSel()}>{e => <path d={edgePath(e())} class="edgesel" />}</Show>
         <For each={refines()}>{r => <Show when={r.at.on === "edge" || r.at.on === "point"}>{r.at.on === "edge" ? <path d={edgePath(r.at as any)} class="refl" /> : <circle cx={S([(r.at as any).x, (r.at as any).y])[0]} cy={S([(r.at as any).x, (r.at as any).y])[1]} r={9} class="refl" />}</Show>}</For>
         <For each={supportsOnEdges()}>{s => { const sh = () => shapeAt((s.at as any).shape); return <Show when={sh()}><EdgeSupport s={s} sh={sh()!} on={selSet().has(s.id)} /></Show>; }}</For>
+        {/* 0.10.4: a selected design member: a band along it, a tick at each restraint, its name */}
+        <For each={(m()?.design_members ?? []).filter(d => selSet().has(d.id))}>{d => {
+          const ends = () => { const a = np().get(d.a), b = np().get(d.b); return a && b ? [a, b] as [Pt, Pt] : null; };
+          return <Show when={ends()}>{e => {
+            const A = () => S(e()[0]), B = () => S(e()[1]), L = () => Math.hypot(e()[1][0] - e()[0][0], e()[1][1] - e()[0][1]) || 1;
+            const n = () => { const ux = B()[0] - A()[0], uy = B()[1] - A()[1], l = Math.hypot(ux, uy) || 1; return [-uy / l, ux / l] as Pt; };
+            const at = (t: number): Pt => [A()[0] + (B()[0] - A()[0]) * t, A()[1] + (B()[1] - A()[1]) * t];
+            return <g class="dm" data-id={d.id}>
+              <line x1={A()[0]} y1={A()[1]} x2={B()[0]} y2={B()[1]} class="dmband" />
+              <For each={d.restraints}>{r => { const P = () => at(r.at / L()); return <line x1={P()[0] - n()[0] * 12} y1={P()[1] - n()[1] * 12} x2={P()[0] + n()[0] * 12} y2={P()[1] + n()[1] * 12} class="dmtick" />; }}</For>
+              <text x={(A()[0] + B()[0]) / 2 + n()[0] * 18} y={(A()[1] + B()[1]) / 2 + n()[1] * 18} class="dmlabel" text-anchor="middle">{d.name}</text>
+            </g>;
+          }}</Show>;
+        }}</For>
         {/* frames: members off the working plane first, faint */}
         <For each={ghosts()}>{g => <line x1={S(g[0])[0]} y1={S(g[0])[1]} x2={S(g[1])[0]} y2={S(g[1])[1]} class="ghost" />}</For>
         <For each={m()?.members ?? []}>{mb => <Show when={memberEnds(mb)}>{e => <g class="mem" classList={{ truss: mb.kind === "truss", sel: selSet().has(mb.id), hover: hoverIs("member", mb.id), slack: !!frameRes()?.slack?.includes(mb.id) && !stale() }} data-id={mb.id}>

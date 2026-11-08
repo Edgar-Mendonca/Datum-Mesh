@@ -106,6 +106,17 @@ pub fn model_check(m: &Model, near: f64) -> Vec<Finding> {
             }
         }
     }
+    // Design members (0.10.4): each chain found again, its restraints on it.
+    for dm in &m.design_members {
+        match crate::frames::design::chain(m, dm.a, dm.b) {
+            Err(e) => out.push(f("error", format!("Design member {} is broken", dm.name), vec![dm.id], e)),
+            Ok(c) => {
+                if dm.restraints.iter().any(|r| !(r.at >= 0.0 && r.at <= c.length)) {
+                    out.push(f("warning", format!("Design member {} has a restraint off its length", dm.name), vec![dm.id], format!("Restraints are measured from its start, 0 to {:.3} m.", c.length)));
+                }
+            }
+        }
+    }
     // Very short members: often a slip of the mouse.
     let span = m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
     for b in &m.members {

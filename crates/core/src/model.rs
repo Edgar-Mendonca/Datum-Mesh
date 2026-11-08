@@ -626,6 +626,62 @@ pub struct Load {
     pub case: u32,
 }
 
+/// A design member (0.10.4): the real beam or column from end node `a` to end node `b`, made of
+/// the members along the line between them (found again after every edit), with its restraints.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DesignMember {
+    pub id: u32,
+    pub name: String,
+    pub a: u32,
+    pub b: u32,
+    #[serde(default)]
+    pub restraints: Vec<Restraint>,
+}
+
+/// The settings of the mechanics checks (0.10.4), typed by the user: no design code's numbers.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CheckSettings {
+    /// Effective length factor K: buckling length = K × the length between restraints.
+    pub k: f64,
+    /// Deflection limit: span over this ratio.
+    pub span_ratio: f64,
+    /// Storey drift limit, as a share of the storey height.
+    pub drift: f64,
+}
+impl Default for CheckSettings {
+    fn default() -> Self {
+        Self { k: 1.0, span_ratio: 300.0, drift: 0.005 }
+    }
+}
+
+/// Where a design member is braced (m from end a) and what the brace holds.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Restraint {
+    pub at: f64,
+    pub holds: Holds,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Holds {
+    /// Sideways movement of the member (lateral).
+    Sideways,
+    /// Twisting.
+    Twist,
+    #[default]
+    Both,
+}
+impl Holds {
+    pub fn words(&self) -> &'static str {
+        match self {
+            Holds::Sideways => "sideways",
+            Holds::Twist => "twisting",
+            Holds::Both => "sideways and twisting",
+        }
+    }
+}
+
 /// A load case (0.3.3): a named set of loads (dead, imposed, wind, …).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Case {
@@ -888,6 +944,9 @@ pub struct Model {
     /// The last rule combinations were made by (0.10.3), for the dialog to start from.
     #[serde(default)]
     pub combo_rule: Option<ComboRule>,
+    /// The mechanics checks' settings (0.10.4).
+    #[serde(default)]
+    pub check_settings: CheckSettings,
     /// Analysis steps (0.4.0), run in order. None: one linear static step.
     #[serde(default)]
     pub steps: Vec<Step>,
@@ -908,6 +967,9 @@ pub struct Model {
     pub parts: Vec<Part>,
     /// Contact between faces of meshed solids (0.8.0).
     pub contacts: Vec<Contact>,
+    /// Design members (0.10.4): chains of members checked as one beam or column.
+    #[serde(default)]
+    pub design_members: Vec<DesignMember>,
     /// The next free id (ids are unique across every kind of item).
     pub next: u32,
 }
@@ -935,12 +997,14 @@ impl Default for Model {
             cases: vec![],
             combos: vec![],
             combo_rule: None,
+            check_settings: CheckSettings::default(),
             steps: vec![],
             rigid_floors: false,
             study: String::new(),
             volume: None,
             parts: vec![],
             contacts: vec![],
+            design_members: vec![],
             next: 1,
         }
     }

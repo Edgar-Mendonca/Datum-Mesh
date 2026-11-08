@@ -54,6 +54,46 @@ fn main() {
     dup.id = 900;
     d.m.members.push(dup);
     let checkdemo = d.m;
+    // A design member (0.10.4): a beam of four members, 8 m on two supports, restrained at 4 m.
+    let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
+    for k in 0..4 {
+        d.apply(Op::AddMember { from: [2.0 * k as f64, 0.0], to: [2.0 * (k + 1) as f64, 0.0], kind: datum_core::model::MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+    }
+    for x in [0.0, 8.0] {
+        let n = d.m.nodes.iter().find(|n| n.x == x).unwrap().id;
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: if x == 0.0 { SupportKind::Pinned } else { SupportKind::RollerX } }) }).unwrap();
+    }
+    let ids: Vec<u32> = d.m.members.iter().map(|b| b.id).collect();
+    let dmid = d.apply(Op::FormDesignMember { ids, name: "Beam B1".into() }).unwrap()[0];
+    let mut dm = d.m.design_members[0].clone();
+    dm.restraints = vec![datum_core::model::Restraint { at: 4.0, holds: datum_core::model::Holds::Both }];
+    d.apply(Op::Set { item: Item::DesignMember(dm) }).unwrap();
+    for b in d.m.members.iter().map(|b| b.id).collect::<Vec<_>>() {
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, case: 0, at: Target::Member { id: b }, kind: LoadKind::Dist { w1: -10e3, w2: -10e3, dir: Dir::Y } }) }).unwrap();
+    }
+    let n4 = d.m.nodes.iter().find(|n| n.x == 4.0).unwrap().id;
+    d.apply(Op::Add { item: Item::Load(Load { id: 0, case: 0, at: Target::Node { id: n4 }, kind: LoadKind::Force { fx: 0.0, fy: -20e3, fz: 0.0 } }) }).unwrap();
+    let dmdemo_checks = datum_core::frames::mech::run(&d.m).unwrap();
+    let dmdemo_values = datum_core::frames::mech::along(&d.m, None, dmid, 4.0).unwrap();
+    let dmdemo_info = datum_core::frames::design::info(&d.m, dmid).unwrap();
+    let dmdemo = d.m;
+    // Storey drift (0.10.4): a two-storey portal, 6 m wide, storeys of 3.5 m, pushed sideways.
+    let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
+    for (f, t) in [([0.0, 0.0], [0.0, 3.5]), ([0.0, 3.5], [0.0, 7.0]), ([6.0, 0.0], [6.0, 3.5]), ([6.0, 3.5], [6.0, 7.0]), ([0.0, 3.5], [6.0, 3.5]), ([0.0, 7.0], [6.0, 7.0])] {
+        d.apply(Op::AddMember { from: f, to: t, kind: datum_core::model::MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+    }
+    for x in [0.0, 6.0] {
+        let n = d.m.nodes.iter().find(|n| n.x == x && n.y == 0.0).unwrap().id;
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind: SupportKind::Fixed }) }).unwrap();
+    }
+    for y in [3.5, 7.0] {
+        let n = d.m.nodes.iter().find(|n| n.x == 0.0 && n.y == y).unwrap().id;
+        d.apply(Op::Add { item: Item::Load(Load { id: 0, case: 0, at: Target::Node { id: n }, kind: LoadKind::Force { fx: 30e3, fy: 0.0, fz: 0.0 } }) }).unwrap();
+    }
+    let left: Vec<u32> = d.m.members.iter().filter(|b| d.m.node(b.a).unwrap().x == 0.0 && d.m.node(b.b).unwrap().x == 0.0).map(|b| b.id).collect();
+    d.apply(Op::FormDesignMember { ids: left, name: "Column C1".into() }).unwrap();
+    let driftdemo_checks = datum_core::frames::mech::run(&d.m).unwrap();
+    let driftdemo = d.m;
     // The braced frame with its cases marked for combinations by rule (0.10.3): demonstration
     // factors typed as a user would, not any design code's.
     let mut braced_rule = examples::get("braced").unwrap();
@@ -155,6 +195,13 @@ fn main() {
         "noload_results": sent(&datum_core::solve(&noload).unwrap()),
         "beamloads": out_m(&beamloads),
         "checkdemo": out_m(&checkdemo),
+        "dmdemo": out_m(&dmdemo),
+        "dmdemo_info": dmdemo_info,
+        "dmdemo_checks": dmdemo_checks,
+        "dmdemo_values": dmdemo_values,
+        "driftdemo_checks": driftdemo_checks,
+        "driftdemo": out_m(&driftdemo),
+        "section_table_i": datum_core::sections::table(&datum_core::model::SectionShape::I { h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107, r: 0.0 }).unwrap(),
         "braced_rule": out_m(&braced_rule),
         "braced_rule_preview": braced_rule_preview,
         "checkdemo_findings": datum_core::frames::check::model_check(&checkdemo, 0.005),

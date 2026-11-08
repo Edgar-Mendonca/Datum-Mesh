@@ -145,6 +145,116 @@ pub fn props(s: &SectionShape) -> Result<Props, String> {
     Ok(p)
 }
 
+
+/// A section's properties in one table (0.10.4), for the window and the mechanics checks: the
+/// elastic ones from `props`, the plastic moduli and the radii of gyration.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Table {
+    pub a: f64,
+    /// Second moments about the strong axis (bending along the depth h) and the other axis (m⁴).
+    pub i: f64,
+    pub iy: f64,
+    /// Elastic moduli I/c (m³).
+    pub z: f64,
+    pub zy: f64,
+    /// Plastic moduli (m³): the first moment of the area each side of the axis that halves it;
+    /// None for a custom section, whose shape is not known.
+    pub s: Option<f64>,
+    pub sy: Option<f64>,
+    /// Radii of gyration √(I/A) (m).
+    pub r: f64,
+    pub ry: f64,
+    /// Torsion constant (m⁴).
+    pub j: f64,
+    /// Extreme fibres (m).
+    pub c: f64,
+    pub cy: f64,
+    /// What is approximate, in words (root fillets lumped at their centroids, open-section J).
+    pub notes: Vec<String>,
+}
+
+/// A piece of a section: a rectangle x0..x1 × y0..y1 (sign −1 for a hole), or (when x0 = x1)
+/// a small area `sign` at the point (x0, y0), for a root fillet.
+type Piece = (f64, f64, f64, f64, f64);
+
+/// The plastic modulus about the axis along x (bending along y): the axis yp halving the area,
+/// then Σ |y − yp| dA, exact for rectangles.
+fn plastic(pieces: &[Piece]) -> f64 {
+    let below = |yp: f64| -> f64 {
+        pieces.iter().map(|&(x0, x1, y0, y1, w)| if x0 == x1 { if y0 < yp { w } else { 0.0 } } else { w * (x1 - x0) * (yp.clamp(y0, y1) - y0) }).sum()
+    };
+    let total: f64 = pieces.iter().map(|&(x0, x1, y0, y1, w)| if x0 == x1 { w } else { w * (x1 - x0) * (y1 - y0) }).sum();
+    let (mut lo, mut hi) = (pieces.iter().map(|p| p.2).fold(f64::INFINITY, f64::min), pieces.iter().map(|p| p.3).fold(f64::NEG_INFINITY, f64::max));
+    for _ in 0..200 {
+        let mid = (lo + hi) / 2.0;
+        if below(mid) < total / 2.0 { lo = mid } else { hi = mid }
+    }
+    let yp = (lo + hi) / 2.0;
+    // ∫ |y − yp| over y0..y1, times the width.
+    let first = |y0: f64, y1: f64| -> f64 {
+        let f = |y: f64| { let d = y - yp; d * d.abs() / 2.0 };
+        f(y1) - f(y0)
+    };
+    pieces.iter().map(|&(x0, x1, y0, y1, w)| if x0 == x1 { w * (y0 - yp).abs() } else { w * (x1 - x0) * first(y0, y1) }).sum()
+}
+
+/// The section as pieces, depth along y and width along x (None for a custom section).
+fn pieces(s: &SectionShape) -> Option<Vec<Piece>> {
+    use SectionShape::*;
+    Some(match *s {
+        Rect { b, h } => vec![(0.0, b, 0.0, h, 1.0)],
+        Box { b, h, t } => vec![(0.0, b, 0.0, h, 1.0), (t, b - t, t, h - t, -1.0)],
+        I { h, b, tw, tf, r } => {
+            let x0 = (b - tw) / 2.0;
+            let mut v = vec![(0.0, b, 0.0, tf, 1.0), (0.0, b, h - tf, h, 1.0), (x0, x0 + tw, tf, h - tf, 1.0)];
+            let (fa, fc, _) = fillet(r);
+            if fa > 0.0 {
+                for (x, y) in [(x0 - fc, tf + fc), (x0 + tw + fc, tf + fc), (x0 - fc, h - tf - fc), (x0 + tw + fc, h - tf - fc)] {
+                    v.push((x, x, y, y, fa));
+                }
+            }
+            v
+        }
+        Channel { h, b, tw, tf } => vec![(0.0, b, 0.0, tf, 1.0), (0.0, b, h - tf, h, 1.0), (0.0, tw, tf, h - tf, 1.0)],
+        Angle { h, b, t } => vec![(0.0, t, 0.0, h, 1.0), (t, b, 0.0, t, 1.0)],
+        Circle { .. } | Tube { .. } | Custom { .. } => return None,
+    })
+}
+
+/// Every property of a section shape in one table (0.10.4).
+pub fn table(s: &SectionShape) -> Result<Table, String> {
+    let p = props(s)?;
+    let mut notes = vec![];
+    let (sx, sy) = match *s {
+        SectionShape::Circle { d } => (Some(d.powi(3) / 6.0), Some(d.powi(3) / 6.0)),
+        SectionShape::Tube { d, t } => {
+            let v = (d.powi(3) - (d - 2.0 * t).powi(3)) / 6.0;
+            (Some(v), Some(v))
+        }
+        _ => match pieces(s) {
+            Some(ps) => {
+                // The other axis: the same pieces turned a quarter.
+                let turned: Vec<Piece> = ps.iter().map(|&(x0, x1, y0, y1, w)| (y0, y1, x0, x1, w)).collect();
+                (Some(plastic(&ps)), Some(plastic(&turned)))
+            }
+            None => {
+                notes.push("A custom section: its shape is not known, so its plastic moduli are not either.".into());
+                (None, None)
+            }
+        },
+    };
+    if matches!(s, SectionShape::I { r, .. } if *r > 0.0) {
+        notes.push("Root fillets: exact in A and I; in the plastic moduli each is taken at its centroid.".into());
+    }
+    if matches!(s, SectionShape::I { .. } | SectionShape::Channel { .. } | SectionShape::Angle { .. }) {
+        notes.push("Torsion constant of an open section: Σ bt³/3, without the fillets.".into());
+    }
+    if matches!(s, SectionShape::Angle { .. }) {
+        notes.push("Angle: about the axes parallel to its legs, not its principal axes.".into());
+    }
+    Ok(Table { a: p.a, i: p.i, iy: p.iy, z: p.z(), zy: p.zy(), s: sx, sy, r: (p.i / p.a).sqrt(), ry: (p.iy / p.a).sqrt(), j: p.j, c: p.c, cy: p.cy, notes })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -152,6 +262,41 @@ mod tests {
 
     fn close(a: f64, b: f64) -> bool {
         (a - b).abs() <= 1e-9 * b.abs().max(1e-30)
+    }
+
+
+    #[test]
+    fn the_section_table_by_hand() {
+        // F01 of the specification: a rectangle 100 × 200 mm.
+        let t = table(&Rect { b: 0.1, h: 0.2 }).unwrap();
+        assert!(close(t.a, 0.02) && close(t.i, 6.666_666_666_666_667e-5) && close(t.z, 6.666_666_666_666_667e-4));
+        assert!(close(t.s.unwrap(), 1e-3) && close(t.r, 0.057_735_026_918_962_58));
+        assert!(close(t.sy.unwrap(), 0.2 * 0.1 * 0.1 / 4.0) && close(t.zy, 0.2 * 0.01 / 6.0));
+        // Circle and tube: d³/6 and (d³ − dᵢ³)/6.
+        assert!(close(table(&Circle { d: 0.05 }).unwrap().s.unwrap(), 0.05f64.powi(3) / 6.0));
+        assert!(close(table(&Tube { d: 0.1, t: 0.01 }).unwrap().s.unwrap(), (0.001 - 0.08f64.powi(3)) / 6.0));
+        // An I without fillets: S = b tf (h − tf) + tw hw²/4, and about the other axis 2 tf b²/4 + hw tw²/4.
+        let (h, b, tw, tf) = (0.3, 0.15, 0.0071, 0.0107);
+        let hw = h - 2.0 * tf;
+        let t = table(&I { h, b, tw, tf, r: 0.0 }).unwrap();
+        assert!(close(t.s.unwrap(), b * tf * (h - tf) + tw * hw * hw / 4.0), "{}", t.s.unwrap());
+        assert!(close(t.sy.unwrap(), 2.0 * tf * b * b / 4.0 + hw * tw * tw / 4.0));
+        // A box: the outer rectangle less the inner.
+        let t = table(&Box { b: 0.1, h: 0.2, t: 0.01 }).unwrap();
+        assert!(close(t.s.unwrap(), 0.1 * 0.04 / 4.0 - 0.08 * 0.18 * 0.18 / 4.0));
+        // An equal angle 100 × 100 × 10 (area 1900 mm²): the plastic axis halves the area, at
+        // y = 950/100 = 9.5 mm (inside the bottom leg); by hand the first moments either side:
+        // below 100·9.5²/2; above: the bottom leg's 0.5 mm strip beyond the upright leg, 90·0.5²/2,
+        // and the upright leg 10·90.5²/2 (from 9.5 to 100 mm).
+        let t = table(&Angle { h: 0.1, b: 0.1, t: 0.01 }).unwrap();
+        let want = 0.1 * 0.0095f64.powi(2) / 2.0 + 0.09 * 0.0005f64.powi(2) / 2.0 + 0.01 * 0.0905f64.powi(2) / 2.0;
+        assert!((t.s.unwrap() - want).abs() < 1e-12, "{} {want}", t.s.unwrap());
+        // S ≥ Z always (the shape factor of a rectangle is 1.5).
+        for sh in [Rect { b: 0.1, h: 0.2 }, Box { b: 0.1, h: 0.2, t: 0.01 }, I { h, b, tw, tf, r: 0.015 }, Channel { h: 0.2, b: 0.075, tw: 0.006, tf: 0.01 }] {
+            let t = table(&sh).unwrap();
+            assert!(t.s.unwrap() >= t.z && t.sy.unwrap() >= t.zy * 0.999, "{sh:?}");
+        }
+        assert!(table(&Custom { a: 0.01, i: 1e-5, c: 0.1, iy: 0.0, j: 0.0 }).unwrap().s.is_none());
     }
 
     #[test]

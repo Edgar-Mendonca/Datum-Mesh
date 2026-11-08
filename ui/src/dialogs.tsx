@@ -2,6 +2,8 @@
 // started, glossary), recovery and closing.
 import { For, Show, createSignal, createResource } from "solid-js";
 import { Out, Material, Section, SectionShape, Props, Check, LibMaterial, num } from "./api";
+/** A section's properties in one table (0.10.4, frames/sections.rs `Table`). */
+type SecTable = { a: number; i: number; iy: number; z: number; zy: number; s: number | null; sy: number | null; r: number; ry: number; j: number; c: number; cy: number; notes: string[] };
 import { openDialog, closeDialog, act, call, out, setOut, model, sel, setSel, toast } from "./store";
 import { C } from "./cmds";
 import { numIn } from "./panels";
@@ -153,6 +155,8 @@ export const sections = (focus?: number) => openDialog(() => {
   const [cur, setCur] = createSignal<number>(focus ?? list()[0]?.id ?? 0);
   const s = () => list().find(x => x.id === cur());
   const [props] = createResource(() => s()?.shape, sh => call<Props>("section_props", { shape: sh }));
+  // 0.10.4: the whole table: elastic and plastic moduli and radii of gyration, both axes.
+  const [tab] = createResource(() => s()?.shape, sh => call<SecTable>("section_table", { shape: sh }));
   const put = (x: Partial<Section>) => { const ss = s(); if (ss) act({ Set: { item: { Section: { ...ss, ...x } } } }); };
   const kind = (k: SectionShape["kind"]) => {
     const d: Record<string, SectionShape> = { rect: { kind: "rect", b: 0.1, h: 0.2 }, circle: { kind: "circle", d: 0.05 }, tube: { kind: "tube", d: 0.1143, t: 0.006 }, box: { kind: "box", b: 0.1, h: 0.2, t: 0.008 }, i: { kind: "i", h: 0.3, b: 0.15, tw: 0.0071, tf: 0.0107 }, channel: { kind: "channel", h: 0.2, b: 0.075, tw: 0.0085, tf: 0.0115 }, angle: { kind: "angle", h: 0.1, b: 0.1, t: 0.01 }, custom: { kind: "custom", a: 0.005, i: 5e-5, c: 0.15 } };
@@ -171,7 +175,18 @@ export const sections = (focus?: number) => openDialog(() => {
           <label>Name</label><input value={ss().name} onChange={e => put({ name: e.currentTarget.value })} />
           <label>Shape</label><select value={ss().shape.kind} onChange={e => kind(e.currentTarget.value as any)}><For each={SHAPES}>{([k, l]) => <option value={k} selected={k === ss().shape.kind}>{l}</option>}</For></select>
           <For each={SHAPES.find(x => x[0] === ss().shape.kind)![2]}>{([k, l]) => <F l={l} q={sq(k, ss().shape.kind)} v={(ss().shape as any)[k] ?? 0} set={v => put({ shape: { ...ss().shape, [k]: v } as SectionShape })} />}</For>
-          <label>Properties</label><div><Show when={props()} fallback={<span class="muted">—</span>}>{p => <span class="mono">A = {fmt("area", p().a)} · I = {fmt("inertia", p().i)} · c = {fmt("len", p().c)}<Show when={model()?.analysis === "space"}><br />Iy = {fmt("inertia", p().iy)} · J = {fmt("inertia", p().j)}</Show></span>}</Show></div>
+          <label class="top">Properties</label><div><Show when={tab()} fallback={<span class="muted">{props() ? "—" : "Not a section: check the sizes."}</span>}>{t => <>
+            <table class="tbl sectab" data-table="section"><thead><tr><th /><th class="r">Strong axis</th><th class="r">Weak axis</th></tr></thead><tbody>
+              <tr><td>Area A</td><td class="r mono" colspan="2">{fmt("area", t().a, 4)}</td></tr>
+              <tr><td>Second moment I</td><td class="r mono">{fmt("inertia", t().i, 4)}</td><td class="r mono">{fmt("inertia", t().iy, 4)}</td></tr>
+              <tr><td>Elastic modulus Z = I/c</td><td class="r mono">{fmt("vol", t().z, 4)}</td><td class="r mono">{fmt("vol", t().zy, 4)}</td></tr>
+              <tr><td>Plastic modulus S</td><td class="r mono">{t().s === null ? "not known" : fmt("vol", t().s!, 4)}</td><td class="r mono">{t().sy === null ? "not known" : fmt("vol", t().sy!, 4)}</td></tr>
+              <tr><td>Shape factor S/Z</td><td class="r mono">{t().s === null ? "–" : num(t().s! / t().z, 4)}</td><td class="r mono">{t().sy === null ? "–" : num(t().sy! / t().zy, 4)}</td></tr>
+              <tr><td>Radius of gyration r = √(I/A)</td><td class="r mono">{fmt("len", t().r, 4)}</td><td class="r mono">{fmt("len", t().ry, 4)}</td></tr>
+              <tr><td>Extreme fibre c</td><td class="r mono">{fmt("len", t().c, 4)}</td><td class="r mono">{fmt("len", t().cy, 4)}</td></tr>
+              <tr><td>Torsion constant J</td><td class="r mono" colspan="2">{fmt("inertia", t().j, 4)}</td></tr>
+            </tbody></table>
+            <For each={t().notes}>{n => <p class="muted small">{n}</p>}</For></>}</Show></div>
           <span /><p class="muted small">Bending is in the plane of the frame, about the section's axis across h. Angles bend about the axis parallel to b.{model()?.analysis === "space" ? " In 3D, Iy bends across the width b and J resists twisting (open sections, such as I and channel, twist easily). Your own values: Iy and J of 0 are taken as for a round bar." : ""}</p>
         </div>}</Show>
       </div>

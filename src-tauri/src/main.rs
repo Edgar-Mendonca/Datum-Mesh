@@ -520,6 +520,33 @@ fn section_props(shape: SectionShape) -> R<sections::Props> {
     sections::props(&shape)
 }
 
+/// The mechanics checks of every design member and the storey drift (0.10.4): each combination
+/// solved on its own.
+#[tauri::command]
+async fn mech_checks(st: State<'_, St>) -> R<datum_core::frames::mech::Report> {
+    let m = st.lock().doc.m.clone();
+    tauri::async_runtime::spawn_blocking(move || datum_core::frames::mech::run(&m)).await.map_err(|e| e.to_string())?
+}
+
+/// Values at a distance along a design member (0.10.4), under a case or combination.
+#[tauri::command]
+async fn member_values(st: State<'_, St>, id: u32, at: f64, which: Option<datum_core::cases::Which>) -> R<datum_core::frames::mech::Probe> {
+    let m = st.lock().doc.m.clone();
+    tauri::async_runtime::spawn_blocking(move || datum_core::frames::mech::along(&m, which, id, at)).await.map_err(|e| e.to_string())?
+}
+
+/// A design member's chain and segments (0.10.4), for its card.
+#[tauri::command]
+fn design_member(st: State<'_, St>, id: u32) -> R<datum_core::frames::design::Info> {
+    datum_core::frames::design::info(&st.lock().doc.m, id)
+}
+
+/// Every property of a section in one table (0.10.4): elastic and plastic moduli, radii of gyration.
+#[tauri::command]
+fn section_table(shape: SectionShape) -> R<sections::Table> {
+    sections::table(&shape)
+}
+
 /// Solve › Model Check (0.10.3): what would spoil a frame's solve, each with the items to go to.
 #[tauri::command]
 fn model_check(st: State<'_, St>, near: f64) -> Vec<datum_core::frames::check::Finding> {
@@ -865,7 +892,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             stop_solve,
-            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, section_table, design_member, mech_checks, member_values, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())

@@ -39,7 +39,7 @@ Everything a small team can build in our own solver and with our own geometry en
 - Done on the branch: origin and eyes in the tree; an icon for each drawing way; the view cube; the workflow bar and Tools; standard parts; every planned feature in the window; point and part-length loads on members (benchmark 38); the four starting points; split, reverse and merge members, merge nodes; the model check (in the panel under the view); member orientation with local axes; loads and assignments tables; every planned feature shown on its ribbon tab with its release; combinations by rule (with the user's own factors); mesh statistics and quality; solver settings; status badges and the icon distinctions; benchmark 39 (axial bar, support movement, force on an arm, round shaft, CQC with close modes, tube volume).
 - Every piece of 0.10.3 is built; it goes out as one release when the user says.
 
-**0.10.4 · Design foundations, from mechanics formulas** (from the third specification)
+**0.10.4 · Design foundations, from mechanics formulas** (from the third specification) — built on the branch, waiting for the user's approval
 - Design members: form one from a chain of members, dissolve it, inspect it; a selection mode for them.
 - Restraints and segments: where a member is braced; segments that extra mesh nodes never change.
 - Values at any distance along a design member, with both values at a jump.

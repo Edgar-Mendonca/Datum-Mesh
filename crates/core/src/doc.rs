@@ -26,6 +26,8 @@ pub enum Item {
     Part(crate::model::Part),
     /// Contact between two faces (0.8.0).
     Contact(crate::model::Contact),
+    /// Design members (0.10.4).
+    DesignMember(crate::model::DesignMember),
 }
 
 /// The model-wide settings, edited together.
@@ -143,6 +145,10 @@ pub enum Op {
     ReverseMember { ids: Vec<u32> },
     /// Frames (0.10.3): join two members in line that meet at a node nothing else uses into one.
     MergeMembers { ids: Vec<u32> },
+    /// Design members (0.10.4): one from these members, end to end in a straight line and alike.
+    FormDesignMember { ids: Vec<u32>, name: String },
+    /// The mechanics checks' settings (0.10.4).
+    CheckSettings { s: crate::model::CheckSettings },
     /// Combinations by rule (0.10.3, `cases::by_rule`): replace the combinations made by a rule
     /// before (never the user's own) with those of this one, and remember it.
     CombosByRule { rule: crate::model::ComboRule },
@@ -362,6 +368,13 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                     }
                     m.steps.push(x);
                 }
+                Item::DesignMember(mut x) => {
+                    x.id = id;
+                    if x.name.trim().is_empty() {
+                        x.name = format!("DM{}", m.design_members.len() + 1);
+                    }
+                    m.design_members.push(x);
+                }
                 Item::Contact(mut x) => {
                     x.id = id;
                     // One contact per pair of faces.
@@ -404,6 +417,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
                 Item::Step(x) => put(&mut m.steps, |y| y.id, x)?,
                 Item::Part(x) => put(&mut m.parts, |y| y.id, x)?,
                 Item::Contact(x) => put(&mut m.contacts, |y| y.id, x)?,
+                Item::DesignMember(x) => put(&mut m.design_members, |y| y.id, x)?,
             }
         }
         Op::AddMember { from, to, kind, section, material, z } => {
@@ -545,6 +559,22 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             let k = m.members.iter().position(|b| b.id == p.id).unwrap();
             m.members[k] = nb;
             m.nodes.retain(|n| n.id != shared);
+        }
+        Op::FormDesignMember { ids, name } => {
+            let (a, b) = crate::frames::design::form(m, &ids)?;
+            if m.design_members.iter().any(|x| (x.a == a && x.b == b) || (x.a == b && x.b == a)) {
+                return Err("These members are a design member already.".into());
+            }
+            let id = fresh(m);
+            let name = if name.trim().is_empty() { format!("DM{}", m.design_members.len() + 1) } else { name };
+            m.design_members.push(crate::model::DesignMember { id, name, a, b, restraints: vec![] });
+            created.push(id);
+        }
+        Op::CheckSettings { s } => {
+            if !(s.k > 0.0 && s.k.is_finite() && s.span_ratio > 0.0 && s.span_ratio.is_finite() && s.drift > 0.0 && s.drift.is_finite()) {
+                return Err("The effective length factor, the deflection ratio and the drift limit must be numbers above zero.".into());
+            }
+            m.check_settings = s;
         }
         Op::CombosByRule { rule } => {
             let made = crate::cases::by_rule(m, &rule)?;
@@ -778,6 +808,7 @@ fn exec(m: &mut Model, op: Op, created: &mut Vec<u32>) -> Result<(), String> {
             m.materials.retain(|x| !set.contains(&x.id));
             m.supports.retain(|x| !set.contains(&x.id));
             m.contacts.retain(|x| !set.contains(&x.id));
+            m.design_members.retain(|x| !set.contains(&x.id));
             // A deleted load case takes its loads with it, and leaves the combinations.
             let gone: Vec<u32> = m.cases.iter().filter(|c| set.contains(&c.id)).map(|c| c.id).collect();
             if !gone.is_empty() {
@@ -1478,6 +1509,9 @@ fn prune(m: &mut Model) {
     m.loads.retain(|s| alive(&s.at));
     m.mesh.refine.retain(|s| alive(&s.at));
     m.contacts.retain(|c| alive(&c.a) && alive(&c.b));
+    // A design member whose end nodes are gone goes too; one whose chain broke stays for the model
+    // check to point out.
+    m.design_members.retain(|x| nodes.contains(&x.a) && nodes.contains(&x.b));
 }
 
 #[cfg(test)]

@@ -3,7 +3,8 @@
 import { cad, cadRun, meshOld, setMeshOld } from "./cad";
 import { geoMesh, faceLabel } from "./study";
 import { selFeature, setSelFeature, editFeature, featureMenu, bodyMenu, kindIcon, rolledBack } from "./history";
-import { For, Show, JSX, createMemo, createSignal, createEffect, createRoot } from "solid-js";
+const DMInsp = lazy(() => import("./design").then(k => ({ default: k.DMInsp })));
+import { For, Show, JSX, createMemo, createSignal, createEffect, createRoot, lazy, Suspense } from "solid-js";
 import { Model, Node, Member, Shape, Support, Load, Contact, SupportKind, LoadKind, Target, Geom, Part, num, parseNum, isFrame, isSolidA } from "./api";
 import { setBackstage, tab, setTab, model, sel, setSel, edgeSel, setEdgeSel, act, setTool, results, stale, setView, meshed, partRes, solidRes, caseOf, openMenu, setActivePart, isShown, toggleShown } from "./store";
 import { stepsDialog } from "./steps";
@@ -23,7 +24,7 @@ export const [inspOpen, setInspOpen] = createSignal(false);
 export const [treeTab, setTreeTab] = createSignal<"model" | "results">("model");
 /** What the card shows with nothing picked: the model's settings, or the results summary. */
 export const [popWhat, setPopWhat] = createSignal<"model" | "results">("model");
-const exists = (id: number) => { const m = model(); return !!m && [m.nodes, m.members, m.shapes, m.supports, m.loads, m.parts ?? [], m.contacts ?? []].some(xs => (xs as { id: number }[]).some(x => x.id === id)); };
+const exists = (id: number) => { const m = model(); return !!m && [m.nodes, m.members, m.shapes, m.supports, m.loads, m.parts ?? [], m.contacts ?? [], m.design_members ?? []].some(xs => (xs as { id: number }[]).some(x => x.id === id)); };
 export const popShown = () => inspOpen() || sel().some(exists) || !!edgeSel() || !!cad()?.features.some(x => x.id === selFeature());
 export const closePop = () => { setInspOpen(false); setSel([]); setEdgeSel(null); setSelFeature(null); };
 import * as D from "./dialogs";
@@ -105,6 +106,7 @@ export const itemName = (m: Model, id: number): string => {
   const sp = m.supports.find(x => x.id === id); if (sp) return `${SUPPORT_NAMES[sp.kind.kind]} · ${targetName(m, sp.at)}`;
   const l = m.loads.find(x => x.id === id); if (l) return `${loadName(l)} · ${targetName(m, l.at)}`;
   const c = (m.contacts ?? []).find(x => x.id === id); if (c) return `Contact · ${targetName(m, c.a)} on ${targetName(m, c.b)}`;
+  const dm = (m.design_members ?? []).find(x => x.id === id); if (dm) return `Design member ${dm.name}`;
   return "";
 };
 
@@ -261,6 +263,7 @@ export const Tree = () => {
               <For each={parts()}>{s => <Leaf id={s.id} icon={s.hole ? (s.geom.kind === "circle" ? "hcircle" : "hrect") : s.geom.kind === "circle" ? "circle" : "poly"} label={s.name} sub={s.hole ? "hole" : s.geom.kind === "circle" ? "circle" : `${s.geom.pts.length} corners`} />}</For></Branch>}>
             <Branch t="Members" icon="frame" n={mm().members.length} open={mm().members.length <= 12} help="members" add={() => setTool("beam")} addText="Draw members (Geometry › Beam)" mark={{ ok: drawn(), why: "Draw members: Geometry › Beam or Truss Bar" }}>
               <For each={mm().members}>{(b, i) => <Leaf id={b.id} icon={b.kind === "truss" ? "truss" : "beam"} label={`Member ${i() + 1}`} sub={`${b.kind} · ${mm().sections.find(s => s.id === b.section)?.name ?? ""}`} />}</For></Branch>
+            <Show when={(mm().design_members ?? []).length}><Branch t="Design members" icon="designmember" n={(mm().design_members ?? []).length} help="members"><For each={mm().design_members ?? []}>{d => <Leaf id={d.id} icon="designmember" label={d.name} sub={`${d.restraints.length} ${d.restraints.length === 1 ? "restraint" : "restraints"}`} />}</For></Branch></Show>
             <Show when={sp() && plates().length}><Branch t="Plates" icon="rect" n={plates().length} help="plates"><For each={plates()}>{s => <Leaf id={s.id} icon={s.hole ? "hrect" : "rect"} label={s.name} sub={s.hole ? "opening" : `${fmt("len", s.plate?.t ?? 0)} thick`} />}</For></Branch></Show>
             <Branch t="Nodes" icon="node" n={mm().nodes.length} help="nodes" add={() => setTool("node")} open={mm().nodes.length <= 12}><For each={mm().nodes}>{(n, i) => <Leaf id={n.id} icon="node" label={`Node ${i() + 1}`} sub={sp() ? toD([n.x, n.y, n.z ?? 0]).map(c => num(toU("coord", c))).join(", ") : `${num(toU("coord", n.x))}, ${num(toU("coord", n.y))}`} />}</For></Branch>
           </Show>
@@ -649,7 +652,7 @@ export const Inspector = () => {
     const mm = m(), s = sel(); if (!mm || s.length !== 1) return null;
     const id = s[0];
     const f = <T extends { id: number }>(xs: T[]) => xs.find(x => x.id === id);
-    return { node: f(mm.nodes), member: f(mm.members), shape: f(mm.shapes), support: f(mm.supports), load: f(mm.loads), part: f(mm.parts ?? []), contact: f(mm.contacts ?? []) };
+    return { node: f(mm.nodes), member: f(mm.members), shape: f(mm.shapes), support: f(mm.supports), load: f(mm.loads), part: f(mm.parts ?? []), contact: f(mm.contacts ?? []), dm: f(mm.design_members ?? []) };
   });
   const title = () => {
     const mm = m(); if (!mm) return "";
@@ -675,6 +678,7 @@ export const Inspector = () => {
           <Show when={one()?.load}>{l => <LoadInsp l={l()} m={mm()} />}</Show>
           <Show when={one()?.part}>{p => <PartInsp p={p()} m={mm()} />}</Show>
           <Show when={one()?.contact}>{c => <ContactInsp c={c()} m={mm()} />}</Show>
+          <Show when={one()?.dm}>{d => <Suspense><DMInsp d={d()} m={mm()} /></Suspense>}</Show>
           <Show when={!sel().length && edgeSel()}>{e => <EdgeInsp m={mm()} e={e()} />}</Show>
           <Show when={!sel().length && !edgeSel() && cad()?.features.some(x => x.id === selFeature())}><FeatureInsp id={selFeature()!} /></Show>
           <Show when={!sel().length && !edgeSel() && !cad()?.features.some(x => x.id === selFeature())}>

@@ -71,6 +71,10 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
           if (c === "cad_auto_size") return 5;
           if (c === "model_check") return window.__checks ?? (window.__cur === f.checkdemo ? f.checkdemo_findings : []);
           if (c === "combos_preview") return f.braced_rule_preview;
+          if (c === "design_member") return f.dmdemo_info;
+          if (c === "mech_checks") return window.__mech ?? f.dmdemo_checks;
+          if (c === "member_values") return f.dmdemo_values;
+          if (c === "section_table") return f.section_table_i;
           if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
           if (c === "cad_import_step") { window.__cad = f.cad.extruded; return f.cad.extruded; }
           if (c === "cad_export") return "/tmp/model." + a.format;
@@ -231,6 +235,12 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const mpp = await lastOp(), ppk = mpp?.Add?.item?.Load?.kind;
   check("Part of Member puts a load over half the member, centred where it was clicked", ppk?.kind === "patch" && ppk.from >= 0 && ppk.to > ppk.from && Math.abs((ppk.from + ppk.to) / 2 - plk?.at) < 0.01, JSON.stringify(mpp));
   await p.keyboard.press("Escape");
+  // 0.10.4: Form Design Member sends the selected members; nothing selected says what to do.
+  await stepHead(1); await p.keyboard.press("Escape");
+  await p.mouse.click(mc[0], mc[1]); await p.waitForTimeout(150);
+  await p.click('.ribbon button[title^="Join the selected members, end to end"]'); await p.waitForTimeout(200);
+  const fdm = await lastOp();
+  check("Form Design Member sends the selected members (0.10.4)", JSON.stringify(fdm?.FormDesignMember?.ids) === JSON.stringify([m0.id]), JSON.stringify(fdm));
   // 0.10.3: split, reverse and merge members from Geometry › Edit.
   await stepHead(1);
   await p.keyboard.press("Escape");
@@ -475,6 +485,42 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("a 3D frame opens in the 3D view, with no plane bar (0.6.2: sketching replaces it)", (await p.$$(".view3d canvas")).length === 1 && (await p.$$(".planebar .seg")).length === 0);
   await p.click('.tabs > button:text-is("Home")');
   check("Home shows 3D Frame chosen", await p.$eval('.ribbon button[title^="3D frames and trusses"]', el => el.classList.contains("on")));
+  // 0.10.4: a design member's card: its chain, restraints and the segments the engine found.
+  await p.evaluate(f => { window.__next = f.dmdemo; }, fix);
+  await open("blank-frame"); await p.waitForTimeout(300);
+  await stepHead(1);
+  await p.click('.tree .ti:has(span:text-is("Beam B1"))'); await p.waitForTimeout(400);
+  check("picking a design member opens its card (0.10.4)", await p.$eval(".ipop .dmcard", el => el.offsetHeight > 50).catch(() => false));
+  const segs = await p.$$eval('.dmcard .dmseg tbody tr', rs => rs.map(r => r.children[2].textContent));
+  check("a design member's card lists its segments between restraints, from the engine (0.10.4)", segs.length === fix.dmdemo_info.segments.length && segs.length === 2, JSON.stringify(segs));
+  check("…and its chain of members (0.10.4)", (await p.textContent(".dmcard")).includes("Member 1 → Member 2 → Member 3 → Member 4"));
+  await p.click(".ipop button.ifold").catch(() => {});
+  await p.click('.ribbon button:has-text("Sections")'); await p.waitForTimeout(400);
+  check("the Sections dialog shows the whole table: Z, S, r for both axes (0.10.4)", (await p.$$('.dlg .sectab tbody tr')).length === 8 && (await p.textContent(".dlg .sectab")).includes("Plastic modulus S"));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  // 0.10.4: Results › Mechanics Checks: statuses from the engine, a trace per check, what is not checked.
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(200);
+  await p.click('.ribbon button:has-text("Mechanics Checks")'); await p.waitForTimeout(500);
+  const mrow = fix.dmdemo_checks.members[0];
+  const stat = await p.$$eval('.dlg [data-table="checks"] .mrow [data-status]', els => els.map(e => e.getAttribute("data-status")));
+  check("Mechanics Checks shows each check's status from the engine, and the member's (0.10.4)", JSON.stringify(stat) === JSON.stringify([...mrow.checks.map(c => c.status), mrow.status]), JSON.stringify(stat));
+  await p.click('.dlg [data-table="checks"] .mrow'); await p.waitForTimeout(150);
+  check("…clicking a member shows each check's formula and values (0.10.4)", (await p.$$('.dlg .trace li')).length === mrow.checks.reduce((n, c) => n + c.trace.length, 0) && (await p.textContent(".dlg .trace")).includes("σ = |N|/A + |M|/Z"));
+  await p.click('.dlg .segtabs button:has-text("Not checked")'); await p.waitForTimeout(100);
+  check("…and lists what is never checked (0.10.4)", (await p.$$('.dlg .notchk li')).length === fix.dmdemo_checks.not_checked.length);
+  await p.fill('.dlg .mset input >> nth=0', "0.7"); await p.keyboard.press("Tab"); await p.waitForTimeout(150);
+  const cs = await lastOp();
+  check("…its effective length factor is sent to the engine (0.10.4)", cs?.CheckSettings?.s?.k === 0.7 && cs.CheckSettings.s.span_ratio === 300, JSON.stringify(cs));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.evaluate(f => { window.__mech = f.driftdemo_checks; }, fix);
+  await p.click('.ribbon button:has-text("Storey Drift")'); await p.waitForTimeout(400);
+  check("Storey Drift lists each storey with its drift and status (0.10.4)", (await p.$$('.dlg [data-table="drift"] tbody tr')).length === 2 && (await p.textContent('.dlg [data-table="drift"]')).includes("pass"));
+  await p.keyboard.press("Escape"); await p.evaluate(() => { window.__mech = undefined; }); await p.waitForTimeout(100);
+  await p.click('.ribbon button:has-text("Values Along")'); await p.waitForTimeout(400);
+  const vr = await p.$$eval('.dlg [data-table="values"] tbody tr', rs => rs.map(r => r.children[0].textContent));
+  check("Values Along gives both sides of a jump (0.10.4)", JSON.stringify(vr) === JSON.stringify(["Just before", "Just after"]), JSON.stringify(vr));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await open("platform"); await p.waitForTimeout(300);
   // 0.10.3: member orientation turns the picked members so their depth faces a direction; their
   // local axes are drawn meanwhile.
   await stepHead(1); await p.waitForTimeout(100);
@@ -673,7 +719,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
   await p.click('.bs aside button:has-text("Roadmap")'); await p.waitForTimeout(200);
   const rmv = await p.$$eval(".rmfeats h3", els => els.map(e => e.textContent));
-  check("File › Roadmap lists the whole map: 100 or more planned features, by release in the agreed order (0.10.1)", (await p.$$(".rmfeats li")).length >= 100 && JSON.stringify(rmv) === JSON.stringify(["0.10.4", "0.10.5", "0.11", "0.12", "0.13", "0.14", "0.15", "1.0"]), JSON.stringify(rmv) + " " + (await p.$$(".rmfeats li")).length);
+  check("File › Roadmap lists the whole map: 100 or more planned features, by release in the agreed order (0.10.1)", (await p.$$(".rmfeats li")).length >= 100 && JSON.stringify(rmv) === JSON.stringify(["0.10.5", "0.11", "0.12", "0.13", "0.14", "0.15", "1.0"]), JSON.stringify(rmv) + " " + (await p.$$(".rmfeats li")).length);
   await p.keyboard.press("Escape"); await p.waitForTimeout(150);
   await stepHead(5); await p.waitForTimeout(100);
   check("Natural Frequencies works for 3D solids", !(await p.$eval('.ribbon button[title^="The lowest natural frequencies"]', el => el.disabled)));

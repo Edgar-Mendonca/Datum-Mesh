@@ -2989,7 +2989,85 @@ pub fn run() -> Vec<Check> {
     v.extend(explicit());
     v.extend(member_loads());
     v.extend(spec_rows());
+    v.extend(design_rows());
     v
+}
+
+/// Benchmark 40 (0.10.4): design members, checked from mechanics formulas: values at any
+/// distance with both sides of a jump (F08), deflection from the chord when a support sinks (F09),
+/// the Euler ratio with a brace, and storey drift; each against a hand value.
+fn design_rows() -> Vec<Check> {
+    use crate::frames::mech;
+    let mut out = vec![];
+    let (e, b, h) = (200e9, 0.05, 0.1f64);
+    let (i, iy) = (b * h.powi(3) / 12.0, h * b.powi(3) / 12.0);
+    let src = "Beam theory: statics and the elastic line";
+    let form = |d: &mut Doc| { let ids = d.m.members.iter().map(|x| x.id).collect(); d.apply(Op::FormDesignMember { ids, name: "B1".into() }).expect("forms")[0] };
+    // A simple beam of 8 m in two members, 10 kN at the middle node.
+    {
+        let (l, p) = (8.0, 10e3);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l / 2.0, 0.0], MemberKind::Beam);
+        member(&mut d, [l / 2.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, l, 0.0, SupportKind::RollerX);
+        let mid = node(&d, l / 2.0, 0.0);
+        load(&mut d, Target::Node { id: mid }, LoadKind::Force { fx: 0.0, fy: -p, fz: 0.0 });
+        let id = form(&mut d);
+        let at = mech::along(&d.m, None, id, l / 2.0).expect("values");
+        let q = mech::along(&d.m, None, id, l / 4.0).expect("values");
+        out.push(check(40, "Design member: 8 m beam, 10 kN at the middle", "Shear jump at the load P", "force", p, (at.left.v - at.right.v).abs(), 1e-9, src));
+        out.push(check(40, "Design member: 8 m beam, 10 kN at the middle", "Moment at the middle PL/4", "moment", p * l / 4.0, at.left.m.abs(), 1e-9, src));
+        out.push(check(40, "Design member: 8 m beam, 10 kN at the middle", "Moment at a quarter, between nodes, PL/8", "moment", p * l / 8.0, q.left.m.abs(), 1e-9, src));
+    }
+    // A simple beam of 6 m under 5 kN/m whose far support sinks 20 mm: from the chord between
+    // the moved ends the deflection is still 5wL⁴/384EI (the sinking turns it without bending).
+    {
+        let (l, w) = (6.0, 5e3);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, l, 0.0, SupportKind::RollerX);
+        let end = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: end }, LoadKind::Settlement { dx: 0.0, dy: -0.02, dz: 0.0 });
+        let bm = d.m.members[0].id;
+        load(&mut d, Target::Member { id: bm }, LoadKind::Dist { w1: -w, w2: -w, dir: crate::model::Dir::Y });
+        let id = form(&mut d);
+        let at = mech::along(&d.m, None, id, l / 2.0).expect("values");
+        out.push(check(40, "Design member: 6 m beam, 5 kN/m, one support sinks 20 mm", "Deflection from the chord 5wL⁴/384EI", "len", 5.0 * w * l.powi(4) / (384.0 * e * i), at.left.deflection, 1e-6, src));
+    }
+    // A pinned strut of 4 m under 20 kN, braced sideways at its middle: N/N_cr about the weak
+    // axis over 2 m, against the strong axis over 4 m; the smaller N_cr governs.
+    {
+        let (l, p) = (4.0, 20e3);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, l, 0.0, SupportKind::RollerX);
+        let end = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: end }, LoadKind::Force { fx: -p, fy: 0.0, fz: 0.0 });
+        form(&mut d);
+        let mut dm = d.m.design_members[0].clone();
+        dm.restraints = vec![crate::model::Restraint { at: l / 2.0, holds: crate::model::Holds::Both }];
+        add(&mut d, Op::Set { item: Item::DesignMember(dm) });
+        let pi2 = std::f64::consts::PI.powi(2);
+        let ncr = (pi2 * e * i / (l * l)).min(pi2 * e * iy / (l * l / 4.0));
+        let r = mech::run(&d.m).expect("checks");
+        let got = r.members[0].checks.iter().find(|c| c.kind == "buckling").and_then(|c| c.ratio).unwrap_or(f64::NAN);
+        out.push(check(40, "Design member: 4 m strut, 20 kN, braced at its middle", "N / N_cr, N_cr = π²EI/L² (Euler)", "ratio", p / ncr, got, 1e-9, "Euler (1744): the buckling load of a pinned strut"));
+    }
+    // A 3 m column fixed at its foot, 10 kN across its top: drift = (HL³/3EI) / L.
+    {
+        let (l, f) = (3.0, 10e3);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [0.0, l], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let top = node(&d, 0.0, l);
+        load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: f, fy: 0.0, fz: 0.0 });
+        let r = mech::run(&d.m).expect("checks");
+        out.push(check(40, "Storey drift: 3 m cantilever column, 10 kN at its top", "Drift HL²/3EI", "ratio", f * l * l / (3.0 * e * i), r.storeys.first().map_or(f64::NAN, |s| s.dx), 1e-6, src));
+    }
+    out
 }
 
 #[cfg(test)]
@@ -2997,6 +3075,13 @@ mod tests {
     #[test]
     fn spec_rows_on_their_own() {
         for r in super::spec_rows() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
+    #[test]
+    fn design_rows_on_their_own() {
+        for r in super::design_rows() {
             assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
         }
     }

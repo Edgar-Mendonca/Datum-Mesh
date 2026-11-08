@@ -2,6 +2,8 @@
 //! steel tables, and the corotational beams for large deflection (0.4.0).
 
 pub mod check;
+pub mod design;
+pub mod mech;
 pub mod corot;
 pub mod corot3;
 pub mod frame;
