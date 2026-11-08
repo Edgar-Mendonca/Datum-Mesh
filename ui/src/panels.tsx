@@ -38,11 +38,28 @@ export const defaultSupport = (k: string): SupportKind => {
   if (k === "hold") return { kind: "hold", x: true, y: true, z: false };
   return { kind: k } as SupportKind;
 };
+/** A member's length (m). */
+export const memberLength = (m: Model, id: number) => {
+  const mb = m.members.find(x => x.id === id), a = mb && m.nodes.find(n => n.id === mb.a), b = mb && m.nodes.find(n => n.id === mb.b);
+  return a && b ? Math.hypot(b.x - a.x, b.y - a.y, (b.z ?? 0) - (a.z ?? 0)) : 0;
+};
+/** A point or part-length load placed on a member (0.10.3), clicked at `t` of its length: the
+ *  point load there, the part-length load over half the member centred there (to the nearest mm). */
+export const placeOnMember = (m: Model, id: number, k: LoadKind, t = 0.5): LoadKind => {
+  const L = memberLength(m, id), mm = (v: number) => Math.min(L, Math.max(0, Math.round(v * 1000) / 1000));
+  if (k.kind === "concentrated") return { ...k, at: mm(L * t) };
+  if (k.kind === "patch") { const c = Math.min(0.75, Math.max(0.25, t)) * L; return { ...k, from: mm(c - L / 4), to: mm(c + L / 4) }; }
+  return k;
+};
+/** Tools whose loads go only on members. */
+export const MEMBER_ONLY = ["load:patch", "load:concentrated"];
 /** A new load of a kind, with typical values (frames in kN, parts smaller). */
 export const defaultLoad = (k: string, frame: boolean): LoadKind => {
   switch (k) {
     case "moment": return { kind: "moment", m: 10e3 };
     case "dist": return { kind: "dist", w1: -5e3, w2: -5e3, dir: "y" };
+    case "patch": return { kind: "patch", w1: -5e3, w2: -5e3, dir: "y", from: 0, to: 1, projected: false };
+    case "concentrated": return { kind: "concentrated", f: -10e3, dir: "y", at: 0 };
     case "pressure": return { kind: "pressure", p: 1e6 };
     case "platepressure": return { kind: "pressure", p: 5e3 };
     case "mass": return { kind: "mass", m: 1000 };
@@ -61,7 +78,7 @@ export const defaultLoad = (k: string, frame: boolean): LoadKind => {
 };
 
 export const SUPPORT_NAMES: Record<string, string> = { fixed: "Fixed", pinned: "Pinned", rollerx: "Roller (moves along x)", rollery: "Roller (moves along y)", roller: "Roller (slides along the edge)", symmetry: "Symmetry", spring: "Spring", temperature: "Temperature", hold: "Held directions" };
-export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement", remote: "Remote force", velocity: "Starting velocity" };
+export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Moment", dist: "Distributed load", patch: "Load over part of a member", concentrated: "Point load on a member", pressure: "Pressure", traction: "Edge force", bearing: "Pin load", gravity: "Gravity (self-weight)", flux: "Heat flux", convection: "Convection", heat: "Heat generation", warming: "Temperature change", mass: "Mass", settlement: "Settlement", remote: "Remote force", velocity: "Starting velocity" };
 /** On a solid, a settlement is a face moved by a set amount (0.7.4). */
 const MOVED = "Moved face";
 /** A load's name: a force spread over a solid's face is a face force (0.7.3). */
@@ -126,7 +143,7 @@ const Row2 = (p: { icon: string; label: string; sub?: string; run?: () => void; 
   <button class="ti" classList={{ on: !!p.on }} onClick={() => p.run?.()}><Ic n={p.icon} /><span>{p.label}</span>{p.sub && <small>{p.sub}</small>}</button>
 );
 const SUP_ICON: Record<string, string> = { fixed: "fixed", pinned: "pinned", rollerx: "roller", rollery: "roller", roller: "roller", symmetry: "symmetry", spring: "spring", temperature: "temp", hold: "roller" };
-const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle", remote: "force", velocity: "up" };
+const LOAD_ICON: Record<string, string> = { force: "force", moment: "moment", dist: "dist", patch: "memberpart", concentrated: "memberpoint", pressure: "pressure", traction: "edgeforce", bearing: "pin", gravity: "gravity", flux: "flux", convection: "convection", heat: "heatgen", warming: "temp", mass: "mass", settlement: "settle", remote: "force", velocity: "up" };
 const STEP_NAME: Record<string, string> = { linear: "Linear (small deflections)", newton: "Large deflection", arc: "Past limit loads", spectrum: "Response spectrum", history: "Time history", large: "Large deformation", largeplastic: "Crushing and collapse", explicit: "Impact (explicit dynamics)" };
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 
@@ -508,6 +525,24 @@ const LoadInsp = (p: { l: Load; m: Model }) => {
       <NumField label="At the start" q="dist" v={f("dist").w1} set={w1 => put({ ...f("dist"), w1 })} />
       <NumField label="At the end" q="dist" v={f("dist").w2} set={w2 => put({ ...f("dist"), w2 })} hint="Equal values make a uniform load. Up (or +x) is positive." />
     </Show>
+    <Show when={k().kind === "patch" || k().kind === "concentrated"}>{(() => {
+      const mlen = () => { const at = p.l.at; return at.on === "member" ? memberLength(p.m, at.id) : 0; };
+      const kk = () => k() as Extract<LoadKind, { kind: "patch" | "concentrated" }>;
+      return <>
+        <Row label="Direction"><Choice v={kk().dir} set={v => put({ ...kk(), dir: v as any })} opts={sp() ? [["y", "Vertical, Z (gravity)"], ["x", "Global X"], ["z", "Global Y, towards −Y"], ["local", "Along the member's local y"]] : [["y", "Global y (gravity)"], ["x", "Global x (wind)"], ["local", "Across the member"]]} /></Row>
+        <Show when={k().kind === "concentrated"}>
+          <NumField label="Force" q="force" v={f("concentrated").f} set={v => put({ ...f("concentrated"), f: v })} hint="Up (or +x, or the member's local y) is positive." />
+          <NumField label="From the start" q="len" v={f("concentrated").at} set={v => put({ ...f("concentrated"), at: Math.max(0, Math.min(mlen(), v)) })} hint={`The member is ${fmt("len", mlen())} long; ${(f("concentrated").at / (mlen() || 1) * 100).toFixed(0)} % along.`} />
+        </Show>
+        <Show when={k().kind === "patch"}>
+          <NumField label="From" q="len" v={f("patch").from} set={v => put({ ...f("patch"), from: Math.max(0, Math.min(f("patch").to, v)) })} />
+          <NumField label="To" q="len" v={f("patch").to} set={v => put({ ...f("patch"), to: Math.max(f("patch").from, Math.min(mlen(), v)) })} hint={`Measured from the member's start; it is ${fmt("len", mlen())} long.`} />
+          <NumField label="At From" q="dist" v={f("patch").w1} set={w1 => put({ ...f("patch"), w1 })} />
+          <NumField label="At To" q="dist" v={f("patch").w2} set={w2 => put({ ...f("patch"), w2 })} hint="Equal values make an even load. Up (or +x) is positive." />
+          <Show when={f("patch").dir !== "local"}><Row label="Per length of"><Choice v={f("patch").projected ? "proj" : "member"} set={v => put({ ...f("patch"), projected: v === "proj" })} opts={[["member", "The member"], ["proj", "Its projection (snow on a roof)"]]} /></Row></Show>
+        </Show>
+      </>;
+    })()}</Show>
     <Show when={k().kind === "pressure"}><NumField label="Pressure" q="stress" v={f("pressure").p} set={pp => put({ kind: "pressure", p: pp })} hint="Positive pushes into the part." /></Show>
     <Show when={k().kind === "traction"}>
       <label class="chk"><input type="checkbox" checked={f("traction").total} onChange={e => put({ ...f("traction"), total: e.currentTarget.checked })} />The whole force (not per length)</label>

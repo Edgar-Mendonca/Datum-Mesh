@@ -116,6 +116,13 @@ pub(crate) struct Elem {
     /// Rigid zones at the ends (m, 0.4.5), and whether this piece is one.
     pub(crate) off: [f64; 2],
     pub(crate) rigid: bool,
+    /// Loads over part of the member (0.10.3): from and to as fractions of the length, and the
+    /// local (px, qy) per length at each: [px_from, px_to, qy_from, qy_to]. `split` cuts there.
+    pub(crate) segs: Vec<(f64, f64, [f64; 4])>,
+    /// Point forces on the member (0.10.3): the fraction of the length and the local (px, qy).
+    pub(crate) pts: Vec<(f64, [f64; 2])>,
+    /// Point forces at the piece's ends after `split`, local axes: [fx_a, fy_a, fx_b, fy_b].
+    pub(crate) tip: [f64; 4],
 }
 
 /// The condensation of a hinged beam (0.3.3), or None.
@@ -220,40 +227,66 @@ fn scatter(e: &Elem, k: &[[f64; 6]; 6], mut out: impl FnMut(usize, usize, f64)) 
     }
 }
 
-/// Cut a beam into `pieces` equal elements; the inner nodes are numbered from `first`. Its
-/// distributed load is shared out along the pieces. A truss bar is not cut.
+/// Cut a beam into `pieces` equal elements, and also where a part-length or point load starts,
+/// ends or acts; the inner nodes are numbered from `first`. Its distributed load is shared out
+/// along the pieces, and a point load goes to the node at its place. A truss bar is not cut: its
+/// part-length and point loads go to its two ends as on a simple span.
 pub(crate) fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
-    // The cuts, as fractions of the length: the rigid zones' ends (0.4.5), and equal pieces of
-    // the flexible part between them.
-    let (oa, ob) = if e.kind == MemberKind::Beam { (e.off[0] / e.l, e.off[1] / e.l) } else { (0.0, 0.0) };
-    let n = if e.kind == MemberKind::Beam { pieces.max(1) } else { 1 };
-    let mut cuts = vec![0.0];
-    if oa > 0.0 {
-        cuts.push(oa);
+    const EPS: f64 = 1e-9;
+    let beam = e.kind == MemberKind::Beam;
+    if !beam {
+        let mut c = Elem { off: [0.0; 2], segs: vec![], pts: vec![], ..e.clone() };
+        let mut to_ends = |t: f64, f: [f64; 2]| {
+            c.tip[0] += f[0] * (1.0 - t);
+            c.tip[1] += f[1] * (1.0 - t);
+            c.tip[2] += f[0] * t;
+            c.tip[3] += f[1] * t;
+        };
+        for &(s0, s1, [p0, p1, q0, q1]) in &e.segs {
+            // A uniform part and a triangle, each a resultant at its centroid.
+            let d = (s1 - s0) * e.l;
+            to_ends((s0 + s1) / 2.0, [p0 * d, q0 * d]);
+            to_ends(s0 + 2.0 * (s1 - s0) / 3.0, [(p1 - p0) * d / 2.0, (q1 - q0) * d / 2.0]);
+        }
+        for &(t, f) in &e.pts {
+            to_ends(t, f);
+        }
+        return vec![c];
     }
+    // The cuts, as fractions of the length: the rigid zones' ends (0.4.5), equal pieces of the
+    // flexible part between them, and the loads' places.
+    let (oa, ob) = (e.off[0] / e.l, e.off[1] / e.l);
+    let n = pieces.max(1);
+    let mut cuts = vec![0.0, 1.0, oa, 1.0 - ob];
     for k in 1..n {
         cuts.push(oa + (1.0 - oa - ob) * k as f64 / n as f64);
     }
-    if ob > 0.0 {
-        cuts.push(1.0 - ob);
+    for &(s0, s1, _) in &e.segs {
+        cuts.extend([s0, s1]);
     }
-    cuts.push(1.0);
-    if cuts.len() == 2 {
-        return vec![Elem { off: [0.0; 2], ..e.clone() }];
+    cuts.extend(e.pts.iter().map(|p| p.0));
+    cuts.retain(|t| (0.0..=1.0).contains(t));
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|a, b| (*a - *b).abs() < EPS);
+    let at_cut = |t: f64| cuts.iter().position(|c| (c - t).abs() < EPS).unwrap_or(0);
+    let mut tips = vec![[0.0; 2]; cuts.len()];
+    for &(t, f) in &e.pts {
+        let k = at_cut(t);
+        tips[k] = [tips[k][0] + f[0], tips[k][1] + f[1]];
     }
     let [p1, p2, q1, q2] = e.p;
     let last = cuts.len() - 2;
     // A hinge belongs at the flexible part's end, at the face of the rigid zone.
-    let (fa, fb) = (usize::from(oa > 0.0), last - usize::from(ob > 0.0));
+    let (fa, fb) = (at_cut(oa), at_cut(1.0 - ob) - 1);
     (0..=last)
         .map(|k| {
             let (s0, s1) = (cuts[k], cuts[k + 1]);
-            let mut c = e.clone();
+            let mut c = Elem { segs: vec![], pts: vec![], tip: [0.0; 4], ..e.clone() };
             c.a = if k == 0 { e.a } else { first + k - 1 };
             c.b = if k == last { e.b } else { first + k };
             c.l = e.l * (s1 - s0);
             c.off = [0.0; 2];
-            c.rigid = (k == 0 && oa > 0.0) || (k == last && ob > 0.0);
+            c.rigid = s1 <= oa + EPS || s0 >= 1.0 - ob - EPS;
             if c.rigid {
                 c.ea *= 1e5;
                 c.ei *= 1e5;
@@ -261,6 +294,23 @@ pub(crate) fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
             }
             c.hinge = [k == fa && e.hinge[0], k == fb && e.hinge[1]];
             c.p = [p1 + (p2 - p1) * s0, p1 + (p2 - p1) * s1, q1 + (q2 - q1) * s0, q1 + (q2 - q1) * s1];
+            for &(g0, g1, w) in &e.segs {
+                if s0 >= g0 - EPS && s1 <= g1 + EPS {
+                    let at = |t: f64, a: f64, b: f64| a + (b - a) * (t - g0) / (g1 - g0);
+                    c.p[0] += at(s0, w[0], w[1]);
+                    c.p[1] += at(s1, w[0], w[1]);
+                    c.p[2] += at(s0, w[2], w[3]);
+                    c.p[3] += at(s1, w[2], w[3]);
+                }
+            }
+            // A point load sits on the node at its place: the start of the first piece, else the
+            // end of the piece before it.
+            if k == 0 {
+                c.tip[0] = tips[0][0];
+                c.tip[1] = tips[0][1];
+            }
+            c.tip[2] = tips[k + 1][0];
+            c.tip[3] = tips[k + 1][1];
             c
         })
         .collect()
@@ -344,7 +394,7 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let sec = m.section(mb.section).ok_or("A member's section is missing.")?;
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a, hinge: mb.hinge, off: mb.offset, rigid: false };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l, c: dx / l, s: dy / l, ea: mat.e * pr.a, ei: mat.e * pr.i, area: pr.a, z: pr.z(), fy: mat.fy, p: [0.0; 4], at: mat.alpha * warming, rho_a: mat.rho * pr.a, hinge: mb.hinge, off: mb.offset, rigid: false, segs: vec![], pts: vec![], tip: [0.0; 4] };
         // Self-weight: ρ A g per length, resolved into the member's axes.
         let w = [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1]];
         let (wx, wy) = (e.c * w[0] + e.s * w[1], -e.s * w[0] + e.c * w[1]);
@@ -369,6 +419,34 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             e.p[1] += w2 * ax;
             e.p[2] += w1 * ay;
             e.p[3] += w2 * ay;
+        }
+    }
+    // Part-length and point loads (0.10.3), resolved into the member's axes.
+    for l in &m.loads {
+        let (Target::Member { id }, LoadKind::Patch { dir, .. } | LoadKind::Concentrated { dir, .. }) = (&l.at, &l.kind) else { continue };
+        let e = elems.iter_mut().find(|e| e.id == *id).ok_or("A load is on a member that does not exist.")?;
+        let (gx, gy) = match dir {
+            Dir::X => (1.0, 0.0),
+            Dir::Y => (0.0, 1.0),
+            Dir::Local => (-e.s, e.c),
+            Dir::Z => {
+                warnings.push("A member load along z acts out of the plane and was left out: solve as a 3D frame.".into());
+                continue;
+            }
+        };
+        let (ax, ay) = (e.c * gx + e.s * gy, -e.s * gx + e.c * gy);
+        match l.kind {
+            LoadKind::Patch { w1, w2, from, to, projected, dir } => {
+                // Per length of the projection across the load: the member's length times |sin| of
+                // the angle between them.
+                let k = if projected && dir != Dir::Local { (e.c * gy - e.s * gx).abs() } else { 1.0 };
+                let (s0, s1) = ((from / e.l).clamp(0.0, 1.0), (to / e.l).clamp(0.0, 1.0));
+                if s1 > s0 {
+                    e.segs.push((s0, s1, [k * w1 * ax, k * w2 * ax, k * w1 * ay, k * w2 * ay]));
+                }
+            }
+            LoadKind::Concentrated { f, at, .. } => e.pts.push(((at / e.l).clamp(0.0, 1.0), [f * ax, f * ay])),
+            _ => {}
         }
     }
     let mut parts = vec![];
@@ -407,14 +485,14 @@ pub(crate) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         // Global stiffness T' k T, with T the block rotation.
         scatter(e, &cond(e, k_local(e)), |i, j, v| sys.add(i, j, v));
         let f = cond_load(e);
-        add_load(&mut sys, e.a, unrot(e, [f[0], f[1], f[2]]));
-        add_load(&mut sys, e.b, unrot(e, [f[3], f[4], f[5]]));
+        add_load(&mut sys, e.a, unrot(e, [f[0] + e.tip[0], f[1] + e.tip[1], f[2]]));
+        add_load(&mut sys, e.b, unrot(e, [f[3] + e.tip[2], f[4] + e.tip[3], f[5]]));
     }
     for l in &m.loads {
         match (&l.kind, &l.at) {
             (LoadKind::Force { fx, fy, .. }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, 0.0]),
             (LoadKind::Moment { m: mz, mx: 0.0, my: 0.0 }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. } | LoadKind::Settlement { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Patch { .. } | LoadKind::Concentrated { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. } | LoadKind::Settlement { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -507,8 +585,10 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     // The size of the loads, for judging the equilibrium check: forces added up without their
     // signs, and moments about the origin likewise (so loads that cancel still give a scale).
     let reach = m.nodes.iter().map(|n| n.x.hypot(n.y)).fold(0.0, f64::max) + m.bounds().map(|b| (b[2] - b[0]).max(b[3] - b[1])).unwrap_or(0.0);
-    let fscale: f64 = (0..nn).map(|i| sys.f[3 * i].abs() + sys.f[3 * i + 1].abs()).sum();
-    let scale = [fscale, fscale * reach + (0..nn).map(|i| sys.f[3 * i + 2].abs()).sum::<f64>()];
+    // Every node: point and part-length loads (0.10.3) sit on the inner nodes of a cut beam.
+    let n_all = sys.f.len() / 3;
+    let fscale: f64 = (0..n_all).map(|i| sys.f[3 * i].abs() + sys.f[3 * i + 1].abs()).sum();
+    let scale = [fscale, fscale * reach + (0..n_all).map(|i| sys.f[3 * i + 2].abs()).sum::<f64>()];
     let settles = fixed.iter().any(|v| *v != 0.0);
     if scale[0] == 0.0 && scale[1] == 0.0 && !settles {
         warnings.push("There are no loads on the model, so nothing moves. Add loads on the Loads tab.".into());
@@ -549,8 +629,16 @@ pub fn solve(m: &Model) -> Result<FrameResults, String> {
     }
     let mut r = FrameResults { disp, reactions, members, applied, reacted, scale, imbalance: 0.0, stats, warnings, path: None, frames: None, dynamic: None, slack: vec![] };
     r.check_balance();
+    // An answer that does not balance and moves further than the model is big is no answer:
+    // rounding hid a mechanism from the solver (0.10.3).
+    if r.imbalance > 1e-6 && umax > span {
+        return Err(MECHANISM.into());
+    }
     Ok(r)
 }
+
+/// What a solve says when the frame can move without resistance.
+pub(crate) const MECHANISM: &str = "The model can move without resistance: add supports so it cannot slide or turn as a whole, and check that every part is connected (a truss needs triangles).";
 
 /// The consistent mass matrix in local axes (u_a, v_a, θ_a, u_b, v_b, θ_b): cubic bending for a
 /// beam, linear for a truss bar (no rotary inertia).
@@ -927,11 +1015,17 @@ fn stitch(e: &Elem, pieces: &[Elem], u: &[f64]) -> MemberResult {
     }
     let mut out = MemberResult { id: e.id, length: e.l, x: vec![], n: vec![], v: vec![], m: vec![], d: vec![], stress: 0.0, util: 0.0, ends: [0.0; 6] };
     let mut at = 0.0;
-    let step = ((STATIONS - 1) / pieces.len()).max(1);
+    // Every piece keeps its ends and its middle: the step divides half the stations.
+    let half = (STATIONS - 1) / 2;
+    let step = (1..=half).rev().find(|s| half.is_multiple_of(*s) && *s <= (STATIONS - 1) / pieces.len()).unwrap_or(1);
     for (k, p) in pieces.iter().enumerate() {
         let r = member_result(p, u);
         let idx: Vec<usize> = (0..STATIONS).step_by(step).chain(std::iter::once(STATIONS - 1)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
-        for &i in idx.iter().skip(usize::from(k > 0)) {
+        // A piece's first station repeats the last one's place; it is kept where a point load acts
+        // (0.10.3), so the shear drops straight down there. Decided by the model, not the values,
+        // so every increment of a solve has the same stations.
+        let jumps = k > 0 && pieces[k - 1].tip[2..].iter().any(|t| *t != 0.0);
+        for &i in idx.iter().skip(usize::from(k > 0 && !jumps)) {
             out.x.push(at + r.x[i]);
             out.n.push(r.n[i]);
             out.v.push(r.v[i]);
@@ -1013,6 +1107,23 @@ mod tests {
     }
     fn load(d: &mut Doc, at: Target, kind: LoadKind) {
         d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at, kind }) }).unwrap();
+    }
+
+    #[test]
+    fn loads_inside_a_member_count_as_loads_and_are_balanced() {
+        // 0.10.3: a point load and a part-length load away from both ends act only on inner nodes;
+        // the solve must not say there are no loads, and the balance is judged against them.
+        let mut d = base(200e9);
+        d.apply(Op::AddMember { from: [0.0, 0.0], to: [8.0, 0.0], kind: MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+        sup(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        sup(&mut d, 8.0, 0.0, SupportKind::RollerX);
+        let id = d.m.members[0].id;
+        load(&mut d, Target::Member { id }, LoadKind::Concentrated { f: -20e3, dir: Dir::Y, at: 2.5 });
+        load(&mut d, Target::Member { id }, LoadKind::Patch { w1: -8e3, w2: -12e3, dir: Dir::Y, from: 4.5, to: 7.5, projected: false });
+        let r = solve(&d.m).unwrap();
+        assert!(r.warnings.is_empty(), "{:?}", r.warnings);
+        assert!(r.scale[0] >= 50e3, "{:?}", r.scale);
+        assert!((r.applied[1] + 50e3).abs() < 1e-6 && r.imbalance() < 1e-9, "{:?} {}", r.applied, r.imbalance());
     }
 
     #[test]

@@ -26,6 +26,19 @@ fn main() {
     let id = d.m.nodes[1].id;
     d.apply(datum_core::doc::Op::Add { item: datum_core::doc::Item::Load(datum_core::model::Load { case: 0, id: 0, at: datum_core::model::Target::Node { id }, kind: datum_core::model::LoadKind::Force { fx: 0.0, fy: -1e4, fz: 0.0 } }) }).unwrap();
     let offgrid = d.m;
+    // A beam with a point load and a tapering load over part of it (0.10.3).
+    let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Frame));
+    d.apply(datum_core::doc::Op::AddMember { from: [0.0, 0.0], to: [8.0, 0.0], kind: datum_core::model::MemberKind::Beam, section: None, material: None, z: [0.0; 2] }).unwrap();
+    let (n0, n1, mb) = (d.m.nodes[0].id, d.m.nodes[1].id, d.m.members[0].id);
+    use datum_core::model::{Dir, Load, LoadKind, Support, SupportKind, Target};
+    use datum_core::doc::{Item, Op};
+    for (n, kind) in [(n0, SupportKind::Pinned), (n1, SupportKind::RollerX)] {
+        d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind }) }).unwrap();
+    }
+    for kind in [LoadKind::Concentrated { f: -20e3, dir: Dir::Y, at: 2.5 }, LoadKind::Patch { w1: -8e3, w2: -12e3, dir: Dir::Y, from: 4.5, to: 7.5, projected: false }] {
+        d.apply(Op::Add { item: Item::Load(Load { case: 0, id: 0, at: Target::Member { id: mb }, kind }) }).unwrap();
+    }
+    let beamloads = d.m;
     // A part with the sample DXF imported (0.3.5), as the shell sends it back.
     let imp = datum_core::dxf::read(datum_core::dxf::SAMPLE_PUB, None).unwrap();
     let mut d = datum_core::doc::Doc::new(datum_core::model::Model::new(datum_core::model::Analysis::Stress));
@@ -112,6 +125,8 @@ fn main() {
         "noload": out_m(&noload),
         "offgrid": out_m(&offgrid),
         "noload_results": sent(&datum_core::solve(&noload).unwrap()),
+        "beamloads": out_m(&beamloads),
+        "beamloads_results": sent(&datum_core::solve(&beamloads).unwrap()),
     });
     println!("{}", serde_json::to_string(&fix).unwrap());
 }

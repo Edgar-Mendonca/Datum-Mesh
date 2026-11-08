@@ -791,6 +791,7 @@ tr.behind td { background: var(--err-bg); }
 .load { cursor: pointer; }
 .la { fill: none; stroke: var(--load); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .la.thin { stroke-width: 1.3; }
+.lpt { fill: var(--load); stroke: none; }
 .la.heat { stroke: var(--amber); }
 .lf { fill: var(--load); }
 .load.sel .la { stroke-width: 2.8; stroke: var(--blue); }

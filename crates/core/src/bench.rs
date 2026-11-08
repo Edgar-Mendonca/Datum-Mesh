@@ -2743,6 +2743,114 @@ fn yielding_large() -> Vec<Check> {
     v
 }
 
+/// Benchmark 38 (0.10.3): point and part-length loads on members, against beam theory.
+fn member_loads() -> Vec<Check> {
+    let mut out = vec![];
+    let (l, p, w, e) = (6.0, 10e3, 4e3, 200e9);
+    let (b, h) = (0.1, 0.25f64);
+    let i = b * h.powi(3) / 12.0;
+    let src = "Beam theory (Euler–Bernoulli; Roark, table 8.1)";
+    let name = "Simply supported beam, point load off centre";
+    // One member, pinned and on a roller, a point load P at a = 2 m (b = 4 m).
+    let simple = |extra: &dyn Fn(&mut Doc, u32)| {
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, l, 0.0, SupportKind::RollerX);
+        let id = d.m.members[0].id;
+        extra(&mut d, id);
+        d
+    };
+    let (a, bb) = (2.0, l - 2.0);
+    let d = simple(&|d, id| load(d, Target::Member { id }, LoadKind::Concentrated { f: -p, dir: Dir::Y, at: a }));
+    let r = frame::solve(&d.m).expect("solves");
+    let mmax = r.members[0].m.iter().copied().fold(f64::MIN, f64::max);
+    let ra = r.reactions.iter().find(|x| x.node == node(&d, 0.0, 0.0)).unwrap().fy;
+    let under = r.members[0].x.iter().position(|x| (x - a).abs() < 1e-9).expect("a station at the load");
+    out.push(check(38, name, "Moment under the load Pab/L", "moment", p * a * bb / l, mmax, 1e-9, src));
+    out.push(check(38, name, "Reaction at the near end Pb/L", "force", p * bb / l, ra, 1e-9, src));
+    out.push(check(38, name, "Deflection under the load Pa²b²/3EIL", "len", p * a * a * bb * bb / (3.0 * e * i * l), -r.members[0].d[under][1], 1e-9, src));
+    // The shear drops by P under the load: both values are drawn at that place.
+    let at_load: Vec<usize> = r.members[0].x.iter().enumerate().filter(|(_, x)| (*x - a).abs() < 1e-9).map(|(k, _)| k).collect();
+    out.push(check(38, name, "Shear just before the load Pb/L", "force", p * bb / l, r.members[0].v[at_load[0]], 1e-9, src));
+    out.push(check(38, name, "Shear just after the load −Pa/L", "force", -p * a / l, r.members[0].v[*at_load.last().unwrap()], 1e-9, src));
+    // A uniform load over the middle half (c = 3 m, centred): midspan wc(8L³ − 4Lc² + c³)/384EI
+    // and moment (wc/2)(L/2) − (wc/2)(c/4).
+    let c = 3.0;
+    let name = "Simply supported beam, uniform load over the middle";
+    let d = simple(&|d, id| load(d, Target::Member { id }, LoadKind::Patch { w1: -w, w2: -w, dir: Dir::Y, from: (l - c) / 2.0, to: (l + c) / 2.0, projected: false }));
+    let r = frame::solve(&d.m).expect("solves");
+    let mid = r.members[0].x.iter().position(|x| (x - l / 2.0).abs() < 1e-9).expect("a station at midspan");
+    out.push(check(38, name, "Midspan moment wc(2L − c)/8", "moment", w * c * (2.0 * l - c) / 8.0, r.members[0].m[mid], 1e-9, src));
+    out.push(check(38, name, "Midspan deflection wc(8L³ − 4Lc² + c³)/384EI", "len", w * c * (8.0 * l.powi(3) - 4.0 * l * c * c + c.powi(3)) / (384.0 * e * i), -r.members[0].d[mid][1], 1e-9, src));
+    // A load rising from zero over the last third: the reactions from statics.
+    let name = "Simply supported beam, load rising over the last third";
+    let d = simple(&|d, id| load(d, Target::Member { id }, LoadKind::Patch { w1: 0.0, w2: -w, dir: Dir::Y, from: 4.0, to: 6.0, projected: false }));
+    let r = frame::solve(&d.m).expect("solves");
+    let total = w * 2.0 / 2.0;
+    let rb = r.reactions.iter().find(|x| x.node == node(&d, l, 0.0)).unwrap().fy;
+    out.push(check(38, name, "Far reaction W·x̄/L, x̄ = 4 + 2·2/3 m", "force", total * (4.0 + 4.0 / 3.0) / l, rb, 1e-9, "Statics"));
+    // A rafter from (0, 0) to (4, 3): a vertical load per metre of plan (projected) against per
+    // metre of rafter.
+    let name = "Inclined rafter, vertical load per plan length";
+    for (projected, run, what) in [(true, 4.0, "Vertical reactions sum to w × plan length 4 m"), (false, 5.0, "Vertical reactions sum to w × rafter length 5 m")] {
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [4.0, 3.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Pinned);
+        support(&mut d, 4.0, 3.0, SupportKind::RollerX);
+        let id = d.m.members[0].id;
+        load(&mut d, Target::Member { id }, LoadKind::Patch { w1: -w, w2: -w, dir: Dir::Y, from: 0.0, to: 5.0, projected });
+        let r = frame::solve(&d.m).expect("solves");
+        out.push(check(38, name, what, "force", w * run, r.reactions.iter().map(|x| x.fy).sum(), 1e-9, "Statics"));
+    }
+    // A cantilever, P at a from the root: tip Pa²(3L − a)/6EI.
+    let (lc, ac) = (3.0, 2.0);
+    let mut d = frame(e, SectionShape::Rect { b, h });
+    member(&mut d, [0.0, 0.0], [lc, 0.0], MemberKind::Beam);
+    support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+    let id = d.m.members[0].id;
+    load(&mut d, Target::Member { id }, LoadKind::Concentrated { f: -p, dir: Dir::Local, at: ac });
+    let r = frame::solve(&d.m).expect("solves");
+    let tip = d.m.nodes.iter().position(|n| n.id == node(&d, lc, 0.0)).unwrap();
+    out.push(check(38, "Cantilever, point load inside the span", "Tip deflection Pa²(3L − a)/6EI", "len", p * ac * ac * (3.0 * lc - ac) / (6.0 * e * i), -r.disp[tip][1], 1e-9, src));
+    // The same in 3D, the load along z (the weak axis).
+    let pr = crate::sections::props(&SectionShape::Rect { b, h }).unwrap();
+    let mut d = space_frame(e, SectionShape::Rect { b, h });
+    member3(&mut d, [0.0; 3], [lc, 0.0, 0.0], MemberKind::Beam);
+    support3(&mut d, [0.0; 3], SupportKind::Fixed);
+    let id = d.m.members[0].id;
+    load(&mut d, Target::Member { id }, LoadKind::Concentrated { f: p, dir: Dir::Z, at: ac });
+    load(&mut d, Target::Member { id }, LoadKind::Patch { w1: w, w2: w, dir: Dir::Z, from: 0.0, to: 1.0, projected: false });
+    let r = crate::space::solve(&d.m).expect("space");
+    // The patch: w over [0, c] gives a tip deflection wc³(4L − c)/24EI.
+    let (c3, ei) = (1.0f64, e * pr.iy);
+    let want = p * ac * ac * (3.0 * lc - ac) / (6.0 * ei) + w * c3.powi(3) * (4.0 * lc - c3) / (24.0 * ei);
+    out.push(check(38, "3D cantilever, point and part-length loads along z", "Tip deflection Pa²(3L − a)/6EIy + wc³(4L − c)/24EIy", "len", want, r.disp[1][2], 1e-9, src));
+    // A member cut after it was loaded keeps its loads where they were.
+    let name = "Loaded beam cut in two by a new member";
+    let d0 = simple(&|d, id| {
+        load(d, Target::Member { id }, LoadKind::Concentrated { f: -p, dir: Dir::Y, at: 4.5 });
+        load(d, Target::Member { id }, LoadKind::Patch { w1: -w, w2: -2.0 * w, dir: Dir::Y, from: 1.0, to: 5.0, projected: false });
+    });
+    let mut d1 = d0.clone();
+    member(&mut d1, [3.0, 0.0], [3.0, 1.0], MemberKind::Beam);
+    let (r0, r1) = (frame::solve(&d0.m).expect("solves"), frame::solve(&d1.m).expect("solves"));
+    // The deflection and moment under the point load (4.5 m from the start, 1.5 m into the far piece).
+    let under = |r: &frame::FrameResults, k: usize, x: f64| {
+        let mr = &r.members[k];
+        let i = mr.x.iter().position(|s| (s - x).abs() < 1e-9).expect("a station at the load");
+        (mr.d[i][1], mr.m[i])
+    };
+    let far = d1.m.members.iter().position(|mb| mb.a == node(&d1, 3.0, 0.0) && mb.b == node(&d1, l, 0.0)).expect("the far piece");
+    let (u0, m0) = under(&r0, 0, 4.5);
+    let (u1, m1) = under(&r1, far, 1.5);
+    out.push(check(38, name, "Deflection under the point load, before and after the cut", "len", u0, u1, 1e-9, "The same model"));
+    out.push(check(38, name, "Moment under the point load, before and after the cut", "moment", m0, m1, 1e-9, "The same model"));
+    let ra = |r: &frame::FrameResults, d: &Doc| r.reactions.iter().find(|x| x.node == node(d, 0.0, 0.0)).unwrap().fy;
+    out.push(check(38, name, "Reaction at the near end, before and after the cut", "force", ra(&r0, &d0), ra(&r1, &d1), 1e-9, "The same model"));
+    out
+}
+
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
     v.extend(simply_supported());
@@ -2781,11 +2889,19 @@ pub fn run() -> Vec<Check> {
     v.extend(remote_load());
     v.extend(contact());
     v.extend(explicit());
+    v.extend(member_loads());
     v
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn member_loads_on_their_own() {
+        for r in super::member_loads() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
     #[test]
     fn explicit_on_its_own() {
         for r in super::explicit() {

@@ -21,6 +21,8 @@ fn scaled(k: &LoadKind, f: f64) -> Option<LoadKind> {
         Force { fx, fy, fz } => Force { fx: fx * f, fy: fy * f, fz: fz * f },
         Moment { m, mx, my } => Moment { m: m * f, mx: mx * f, my: my * f },
         Dist { w1, w2, dir } => Dist { w1: w1 * f, w2: w2 * f, dir },
+        Patch { w1, w2, dir, from, to, projected } => Patch { w1: w1 * f, w2: w2 * f, dir, from, to, projected },
+        Concentrated { f: p, dir, at } => Concentrated { f: p * f, dir, at },
         Pressure { p } => Pressure { p: p * f },
         Traction { fx, fy, total, fz } => Traction { fx: fx * f, fy: fy * f, total, fz: fz * f },
         Bearing { fx, fy } => Bearing { fx: fx * f, fy: fy * f },

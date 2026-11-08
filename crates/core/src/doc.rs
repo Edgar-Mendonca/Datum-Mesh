@@ -1192,6 +1192,8 @@ fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
         let Some(i) = m.members.iter().position(|b| on(b, n).is_some()) else { continue };
         let t = on(&m.members[i], n).unwrap();
         let b = m.members[i].clone();
+        // Where the cut is along the old member (m from end a), for part-length and point loads.
+        let cut = t * m.member_length(b.id).unwrap_or(0.0);
         let nid = fresh(m);
         m.members[i].b = n;
         // A hinge at the far end goes with the far piece.
@@ -1200,12 +1202,33 @@ fn join(m: &mut Model, nodes: &[u32], members: &[u32]) {
         m.members.push(Member { id: nid, a: n, b: b.b, kind: b.kind, section: b.section, material: b.material, roll: b.roll, hinge: [false, b.hinge[1]], only: b.only, offset: [0.0, b.offset[1]] });
         let mut extra = vec![];
         for l in m.loads.iter_mut() {
-            if let (Target::Member { id }, LoadKind::Dist { w1, w2, dir }) = (&l.at, &mut l.kind) {
-                if *id == b.id {
+            if l.at != (Target::Member { id: b.id }) {
+                continue;
+            }
+            match &mut l.kind {
+                LoadKind::Dist { w1, w2, dir } => {
                     let wt = *w1 + (*w2 - *w1) * t;
                     extra.push((LoadKind::Dist { w1: wt, w2: *w2, dir: *dir }, nid, l.case));
                     *w2 = wt;
                 }
+                LoadKind::Patch { w1, w2, dir, from, to, projected } if *to > cut => {
+                    if *from >= cut {
+                        // Wholly on the far piece: it moves there.
+                        *from -= cut;
+                        *to -= cut;
+                        l.at = Target::Member { id: nid };
+                    } else {
+                        let wt = *w1 + (*w2 - *w1) * (cut - *from) / (*to - *from);
+                        extra.push((LoadKind::Patch { w1: wt, w2: *w2, dir: *dir, from: 0.0, to: *to - cut, projected: *projected }, nid, l.case));
+                        *w2 = wt;
+                        *to = cut;
+                    }
+                }
+                LoadKind::Concentrated { at, .. } if *at > cut => {
+                    *at -= cut;
+                    l.at = Target::Member { id: nid };
+                }
+                _ => {}
             }
         }
         for (kind, mid, case) in extra {

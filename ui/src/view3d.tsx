@@ -18,7 +18,7 @@ import { Model, SpaceMember, Target, clean, isSolidA, solidDisp, invoke } from "
 import { solved, sketch, sketchPick, setSketchPick, model, sel, setSel, tool, setTool, act, spaceRes, stale, show, themeTick, opts, toast, setEdgeSel, modes, modeOn, modeSel, phase, solidRes, shownLoad } from "./store";
 import { palette, BANDS, curField, rangeOf } from "./parts";
 import { outline, edgePts, inside } from "./geom";
-import { defaultLoad, defaultSupport } from "./panels";
+import { defaultLoad, defaultSupport, MEMBER_ONLY, placeOnMember } from "./panels";
 import { fmt, unit } from "./units";
 import { scale, pan } from "./canvas";
 import { sketchFrame, placeOn } from "./sketchmode";
@@ -671,10 +671,13 @@ export const View3D = () => {
       if (k.kind === "moment" && l.at.on === "node") { const p = P.get(l.at.id); if (p) arrow(p, [k.mx ?? 0, k.my ?? 0, k.m], L * 0.8, colour, true); }
       if (k.kind === "settlement" && l.at.on === "node") { const p = P.get(l.at.id); if (p) arrow([p[0] + k.dx * 0, p[1] - span * 0.04, p[2]], [k.dx, k.dy, k.dz ?? 0], L * 0.6, colour); }
       if (k.kind === "mass" && l.at.on === "node") { const p = P.get(l.at.id); if (p) { const b = new THREE.Mesh(new THREE.SphereGeometry(span * 0.018, 16, 12), new THREE.MeshLambertMaterial({ color: new THREE.Color(on ? accent : ink) })); b.position.set(...p); world.add(b); } }
-      if (k.kind === "dist" && l.at.on === "member") {
-        const b = m.members.find(x => x.id === (l.at as any).id), a = b && P.get(b.a), c = b && P.get(b.b); if (!a || !c) continue;
+      if ((k.kind === "dist" || k.kind === "patch" || k.kind === "concentrated") && l.at.on === "member") {
+        const b = m.members.find(x => x.id === (l.at as any).id), a0 = b && P.get(b.a), c0 = b && P.get(b.b); if (!a0 || !c0) continue;
         const res = r?.members.find(x => x.id === b!.id);
         const dir: P3 = k.dir === "x" ? [1, 0, 0] : k.dir === "y" ? [0, 1, 0] : k.dir === "z" ? [0, 0, 1] : (res?.axes[1] ?? [0, 1, 0]);
+        const lw = Math.hypot(c0[0] - a0[0], c0[1] - a0[1], c0[2] - a0[2]) || 1, along = (s: number): P3 => [a0[0] + (c0[0] - a0[0]) * s, a0[1] + (c0[1] - a0[1]) * s, a0[2] + (c0[2] - a0[2]) * s];
+        if (k.kind === "concentrated") { arrow(along(Math.min(1, k.at / lw)), dir.map(x => x * (Math.sign(k.f) || -1)) as P3, L * 0.8, colour); continue; }
+        const a = along(k.kind === "patch" ? Math.min(1, k.from / lw) : 0), c = along(k.kind === "patch" ? Math.min(1, k.to / lw) : 1);
         const wmax = Math.max(Math.abs(k.w1), Math.abs(k.w2)) || 1;
         for (let i = 0; i <= 6; i++) {
           const t = i / 6, w = k.w1 + (k.w2 - k.w1) * t; if (Math.abs(w) < 1e-12) continue;
@@ -917,8 +920,10 @@ export const View3D = () => {
     }
     if (t.startsWith("sup:") || t.startsWith("load:")) {
       if (!h || (t.startsWith("sup:") && h.kind !== "node")) return toast(t.startsWith("sup:") ? "Click a node to put the support on." : "Click a node or a member for the load.");
+      if (MEMBER_ONLY.includes(t) && h.kind !== "member") return toast("Click a member for this load; set where along it in the Inspector.");
       const at: Target = { on: h.kind, id: h.id };
-      const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4))] : ["Load", defaultLoad(t.slice(5), true)];
+      let [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4))] : ["Load", defaultLoad(t.slice(5), true)] as [string, any];
+      if (h.kind === "member" && MEMBER_ONLY.includes(t)) val = placeOnMember(model()!, h.id, val);
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) setSel(o.created);
       return;

@@ -67,3 +67,4 @@ Everything a small team can build in our own solver and with our own geometry en
 - The workflow bar: a done step has a light green ground (no ticks); a Tools group with Parts, Library, Python (planned) and Options.
 - Standard parts: hexagon bolts, nuts, plain washers and dowel pins in metric sizes, by click or drag onto the view.
 - Every feature of Batches 1–4 is in the window as planned, with its release (126 in the register).
+- Point loads and part-length loads on members (2D and 3D frames): along the member or projected, even or tapering; the beam is cut under each, so diagrams jump and kink exactly; loads follow when a member is cut by a new joint. Benchmark 38 (16 rows, all to 1e-9). A frame that rounding hid as a mechanism now says so (an answer that does not balance and moves further than the model is big).

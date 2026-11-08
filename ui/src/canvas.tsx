@@ -8,7 +8,7 @@ import { model as model0, sel, setSel, edgeSel, setEdgeSel, tool, setTool, act a
 import { C } from "./cmds";
 import { svgPath, edgePts, edgeCount, distTo, inside, outline, keyPts, orient, area } from "./geom";
 import { fmt } from "./units";
-import { defaultLoad, defaultSupport } from "./panels";
+import { defaultLoad, defaultSupport, MEMBER_ONLY, placeOnMember } from "./panels";
 import { ResultsLayer, ResultsProbe } from "./results";
 import { PartLayer, PartMarkers, PartProbe } from "./parts";
 import { FrameModeLayer } from "./modes";
@@ -232,8 +232,20 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean; np: Map<
       const [x, y] = toS(w), r = 18, ccw = k.m >= 0;
       return <><path d={`M${x + r} ${y}A${r} ${r} 0 1 ${ccw ? 0 : 1} ${x} ${y + (ccw ? r : -r)}`} class="la" /><path d={ccw ? `M${x - 5} ${y + r - 5}L${x} ${y + r}L${x - 5} ${y + r + 5}` : `M${x - 5} ${y - r - 5}L${x} ${y - r}L${x - 5} ${y - r + 5}`} class="la" /><text x={x + r + 4} y={y - r} class="ltxt">{fmt("moment", Math.abs(k.m), 3)}</text></>;
     }
-    if (k.kind === "dist" && at.on === "member") {
+    if (k.kind === "concentrated" && at.on === "member") {
       const mb = p.m.members.find(x => x.id === at.id); const a = mb && np().get(mb.a), b = mb && np().get(mb.b); if (!a || !b) return null;
+      const lw = Math.hypot(b[0] - a[0], b[1] - a[1]), t = lw ? Math.min(1, k.at / lw) : 0;
+      const [sa, sb] = [toS(a), toS(b)], L = Math.hypot(sb[0] - sa[0], sb[1] - sa[1]); if (!L) return null;
+      const ux = (sb[0] - sa[0]) / L, uy = (sb[1] - sa[1]) / L, sg = Math.sign(k.f) || -1;
+      const v: Pt = k.dir === "x" ? [sg, 0] : k.dir === "y" ? [0, -sg] : [uy * sg, -ux * sg];
+      const tip: Pt = [sa[0] + (sb[0] - sa[0]) * t, sa[1] + (sb[1] - sa[1]) * t], len = 34;
+      return <><path d={arrowPath(tip, v, len)} class="la" /><circle cx={tip[0]} cy={tip[1]} r={2.6} class="lpt" /><text x={tip[0] - v[0] * len + 5} y={tip[1] - v[1] * len - 4} class="ltxt">{fmt("force", Math.abs(k.f), 3)}</text></>;
+    }
+    if ((k.kind === "dist" || k.kind === "patch") && at.on === "member") {
+      const mb = p.m.members.find(x => x.id === at.id); const a0 = mb && np().get(mb.a), b0 = mb && np().get(mb.b); if (!a0 || !b0) return null;
+      // A part-length load: the stretch of the member it covers.
+      const lw = Math.hypot(b0[0] - a0[0], b0[1] - a0[1]) || 1, s0 = k.kind === "patch" ? Math.min(1, k.from / lw) : 0, s1 = k.kind === "patch" ? Math.min(1, k.to / lw) : 1;
+      const a: Pt = [a0[0] + (b0[0] - a0[0]) * s0, a0[1] + (b0[1] - a0[1]) * s0], b: Pt = [a0[0] + (b0[0] - a0[0]) * s1, a0[1] + (b0[1] - a0[1]) * s1];
       const [sa, sb] = [toS(a), toS(b)], L = Math.hypot(sb[0] - sa[0], sb[1] - sa[1]); if (!L) return null;
       const wmax = Math.max(Math.abs(k.w1), Math.abs(k.w2)) || 1, ux = (sb[0] - sa[0]) / L, uy = (sb[1] - sa[1]) / L;
       // Direction of the load on screen: global x, global y, or the member's local y (left of a→b in the world).
@@ -423,7 +435,14 @@ export const Canvas = () => {
     if (t.startsWith("sup:") || t.startsWith("load:")) {
       const h = hitTest(w), at = placeOn(h, frame() ? w : p, frame(), t);
       if (!at) return toast(t === "load:platepressure" ? "Click inside a plate to put the pressure on it." : t.startsWith("sup:") ? (frame() ? "Click a node (or a plate's edge) to put the support on." : "Click an edge or a point of the part.") : "Click where the load goes: a node, a member or an edge.");
-      const [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4))] : ["Load", defaultLoad(t.slice(5), frame())];
+      if (MEMBER_ONLY.includes(t) && at.on !== "member") return toast("Click a member for this load: it goes where you click along it.");
+      let [kind, val] = t.startsWith("sup:") ? ["Support", defaultSupport(t.slice(4))] : ["Load", defaultLoad(t.slice(5), frame())] as [string, any];
+      if (at.on === "member" && MEMBER_ONLY.includes(t)) {
+        // Where along the member the click was.
+        const mm = model()!, mb = mm.members.find(x => x.id === at.id)!, a = np().get(mb.a) ?? [0, 0], b = np().get(mb.b) ?? [0, 0];
+        const dx = b[0] - a[0], dy = b[1] - a[1], s = Math.max(0, Math.min(1, ((w[0] - a[0]) * dx + (w[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+        val = placeOnMember(mm, at.id, val, s);
+      }
       const o = await act({ Add: { item: { [kind]: { id: 0, at, kind: val } } } });
       if (o?.created.length) batch(() => { setSel(o.created); setEdgeSel(null); });
     }

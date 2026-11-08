@@ -34,6 +34,7 @@ export type SupportKind =
 export interface Support { id: number; at: Target; kind: SupportKind }
 export type LoadKind =
   | { kind: "force"; fx: number; fy: number; fz?: number } | { kind: "moment"; m: number; mx?: number; my?: number } | { kind: "dist"; w1: number; w2: number; dir: "y" | "x" | "z" | "local" }
+  | { kind: "patch"; w1: number; w2: number; dir: "y" | "x" | "z" | "local"; from: number; to: number; projected?: boolean } | { kind: "concentrated"; f: number; dir: "y" | "x" | "z" | "local"; at: number }
   | { kind: "pressure"; p: number } | { kind: "traction"; fx: number; fy: number; total: boolean; fz?: number } | { kind: "bearing"; fx: number; fy: number } | { kind: "gravity"; gx: number; gy: number; gz?: number }
   | { kind: "warming"; dt: number } | { kind: "flux"; q: number } | { kind: "convection"; h: number; t_inf: number } | { kind: "heat"; q: number } | { kind: "mass"; m: number } | { kind: "settlement"; dx: number; dy: number; dz?: number } | { kind: "remote"; at: [number, number, number]; f: [number, number, number]; m: [number, number, number] } | { kind: "velocity"; v: [number, number, number] };
 export interface Load { id: number; at: Target; kind: LoadKind; case?: number }

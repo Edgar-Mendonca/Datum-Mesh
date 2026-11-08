@@ -213,6 +213,17 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.mouse.click(mc[0], mc[1]); await p.waitForTimeout(150);
   const dl = await lastOp();
   check("the Distributed tool puts a load on the member clicked", dl?.Add?.item?.Load?.at?.on === "member" && dl.Add.item.Load.kind.kind === "dist", JSON.stringify(dl));
+  // 0.10.3: a point load and a part-length load go where the member is clicked.
+  await p.click('.ribbon button[title^="A force at a point along a member"]');
+  await p.mouse.click(mc[0], mc[1]); await p.waitForTimeout(150);
+  const mpl = await lastOp(), plk = mpl?.Add?.item?.Load?.kind;
+  check("Point on Member puts a point load on the member, where it was clicked", mpl?.Add?.item?.Load?.at?.on === "member" && plk?.kind === "concentrated" && plk.at > 0, JSON.stringify(mpl));
+  await p.mouse.click(n0[0], n0[1]); await p.waitForTimeout(150);
+  check("Point on Member does nothing on a node", JSON.stringify(await lastOp()) === JSON.stringify(mpl));
+  await p.click('.ribbon button[title^="A distributed load over part of a member"]');
+  await p.mouse.click(mc[0], mc[1]); await p.waitForTimeout(150);
+  const mpp = await lastOp(), ppk = mpp?.Add?.item?.Load?.kind;
+  check("Part of Member puts a load over half the member, centred where it was clicked", ppk?.kind === "patch" && ppk.from >= 0 && ppk.to > ppk.from && Math.abs((ppk.from + ppk.to) / 2 - plk?.at) < 0.01, JSON.stringify(mpp));
   await p.keyboard.press("Escape");
 
   // 8. A part: arcs, edges, edge loads and drawing shapes.

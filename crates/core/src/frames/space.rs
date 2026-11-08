@@ -138,6 +138,13 @@ pub(super) struct Elem {
     /// Rigid zones at the ends (m, 0.4.5), and whether this piece is one.
     off: [f64; 2],
     rigid: bool,
+    /// Loads over part of the member (0.10.3): from and to as fractions of the length, and the
+    /// local per-length loads at each, as `p`. `split` cuts there.
+    segs: Vec<(f64, f64, [f64; 6])>,
+    /// Point forces on the member (0.10.3): the fraction of the length and the local force.
+    pts: Vec<(f64, [f64; 3])>,
+    /// Point forces at the piece's ends after `split`, local axes: a's (x, y, z), then b's.
+    tip: [f64; 6],
 }
 
 /// The condensation of a hinged beam (0.3.3), or None.
@@ -399,39 +406,68 @@ fn cut(e: &Elem, at: &[(f64, usize)]) -> Vec<Elem> {
         .collect()
 }
 
-/// Cut a beam into `pieces` equal elements, inner nodes numbered from `first`; its distributed
-/// load is shared out along the pieces. A truss bar is not cut.
+/// Cut a beam into `pieces` equal elements, and also where a part-length or point load starts,
+/// ends or acts; inner nodes numbered from `first`. Its distributed load is shared out along the
+/// pieces and a point load goes to the node at its place. A truss bar is not cut: its part-length
+/// and point loads go to its two ends as on a simple span.
 fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
-    // The cuts, as fractions of the length: the rigid zones' ends (0.4.5), and equal pieces of
-    // the flexible part between them.
-    let (oa, ob) = if e.kind == MemberKind::Beam { (e.off[0] / e.l, e.off[1] / e.l) } else { (0.0, 0.0) };
-    let n = if e.kind == MemberKind::Beam { pieces.max(1) } else { 1 };
-    let mut cuts = vec![0.0];
-    if oa > 0.0 {
-        cuts.push(oa);
+    const EPS: f64 = 1e-9;
+    if e.kind != MemberKind::Beam {
+        let mut c = Elem { off: [0.0; 2], segs: vec![], pts: vec![], ..e.clone() };
+        let mut to_ends = |t: f64, f: [f64; 3]| {
+            for k in 0..3 {
+                c.tip[k] += f[k] * (1.0 - t);
+                c.tip[3 + k] += f[k] * t;
+            }
+        };
+        for &(s0, s1, w) in &e.segs {
+            let d = (s1 - s0) * e.l;
+            to_ends((s0 + s1) / 2.0, [w[0] * d, w[2] * d, w[4] * d]);
+            to_ends(s0 + 2.0 * (s1 - s0) / 3.0, [(w[1] - w[0]) * d / 2.0, (w[3] - w[2]) * d / 2.0, (w[5] - w[4]) * d / 2.0]);
+        }
+        for &(t, f) in &e.pts {
+            to_ends(t, f);
+        }
+        return vec![c];
     }
+    // The cuts, as fractions of the length: the rigid zones' ends (0.4.5), equal pieces of the
+    // flexible part between them, and the loads' places.
+    let (oa, ob) = (e.off[0] / e.l, e.off[1] / e.l);
+    let n = pieces.max(1);
+    let mut cuts = vec![0.0, 1.0, oa, 1.0 - ob];
     for k in 1..n {
         cuts.push(oa + (1.0 - oa - ob) * k as f64 / n as f64);
     }
-    if ob > 0.0 {
-        cuts.push(1.0 - ob);
+    for &(s0, s1, _) in &e.segs {
+        cuts.extend([s0, s1]);
     }
-    cuts.push(1.0);
+    cuts.extend(e.pts.iter().map(|p| p.0));
+    cuts.retain(|t| (0.0..=1.0).contains(t));
+    cuts.sort_by(f64::total_cmp);
+    cuts.dedup_by(|a, b| (*a - *b).abs() < EPS);
     if cuts.len() == 2 {
-        return vec![Elem { off: [0.0; 2], ..e.clone() }];
+        return vec![Elem { off: [0.0; 2], segs: vec![], pts: vec![], ..e.clone() }];
+    }
+    let at_cut = |t: f64| cuts.iter().position(|c| (c - t).abs() < EPS).unwrap_or(0);
+    let mut tips = vec![[0.0; 3]; cuts.len()];
+    for &(t, f) in &e.pts {
+        let k = at_cut(t);
+        for j in 0..3 {
+            tips[k][j] += f[j];
+        }
     }
     let p = e.p;
     let last = cuts.len() - 2;
-    let (fa, fb) = (usize::from(oa > 0.0), last - usize::from(ob > 0.0));
+    let (fa, fb) = (at_cut(oa), at_cut(1.0 - ob) - 1);
     (0..=last)
         .map(|k| {
             let (s0, s1) = (cuts[k], cuts[k + 1]);
-            let mut c = e.clone();
+            let mut c = Elem { segs: vec![], pts: vec![], tip: [0.0; 6], ..e.clone() };
             c.a = if k == 0 { e.a } else { first + k - 1 };
             c.b = if k == last { e.b } else { first + k };
             c.l = e.l * (s1 - s0);
             c.off = [0.0; 2];
-            c.rigid = (k == 0 && oa > 0.0) || (k == last && ob > 0.0);
+            c.rigid = s1 <= oa + EPS || s0 >= 1.0 - ob - EPS;
             if c.rigid {
                 c.ea *= 1e5;
                 c.eiz *= 1e5;
@@ -445,6 +481,19 @@ fn split(e: &Elem, pieces: usize, first: usize) -> Vec<Elem> {
                 c.p[2 * j] = q1 + (q2 - q1) * s0;
                 c.p[2 * j + 1] = q1 + (q2 - q1) * s1;
             }
+            for &(g0, g1, w) in &e.segs {
+                if s0 >= g0 - EPS && s1 <= g1 + EPS {
+                    for j in 0..3 {
+                        let at = |t: f64| w[2 * j] + (w[2 * j + 1] - w[2 * j]) * (t - g0) / (g1 - g0);
+                        c.p[2 * j] += at(s0);
+                        c.p[2 * j + 1] += at(s1);
+                    }
+                }
+            }
+            if k == 0 {
+                c.tip[..3].copy_from_slice(&tips[0]);
+            }
+            c.tip[3..].copy_from_slice(&tips[k + 1]);
             c
         })
         .collect()
@@ -476,7 +525,7 @@ pub(super) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let mat = m.material(mb.material).ok_or("A member's material is missing.")?;
         let pr = sections::props(&sec.shape)?;
         let gm = mat.e / (2.0 * (1.0 + mat.nu));
-        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2], pn: 0.0, off: mb.offset, rigid: false };
+        let mut e = Elem { id: mb.id, kind: mb.kind, a, b, l: dist3(pa, pb), r: axes(pa, pb, mb.roll), ea: mat.e * pr.a, eiz: mat.e * pr.i, eiy: mat.e * pr.iy, gj: gm * pr.j, area: pr.a, zz: pr.z(), zy: pr.zy(), fy: mat.fy, p: [0.0; 6], at: mat.alpha * warming, rho_a: mat.rho * pr.a, rho_ip: mat.rho * (pr.i + pr.iy), eimin: mat.e * pr.i.min(pr.iy), hinge: mb.hinge, twist: [false; 2], pn: 0.0, off: mb.offset, rigid: false, segs: vec![], pts: vec![], tip: [0.0; 6] };
         let w = to_local(&e, [mat.rho * pr.a * g[0], mat.rho * pr.a * g[1], mat.rho * pr.a * g[2]]);
         e.p = [w[0], w[0], w[1], w[1], w[2], w[2]];
         elems.push(e);
@@ -495,6 +544,31 @@ pub(super) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
                 e.p[2 * k] += w1 * ax[k];
                 e.p[2 * k + 1] += w2 * ax[k];
             }
+        }
+    }
+    // Part-length and point loads (0.10.3), resolved into the member's axes.
+    for l in &m.loads {
+        let (Target::Member { id }, LoadKind::Patch { dir, .. } | LoadKind::Concentrated { dir, .. }) = (&l.at, &l.kind) else { continue };
+        let e = elems.iter_mut().find(|e| e.id == *id).ok_or("A load is on a member that does not exist.")?;
+        let gdir = match dir {
+            Dir::X => [1.0, 0.0, 0.0],
+            Dir::Y => [0.0, 1.0, 0.0],
+            Dir::Z => [0.0, 0.0, 1.0],
+            Dir::Local => e.r[1],
+        };
+        let ax = to_local(e, gdir);
+        match l.kind {
+            LoadKind::Patch { w1, w2, from, to, projected, dir } => {
+                // Per length of the projection across the load: the member's length times the
+                // sine of the angle between the member and the load.
+                let k = if projected && dir != Dir::Local { (1.0 - ax[0] * ax[0]).max(0.0).sqrt() } else { 1.0 };
+                let (s0, s1) = ((from / e.l).clamp(0.0, 1.0), (to / e.l).clamp(0.0, 1.0));
+                if s1 > s0 {
+                    e.segs.push((s0, s1, [k * w1 * ax[0], k * w2 * ax[0], k * w1 * ax[1], k * w2 * ax[1], k * w1 * ax[2], k * w2 * ax[2]]));
+                }
+            }
+            LoadKind::Concentrated { f, at, .. } => e.pts.push(((at / e.l).clamp(0.0, 1.0), [f * ax[0], f * ax[1], f * ax[2]])),
+            _ => {}
         }
     }
     let mut parts = vec![];
@@ -529,6 +603,9 @@ pub(super) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         on.sort_by(|x, y| x.0.total_cmp(&y.0));
         on.dedup_by_key(|x| x.1);
         if !on.is_empty() {
+            if !e.segs.is_empty() || !e.pts.is_empty() {
+                warnings.push("A part-length or point load on a member that a plate runs along was left out: load the whole member, or the plate.".into());
+            }
             let pcs = cut(e, &on);
             spans.push(parts.len()..parts.len() + pcs.len());
             parts.extend(pcs);
@@ -591,8 +668,9 @@ pub(super) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
         let f = cond_load(e);
         let (fa, ma) = (to_global(e, [f[0], f[1], f[2]]), to_global(e, [f[3], f[4], f[5]]));
         let (fb, mb) = (to_global(e, [f[6], f[7], f[8]]), to_global(e, [f[9], f[10], f[11]]));
-        add_load(&mut sys, e.a, [fa[0], fa[1], fa[2], ma[0], ma[1], ma[2]]);
-        add_load(&mut sys, e.b, [fb[0], fb[1], fb[2], mb[0], mb[1], mb[2]]);
+        let (ta, tb) = (to_global(e, [e.tip[0], e.tip[1], e.tip[2]]), to_global(e, [e.tip[3], e.tip[4], e.tip[5]]));
+        add_load(&mut sys, e.a, [fa[0] + ta[0], fa[1] + ta[1], fa[2] + ta[2], ma[0], ma[1], ma[2]]);
+        add_load(&mut sys, e.b, [fb[0] + tb[0], fb[1] + tb[1], fb[2] + tb[2], mb[0], mb[1], mb[2]]);
     }
     // Plates: stiffness, their own weight and pressure (lumped: a third of each triangle's load
     // on each corner).
@@ -632,7 +710,7 @@ pub(super) fn assemble(m: &Model, pieces: usize) -> Result<Assembly, String> {
             (LoadKind::Pressure { .. }, Target::Plate { .. }) => {}
             (LoadKind::Force { fx, fy, fz }, Target::Node { id }) => add_load(&mut sys, idx[id], [*fx, *fy, *fz, 0.0, 0.0, 0.0]),
             (LoadKind::Moment { m: mz, mx, my }, Target::Node { id }) => add_load(&mut sys, idx[id], [0.0, 0.0, 0.0, *mx, *my, *mz]),
-            (LoadKind::Dist { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. } | LoadKind::Settlement { .. }, _) => {}
+            (LoadKind::Dist { .. } | LoadKind::Patch { .. } | LoadKind::Concentrated { .. } | LoadKind::Gravity { .. } | LoadKind::Warming { .. } | LoadKind::Mass { .. } | LoadKind::Settlement { .. }, _) => {}
             (k, _) => warnings.push(format!("A {} load does not act on frames and was left out.", load_name(k))),
         }
     }
@@ -790,6 +868,11 @@ pub fn solve(m: &Model) -> Result<SpaceResults, String> {
         }
     }
     let umax = r.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()).chain(r.plates.iter().flat_map(|p| p.disp.iter().map(|d| (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()))).fold(0.0, f64::max);
+    // An answer that does not balance and moves further than the model is big is no answer:
+    // rounding hid a mechanism from the solver (0.10.3).
+    if r.imbalance > 1e-6 && umax > span(m) {
+        return Err(format!("{} In 3D, a beam held only by pins at its ends can spin about its own axis: fix one end, or hold its turning with a spring.", super::frame::MECHANISM));
+    }
     if umax > 0.1 * span(m) {
         r.warnings.push(format!("The largest movement is {:.0} % of the model's size: far beyond small deflections, so this linear answer is not reliable. Check the supports, sections and units.", umax / span(m) * 100.0));
     }
@@ -925,9 +1008,15 @@ fn stitched(e: &Elem, pieces: &[Elem], uls: &[[f64; 12]]) -> SpaceMember {
     // Stations per piece so the member has about as many as an uncut one.
     for (k, p) in pieces.iter().enumerate() {
         let r = member_result(p, uls[k]);
-        let step = (STATIONS - 1) / pieces.len().clamp(1, STATIONS - 1);
-        let idx: Vec<usize> = (0..STATIONS).step_by(step.max(1)).chain(std::iter::once(STATIONS - 1)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
-        for &i in idx.iter().skip(usize::from(k > 0)) {
+        // Every piece keeps its ends and its middle: the step divides half the stations.
+        let half = (STATIONS - 1) / 2;
+        let step = (1..=half).rev().find(|s| half.is_multiple_of(*s) && *s <= (STATIONS - 1) / pieces.len()).unwrap_or(1);
+        let idx: Vec<usize> = (0..STATIONS).step_by(step).chain(std::iter::once(STATIONS - 1)).collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        // A piece's first station repeats the last one's place; it is kept where a point load acts
+        // (0.10.3), so the diagram drops straight down there.
+        // Decided by the model, not the values, so every increment has the same stations.
+        let jumps = k > 0 && pieces[k - 1].tip[3..].iter().any(|t| *t != 0.0);
+        for &i in idx.iter().skip(usize::from(k > 0 && !jumps)) {
             out.x.push(at + r.x[i]);
             out.n.push(r.n[i]);
             out.vy.push(r.vy[i]);

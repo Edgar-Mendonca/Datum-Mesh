@@ -365,14 +365,19 @@ mod tests {
                 let _ = d.apply(Op::Add { item: Item::Support(Support { id: 0, at: Target::Node { id: n }, kind }) });
             }
             for _ in 0..(1 + r.below(4)) {
-                let kind = match r.below(4) {
+                let kind = match r.below(6) {
                     0 => LoadKind::Force { fx: r.f(-1e3, 1e3), fy: r.f(-1e3, 1e3), fz: r.f(-1e3, 1e3) },
                     1 => LoadKind::Moment { m: r.f(-1e3, 1e3), mx: r.f(-1e3, 1e3), my: r.f(-1e3, 1e3) },
                     2 => LoadKind::Dist { w1: r.f(-1e3, 1e3), w2: r.f(-1e3, 1e3), dir: [Dir::X, Dir::Y, Dir::Z, Dir::Local][r.below(4)] },
+                    3 => {
+                        let from = r.f(0.0, 0.5);
+                        LoadKind::Patch { w1: r.f(-1e3, 1e3), w2: r.f(-1e3, 1e3), dir: [Dir::X, Dir::Y, Dir::Z, Dir::Local][r.below(4)], from, to: from + r.f(0.01, 0.5), projected: r.below(2) == 0 }
+                    }
+                    4 => LoadKind::Concentrated { f: r.f(-1e3, 1e3), dir: [Dir::X, Dir::Y, Dir::Z, Dir::Local][r.below(4)], at: r.f(0.0, 1.0) },
                     _ => LoadKind::Gravity { gx: 0.0, gy: -9.81, gz: r.f(-2.0, 2.0) },
                 };
                 let at = match kind {
-                    LoadKind::Dist { .. } => Target::Member { id: d.m.members[r.below(d.m.members.len())].id },
+                    LoadKind::Dist { .. } | LoadKind::Patch { .. } | LoadKind::Concentrated { .. } => Target::Member { id: d.m.members[r.below(d.m.members.len())].id },
                     LoadKind::Gravity { .. } => Target::Body,
                     _ => Target::Node { id: d.m.nodes[r.below(d.m.nodes.len())].id },
                 };
@@ -927,5 +932,14 @@ mod tests {
             }
         }
         assert!(ok >= 12, "{ok} solved; {why:?}");
+    }
+
+    #[test]
+    fn a_3d_frame_free_to_spin_says_so_when_a_point_load_cuts_its_beam() {
+        // Random space frame 84 (0.10.3): the point load cuts a beam in two, and rounding then hid
+        // the mechanism from the solver, which answered with movements 1e8 times the model's size.
+        let m: Model = serde_json::from_str(r#"{"format":1,"name":"Untitled frame","notes":"","analysis":"space","units":"SI","grid":0.5,"thickness":0.01,"revolve":0.0,"t_ref":293.15,"nodes":[{"id":3,"x":0.0,"y":0.0,"z":2.0},{"id":4,"x":2.0,"y":0.0,"z":2.0},{"id":6,"x":0.0,"y":1.0,"z":1.0},{"id":8,"x":1.0,"y":2.0,"z":0.0},{"id":10,"x":2.0,"y":2.0,"z":1.0},{"id":12,"x":0.0,"y":1.0,"z":2.0},{"id":14,"x":2.0,"y":1.0,"z":2.0},{"id":16,"x":1.0,"y":2.0,"z":2.0}],"members":[{"id":5,"a":3,"b":4,"kind":"beam","section":2,"material":1,"roll":-0.6030660000000001,"hinge":[false,false]},{"id":7,"a":3,"b":6,"kind":"beam","section":2,"material":1,"roll":0.14378400000000013,"hinge":[false,false]},{"id":9,"a":4,"b":8,"kind":"beam","section":2,"material":1,"roll":1.1267579999999997,"hinge":[false,false]},{"id":11,"a":3,"b":10,"kind":"truss","section":2,"material":1,"roll":-0.9882300000000002,"hinge":[true,false]},{"id":13,"a":8,"b":12,"kind":"truss","section":2,"material":1,"roll":0.06904200000000005,"hinge":[false,true]},{"id":15,"a":10,"b":14,"kind":"beam","section":2,"material":1,"roll":1.7808659999999996,"hinge":[false,false]},{"id":17,"a":12,"b":16,"kind":"truss","section":2,"material":1,"roll":-2.818206,"hinge":[false,false]}],"shapes":[],"sections":[{"id":2,"name":"I 300 \u00d7 150","shape":{"kind":"i","h":0.3,"b":0.15,"tw":0.0071,"tf":0.0107,"r":0.0}}],"materials":[{"id":1,"name":"Structural steel S355","e":210000000000.0,"nu":0.3,"rho":7850.0,"fy":355000000.0,"k":50.0,"alpha":1.2e-05,"source":"EN 1993-1-1 \u00a73.2 (E, \u03bd, \u03b1, density); EN 10025-2 (yield)"}],"supports":[{"id":18,"at":{"on":"node","id":3},"kind":{"kind":"fixed"}},{"id":19,"at":{"on":"node","id":10},"kind":{"kind":"spring","kx":1000000.0,"ky":1000000.0,"kr":100000.0,"kz":1000000.0,"krx":100000.0,"kry":100000.0}},{"id":20,"at":{"on":"node","id":16},"kind":{"kind":"fixed"}}],"loads":[{"id":21,"at":{"on":"node","id":16},"kind":{"kind":"force","fx":724.704,"fy":805.0999999999999,"fz":846.5820000000001},"case":0},{"id":22,"at":{"on":"member","id":15},"kind":{"kind":"dist","w1":-749.02,"w2":-871.108,"dir":"y"},"case":0},{"id":23,"at":{"on":"member","id":15},"kind":{"kind":"concentrated","f":730.576,"dir":"z","at":0.533836},"case":0},{"id":24,"at":{"on":"body"},"kind":{"kind":"gravity","gx":0.0,"gy":-9.81,"gz":1.83292},"case":0}],"mesh":{"size":0.0,"order":2,"min_angle":25.0,"refine":[],"layers":0},"cases":[],"combos":[],"steps":[],"contacts":[],"next":25}"#).unwrap();
+        let Err(e) = crate::space::solve(&m) else { panic!("a mechanism") };
+        assert!(e.contains("can move without resistance"), "{e}");
     }
 }

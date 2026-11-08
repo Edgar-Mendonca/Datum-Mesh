@@ -207,6 +207,7 @@ impl Corot {
         for (k, pi) in span.enumerate() {
             let p = &self.pieces[pi];
             let part = &self.asm.parts[pi];
+            let jumps = k > 0 && self.asm.parts[pi - 1].tip[2..].iter().any(|t| *t != 0.0);
             let (l, def, _, _, _, c, s) = self.local(p, u);
             let fe = self.forces(p, u);
             // End forces in the piece's present axes, its own loads taken off.
@@ -226,15 +227,16 @@ impl Corot {
             let (pa, pb) = (self.asm.pos[p.a], self.asm.pos[p.b]);
             let xa = [pa[0] + u[3 * p.a], pa[1] + u[3 * p.a + 1]];
             for j in 0..=SUB {
-                if k > 0 && j == 0 {
-                    continue;
-                }
                 let t = l0 * j as f64 / SUB as f64;
                 let xi = j as f64 / SUB as f64;
-                x.push(start + t);
                 let n = -ends[0] - px(t);
                 let v = ends[1] + qv(t);
                 let mm = if p.beam { -ends[2] + ends[1] * t + qm(t) } else { ends[1] * t + qm(t) };
+                // A piece's start repeats the last one's end; kept where a point load acts (0.10.3).
+                if k > 0 && j == 0 && !jumps {
+                    continue;
+                }
+                x.push(start + t);
                 nv.push(n);
                 vv.push(v);
                 mv.push(mm);

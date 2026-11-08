@@ -539,6 +539,20 @@ pub enum LoadKind {
     },
     /// Members: load per length varying linearly from w1 at end a to w2 at end b (N/m).
     Dist { w1: f64, w2: f64, dir: Dir },
+    /// Members (0.10.3): load per length over part of the member, linear from w1 at `from` to
+    /// w2 at `to` (m from end a). With `projected`, a global load is per length of the member's
+    /// projection across its direction (snow on a rafter), not per length of the member.
+    Patch {
+        w1: f64,
+        w2: f64,
+        dir: Dir,
+        from: f64,
+        to: f64,
+        #[serde(default)]
+        projected: bool,
+    },
+    /// Members (0.10.3): a force `f` (N) at `at` m from end a, in direction `dir`.
+    Concentrated { f: f64, dir: Dir, at: f64 },
     /// Edges: pressure (Pa), positive pushing into the body.
     Pressure { p: f64 },
     /// Edges: a force spread along the edge; `total` = (fx, fy) is the whole force (N), else per length (N/m).
@@ -902,6 +916,12 @@ impl Model {
     pub fn section(&self, id: u32) -> Option<&Section> {
         self.sections.iter().find(|s| s.id == id)
     }
+    /// A member's length (m), from its end nodes.
+    pub fn member_length(&self, id: u32) -> Option<f64> {
+        let mb = self.members.iter().find(|m| m.id == id)?;
+        let (a, b) = (self.node(mb.a)?, self.node(mb.b)?);
+        Some(((b.x - a.x).powi(2) + (b.y - a.y).powi(2) + (b.z - a.z).powi(2)).sqrt())
+    }
 
     /// The extent of everything drawn: (x0, y0, x1, y1), or None for an empty model.
     pub fn bounds(&self) -> Option<[f64; 4]> {
@@ -1160,6 +1180,8 @@ impl Model {
                 (LoadKind::Force { fx, fy, fz }, Target::Node { .. } | Target::Point { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Moment { m, mx, my }, Target::Node { .. }) => m.is_finite() && mx.is_finite() && my.is_finite(),
                 (LoadKind::Dist { w1, w2, .. }, Target::Member { .. }) => w1.is_finite() && w2.is_finite(),
+                (LoadKind::Patch { w1, w2, from, to, .. }, Target::Member { id }) => w1.is_finite() && w2.is_finite() && *from >= 0.0 && to > from && self.member_length(*id).is_some_and(|l| *to <= l * (1.0 + 1e-9)),
+                (LoadKind::Concentrated { f, at, .. }, Target::Member { id }) => f.is_finite() && *at >= 0.0 && self.member_length(*id).is_some_and(|l| *at <= l * (1.0 + 1e-9)),
                 (LoadKind::Pressure { p }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Plate { .. } | Target::Face { .. }) => p.is_finite(),
                 (LoadKind::Traction { fx, fy, fz, .. }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => fx.is_finite() && fy.is_finite() && fz.is_finite(),
                 (LoadKind::Bearing { fx, fy }, Target::Edge { .. }) => fx.is_finite() && fy.is_finite(),
