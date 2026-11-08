@@ -1434,3 +1434,24 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .tree .rtree .ti.okline small, .tree .rtree .ti.okline .tic { color: var(--ok-fg); }
 .tree .rtree .ti.badline, .tree .rtree .ti.badline small { color: var(--err-fg); }
 .tree .rtree .stalebar { margin: 2px 8px; }
+
+/* 0.10.2: the pop-up card as the mock-ups draw it: a property sheet, a label and its value on one
+   line, small section heads, compact fields, Delete at the foot. Changes apply as they are typed. */
+.ipop { border-radius: 3px; }
+.ipop .insp { width: max(var(--insp-w, 300px), 320px); background: var(--bg2); }
+.ipop .insp header { padding: 6px 10px; background: var(--bg2); }
+.ipop .ibody { padding: 2px 0 10px; font-size: 12px; }
+.ipop .iprow { display: grid; grid-template-columns: 36% 1fr; align-items: center; column-gap: 8px; margin: 0; padding: 2px 10px; border-bottom: 1px solid var(--line2); min-height: 26px; }
+.ipop .iprow > label { margin: 0; font-size: 12px; color: var(--text2); display: flex; gap: 4px; align-items: baseline; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ipop .iprow > label .unit { font: 10px var(--mono); color: var(--muted); }
+.ipop .iprow > input, .ipop .iprow > select, .ipop .iprow > div > input, .ipop .iprow > div > select { height: 22px; font-size: 12px; padding: 0 5px; width: 100%; min-width: 0; }
+.ipop .iprow > span:not(.hint) { font-size: 12px; }
+.ipop .iprow .hint { grid-column: 1 / -1; font-size: 10.5px; color: var(--muted); line-height: 1.35; padding: 1px 0 3px; }
+.ipop .ibody h4 { margin: 10px 10px 2px; font-size: 9.5px; }
+.ipop .ibody .chk { padding: 3px 10px; margin: 0; border-bottom: 1px solid var(--line2); font-size: 12px; }
+.ipop .ibody table.kv { margin: 0; width: 100%; }
+.ipop .ibody table.kv td { padding: 3px 10px; border-bottom: 1px solid var(--line2); font-size: 12px; }
+.ipop .ibody > p, .ipop .ibody .muted.small { padding: 0 10px; }
+.ipop .ibody .ibtns { padding: 8px 10px 0; display: flex; justify-content: flex-end; gap: 6px; }
+.ipop .ibody table.kv tr td:first-child { padding-left: 10px; color: var(--text2); }
+.ipop .ibody table.kv tr td:last-child { padding-right: 10px; }
