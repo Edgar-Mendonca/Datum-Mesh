@@ -1,6 +1,7 @@
 // Frame results: drawn over the canvas (deflected shape, axial, shear and moment diagrams,
 // reactions, utilisation colours, a probe that follows the pointer, a legend). The Results page is
 // in resultspage.tsx. The engine computes every number.
+import { legendFolded, setLegendFolded } from "./store";
 import { For, Show, JSX, createMemo } from "solid-js";
 import { Pt, MemberResult, Model, FrameResults, num, clean } from "./api";
 import { solved, frameRes as results, stale, show, model, cursor, setView, modeOn, solvedFor } from "./store";
@@ -128,7 +129,7 @@ export const ResultsLegend = () => {
   const dmax = () => Math.max(0, ...(r()?.members.flatMap(mr => mr.d.map(d => Math.hypot(d[0], d[1]))) ?? [0]));
   return (
     <Show when={r() && m()?.analysis === "frame" && !modeOn()}>
-      <div class="legend">
+      <div class="legend rleg" classList={{ folded: legendFolded() }}><button class="lfold" title={legendFolded() ? "Show the legend" : "Fold the legend away"} onClick={() => setLegendFolded(!legendFolded())}>{legendFolded() ? "▸ Legend" : "▾"}</button>
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <Show when={diagInfo()}>{d => <div><b>{d().name}</b><span>max {fmt(d().q, clean(d().max, d().big))} · min {fmt(d().q, clean(d().min, d().big))}</span><small>{show().diagram === "m" ? "Drawn on the tension side." : "Positive drawn on the member's left side (looking from start to end); tension positive."}</small></div>}</Show>

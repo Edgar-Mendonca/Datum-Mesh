@@ -208,3 +208,6 @@ export const openMenu = (e: MouseEvent | { x: number; y: number }, items: Item[]
 export const [dialogs, setDialogs] = createSignal<(() => JSX.Element)[]>([]);
 export const openDialog = (d: () => JSX.Element) => setDialogs(v => [...v, d]);
 export const closeDialog = () => setDialogs(v => v.slice(0, -1));
+
+/** The results legend card folded to its head (0.10.2): it floats over the view. */
+export const [legendFolded, setLegendFolded] = createSignal(false);

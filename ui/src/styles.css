@@ -1388,3 +1388,39 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .tree .tres table td, .tree .tres table th { padding: 2px 4px; font-size: 11.5px; }
 .tree .tres table td.r, .tree .tres table td:last-child { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
 .tree .tres h4, .tree .tres b.rh { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+
+/* 0.10.2: the results legend as the mock-ups draw it: a dark card inside the view, top left, the
+   colour bands running up the side with their values, the result chosen at its head. */
+.center { position: relative; }
+.legend.rleg { position: absolute; left: 12px; top: 44px; z-index: 6; width: 236px; max-height: calc(100% - 120px); overflow: auto;
+  flex-direction: column; flex-wrap: nowrap; gap: 6px; padding: 9px 11px 10px; border: 0; border-radius: 3px;
+  background: rgba(17, 27, 38, .9); color: #E8EEF3; box-shadow: 0 4px 16px rgba(0, 0, 0, .25); font-size: 11.5px; }
+.legend.rleg > div, .legend.rleg > .lrow { width: 100%; }
+.legend.rleg b { color: #9FB0BF; }
+.legend.rleg small, .legend.rleg .muted { color: #A9B8C5; }
+.legend.rleg span { color: #E8EEF3; }
+.legend.rleg select, .legend.rleg .fpick { width: 100%; min-width: 0; background: #1E2C3A; color: #F1F5F8; border: 1px solid #3A4B5C; font: 600 12px var(--sans); }
+.legend.rleg .seg { background: #1E2C3A; border-color: #3A4B5C; }
+.legend.rleg .seg button { color: #CBD6DF; }
+.legend.rleg .seg button.on { background: #0F6E8C; color: #fff; }
+.legend.rleg label.chk { color: #E8EEF3; }
+.legend.rleg input[type=range] { width: 100%; }
+.legend.rleg .eqline { margin-left: 0; align-self: flex-start; color: #7FD3A8; font-size: 11px; }
+.legend.rleg .eqline.bad { color: #F2A07B; }
+.legend.rleg .lnk { color: #9CD3E3; margin-left: 4px; }
+.legend.rleg .stalebar { background: #4A3B12; color: #F7E2A8; padding: 4px 6px; border-radius: 2px; flex-wrap: wrap; }
+/* The bands, highest at the top, each value at its lower edge. */
+.legend.rleg .cbar { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; margin: 4px 0 8px; height: auto; overflow: visible; background: none; border-radius: 0; min-width: 0; }
+.legend.rleg .cbar .cb { display: flex; flex-direction: column-reverse; padding: 0 0 0 0; }
+.legend.rleg .cbar .cb i { width: 18px; height: 13px; }
+.legend.rleg .cbar .cb small, .legend.rleg .cbar .cb b small { top: auto; bottom: -6px; left: 24px; transform: none; color: #E8EEF3; font: 10.5px var(--mono); }
+.legend.rleg .cbar .cb b { height: 0; width: 18px; display: block; }
+.legend.rleg .cbar .cb b small { bottom: -6px; }
+.legend.rleg .cbar em { color: #A9B8C5; margin-left: 64px; }
+.legend.rleg .ukey { color: #E8EEF3; }
+
+.legend.rleg .lfold { position: absolute; top: 4px; right: 6px; width: auto !important; border: 0; background: none; color: #A9B8C5; font-size: 11px; padding: 0 2px; cursor: pointer; }
+.legend.rleg .lfold:hover { color: #fff; }
+.legend.rleg.folded { width: auto; padding: 4px 10px; }
+.legend.rleg.folded > :not(.lfold) { display: none; }
+.legend.rleg.folded .lfold { position: static; }

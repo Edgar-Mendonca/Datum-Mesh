@@ -379,7 +379,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("a part with edge temperatures shows Temperature among its stress results", (await p.$$eval(".legend .fpick option", os => os.map(o => o.value))).includes("t") && (await p.$eval(".legend .fpick", el => el.value)) === "vm");
   await p.selectOption(".legend .fpick", "t"); await p.waitForTimeout(150);
   check("the heated plate's temperatures run from 20 to 220 °C", (await p.textContent(".legend .cbar")).includes("°C") && (await p.textContent(".mm.max")).includes("220"));
-  await p.click(".canvas", { position: { x: 30, y: 400 } }); await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.click(".canvas", { position: { x: (await p.$eval(".canvas", el => el.clientWidth)) - 30, y: 400 } }); await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await modelCard(); check("the Inspector has the stress-free temperature", (await p.textContent(".insp")).includes("Stress-free temperature"));
   await stepHead(3); await p.click('.ribbon button[title^="A uniform change of temperature"]'); await p.waitForTimeout(150);
   const wl = (await ops()).reverse().find(o => o.Add && o.Add.item.Load && o.Add.item.Load.kind.kind === "warming");
@@ -1185,7 +1185,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.mouse.down({ button: "middle" }); await p.mouse.move(cv.x + cv.w / 2 + 80, cv.y + cv.h / 2 + 40, { steps: 4 }); await p.mouse.up({ button: "middle" }); await p.waitForTimeout(150);
   check("the moment diagram follows a pan (0.1.1 bug)", await startsAtMember());
   // (11) No rounding noise in the probe.
-  const mid = await p.$eval(`.mem[data-id="${pf.members[1].id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width * 0.3, r.top + r.height * 0.7]; });
+  const mid = await p.$eval(`.mem[data-id="${pf.members[1].id}"] line`, el => { const r = el.getBoundingClientRect(); return [r.left + r.width * 0.75, r.top + r.height * 0.25]; });
   await p.mouse.move(mid[0], mid[1]); await p.waitForTimeout(150);
   const probeText = (await p.$$(".probe")).length ? await p.textContent(".probe") : "";
   check("the probe shows no rounding noise", probeText.length > 0 && !/e-1\d/.test(probeText), probeText);
@@ -1527,6 +1527,10 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     check("the tree's counts are plain grey numbers on the right, the ? and + only under the pointer", await p.$eval(".tree .tgrp summary .pill", el => getComputedStyle(el).borderTopStyle === "none") && await p.$eval(".tree .tgrp summary .help", el => getComputedStyle(el).display === "none"));
     await p.keyboard.press("F5"); await p.waitForTimeout(400);
     check("a finished solve opens the tree's Results tab (0.10.2, the mock-ups)", (await p.textContent(".tree .ttabs button.on")) === "Results");
+    check("the results legend is a dark card floating in the view (0.10.2, the mock-ups)", await p.$eval(".legend.rleg", el => getComputedStyle(el).position === "absolute" && el.closest(".center") !== null));
+    await p.click(".legend.rleg .lfold"); await p.waitForTimeout(80);
+    check("…that folds to one line and opens again", await p.$eval(".legend.rleg", el => el.classList.contains("folded") && el.offsetHeight < 40));
+    await p.click(".legend.rleg .lfold"); await p.waitForTimeout(80);
     await p.click('.tabs > button:text-is("Geometry")'); await p.waitForTimeout(100);
     await p.click('.ribbon button:has-text("Nodes & Members")'); await p.waitForTimeout(400);
     check("Geometry › Nodes & Members opens the Tables in the bottom panel, a row for each node and member (0.10.2)", (await p.$$('.ttab[data-table="nodes"] tbody tr')).length === pm.nodes.length && (await p.$$('.ttab[data-table="members"] tbody tr')).length === pm.members.length && (await p.textContent(".console header button.on")) === "Tables");

@@ -3,6 +3,7 @@
 // paths built once in model coordinates and redrawn with one transform on pan and zoom. Also the
 // deformed shape, mesh lines, min/max markers, a probe that reads any point, the legend, the
 // results tables and the mesh statistics. The engine computes every value; this only draws them.
+import { legendFolded, setLegendFolded } from "./store";
 import { For, Show, createMemo, createEffect } from "solid-js";
 import { Pt, Mesh, PartResults, PlaneResults, HeatResults, Field, Model, num, clean } from "./api";
 import { model, partRes, solidRes, show, setShow, stale, cursor, opts, meshed, meshStale, view, setView, themeTick, setSel, modes, modeSel, modeOn, phase, modesStale, solvedFor } from "./store";
@@ -348,7 +349,7 @@ export const PartLegend = () => {
   const d = () => curField();
   return (
     <Show when={r() && view() !== "mesh" && !modeOn()}>
-      <div class="legend">
+      <div class="legend rleg" classList={{ folded: legendFolded() }}><button class="lfold" title={legendFolded() ? "Show the legend" : "Fold the legend away"} onClick={() => setLegendFolded(!legendFolded())}>{legendFolded() ? "▸ Legend" : "▾"}</button>
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={() => import("./cmds").then(c => c.C.solve())}>Solve again (F5)</button></div></Show>
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div class="lrow">

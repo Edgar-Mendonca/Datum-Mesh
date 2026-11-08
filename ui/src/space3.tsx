@@ -1,6 +1,7 @@
 // 3D frames without three.js (0.2.6): what the members are coloured by, the deflection scale, the
 // legend under the 3D view and the plane bar over it. The 3D view itself (view3d.tsx, with
 // three.js) is loaded only when a 3D frame is open, so the window starts light.
+import { legendFolded, setLegendFolded } from "./store";
 import { showMesh } from "./study";
 import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Model, SpaceMember, SpaceResults, num, isSolidA, solidDisp } from "./api";
@@ -63,7 +64,7 @@ export const SpaceLegend = () => {
   const cols = () => palette(opts().contours);
   return (
     <Show when={r() && m()}>
-      <div class="legend">
+      <div class="legend rleg" classList={{ folded: legendFolded() }}><button class="lfold" title={legendFolded() ? "Show the legend" : "Fold the legend away"} onClick={() => setLegendFolded(!legendFolded())}>{legendFolded() ? "▸ Legend" : "▾"}</button>
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div><b>Colour by</b><select class="fpick" value={q3()} onChange={e => setQ3(e.currentTarget.value as Q3)}>{Q3S.map(([k, l]) => <option value={k} selected={k === q3()}>{l}</option>)}</select></div>
@@ -132,7 +133,7 @@ export const SolidLegend = () => {
   const hot = () => r()?.kind === "solidheat";
   return (
     <Show when={r() && isSolidA(model()?.analysis)}>
-      <div class="legend">
+      <div class="legend rleg" classList={{ folded: legendFolded() }}><button class="lfold" title={legendFolded() ? "Show the legend" : "Fold the legend away"} onClick={() => setLegendFolded(!legendFolded())}>{legendFolded() ? "▸ Legend" : "▾"}</button>
         <Show when={stale()}><div class="stalebar"><Icon n="info" /> The model changed since it was solved. <button class="btn sm pri" onClick={C.solve}>Solve again (F5)</button></div></Show>
         <Show when={solvedFor()}><div><b>Load case</b><span>{solvedFor()}</span></div></Show>
         <div><b>Result</b><select class="fpick" value={fd().key} onChange={e => C.show({ field: e.currentTarget.value })}>{fieldsFor(r()!.kind).map(f => <option value={f.key} selected={f.key === fd().key}>{f.name}</option>)}</select>
