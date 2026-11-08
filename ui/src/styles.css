@@ -1621,3 +1621,21 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .cprev { border-left: 1px solid var(--line); padding-left: 16px; max-height: 420px; overflow: auto; }
 .cprev .pill { font: 500 10px var(--mono); border: 1px solid var(--line); border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
 .crule .tbl input.fac { width: 56px; }
+
+/* 0.10.3: mesh statistics */
+.mstats { height: 100%; overflow: auto; padding: 6px 12px 10px; box-sizing: border-box; }
+.msgrid { display: grid; grid-template-columns: minmax(330px, 1.1fr) minmax(0, 1.4fr) minmax(0, 1.1fr); gap: 18px; }
+.msgrid section:first-child .ttab td { white-space: normal; }
+.msgrid h4 { margin: 2px 0 6px; font: 500 10.5px var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.badge.q0 { color: #1F7A4D; border-color: #9FD3B6; background: #EEF8F2; }
+.badge.q1 { color: #6B6F00; border-color: #D9D58A; background: #FBFAE6; }
+.badge.q2 { color: #8A5A00; border-color: #E7C77A; background: #FFF6DF; }
+.badge.q3 { color: #B3261E; border-color: #E6A19C; background: #FCEEEE; }
+
+/* 0.10.3: status badges in words: model, solve, balance kept apart */
+.sbadges { display: inline-flex; gap: 6px; margin-right: 12px; }
+.sb { display: inline-flex; align-items: center; gap: 5px; font: 500 10.5px var(--mono); padding: 1px 6px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); background: var(--panel); }
+.sb b { font-weight: 500; letter-spacing: .05em; text-transform: uppercase; font-size: 9.5px; opacity: .75; }
+.sb.ok { color: #1F7A4D; border-color: #9FD3B6; }
+.sb.warn { color: #8A5A00; border-color: #E7C77A; }
+.sb.bad { color: #B3261E; border-color: #E6A19C; }

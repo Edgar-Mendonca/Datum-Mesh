@@ -299,7 +299,7 @@ export const Tree = () => {
           <Show when={heat()}><Row2 icon="solve" label="Steady heat conduction" sub="one solve" /></Show>
           <Show when={!heat()}><Branch t="Steps" icon="list" n={(mm().steps ?? []).length || undefined} help="steps">
             <Show when={(mm().steps ?? []).length} fallback={<Row2 icon="solve" label="Static, linear" sub="one solve" run={stepsDialog} />}>
-              <For each={mm().steps!}>{(s, i) => <Row2 icon={s.kind === "spectrum" || s.kind === "history" ? "wave" : s.kind === "linear" ? "solve" : "curve"} label={s.name || `Step ${i() + 1}`} sub={`${STEP_NAME[s.kind] ?? s.kind}${s.kind === "newton" || s.kind === "arc" || s.kind === "large" || s.kind === "largeplastic" ? ` · ${plural(s.increments, "increment")}` : ""}`} run={stepsDialog} />}</For></Show></Branch></Show>
+              <For each={mm().steps!}>{(s, i) => <Row2 icon={({ linear: "st-linear", newton: "st-newton", arc: "st-arc", spectrum: "st-spectrum", history: "st-history", large: "st-newton", largeplastic: "st-arc", explicit: "st-history" } as Record<string, string>)[s.kind] ?? "curve"} label={s.name || `Step ${i() + 1}`} sub={`${STEP_NAME[s.kind] ?? s.kind}${s.kind === "newton" || s.kind === "arc" || s.kind === "large" || s.kind === "largeplastic" ? ` · ${plural(s.increments, "increment")}` : ""}`} run={stepsDialog} />}</For></Show></Branch></Show>
           </Step>
           <Step n={6} t={fs()[5].t} done={fs()[5].done} why={fs()[5].why}>
           <Branch t="Results" icon="contour" help="results" mark={results() ? { ok: !stale(), why: "The model changed since it was solved: solve again (F5)" } : null}>

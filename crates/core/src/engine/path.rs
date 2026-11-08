@@ -41,11 +41,26 @@ pub struct Control {
     pub max_iter: usize,
     /// Arc length: the most increments before giving up on reaching λ = 1.
     pub max_increments: usize,
+    /// The smallest increment, as a share of the first, before the solve stops (0.10.3).
+    pub min_step: f64,
+    /// Grow the increment again after an easy one (few iterations) (0.10.3).
+    pub grow: bool,
 }
 
 impl Default for Control {
     fn default() -> Self {
-        Control { increments: 10, arc: false, tol: 1e-8, max_iter: 30, max_increments: 400 }
+        Control { increments: 10, arc: false, tol: 1e-8, max_iter: 30, max_increments: 400, min_step: 1e-4, grow: true }
+    }
+}
+
+impl Control {
+    /// The control for a step: its kind and increments, and the user's solver settings (0.10.3).
+    pub fn for_step(increments: usize, arc: bool, s: Option<&crate::model::SolverSettings>) -> Control {
+        let d = Control { increments, arc, ..Default::default() };
+        match s {
+            None => d,
+            Some(s) => Control { tol: s.tol, max_iter: s.max_iter as usize, max_increments: s.max_increments as usize, min_step: s.min_step, grow: s.grow, ..d },
+        }
     }
 }
 
@@ -159,14 +174,14 @@ fn newton(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, 
                 path.iterations += it;
                 crate::progress::converged(lambda, it);
                 path.points.push(Point { lambda, u: u.clone(), iterations: it, stable });
-                if it <= 4 {
+                if ctl.grow && it <= 4 {
                     step = (step * 1.5).min(first);
                 }
             }
             None => {
                 step /= 2.0;
                 crate::progress::cut((lambda + step).min(1.0), format!("it did not converge in {} iterations; the increment is halved", ctl.max_iter));
-                if step < first * 1e-4 {
+                if step < first * ctl.min_step {
                     let last = path.points.last().map_or(0.0, |x| x.lambda);
                     path.note = Some(format!("The solution stopped at {:.1} % of the load: it would not converge beyond. The structure may have reached its limit load (snap-through or collapse); try arc length to follow it further.", last * 100.0));
                     return Ok(());
@@ -285,7 +300,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
             None => {
                 dl /= 2.0;
                 crate::progress::cut(lambda, format!("it did not converge in {} iterations; the arc length is halved", ctl.max_iter));
-                if dl < dl0 * 1e-5 {
+                if dl < dl0 * ctl.min_step * 0.1 {
                     path.note = Some(format!("The arc-length solution would not converge beyond a load factor of {:.3}.", lambda));
                     return Ok(());
                 }
@@ -346,6 +361,28 @@ mod tests {
             let fd = (m.force(w + d).0 - m.force(w - d).0) / (2.0 * d);
             assert!((fd - m.force(w).1).abs() < 1e-5 * fd.abs().max(1.0), "{w}: {fd} {}", m.force(w).1);
         }
+    }
+
+    #[test]
+    fn solver_settings_change_how_the_path_is_followed() {
+        // 0.10.3: the user's settings reach the solver. Half the limit load, well within reach.
+        let m = Mises { a: 1.0, h: 0.1, ea: 1e6, held: vec![false] };
+        let top = (0..=10_000).map(|i| m.force(0.1 * i as f64 / 10_000.0).0).fold(0.0, f64::max);
+        let pl = 0.5 * top;
+        let s = |tol: f64, max_iter: u32, min_step: f64, grow: bool| crate::model::SolverSettings { tol, max_iter, max_increments: 400, min_step, grow };
+        let usual = follow(&m, &[0.0], &[pl], &[0.0], &Control::for_step(4, false, None)).unwrap();
+        assert!(usual.reached);
+        // A tighter tolerance takes at least as many iterations and still balances.
+        let tight = follow(&m, &[0.0], &[pl], &[0.0], &Control::for_step(4, false, Some(&s(1e-13, 30, 1e-4, true)))).unwrap();
+        assert!(tight.reached && tight.iterations >= usual.iterations);
+        let last = tight.points.last().unwrap();
+        assert!((m.force(last.u[0]).0 - pl).abs() < 1e-9 * pl);
+        // One iteration allowed and no cutting below half the first increment: it stops, and says why.
+        let stuck = follow(&m, &[0.0], &[pl], &[0.0], &Control::for_step(1, false, Some(&s(1e-12, 1, 0.5, true)))).unwrap();
+        assert!(!stuck.reached && stuck.note.is_some());
+        // Increments not grown: exactly the four asked for when each converges.
+        let even = follow(&m, &[0.0], &[pl], &[0.0], &Control::for_step(4, false, Some(&s(1e-8, 30, 1e-4, false)))).unwrap();
+        assert!(even.reached && even.points.len() == 5, "{}", even.points.len());
     }
 
     #[test]

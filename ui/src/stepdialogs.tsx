@@ -85,6 +85,23 @@ export const stepsDialog = () => openDialog(() => {
           <td><button class="x" title="Delete this step" onClick={() => act({ Delete: { ids: [s.id] } })}>×</button></td>
         </tr>}</For></tbody></table>
     </Show>
+    {/* 0.10.3: solver settings of each large-deflection step (frames), typed by the user. */}
+    <For each={sts().filter(s => !part() && (s.kind === "newton" || s.kind === "arc"))}>{s => {
+      const S = { tol: 1e-8, max_iter: 30, max_increments: 400, min_step: 1e-4, grow: true };
+      const cur = () => s.solver ?? S;
+      const put = (ch: Partial<typeof S>) => set(s, { solver: { ...cur(), ...ch } });
+      return <div class="dynset solverset" data-step={s.id}>
+        <h4>{s.name}: solver settings <Show when={s.solver}><button class="lnk small" onClick={() => set(s, { solver: null })}>back to the usual ones</button></Show></h4>
+        <div class="dyngrid">
+          <label title="An increment has converged when the out-of-balance force is this share of the load">Tolerance<input class="mono fac" value={String(cur().tol)} onChange={numIn(v => v > 0 && v < 1 && put({ tol: v }), () => String(cur().tol))} /></label>
+          <label title="If an increment has not converged after this many iterations, it is halved">Iterations per increment<input class="mono fac" value={cur().max_iter} onChange={numIn(v => v >= 1 && v <= 1000 && put({ max_iter: Math.round(v) }), () => String(cur().max_iter))} /></label>
+          <label title="The smallest increment, as a share of the first, before the solve stops and says where">Smallest increment<input class="mono fac" value={String(cur().min_step)} onChange={numIn(v => v > 0 && v <= 1 && put({ min_step: v }), () => String(cur().min_step))} /><span class="unit">of the first</span></label>
+          <Show when={s.kind === "arc"}><label title="Past limit loads: the most increments before giving up on reaching the full load">Most increments<input class="mono fac" value={cur().max_increments} onChange={numIn(v => v >= 1 && put({ max_increments: Math.round(v) }), () => String(cur().max_increments))} /></label></Show>
+          <label class="chk"><input type="checkbox" checked={cur().grow} onChange={e => put({ grow: e.currentTarget.checked })} />Grow the increment again after an easy one</label>
+        </div>
+        <p class="muted small">{s.solver ? "Your own settings." : "The usual settings, which suit most frames."} Elastic-plastic and large-deformation steps of parts and solids keep their own for now.</p>
+      </div>;
+    }}</For>
     <For each={sts().filter(s => s.kind === "explicit")}>{s => <div class="dynset">
       <h4>{s.name}: explicit dynamics</h4>
       <div class="dyngrid">

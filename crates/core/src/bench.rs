@@ -2851,6 +2851,104 @@ fn member_loads() -> Vec<Check> {
     out
 }
 
+/// Benchmark 39 (0.10.3): rows asked for by the structural specification, each against a hand
+/// formula: an axial bar, a fixed–fixed beam whose end moves, a force on an arm, a round shaft in
+/// torsion, CQC with close and far modes, and a tube's volume.
+fn spec_rows() -> Vec<Check> {
+    let mut out = vec![];
+    let (e, b, h) = (200e9, 0.05, 0.1f64);
+    let (a, i) = (b * h, b * h.powi(3) / 12.0);
+    let src = "Mechanics of materials";
+    // An axial bar: P along a 3 m bar fixed at one end: δ = PL/EA, N = P, σ = P/A.
+    {
+        let (l, p) = (3.0, 100e3);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: p, fy: 0.0, fz: 0.0 });
+        let r = frame::solve(&d.m).expect("solves");
+        let ti = d.m.nodes.iter().position(|n| n.id == tip).unwrap();
+        out.push(check(39, "Axial bar, 100 kN on 3 m", "Extension PL/EA", "len", p * l / (e * a), r.disp[ti][0], 1e-9, src));
+        out.push(check(39, "Axial bar, 100 kN on 3 m", "Axial force P (tension)", "force", p, r.members[0].n[0], 1e-9, src));
+        out.push(check(39, "Axial bar, 100 kN on 3 m", "Stress P/A", "stress", p / a, r.members[0].stress, 1e-9, src));
+    }
+    // A fixed–fixed beam whose right end sinks δ: end moments 6EIδ/L², end shears 12EIδ/L³.
+    {
+        let (l, dl) = (6.0, -0.01);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        support(&mut d, l, 0.0, SupportKind::Fixed);
+        let end = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: end }, LoadKind::Settlement { dx: 0.0, dy: dl, dz: 0.0 });
+        let r = frame::solve(&d.m).expect("solves");
+        let left = r.reactions.iter().find(|x| x.node == node(&d, 0.0, 0.0)).unwrap();
+        let src = "Beam theory: slope–deflection, a support moved";
+        out.push(check(39, "Fixed–fixed beam, one end sinks 10 mm", "End moment 6EIδ/L²", "moment", 6.0 * e * i * dl.abs() / (l * l), left.m.abs(), 1e-9, src));
+        out.push(check(39, "Fixed–fixed beam, one end sinks 10 mm", "End shear 12EIδ/L³", "force", 12.0 * e * i * dl.abs() / l.powi(3), left.fy.abs(), 1e-9, src));
+    }
+    // A force on an arm: a cantilever 4 m along x, an arm 1 m up at its tip, 10 kN along x at the
+    // arm's end: the root takes −F and the moment F·e, and the cantilever carries N = F.
+    {
+        let (l, ea, f) = (4.0, 1.0, 10e3);
+        let mut d = frame(e, SectionShape::Rect { b, h });
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        member(&mut d, [l, 0.0], [l, ea], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let top = node(&d, l, ea);
+        load(&mut d, Target::Node { id: top }, LoadKind::Force { fx: f, fy: 0.0, fz: 0.0 });
+        let r = frame::solve(&d.m).expect("solves");
+        let root = r.reactions.iter().find(|x| x.node == node(&d, 0.0, 0.0)).unwrap();
+        let src = "Statics: a force moved to a point is the force and its moment, M = F·e";
+        out.push(check(39, "Force of 10 kN on a 1 m arm at a cantilever's tip", "Root moment F·e", "moment", f * ea, root.m.abs(), 1e-9, src));
+        out.push(check(39, "Force of 10 kN on a 1 m arm at a cantilever's tip", "Root reaction along x, F", "force", f, root.fx.abs(), 1e-9, src));
+        out.push(check(39, "Force of 10 kN on a 1 m arm at a cantilever's tip", "Axial force in the cantilever, F", "force", f, r.members[0].n[0].abs(), 1e-9, src));
+    }
+    // A round shaft 50 mm across, 1 m long, twisted by 1 kN·m: θ = TL/GJ, J = πd⁴/32.
+    {
+        let (d0, l, t) = (0.05f64, 1.0, 1e3);
+        let jp = std::f64::consts::PI * d0.powi(4) / 32.0;
+        let g = e / (2.0 * (1.0 + Material::steel(1).nu));
+        let pr = crate::sections::props(&SectionShape::Circle { d: d0 }).unwrap();
+        out.push(check(39, "Round shaft 50 mm across", "Torsion constant J = πd⁴/32", "ratio", jp, pr.j, 1e-12, src));
+        let mut d = space_frame(e, SectionShape::Circle { d: d0 });
+        member3(&mut d, [0.0; 3], [l, 0.0, 0.0], MemberKind::Beam);
+        support3(&mut d, [0.0; 3], SupportKind::Fixed);
+        let id = node3(&d, [l, 0.0, 0.0]);
+        load(&mut d, Target::Node { id }, LoadKind::Moment { m: 0.0, mx: t, my: 0.0 });
+        let r = crate::space::solve(&d.m).expect("space");
+        out.push(check(39, "Round shaft 50 mm across, 1 kN·m on 1 m", "Twist TL/GJ", "rad", t * l / (g * jp), r.disp[1][3], 1e-9, src));
+        out.push(check(39, "Round shaft 50 mm across, 1 kN·m on 1 m", "Root torque T", "moment", t, r.reactions[0].f[3].abs(), 1e-9, "Statics"));
+    }
+    // CQC (Der Kiureghian 1981): two modes at the same frequency are fully correlated, so
+    // their peaks add; far apart they are not, and CQC falls to SRSS; between, the closed form.
+    {
+        use crate::engine::dynamics::{combine, cqc};
+        let src = "Der Kiureghian (1981), the CQC correlation of two modes";
+        let z = 0.05;
+        out.push(check(39, "CQC, two modes at the same frequency", "Correlation ρ = 1", "ratio", 1.0, cqc(10.0, 10.0, z), 1e-12, src));
+        let rho = |w2: f64| vec![vec![1.0, cqc(10.0, w2, z)], vec![cqc(w2, 10.0, z), 1.0]];
+        out.push(check(39, "CQC, two modes at the same frequency, values 3 and 4", "Combined 3 + 4", "ratio", 7.0, combine(&[3.0, 4.0], &rho(10.0)), 1e-12, src));
+        out.push(check(39, "CQC, modes 1 : 20 apart, values 3 and 4", "Combined as SRSS, √(3² + 4²)", "ratio", 5.0, combine(&[3.0, 4.0], &rho(200.0)), 2e-3, src));
+        // Frequency ratio 0.9 and 5 % damping, the closed form worked by hand:
+        // 8·0.05²·1.9·0.9^1.5 / ((1 − 0.81)² + 4·0.05²·0.9·1.9²) = 0.0324446 / 0.068590 = 0.473024.
+        let hand = 8.0 * 0.0025 * 1.9 * 0.9f64.powf(1.5) / (0.19f64.powi(2) + 4.0 * 0.0025 * 0.9 * 3.61);
+        out.push(check(39, "CQC, frequency ratio 0.9, 5 % damping", "Correlation ρ ≈ 0.473", "ratio", hand, cqc(10.0, 9.0, z), 1e-12, src));
+    }
+    // A tube: a ring of R = 50 mm and r = 40 mm extruded 0.5 m: π(R² − r²)L.
+    {
+        let mut d = Doc::new(Model::new(Analysis::Solid));
+        let pid = add_id(&mut d, Item::Part(crate::model::Part { depth: 0.5, ..Default::default() }));
+        let mat = d.m.materials[0].id;
+        add_id(&mut d, Item::Shape(Shape { geom: Geom::Circle { c: [0.0, 0.0], r: 0.05 }, material: mat, part: pid, ..Default::default() }));
+        add_id(&mut d, Item::Shape(Shape { geom: Geom::Circle { c: [0.0, 0.0], r: 0.04 }, material: mat, part: pid, hole: true, ..Default::default() }));
+        let want = std::f64::consts::PI * (0.05f64.powi(2) - 0.04f64.powi(2)) * 0.5;
+        out.push(check(39, "Tube R = 50 mm, r = 40 mm, 0.5 m long", "Volume π(R² − r²)L", "ratio", want, crate::solids::modelling::volume(&d.m, pid).unwrap_or(0.0), 1e-12, "Volume of a prism: area × depth"));
+    }
+    out
+}
+
 pub fn run() -> Vec<Check> {
     let mut v = cantilever();
     v.extend(simply_supported());
@@ -2890,11 +2988,19 @@ pub fn run() -> Vec<Check> {
     v.extend(contact());
     v.extend(explicit());
     v.extend(member_loads());
+    v.extend(spec_rows());
     v
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn spec_rows_on_their_own() {
+        for r in super::spec_rows() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
     #[test]
     fn member_loads_on_their_own() {
         for r in super::member_loads() {

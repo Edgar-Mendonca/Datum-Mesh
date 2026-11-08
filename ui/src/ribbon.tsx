@@ -443,12 +443,13 @@ export const Ribbon = () => {
           <G l="Mesh" h="mesh"><B big i="mesh" l="Mesh" run={() => meshSolids()} off={solving()} title="Fill the solids with 10-node tetrahedra (Gmsh); made again by itself when the solids change" />
             <S><B i="mesh" l="Element Size" dd={sizeMenu} /><B i="view" l="Show Elements" on={show().mesh} run={() => C.show({ mesh: !show().mesh })} title="Draw the elements' edges on the solid" /><T i="refine" l="Finer Near a Face" t="refine" title="Click a face to mesh finer near it (a quarter of the element size there; change it in the tree under Mesh); click it again to take it off" /></S></G>
           <G l="Elements" h="elements"><div class="rnote">10-node tetrahedra (quadratic): accurate for stress in any shape.</div></G>
+          <G l="Quality" h="mesh"><B big i="table" l="Mesh Statistics" run={() => import("./console").then(k => k.showTables())} title="The mesh's elements, sizes and shapes, and its worst elements, in a table under the view" /></G>
         </Show>
         <Show when={!frame() && !hasSolids()} fallback={<Show when={frame()}><G l="Mesh" h="mesh"><div class="rnote">Frames and trusses are not meshed: each member is one exact element. Meshing is for parts.</div></G></Show>}>
           <G l="Mesh" h="mesh"><B big i="mesh" l="Mesh" run={C.mesh} off={solving()} title="Mesh the part and show it" />
             <S><B i="mesh" l="Element Size" dd={sizeMenu} /><T i="refine" l="Refine Near" t="refine" title="Click an edge or a point: elements a quarter of the size there" /><B i="view" l="Show the Mesh" on={view() === "mesh"} run={() => view() === "mesh" ? setView("model") : C.mesh()} title="Show the elements (the mesh view), or go back to the part" /></S></G>
           <G l="Elements" h="elements"><S><B i="tri6" l="Quadratic (6-node)" on={m()?.mesh.order === 2} run={() => C.meshSettings({ order: 2 })} /><B i="tri3" l="Linear (3-node)" on={m()?.mesh.order === 1} run={() => C.meshSettings({ order: 1 })} /></S></G>
-          <G l="Quality" h="mesh"><S><B i="quality" l="Colour by Quality" on={show().quality && view() === "mesh"} run={() => { C.show({ quality: view() !== "mesh" || !show().quality }); if (view() !== "mesh") C.mesh(); }} /><B i="table" l="Statistics" run={() => C.mesh()} /></S></G>
+          <G l="Quality" h="mesh"><S><B i="quality" l="Colour by Quality" on={show().quality && view() === "mesh"} run={() => { C.show({ quality: view() !== "mesh" || !show().quality }); if (view() !== "mesh") C.mesh(); }} /><B i="table" l="Mesh Statistics" run={() => import("./console").then(k => k.showTables())} title="The mesh's elements, sizes and shapes, and its worst elements, in a table under the view" /></S></G>
         </Show>
       </Show>
       <Show when={tab() === "loads"}>

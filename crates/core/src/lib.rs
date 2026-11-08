@@ -44,6 +44,9 @@ pub enum Results {
 /// kind for the window.
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
+// One per solve, sent straight to the window: its size does not matter (0.10.3: a mesh's
+// statistics made the part variant bigger).
+#[allow(clippy::large_enum_variant)]
 pub enum Modes {
     Frame(frame::FrameModes),
     Plane(plane::PartModes),

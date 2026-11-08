@@ -49,7 +49,9 @@ export interface Combo { id: number; name: string; parts: { case: number; f: num
 export type Which = { on: "case"; id: number } | { on: "combo"; id: number };
 /** An analysis step (0.4.0). */
 export type StepKind = "linear" | "newton" | "arc" | "spectrum" | "history" | "large" | "largeplastic" | "explicit";
-export interface Step { id: number; name: string; kind: StepKind; load: Which | null; factor: number; increments: number; pieces: number; monitor: number | null; along: [number, number, number]; spectrum: [number, number][]; damping: number; modes: number; cqc: boolean; time: [number, number][]; ground: boolean; dt: number; duration: number }
+/** A nonlinear step's solver settings (0.10.3). */
+export interface SolverSettings { tol: number; max_iter: number; max_increments: number; min_step: number; grow: boolean }
+export interface Step { solver?: SolverSettings | null; id: number; name: string; kind: StepKind; load: Which | null; factor: number; increments: number; pieces: number; monitor: number | null; along: [number, number, number]; spectrum: [number, number][]; damping: number; modes: number; cqc: boolean; time: [number, number][]; ground: boolean; dt: number; duration: number }
 /** A dynamic solution (0.4.2): a spectrum's modes, or a time history's record. */
 export interface ModeRow { f: number; period: number; sa: number; gamma: number; mass: number; share: number }
 export interface DynInfo { kind: "spectrum" | "history"; modes: ModeRow[]; total_mass: number; share: number; combined: string; node: number; t: number[]; ux: number[]; uy: number[]; uz: number[]; peak_t: number; peak: number[]; steps: number; notes: string[] }
@@ -60,7 +62,7 @@ export interface LibSection { name: string; family: string; shape: SectionShape;
 export interface MeshSettings { size: number; order: number; min_angle: number; refine: { at: Target; size: number }[]; layers?: number }
 /** An imported tetrahedral mesh as the window gets it (0.5.5): its outer surface, the face of each
  * drawn triangle, and its faces' names and sizes (the mesh itself stays in the engine). */
-export interface VolPreview { order: number; elements: number; nodes: number; material: number; source: string; faces: { name: string; facets: number; area: number }[]; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; tface: number[] }
+export interface VolPreview { order: number; elements: number; nodes: number; material: number; source: string; faces: { name: string; facets: number; area: number }[]; surface: { nodes: P3[]; tris: [number, number, number][]; lines: [number, number][] }; tface: number[]; quality?: Quality }
 export interface Model {
   format: number; name: string; notes: string; analysis: Analysis; units: "SI" | "US"; grid: number; thickness: number; t_ref: number; revolve?: number; rigid_floors?: boolean; study?: string; volume?: VolPreview; parts?: Part[]; contacts?: Contact[]; assembly?: VolPreview & { targets: (Target | null)[]; face_part: number[]; ties: number }; assembly_error?: string; /** Each part's exact volume, m³ (0.6.3). */ part_volume?: Record<string, number>; cases?: Case[]; combos?: Combo[]; combo_rule?: ComboRule; steps?: Step[];
   nodes: Node[]; members: Member[]; shapes: Shape[]; sections: Section[]; materials: Material[]; supports: Support[]; loads: Load[];
@@ -105,7 +107,8 @@ export interface Check { bench: number; name: string; quantity: string; q: strin
 
 // Parts: the mesh, nodal and element fields, and the results of plane stress, strain and heat.
 export interface BEdge { shape: number; edge: number; n: [number, number, number] }
-export interface Quality { min_angle: number; max_aspect: number; good: number }
+export interface Quality { min_angle: number; max_aspect: number; good: number;
+  /** Mesh statistics (0.10.3). */ elements?: number; angle_bands?: number[]; aspect_bands?: number[]; edges?: [number, number, number]; worst?: { element: number; at: [number, number, number]; angle: number; aspect: number }[] }
 export interface Mesh { nodes: Pt[]; tris: number[][]; order: number; mat: number[]; edges: BEdge[]; points: [Pt, number][]; size: number; quality: Quality }
 export interface Field { key: string; v: number[]; min: number; max: number; at_min: Pt; at_max: Pt }
 export interface PlaneReaction { support: number; fx: number; fy: number }

@@ -1774,6 +1774,8 @@ pub struct Preview {
     pub faces: Vec<FacePreview>,
     pub surface: Surface,
     pub tface: Vec<u32>,
+    /// The mesh's quality and statistics (0.10.3).
+    pub quality: Quality,
 }
 #[derive(Serialize)]
 pub struct FacePreview {
@@ -1785,7 +1787,7 @@ pub struct FacePreview {
 pub fn preview(ms: &TetMesh) -> Preview {
     let (surface, _, tface) = surface_faces(ms);
     let faces = ms.faces.iter().map(|f| FacePreview { name: f.name.clone(), facets: f.facets.len(), area: f.facets.iter().flat_map(|&(e, k)| facet_points(ms, e as usize, k as usize)).map(|(_, nv, _)| dot(nv, nv).sqrt()).sum() }).collect();
-    Preview { order: ms.order, elements: ms.tets.len(), nodes: ms.nodes.len(), material: ms.material, source: ms.source.clone(), faces, surface, tface }
+    Preview { order: ms.order, elements: ms.tets.len(), nodes: ms.nodes.len(), material: ms.material, source: ms.source.clone(), faces, surface, tface, quality: quality(ms) }
 }
 
 /// The model as the window gets it: an imported mesh replaced by its preview.
@@ -1839,8 +1841,8 @@ pub fn mean_edge(ms: &TetMesh) -> f64 {
 /// element, the largest ratio of longest edge to the height a regular element would need, and the
 /// share of elements with every face angle over 30°.
 fn quality(ms: &TetMesh) -> Quality {
-    let (mut min_angle, mut max_aspect, mut good) = (180.0f64, 1.0f64, 0usize);
-    for el in &ms.tets {
+    let mut acc = super::mesh::QualityAcc::new();
+    for (e, el) in ms.tets.iter().enumerate() {
         let p = |i: usize| ms.nodes[el[i] as usize];
         let mut worst = 180.0f64;
         for f in FACES {
@@ -1851,15 +1853,15 @@ fn quality(ms: &TetMesh) -> Quality {
                 worst = worst.min(cosv.clamp(-1.0, 1.0).acos().to_degrees());
             }
         }
-        min_angle = min_angle.min(worst);
-        good += (worst > 30.0) as usize;
-        let lmax = EDGES.iter().map(|&(a, b)| { let d = sub(p(a), p(b)); dot(d, d).sqrt() }).fold(0.0, f64::max);
+        let ls: Vec<f64> = EDGES.iter().map(|&(a, b)| { let d = sub(p(a), p(b)); dot(d, d).sqrt() }).collect();
+        let lmax = ls.iter().copied().fold(0.0, f64::max);
         let v = dot(cross(sub(p(1), p(0)), sub(p(2), p(0))), sub(p(3), p(0))).abs() / 6.0;
         // A regular tetrahedron of edge l has volume l³/(6√2).
         let ideal = lmax.powi(3) / (6.0 * 2f64.sqrt());
-        max_aspect = max_aspect.max((ideal / v.max(1e-300)).cbrt());
+        let at = [0, 1, 2].map(|k| (p(0)[k] + p(1)[k] + p(2)[k] + p(3)[k]) / 4.0);
+        acc.add(e, worst, (ideal / v.max(1e-300)).cbrt(), at, &ls);
     }
-    Quality { min_angle, max_aspect, good: good as f64 / ms.tets.len().max(1) as f64 }
+    acc.done()
 }
 
 #[cfg(test)]

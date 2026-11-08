@@ -25,6 +25,7 @@ const [tab, setTab] = createSignal<"messages" | "solver" | "log" | "tables" | "g
 const [open, setOpen] = createSignal(false);
 /** The Tables (0.10.2): loaded when first opened. */
 const FrameTables = lazy(() => import("./tables").then(k => ({ default: k.FrameTables })));
+const MeshStats = lazy(() => import("./meshstats").then(k => ({ default: k.MeshStats })));
 const CheckPanel = lazy(() => import("./frameedit").then(k => ({ default: k.CheckPanel })));
 const GraphsPanel = lazy(() => import("./graphspanel").then(k => ({ default: k.GraphsPanel })));
 /** Opens the bottom panel on its Tables (Geometry › Nodes and Members). */
@@ -157,7 +158,8 @@ export const Console = () => {
       <T t="log">Log</T>
       <Show when={isFrame(model()?.analysis)}><T t="tables">Tables</T><T t="check">Model check</T></Show>
       <Show when={(results() as { dynamic?: { kind: string } } | null)?.dynamic?.kind === "history"}><T t="graphs">Graphs</T></Show>
-      <Show when={showPlanned()}><For each={[...(isFrame(model()?.analysis) ? [] : [["meshstats", "Tables", "0.10.2"]]), ["jobs", "Jobs", "0.15"], ["script", "Python", "0.15"]]}>{([id, l, v]) =>
+      <Show when={model() && !isFrame(model()?.analysis)}><T t="tables">Mesh statistics</T></Show>
+      <Show when={showPlanned()}><For each={[["jobs", "Jobs", "0.15"], ["script", "Python", "0.15"]]}>{([id, l, v]) =>
         <button class="cplanned" data-planned={id} title={`${l}: planned for ${v}. Click to see what it will do.`} onClick={() => openPlanned(id)}>{l}<i>{v}</i></button>}</For></Show>
       <span class="grow" />
       <Show when={run()}>{r => <span class="cnow"><span classList={{ cdot: true, live: r().status === "running", bad: r().status === "failed" }} />{STATUS[r().status]} · {elapsed(r())}<Show when={progress(r()) !== null}><span class="cbar sm"><i style={{ width: `${Math.min(100, progress(r())! * 100)}%` }} /></span></Show></span>}</Show>
@@ -172,7 +174,7 @@ export const Console = () => {
       <Match when={tab() === "log"}><Log /></Match>
       <Match when={tab() === "graphs"}><Suspense fallback={<p class="muted cempty">Loading the graphs…</p>}><GraphsPanel /></Suspense></Match>
       <Match when={tab() === "tables" && isFrame(model()?.analysis)}><Suspense fallback={<p class="muted cempty">Loading the tables…</p>}><FrameTables /></Suspense></Match>
-      <Match when={tab() === "tables"}><Messages /></Match>
+      <Match when={tab() === "tables"}><Suspense fallback={<p class="muted cempty">Loading…</p>}><MeshStats /></Suspense></Match>
       <Match when={tab() === "check" && isFrame(model()?.analysis)}><Suspense fallback={<p class="muted cempty">Checking…</p>}><CheckPanel /></Suspense></Match>
       <Match when={tab() === "check"}><Messages /></Match>
     </Switch></div></Show>

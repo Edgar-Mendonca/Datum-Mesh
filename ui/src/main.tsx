@@ -10,6 +10,7 @@ import "./styles.css";
 import { invoke, listen, Out, Options, num, isFrame } from "./api";
 import { sketch, out, setOut, view, setView, backstage, setBackstage, setOpts, opts, dialogs, toast, loadOut, setThemeRaw, applyTheme, sel, cursor, tool, model, results, rawResults, stale, solving, partRes, meshed, modes, modeOn, closeDialog } from "./store";
 import { C } from "./cmds";
+import { StatusBadges } from "./badges";
 import { TitleBar, Ribbon, palette } from "./ribbon";
 import { Backstage, update, checkUpdate } from "./backstage";
 import { Canvas, fit, scale } from "./canvas";
@@ -66,6 +67,7 @@ const Status = () => {
       <Show when={cursor()}>{c => <span class="mono muted">{onPlane() ? (() => { const p = toD(unproj(c()[0], c()[1])); return `X ${fmt("coord", p[0])} · Y ${fmt("coord", p[1])} · Z ${fmt("coord", p[2])}`; })() : `x ${fmt("coord", c()[0])} · y ${fmt("coord", c()[1])}`}</span>}</Show>
       <span class="muted">{model() ? `${ANALYSES.find(a => a[0] === model()!.analysis)?.[1]} · ${isFrame(model()!.analysis) ? `${model()!.nodes.length} nodes · ${model()!.members.length} members` : model()!.volume ? `${model()!.volume!.elements.toLocaleString()} tetrahedra` : model()!.parts?.length ? `${model()!.parts!.length} parts` : `${model()!.shapes.length} shapes${partRes() ? ` · ${partRes()!.mesh.tris.length.toLocaleString()} elements` : ""}`}` : ""}{sel().length ? ` · ${sel().length} selected` : ""}</span>
       <span class="grow" />
+      <StatusBadges />
       <button onClick={C.zoomOut}>−</button><span class="muted zoomv" title="Drawing scale on a 96 dpi screen">{ratio()}</span><button onClick={C.zoomIn}>+</button>
     </footer>
   );

@@ -4,6 +4,7 @@
 import { For, Show, createSignal, createResource } from "solid-js";
 import { act, call, model, sel, setSel, toast, openDialog, setLocalAxes } from "./store";
 import { fromD } from "./axes";
+import { checkTick, setCheckTick } from "./badges";
 import { numIn } from "./panels";
 import { Dialog } from "./ui";
 import { fromU, toU, unit } from "./units";
@@ -70,7 +71,7 @@ type Finding = { level: "error" | "warning" | "note"; what: string; ids: number[
  *  model changes; a row selects what it is about, which stays in sight above. */
 export const CheckPanel = () => {
   const [near, setNear] = createSignal(0.005);
-  const [found] = createResource(() => [near(), model()] as const, ([d]) => call<Finding[]>("model_check", { near: d }));
+  const [found] = createResource(() => [near(), model()] as const, ([d]) => { setCheckTick(checkTick() + 1); return call<Finding[]>("model_check", { near: d }); });
   const LABEL = { error: "Error", warning: "Warning", note: "Note" };
   const count = (f: Finding[], l: string) => f.filter(x => x.level === l).length;
   return <div class="mcheck">

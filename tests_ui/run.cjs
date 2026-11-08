@@ -69,7 +69,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
           if (c === "cad_contacts") return { m: { ...f.cad.meshed_model, contacts: [{ id: 901, a: { on: "face", face: 0 }, b: { on: "face", face: 1 }, friction: 0.2 }] }, path: null, dirty: true, undo: true, redo: false, created: [901], warnings: [] };
           if (c === "cad_mesh") return { m: f.cad.meshed_model, path: null, dirty: true, undo: true, redo: false, created: [], warnings: [] };
           if (c === "cad_auto_size") return 5;
-          if (c === "model_check") return f.checkdemo_findings;
+          if (c === "model_check") return window.__checks ?? (window.__cur === f.checkdemo ? f.checkdemo_findings : []);
           if (c === "combos_preview") return f.braced_rule_preview;
           if (c === "cad_members") { window.__cad = f.cad.empty; return { m: f.platform.m, path: null, dirty: true, undo: true, redo: false, created: [1, 2, 3], warnings: [] }; }
           if (c === "cad_import_step") { window.__cad = f.cad.extruded; return f.cad.extruded; }
@@ -120,6 +120,10 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
     await p.waitForTimeout(150);
   };
 
+  // 0.10.3: things that must never be confused have different shapes (the specification's icon rule).
+  const pairs = [["force", "mass"], ["release", "pinned"], ["rigidlink", "beam"], ["temp", "tgradient"], ["st-linear", "st-newton"], ["modes", "st-spectrum"]];
+  const drawn2 = await p.evaluate(ps => ps.map(([a, b]) => [document.getElementById(`i-${a}`)?.innerHTML, document.getElementById(`i-${b}`)?.innerHTML]), pairs);
+  check("mass and force, release and pin, rigid link and member, uniform and gradient temperature, linear and nonlinear, modal and spectrum each have their own icon (0.10.3)", drawn2.every(([a, b]) => !!a && !!b && a !== b), JSON.stringify(drawn2.map(d => d.map(x => !!x))));
   // 1. File page: every worked example, crimson sidebar.
   const tiles = await p.$$eval(".home .tile b", els => els.map(e => e.textContent));
   check("Home shows the blank models and a way to the examples (0.6.1)", fix.examples_list.filter(e => e.group === "Blank").every(e => tiles.includes(e.name)) && tiles.includes("Examples") && !tiles.includes("Portal frame"), JSON.stringify(tiles));
@@ -246,6 +250,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("Merge Nodes sends a tolerance of 5 mm (0.10.3)", mn?.MergeNodes && Math.abs(mn.MergeNodes.tol - 0.005) < 1e-12, JSON.stringify(mn));
   // The model check: the engine's findings, worst first; a row selects what it is about.
   await stepHead(5);
+  await p.evaluate(f => { window.__checks = f.checkdemo_findings; }, fix);
   await p.click('.ribbon button[title^="Look for what would spoil the solve"]'); await p.waitForTimeout(300);
   const mrows = await p.$$eval(".mctable tbody tr", rs => rs.map(r => r.className));
   check("Model Check lists the engine's findings, errors first (0.10.3)", mrows.length === fix.checkdemo_findings.length && mrows[0] === "error", JSON.stringify(mrows));
@@ -253,6 +258,8 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("a Model Check row selects what it is about (0.10.3)", (await p.textContent(".status")).includes("2 selected"), await p.textContent(".status"));
   check("the Model Check sits in the panel under the view, so the selection stays in sight (0.10.3)", (await p.$$(".console.open .mcheck")).length === 1 && !(await p.$(".dlg")));
   await p.click(".console header .cchev"); await p.waitForTimeout(100);
+  check("the status bar keeps model, solve and balance apart, in words (0.10.3)", (await p.textContent('.status .sb[data-badge="model"]')).includes("2 errors") && (await p.textContent('.status .sb[data-badge="solve"]')).includes("Not solved") && (await p.textContent('.status .sb[data-badge="balance"]')).includes("Not checked"));
+  await p.evaluate(() => { window.__checks = undefined; });
   await stepHead(3); await p.waitForTimeout(100);
 
   // 8. A part: arcs, edges, edge loads and drawing shapes.
@@ -662,11 +669,11 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("…and the steps on Analysis", (await p.$$('.ctxbar [data-ctx="steps"]')).length === 1 && (await p.$$('.ctxbar [data-ctx="materials"]')).length === 0);
   await p.click('.tabs > button:text-is("Animate")'); await p.waitForTimeout(100);
   check("Animate: Play is there, off until there is a result (0.10.1)", await p.$eval('.ribbon button:has-text("Play")', el => el.disabled));
-  check("the bottom panel's planned tabs include Tables (0.10.2)", (await p.$$eval(".console header .cplanned", els => els.map(e => e.textContent))).some(t => t.startsWith("Tables")));
+  check("a part's panel under the view has Mesh statistics (0.10.3; planned in 0.10.2)", (await p.$$eval(".console header button", els => els.map(e => e.textContent))).some(t => t.startsWith("Mesh statistics")));
   await p.evaluate(() => document.querySelector(".tabs .file").click()); await p.waitForTimeout(150);
   await p.click('.bs aside button:has-text("Roadmap")'); await p.waitForTimeout(200);
   const rmv = await p.$$eval(".rmfeats h3", els => els.map(e => e.textContent));
-  check("File › Roadmap lists the whole map: 100 or more planned features, by release in the agreed order (0.10.1)", (await p.$$(".rmfeats li")).length >= 100 && JSON.stringify(rmv) === JSON.stringify(["0.10.3", "0.10.4", "0.10.5", "0.11", "0.12", "0.13", "0.14", "0.15", "1.0"]), JSON.stringify(rmv) + " " + (await p.$$(".rmfeats li")).length);
+  check("File › Roadmap lists the whole map: 100 or more planned features, by release in the agreed order (0.10.1)", (await p.$$(".rmfeats li")).length >= 100 && JSON.stringify(rmv) === JSON.stringify(["0.10.4", "0.10.5", "0.11", "0.12", "0.13", "0.14", "0.15", "1.0"]), JSON.stringify(rmv) + " " + (await p.$$(".rmfeats li")).length);
   await p.keyboard.press("Escape"); await p.waitForTimeout(150);
   await stepHead(5); await p.waitForTimeout(100);
   check("Natural Frequencies works for 3D solids", !(await p.$eval('.ribbon button[title^="The lowest natural frequencies"]', el => el.disabled)));
@@ -1043,6 +1050,11 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("Solve › Steps shows on when the model has a large-deflection step", await p.$eval('.ribbon button:has-text("Steps")', b => b.classList.contains("on")));
   await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   const stD = await p.textContent(".dlg");
+  // 0.10.3: each large-deflection step has its solver settings, typed in.
+  check("a large-deflection step shows its solver settings: tolerance, iterations, smallest increment (0.10.3)", (await p.$$(".dlg .solverset input.fac")).length >= 3 && stD.includes("solver settings"));
+  { const tolIn = await p.$(".dlg .solverset input.fac"); await tolIn.fill("1e-10"); await tolIn.press("Tab"); await p.waitForTimeout(150);
+    const so = (await ops()).reverse().find(o => o.Set?.item?.Step);
+    check("…typing a tolerance sets that step's solver settings (0.10.3)", so?.Set?.item?.Step?.solver?.tol === 1e-10 && so.Set.item.Step.solver.max_iter === 30, JSON.stringify(so?.Set?.item?.Step?.solver)); }
   check("the steps dialog lists the step, how it is solved and the node it follows", (await p.$eval(".dlg table.steps input", i => i.value)) === "Past the limit" && (await p.$eval(".dlg table.steps select", s => s.value)) === "arc" && (await p.$$eval(".dlg table.steps tbody tr:not(.sinit)", r => r.length)) === 1 && (await p.$$(".dlg table.steps tr.sinit")).length === 1, stD.slice(0, 300) + " | " + (await p.$$eval(".dlg table.steps select", ss => ss.map(s => s.value).join())));
   await p.selectOption(".dlg table.steps select >> nth=0", "newton"); await p.waitForTimeout(150);
   const stO = await lastOp();

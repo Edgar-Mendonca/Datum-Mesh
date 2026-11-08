@@ -701,6 +701,26 @@ pub struct Factor {
     pub f: f64,
 }
 
+/// Solver settings of a nonlinear step (0.10.3), typed by the user.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SolverSettings {
+    /// Out-of-balance force over the load's size at which an increment has converged.
+    pub tol: f64,
+    /// The most iterations in one increment before it is cut.
+    pub max_iter: u32,
+    /// Past limit loads: the most increments before giving up on reaching the full load.
+    pub max_increments: u32,
+    /// The smallest increment, as a share of the first, before the solve stops.
+    pub min_step: f64,
+    /// Grow the increment again after an easy one.
+    pub grow: bool,
+}
+impl Default for SolverSettings {
+    fn default() -> Self {
+        SolverSettings { tol: 1e-8, max_iter: 30, max_increments: 400, min_step: 1e-4, grow: true }
+    }
+}
+
 /// How a step is solved (0.4.0).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -766,6 +786,9 @@ pub struct Step {
     /// Time step and length of a time history (s).
     pub dt: f64,
     pub duration: f64,
+    /// How the nonlinear solver works (0.10.3); None: its usual settings.
+    #[serde(default)]
+    pub solver: Option<SolverSettings>,
 }
 
 impl Default for Step {
@@ -788,6 +811,7 @@ impl Default for Step {
             ground: false,
             dt: 0.01,
             duration: 2.0,
+            solver: None,
         }
     }
 }
@@ -1064,6 +1088,17 @@ impl Model {
             }
             if !(1..=200).contains(&st.pieces) {
                 return Err("Beams are cut into 1 to 200 pieces in a step.".into());
+            }
+            if let Some(s) = &st.solver {
+                if !(s.tol.is_finite() && s.tol > 0.0 && s.tol < 1.0) {
+                    return Err("The solver's tolerance is a small positive number, such as 1e-8.".into());
+                }
+                if !(1..=1000).contains(&s.max_iter) || !(1..=100_000).contains(&s.max_increments) {
+                    return Err("The solver takes 1 to 1 000 iterations per increment and 1 to 100 000 increments.".into());
+                }
+                if !(s.min_step.is_finite() && s.min_step > 0.0 && s.min_step <= 1.0) {
+                    return Err("The smallest increment is a share of the first, more than 0 and at most 1.".into());
+                }
             }
             if !(st.damping.is_finite() && (0.0..1.0).contains(&st.damping)) {
                 return Err("Damping is a ratio from 0 to under 1 (0.05 is 5 %).".into());

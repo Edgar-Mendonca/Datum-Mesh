@@ -25,6 +25,70 @@ pub struct Quality {
     pub max_aspect: f64,
     /// Share of triangles with every angle over 30°.
     pub good: f64,
+    /// Mesh statistics (0.10.3): how many elements; how many have their smallest angle over 30°,
+    /// 20–30°, 10–20° and under 10°; how many have an aspect ratio up to 2, 2–5, 5–10 and over 10;
+    /// edge lengths (smallest, mean, largest, m); and the worst elements by angle, with where they are.
+    pub elements: usize,
+    pub angle_bands: [usize; 4],
+    pub aspect_bands: [usize; 4],
+    pub edges: [f64; 3],
+    pub worst: Vec<Worst>,
+}
+
+/// One of a mesh's worst elements (0.10.3): its number, middle (m; z is 0 in 2D), smallest angle and aspect ratio.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct Worst {
+    pub element: usize,
+    pub at: [f64; 3],
+    pub angle: f64,
+    pub aspect: f64,
+}
+
+/// Gathers a mesh's quality element by element (triangles and tetrahedra alike).
+#[derive(Default)]
+pub(crate) struct QualityAcc {
+    q: Quality,
+    good: usize,
+    sum: f64,
+    count: usize,
+    worst: Vec<Worst>,
+}
+impl QualityAcc {
+    pub(crate) fn new() -> Self {
+        QualityAcc { q: Quality { min_angle: 180.0, max_aspect: 1.0, edges: [f64::INFINITY, 0.0, 0.0], ..Default::default() }, ..Default::default() }
+    }
+    /// One element: its smallest angle (°), aspect ratio, middle and edge lengths.
+    pub(crate) fn add(&mut self, element: usize, angle: f64, aspect: f64, at: [f64; 3], edges: &[f64]) {
+        let q = &mut self.q;
+        q.elements += 1;
+        q.min_angle = q.min_angle.min(angle);
+        q.max_aspect = q.max_aspect.max(aspect);
+        self.good += (angle > 30.0) as usize;
+        q.angle_bands[if angle > 30.0 { 0 } else if angle > 20.0 { 1 } else if angle > 10.0 { 2 } else { 3 }] += 1;
+        q.aspect_bands[if aspect <= 2.0 { 0 } else if aspect <= 5.0 { 1 } else if aspect <= 10.0 { 2 } else { 3 }] += 1;
+        for &l in edges {
+            q.edges[0] = q.edges[0].min(l);
+            q.edges[2] = q.edges[2].max(l);
+            self.sum += l;
+            self.count += 1;
+        }
+        // The five smallest angles, kept in order.
+        let w = Worst { element, at, angle, aspect };
+        let k = self.worst.iter().position(|x| x.angle > angle).unwrap_or(self.worst.len());
+        if k < 5 {
+            self.worst.insert(k, w);
+            self.worst.truncate(5);
+        }
+    }
+    pub(crate) fn done(mut self) -> Quality {
+        self.q.good = self.good as f64 / self.q.elements.max(1) as f64;
+        self.q.edges[1] = self.sum / self.count.max(1) as f64;
+        if self.count == 0 {
+            self.q.edges = [0.0; 3];
+        }
+        self.q.worst = self.worst;
+        self.q
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -374,8 +438,8 @@ pub fn mesh(m: &Model) -> Result<Mesh, String> {
 }
 
 fn quality(nodes: &[[f64; 2]], tris: &[Vec<u32>]) -> Quality {
-    let (mut min_angle, mut max_aspect, mut good) = (180.0f64, 1.0f64, 0usize);
-    for t in tris {
+    let mut acc = QualityAcc::new();
+    for (e, t) in tris.iter().enumerate() {
         let p = [nodes[t[0] as usize], nodes[t[1] as usize], nodes[t[2] as usize]];
         let l = [0, 1, 2].map(|i| (p[(i + 1) % 3][0] - p[i][0]).hypot(p[(i + 1) % 3][1] - p[i][1]));
         let mut amin = 180.0f64;
@@ -385,17 +449,14 @@ fn quality(nodes: &[[f64; 2]], tris: &[Vec<u32>]) -> Quality {
             let cos = ((a * a + b * b - c * c) / (2.0 * a * b)).clamp(-1.0, 1.0);
             amin = amin.min(cos.acos().to_degrees());
         }
-        min_angle = min_angle.min(amin);
-        if amin > 30.0 {
-            good += 1;
-        }
         let area = ((p[1][0] - p[0][0]) * (p[2][1] - p[0][1]) - (p[2][0] - p[0][0]) * (p[1][1] - p[0][1])).abs() / 2.0;
         let lmax = l[0].max(l[1]).max(l[2]);
         // Equilateral: area = √3/4 l², so this is 1 for a perfect triangle.
         let aspect = if area > 0.0 { lmax * lmax * 3f64.sqrt() / 4.0 / area } else { f64::INFINITY };
-        max_aspect = max_aspect.max(aspect);
+        let at = [(p[0][0] + p[1][0] + p[2][0]) / 3.0, (p[0][1] + p[1][1] + p[2][1]) / 3.0, 0.0];
+        acc.add(e, amin, aspect, at, &l);
     }
-    Quality { min_angle, max_aspect, good: good as f64 / tris.len().max(1) as f64 }
+    acc.done()
 }
 
 #[cfg(test)]
@@ -403,6 +464,23 @@ mod tests {
     use super::*;
     use crate::doc::{Doc, Item, Op};
     use crate::model::{Analysis, Shape};
+
+    #[test]
+    fn mesh_statistics_count_bands_and_name_the_worst() {
+        // An equilateral triangle (60°, aspect 1) and a sliver (smallest angle about 5.7°).
+        let h = 3f64.sqrt() / 2.0;
+        let nodes = vec![[0.0, 0.0], [1.0, 0.0], [0.5, h], [2.0, 0.0], [3.0, 0.0], [2.5, 0.05]];
+        let q = quality(&nodes, &[vec![0, 1, 2], vec![3, 4, 5]]);
+        assert_eq!(q.elements, 2);
+        assert_eq!(q.angle_bands, [1, 0, 0, 1]);
+        assert_eq!(q.aspect_bands[0], 1);
+        assert!(q.aspect_bands[3] == 1, "{:?}", q.aspect_bands);
+        assert!((q.min_angle - 0.1f64.atan().to_degrees()).abs() < 1e-9, "{}", q.min_angle);
+        assert_eq!(q.worst[0].element, 1);
+        assert!((q.worst[0].at[0] - 2.5).abs() < 1e-12 && (q.worst[1].angle - 60.0).abs() < 1e-9);
+        assert!((q.edges[0] - 0.05f64.hypot(0.5)).abs() < 1e-12 && (q.edges[2] - 1.0).abs() < 1e-12);
+        assert!((q.good - 0.5).abs() < 1e-12);
+    }
 
     fn part(shapes: Vec<(Geom, bool)>, size: f64, order: u8) -> Model {
         let mut d = Doc::new(Model::new(Analysis::Stress));

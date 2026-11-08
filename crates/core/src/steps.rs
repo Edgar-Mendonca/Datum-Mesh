@@ -125,7 +125,7 @@ fn frame(m: &Model, which: Option<Which>) -> Result<Results, String> {
     for (k, st) in m.steps.iter().enumerate() {
         let target = &loads[k].1;
         let load: Vec<f64> = (0..n).map(|i| target[i] - base[i]).collect();
-        let ctl = Control { increments: st.increments as usize, arc: st.kind == StepKind::Arc, ..Default::default() };
+        let ctl = Control::for_step(st.increments as usize, st.kind == StepKind::Arc, st.solver.as_ref());
         let path = follow(c, &base, &load, &u, &ctl)?;
         iterations += path.iterations;
         for p in path.points.iter().skip(1) {
@@ -225,7 +225,7 @@ fn space(m: &Model, which: Option<Which>) -> Result<Results, String> {
     for (k, st) in m.steps.iter().enumerate() {
         let target = &loads[k].1;
         let load: Vec<f64> = (0..n).map(|i| target[i] - base[i]).collect();
-        let ctl = Control { increments: st.increments as usize, arc: st.kind == StepKind::Arc, ..Default::default() };
+        let ctl = Control::for_step(st.increments as usize, st.kind == StepKind::Arc, st.solver.as_ref());
         let path = follow(c, &base, &load, &u, &ctl)?;
         iterations += path.iterations;
         for p in path.points.iter().skip(1) {
