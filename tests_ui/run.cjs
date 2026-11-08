@@ -898,6 +898,10 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.evaluate(() => { window.__solveKey = null; });
   check("a time history's legend says when its results are, inertia included", (await p.textContent(".legend")).includes("Equilibrium at t ="));
   check("a time history plays through its times", (await p.textContent(".player .plabel").catch(() => "")).includes("t = "), await p.textContent(".player").catch(() => "none"));
+  // 0.10.2 (the mock-ups): its graphs open in the bottom panel; the bar above the view says its time, record and damping.
+  check("a time history opens its Graphs in the bottom panel: the movement against time (0.10.2, the mock-ups)", (await p.textContent(".console header button.on").catch(() => "")) === "Graphs" && (await p.$$(".gpanels .gpanel svg path")).length >= 1 && /Movement in/.test(await p.textContent(".gpanels")));
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(100);
+  check("…and the bar above the view says its time, record and damping", /Time.*Record.*Damping/.test(await p.textContent('.ctxbar [data-ctx="history"]').catch(() => "")));
   await p.click('.ribbon button:has-text("Dynamics")'); await p.waitForTimeout(250);
   const qhd = await p.textContent(".dlg");
   check("Results › Dynamics plots a time history's movement against time and lists the largest movements", (await p.$$(".dlg svg.curve path.line")).length === 1 && qhd.includes("Largest movements") && qhd.includes("Newmark"), qhd.slice(0, 200));

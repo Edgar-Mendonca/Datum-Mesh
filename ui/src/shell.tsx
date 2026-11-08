@@ -1,52 +1,44 @@
 // The window shell of 0.10.0 (docs/PLAN-1.0.md, the mock-ups): the context bar under the ribbon
 // (load case, what is picked, how the model is drawn, the view, units, planned features) and the
 // tool strip beside the tree (the current step's most used tools). Nothing here calculates.
-import { For, Show, JSX } from "solid-js";
+import { For, Show } from "solid-js";
 import { model, tab, tool, show, results, opts, setOpts } from "./store";
 import * as D from "./dialogs";
 import { stepsDialog } from "./steps";
 import { C } from "./cmds";
 import { Icon } from "./ui";
-import { isFrame, isSolidA } from "./api";
+import { isFrame, isSolidA, DynInfo, num } from "./api";
 import { CasePicker } from "./cases";
 import { showPlanned, setShowPlanned } from "./planned";
 import { hasSolids } from "./study";
 
-/** A dimmed control for a feature still to come (its release in the tooltip). */
-const Soon = (p: { children: JSX.Element; v: string; what: string }) => <span class="soonc" title={`${p.what}: planned for ${p.v}`}>{p.children}</span>;
 
 export const CtxBar = () => {
   const m = () => model();
   const frame = () => isFrame(m()?.analysis);
+  const dyn = () => (results() as { dynamic?: DynInfo } | null)?.dynamic;
+  // 0.10.2 (the mock-ups): only what works is on the bar; what is still to come is on each tab's
+  // Coming menu, not here. Its middle follows the tab: the case, the materials, the steps, a time
+  // history's time, record and damping.
   return <div class="ctxbar">
-    <Show when={frame()}><label>Case</label><CasePicker /><span class="sep" /></Show>
-    {/* 0.10.1: what the bar holds follows the tab (the mock-ups): the materials, the steps, what is shown of a frame, the snaps. */}
+    <Show when={frame() && !(tab() === "results" && dyn()?.kind === "history")}><label>Case</label><CasePicker /><span class="sep" /></Show>
     <Show when={tab() === "properties"}><span class="ctxtab" data-ctx="materials"><label>Materials</label><b>{m()?.materials.length ?? 0}</b>
-      <button class="btn sm" onClick={() => D.materials()} title="The materials of the model: pick from the library or type your own">Materials…</button>
-      <Soon v="0.10.2" what="Colour the model by material or by section"><label>Colour</label><span class="seg"><span class="on">By material</span><span>By section</span></span></Soon></span><span class="sep" /></Show>
+      <button class="btn sm" onClick={() => D.materials()} title="The materials of the model: pick from the library or type your own">Materials…</button></span><span class="sep" /></Show>
     <Show when={tab() === "solve"}><span class="ctxtab" data-ctx="steps"><label>Steps</label><b>{(m()?.steps ?? []).length || 1}</b><small>{(m()?.steps ?? []).some(s => s.kind !== "linear") ? "nonlinear" : "linear"}</small>
-      <button class="btn sm" onClick={stepsDialog} title="Analysis steps: linear, or large deflection, yielding, dynamics">Steps…</button>
-      <Soon v="0.10.2" what="Show only the loads active in a step"><label>Show</label><span class="seg"><span class="on">Loads in the step</span><span>All</span></span></Soon></span><span class="sep" /></Show>
-    <Show when={frame() && tab() === "geometry"}><span class="ctxtab" data-ctx="frame">
-      <Soon v="0.10.2" what="Member and node numbers, sections, end releases and local axes drawn on the frame"><label>Show</label><span class="seg"><span>Numbers</span><span>Sections</span><span>Releases</span><span>Local axes</span></span></Soon>
-      <label>Snap</label><span class="seg"><button classList={{ on: opts().snap }} onClick={() => setOpts({ ...opts(), snap: !opts().snap })} title="Points land on the grid">Grid</button></span>
-      <Soon v="0.11" what="Snap to nodes and to the middle of members"><span class="seg"><span>Nodes</span><span>Midpoints</span></span></Soon></span><span class="sep" /></Show>
-    <Show when={m()?.analysis === "space" && tab() === "results"}><Soon v="0.11" what="Plate results on the top or bottom face"><label>Face</label><span class="seg"><span>Top</span><span class="on">Bottom</span></span></Soon><span class="sep" /></Show>
-    <label>Pick</label>
-    <Soon v="0.11" what="A selection filter: only faces, edges, nodes, members or parts"><span class="seg"><span class="on">Anything</span>{(frame() ? ["Nodes", "Members", "Loads"] : ["Parts", "Faces", "Edges", "Nodes"]).map(x => <span>{x}</span>)}</span></Soon>
-    <span class="sep" />
+      <button class="btn sm" onClick={stepsDialog} title="Analysis steps: linear, or large deflection, yielding, dynamics">Steps…</button></span><span class="sep" /></Show>
+    <Show when={tab() === "results" && dyn()?.kind === "history" ? dyn() : null}>{d => <span class="ctxtab" data-ctx="history">
+      <label>Time</label><b>{num(d().peak_t, 4)} s</b><small>the peak, of {num(d().t[d().t.length - 1] ?? 0, 4)} s</small>
+      <label>Record</label><span class="ctxv">{dynRecord(d())}</span>
+      <label>Damping</label><span class="ctxv">{dynDamping()}</span></span>}</Show>
+    <Show when={frame() && tab() === "geometry"}><span class="ctxtab" data-ctx="frame"><label>Snap</label><span class="seg"><button classList={{ on: opts().snap }} onClick={() => setOpts({ ...opts(), snap: !opts().snap })} title="Points land on the grid">Grid</button><button classList={{ on: opts().grid }} onClick={() => setOpts({ ...opts(), grid: !opts().grid })} title="Show the grid">Show grid</button></span></span><span class="sep" /></Show>
     <span class="seg" role="group" aria-label="How the model is drawn">
       <button classList={{ on: !show().mesh }} title="Shaded" onClick={() => C.show({ mesh: false })}><Icon n="solid" /></button>
       <button classList={{ on: show().mesh }} title="Shaded with the elements' edges" onClick={() => C.show({ mesh: true })}><Icon n="meshlines" /></button>
-      <Soon v="0.11" what="Wireframe and hidden lines"><button disabled title="Wireframe"><Icon n="mesh" /></button><button disabled title="Hidden lines"><Icon n="model" /></button></Soon>
     </span>
     <span class="sep" />
     <button class="ib" title="Fit the model in the view (F)" onClick={C.fit}><Icon n="fit" /></button>
     <button class="ib" title="Zoom in" onClick={C.zoomIn}><Icon n="zin" /></button>
     <button class="ib" title="Zoom out" onClick={C.zoomOut}><Icon n="zout" /></button>
-    <Soon v="0.11" what="Saved views: keep up to four views and go back with one key"><span class="seg"><span>1</span><span>2</span><span>3</span><span>4</span></span></Soon>
-    <span class="sep" />
-    <Soon v="0.11" what="Display groups: show only some parts, faces or members"><label>Show</label><span class="fakesel">Everything</span></Soon>
     <span class="grow" />
     <label class="chk" title="The features still to come, dimmed, with the release that brings each"><input type="checkbox" checked={showPlanned()} onChange={e => setShowPlanned(e.currentTarget.checked)} />Planned features</label>
     <span class="sep" />
@@ -56,6 +48,9 @@ export const CtxBar = () => {
     </select>
   </div>;
 };
+/** A time history's ground record, as its step names it. */
+const dynRecord = (d: DynInfo) => { const st = (model()?.steps ?? []).find(s => s.kind === "history"); return st ? `${st.ground ? "ground shaking" : "load in time"} · ${st.time.length} points` : `${d.steps.toLocaleString()} steps`; };
+const dynDamping = () => { const st = (model()?.steps ?? []).find(s => s.kind === "history"); return st ? `${num(st.damping * 100, 3)} %` : "—"; };
 
 type Tl = [string, string, string]; // icon, label, tool id ("cmd:…" runs a command)
 const TOOLS: Record<string, (a: string) => Tl[]> = {

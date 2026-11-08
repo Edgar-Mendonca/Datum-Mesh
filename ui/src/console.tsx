@@ -2,8 +2,8 @@
 // solve as it runs: load increments, Newton iterations and how far from balance each is,
 // increments cut back, time reached; Stop) and the Log (the same as plain lines, to copy).
 // The engine reports its progress (`datum_core::progress`); the shell sends it as `solver` events.
-import { For, Show, Switch, Match, createSignal, createMemo, JSX, lazy, Suspense } from "solid-js";
-import { notes, setNotes, note, model } from "./store";
+import { For, Show, Switch, Match, createSignal, createMemo, createEffect, createRoot, JSX, lazy, Suspense } from "solid-js";
+import { notes, setNotes, note, model, results } from "./store";
 import { isFrame } from "./api";
 import { showPlanned, openPlanned } from "./planned";
 import { invoke, listen, num } from "./api";
@@ -21,11 +21,14 @@ export type Run = {
 const [run, setRun] = createSignal<Run | null>(null);
 export { run };
 const [lines, setLines] = createSignal<string[]>([]);
-const [tab, setTab] = createSignal<"messages" | "solver" | "log" | "tables">("messages");
+const [tab, setTab] = createSignal<"messages" | "solver" | "log" | "tables" | "graphs">("messages");
 const [open, setOpen] = createSignal(false);
 /** The Tables (0.10.2): loaded when first opened. */
 const FrameTables = lazy(() => import("./tables").then(k => ({ default: k.FrameTables })));
+const GraphsPanel = lazy(() => import("./graphspanel").then(k => ({ default: k.GraphsPanel })));
 /** Opens the bottom panel on its Tables (Geometry › Nodes and Members). */
+let hadHistory = false;
+createRoot(() => createEffect(() => { const h = (results() as { dynamic?: { kind: string } } | null)?.dynamic?.kind === "history"; if (h && !hadHistory) { setTab("graphs"); setOpen(true); } hadHistory = h; }));
 export const showTables = () => { setTab("tables"); setOpen(true); window.dispatchEvent(new Event("resize")); };
 const store = (k: string, v?: string) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch { /* private window */ } return null; };
 const [height, setHeight] = createSignal(Math.min(480, Math.max(120, +(store("dm.console.h") ?? 200) || 200)));
@@ -135,14 +138,14 @@ const Log = () => <div class="clog"><pre>{lines().join("\n") || "The solver's lo
 
 export const Console = () => {
   const unread = createMemo(() => notes().slice(seen()).filter(n => n.level !== "info").length);
-  const show = (t: "messages" | "solver" | "log" | "tables") => { if (open() && tab() === t) setOpen(false); else { setTab(t); setOpen(true); } if (t === "messages") setSeen(notes().length); };
+  const show = (t: "messages" | "solver" | "log" | "tables" | "graphs") => { if (open() && tab() === t) setOpen(false); else { setTab(t); setOpen(true); } if (t === "messages") setSeen(notes().length); };
   const grip = (e: PointerEvent) => {
     const y0 = e.clientY, h0 = height(), el = e.currentTarget as HTMLElement; el.setPointerCapture(e.pointerId);
     const mv = (m: PointerEvent) => setHeight(Math.min(window.innerHeight * 0.6, Math.max(90, h0 + y0 - m.clientY)));
     const up = () => { el.removeEventListener("pointermove", mv); el.removeEventListener("pointerup", up); store("dm.console.h", String(Math.round(height()))); window.dispatchEvent(new Event("resize")); };
     el.addEventListener("pointermove", mv); el.addEventListener("pointerup", up);
   };
-  const T = (p: { t: "messages" | "solver" | "log" | "tables"; children: JSX.Element }) => <button classList={{ on: open() && tab() === p.t }} onClick={() => show(p.t)}>{p.children}</button>;
+  const T = (p: { t: "messages" | "solver" | "log" | "tables" | "graphs"; children: JSX.Element }) => <button classList={{ on: open() && tab() === p.t }} onClick={() => show(p.t)}>{p.children}</button>;
   return <section class="console" classList={{ open: open() }} style={open() ? { height: `${height()}px` } : {}}>
     <Show when={open()}><div class="cgrip" onPointerDown={grip} title="Drag to make the panel taller or shorter" /></Show>
     <header>
@@ -150,6 +153,7 @@ export const Console = () => {
       <T t="solver">Solver monitor</T>
       <T t="log">Log</T>
       <Show when={isFrame(model()?.analysis)}><T t="tables">Tables</T></Show>
+      <Show when={(results() as { dynamic?: { kind: string } } | null)?.dynamic?.kind === "history"}><T t="graphs">Graphs</T></Show>
       <Show when={showPlanned()}><For each={[...(isFrame(model()?.analysis) ? [] : [["meshstats", "Tables", "0.10.2"]]), ["jobs", "Jobs", "0.15"], ["script", "Python", "0.15"]]}>{([id, l, v]) =>
         <button class="cplanned" data-planned={id} title={`${l}: planned for ${v}. Click to see what it will do.`} onClick={() => openPlanned(id)}>{l}<i>{v}</i></button>}</For></Show>
       <span class="grow" />
@@ -163,6 +167,7 @@ export const Console = () => {
       <Match when={tab() === "messages"}><Messages /></Match>
       <Match when={tab() === "solver"}><Monitor /></Match>
       <Match when={tab() === "log"}><Log /></Match>
+      <Match when={tab() === "graphs"}><Suspense fallback={<p class="muted cempty">Loading the graphs…</p>}><GraphsPanel /></Suspense></Match>
       <Match when={tab() === "tables" && isFrame(model()?.analysis)}><Suspense fallback={<p class="muted cempty">Loading the tables…</p>}><FrameTables /></Suspense></Match>
       <Match when={tab() === "tables"}><Messages /></Match>
     </Switch></div></Show>

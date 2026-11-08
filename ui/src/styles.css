@@ -1479,3 +1479,17 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .mlist .mrow small { margin-left: auto; color: var(--muted); font: 10.5px var(--mono); white-space: nowrap; }
 .mlist .mrow:hover { background: var(--pale); }
 .mlist .mrow.on { background: var(--sel); border-left-color: var(--blue); }
+
+.ctxbar .ctxv { font-size: 12px; color: var(--text); margin-right: 10px; }
+.ctxbar .ctxtab label { margin-left: 4px; }
+
+/* 0.10.2: the bottom panel's graphs (the mock-ups): side by side, the full height of the panel. */
+.gpanels { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); height: 100%; min-height: 0; }
+.gpanel { margin: 0; padding: 6px 12px 4px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line2); }
+.gpanel:last-child { border-right: 0; }
+.gpanel figcaption { font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.gpanel svg { flex: 1; width: 100%; min-height: 0; }
+.gpanel svg text { font: 9.5px var(--mono); fill: var(--muted); }
+.gpanel svg .grid { stroke: var(--line2); }
+.gpanel svg .ax { stroke: var(--line3); }
+.gpanel svg .peak { stroke: var(--muted); stroke-dasharray: 3 3; }
