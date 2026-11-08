@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.10.2 — unreleased
+
+The window brought to the approved mock-ups, screen by screen, and the first tables and managers.
+
+**The look of the mock-ups**
+- The tree: one dense tree of rows with icons, no numbered step circles; counts as plain grey numbers on the right; the ? and + only on the row under the pointer; wider to start with.
+- The title bar: the app's name by its mark, New and Open, and in the middle the file with what it is (its analysis, linear or nonlinear, its units).
+- Results in 3D on a dark ground with a faint grid; a finished solve opens the tree's Results tab.
+- The Results tab is a tree: what was solved at its head; each result with its largest value (a frame's diagrams, deflection, reactions and utilisation; a 3D frame's colour-by results; a part's or solid's contours), a click showing it in the view; Checks (equilibrium, the smallest safety factor); Graphs and tables.
+- The results legend is a dark card in the view: the result at its head, the colour bands running up its side with their values, the deformed shape, the cut and the balance check below; ▾ folds it to one line.
+- The pop-up card is a property sheet: a label and its value on one line, small section heads, Delete at the foot.
+- The bar above the view keeps only what works (the case, the materials, the steps, a frame's snap, shading, fit and zoom, planned features, units); the dimmed controls are gone from it, each still on its tab's Coming menu.
+- The workflow bar has Python (planned) and Options at its foot.
+
+**Tables and managers**
+- A frame's nodes and members in tables in the bottom panel (Geometry › Nodes & Members): typed into as a sheet is, picked with the view, every change undoable.
+- Paste from a sheet: rows of x, y (z) become nodes, rows of x, y to x, y members with their nodes, rows of two node numbers members between them; headings and rows not understood are left out and said in Messages.
+- The material manager: a search over the materials, General, Elastic, Yielding and Heat tabs (Damage and Rate planned), and the stress–strain curve the solver uses beside them.
+- The step manager: the starting state, then each step numbered with its status; every cell typed into in place.
+- A time history: the bar above the view says when the results are, what drove it and its damping; the bottom panel opens Graphs, the movement against time beside the record as given.
+
+**Size**
+- The help cards' words load just after the window opens: startup code 482 to 453 kB. The whole window's budget is 1.8 MB (was 1.6 MB).
+
 ## 0.10.1 — 2026-11-07
 
 Every module has its place: the tabs and the bar above the view of the approved mock-ups, and the whole map of features still to come, now over a hundred.
