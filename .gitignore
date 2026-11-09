@@ -5,3 +5,4 @@
 /tests_ui/fixture.json
 /tests_ui/shots
 src-tauri/gmsh/
+src-tauri/cli/

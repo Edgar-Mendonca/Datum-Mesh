@@ -1,0 +1,15 @@
+[package]
+name = "datum-mesh-cli"
+version = "0.10.5"
+license = "MIT"
+edition = "2021"
+description = "Datum Mesh from the command line and for AI agents (MCP): the same engine and edits as the window."
+
+[[bin]]
+name = "datum-mesh-cli"
+path = "src/main.rs"
+
+[dependencies]
+datum-core = { path = "../core" }
+serde.workspace = true
+serde_json.workspace = true

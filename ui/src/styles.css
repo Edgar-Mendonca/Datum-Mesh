@@ -1027,11 +1027,16 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .view3d .sweeppanel input.num { width: 76px; font: 12px var(--mono); padding: 2px 5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); }
 .view3d .sweeppanel .btn { letter-spacing: 0; text-transform: none; padding: 2px 8px; }
 /* The results player (0.6.4). */
-.player { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 7; display: flex; align-items: center; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 4px 12px 4px 6px; font-size: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+.player { position: absolute; right: 8px; bottom: 52px; width: 270px; z-index: 7; display: flex; flex-direction: column; gap: 6px; background: var(--bg2, var(--panel)); border: 1px solid var(--line); border-radius: 3px; padding: 0 10px 8px; font-size: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.18); }
+.player header { display: flex; align-items: center; justify-content: space-between; margin: 0 -10px; padding: 6px 10px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.player header .x { border: none; background: transparent; font-size: 16px; cursor: pointer; color: var(--muted); }
+.player .prow { display: flex; align-items: center; gap: 8px; }
+.player .prow.small { justify-content: space-between; color: var(--muted); }
+.ipop.playup { max-height: calc(100% - 52px - 150px); }
 .player .pbtn { width: 28px; height: 28px; border-radius: 50%; border: none; background: transparent; color: var(--text); display: grid; place-items: center; cursor: pointer; }
 .player .pbtn:first-child { background: var(--blue); color: #fff; }
 .player .pbtn svg { width: 16px; height: 16px; }
-.player input[type=range] { width: 220px; accent-color: var(--blue); }
+.player input[type=range] { width: 100%; accent-color: var(--blue); }
 .player .plabel { min-width: 130px; color: var(--muted); }
 .player select { font-size: 12px; }
 .player .ploop { display: flex; align-items: center; gap: 4px; color: var(--muted); }
@@ -1672,3 +1677,7 @@ label.tbl2 textarea { display: block; width: 100%; margin-top: 4px; font-size: 1
 .mfoot p { margin: 2px 0; }
 .notchk { margin: 4px 0 0 18px; }
 .vals { width: 100%; font-size: 12px; margin-top: 8px; }
+
+/* 0.10.5: Help › Command Line */
+.clitab { width: 100%; margin: 6px 0; }
+.clitab code { user-select: all; word-break: break-all; }

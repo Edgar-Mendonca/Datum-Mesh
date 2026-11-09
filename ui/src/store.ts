@@ -81,6 +81,10 @@ export const [modesStale, setModesStale] = createSignal(false);
 export const [modeSel, setModeSel] = createSignal(0);
 export const [modeOn, setModeOn] = createSignal(false);
 export const [animate, setAnimate] = createSignal(true);
+/** The animation panel (0.10.5): shown at the right of the view; and whether it is up now, so the
+ * properties card above it leaves it room. */
+export const [playerShown, setPlayerShown] = createSignal(true);
+export const [playerUp, setPlayerUp] = createSignal(false);
 export const [phase, setPhase] = createSignal(1);
 /** The part's mesh without results (Mesh view), and whether the model changed since. */
 export const [meshed, setMeshed] = createSignal<Mesh | null>(null);

@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "A command line and an MCP server: scripts and AI agents make, solve and check models with the same engine and edits as the window",
     "Design members with restraints and segments, values anywhere along a member, and mechanics checks (stress, Euler buckling, deflection, storey drift) that show their working and say what was not checked",
     "Four starting points: 2D frame, 3D frame, 2D part and 3D solid",
     "Frames: point and part-length loads, split, reverse and merge, member orientation, a model check, loads and assignments tables, and combinations by rule with your own factors",
@@ -57,15 +58,6 @@
     "docs/images/fin-solved.png"
   ],
   "roadmap": [
-    {
-      "v": "0.10.5",
-      "title": "Driving it",
-      "when": "Next",
-      "items": [
-        "The animation player as a panel at the side",
-        "A command line and an MCP server, so scripts and AI agents run the same commands as the window"
-      ]
-    },
     {
       "v": "0.10.6",
       "title": "Proving it",

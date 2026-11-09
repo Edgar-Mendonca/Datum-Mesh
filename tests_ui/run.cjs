@@ -357,6 +357,26 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   check("Play moves on through the result, and pauses", lPlay !== "50 % of the load" && (await p.$$(".player .pbtn use[href='#i-play']")).length === 1, lPlay);
   await slide(1000);
   check("at the end of the slider the result is drawn as solved", (await p.$eval(".defl", e => e.getAttribute("d"))) === dEnd);
+  // 0.10.5: the animation panel sits at the right of the view; Play works from the ribbon even
+  // with the panel closed (it used to be reset as it opened), and at the end with Loop off.
+  const pbox = await p.$eval(".player", el => { const r = el.getBoundingClientRect(), v = el.parentElement.closest(".view, .stage, main")?.getBoundingClientRect() ?? document.body.getBoundingClientRect(); return { right: v.right - r.right, w: r.width, left: r.left - v.left }; });
+  check("the animation panel is a card at the right of the view (0.10.5)", pbox.right < 40 && pbox.left > pbox.w, JSON.stringify(pbox));
+  await p.click(".player header .x"); await p.waitForTimeout(150);
+  check("…its × closes it (0.10.5)", (await p.$$(".player")).length === 0);
+  await p.click('.tabs > button:text-is("Animate")'); await p.waitForTimeout(150);
+  await p.click('.ribbon button:has-text("Play") >> nth=0'); await p.waitForTimeout(600);
+  check("Play on the ribbon opens the panel and plays, even when the panel was closed (0.10.5 bug)", (await p.$$(".player .pbtn use[href='#i-pause']")).length === 1 && !(await p.textContent(".player .plabel")).includes("100 %"), await p.textContent(".player").catch(() => "none"));
+  await p.click(".player .pbtn >> nth=0"); await p.waitForTimeout(100);
+  await p.$eval(".player .ploop input", el => { if (el.checked) el.click(); });
+  await slide(1000);
+  await p.click(".player .pbtn >> nth=0"); await p.waitForTimeout(400);
+  check("Play at the end with Loop off starts again from the beginning (0.10.5 bug)", (await p.$$(".player .pbtn use[href='#i-pause']")).length === 1 || !(await p.textContent(".player .plabel")).includes("100 %"), await p.textContent(".player .plabel"));
+  await p.click(".player .pbtn >> nth=0").catch(() => {}); await p.$eval(".player .ploop input", el => { if (!el.checked) el.click(); }); await slide(1000);
+  await p.click('.ribbon button:has-text("Animation Panel")'); await p.waitForTimeout(100);
+  check("Animate › Animation Panel hides and shows it (0.10.5)", (await p.$$(".player")).length === 0);
+  await p.click('.ribbon button:has-text("Animation Panel")'); await p.waitForTimeout(150);
+  check("…and shows it again", (await p.$$(".player")).length === 1);
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(150);
   check("the moment diagram is drawn for every member", (await p.$$(".diag.d-m")).length === pr2.members.length);
   check("reactions are drawn at the supports", (await p.$$(".rarrow")).length >= 4);
   check("the legend shows the equilibrium check", (await p.textContent(".legend")).includes("reactions balance the loads"));
@@ -497,6 +517,11 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.click(".ipop button.ifold").catch(() => {});
   await p.click('.ribbon button:has-text("Sections")'); await p.waitForTimeout(400);
   check("the Sections dialog shows the whole table: Z, S, r for both axes (0.10.4)", (await p.$$('.dlg .sectab tbody tr')).length === 8 && (await p.textContent(".dlg .sectab")).includes("Plastic modulus S"));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  // 0.10.5: Help › Command Line shows how to run datum-mesh-cli and connect an AI agent.
+  await p.click('.tabs > button:text-is("Help")'); await p.waitForTimeout(150);
+  await p.click('.ribbon button:has-text("Command Line")'); await p.waitForTimeout(400);
+  check("Help › Command Line lists the commands to run and how to connect an AI agent (0.10.5)", (await p.$$('.dlg .clitab tr')).length === 6 && (await p.textContent(".dlg .clitab")).includes(" mcp"));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   // 0.10.4: Results › Mechanics Checks: statuses from the engine, a trace per check, what is not checked.
   await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(200);

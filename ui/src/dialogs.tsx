@@ -318,6 +318,27 @@ export const recoverDialog = (name: string, saved: string, done: () => void) => 
 
 
 /** Help › Verification: every benchmark solved now by this version, against its reference. */
+/** Help › Command Line and AI Agents (0.10.5): where datum-mesh-cli is and how to connect an agent. */
+export const cliHelp = () => openDialog(() => {
+  const [path] = createResource(() => call<string | null>("cli_path").catch(() => null));
+  const exe = () => path() ?? "datum-mesh-cli";
+  const q = (s: string) => (s.includes(" ") ? `"${s}"` : s);
+  const lines = () => [
+    ["Every command and its parameters", `${q(exe())} commands`],
+    ["Solve a model, the summary as JSON", `${q(exe())} solve model.dmesh`],
+    ["One command on a model", `${q(exe())} call mech_checks --file model.dmesh`],
+    ["A script of commands", `${q(exe())} run script.json`],
+    ["Run the verification benchmarks", `${q(exe())} verify`],
+    ["The MCP server, for an AI agent (add it as a server with this command)", `${q(exe())} mcp`],
+  ];
+  return <Dialog title="Command line and AI agents" help="cli" okText="Close">
+    <p class="small">Datum Mesh also runs without its window: <b>datum-mesh-cli</b> makes, edits, solves and checks models with the same engine and the same edits as the window, and answers in JSON. AI agents drive it through MCP, the Model Context Protocol. Units are SI (m, N, Pa, K).</p>
+    <p class="small muted">{path() ? `Installed at ${path()}` : "Not found beside this copy of Datum Mesh (a development build): build it with cargo build -p datum-mesh-cli."}</p>
+    <table class="tbl clitab"><tbody><For each={lines()}>{([w, c]) => <tr><td class="small">{w}</td><td><code class="mono small">{c}</code></td><td><button class="btn sm" title="Copy" onClick={() => navigator.clipboard?.writeText(c).then(() => toast("Copied.", true)).catch(() => {})}>Copy</button></td></tr>}</For></tbody></table>
+    <p class="muted small">Not yet from the command line: meshing solids drawn with the modelling tools (they need the window's geometry engine) and pictures of results.</p>
+  </Dialog>;
+});
+
 export const verification = () => openDialog(() => {
   const [rows] = createResource(() => call<Check[]>("verification"));
   const [ver] = createResource(() => call<string>("version"));

@@ -1,12 +1,13 @@
-// Playing results (0.6.4), loaded with the results. A bar over the drawing plays the solution:
+// Playing results (0.6.4), loaded with the results. A panel at the right of the view (0.10.5; a
+// bar over the drawing before) plays the solution:
 // a linear static result grows from no load to the full load; a nonlinear one goes through its
 // increments, a time history through its times (both from the engine's frames), and a mode swings.
 // Play, pause, a slider to any moment, the speed and looping. The results are not copied into the
 // drawing code: the player hands the store a view of them at its position (`setPlayView`), and the
 // canvas and the 3D view draw that as they draw any result.
-import { Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Results, num } from "./api";
-import { rawResults, setPlayView, modeOn, modes, setPhase, animate, setAnimate, stale } from "./store";
+import { rawResults, setPlayView, modeOn, modes, setPhase, animate, setAnimate, stale, setPlayerShown, setPlayerUp } from "./store";
 import { fmt } from "./units";
 import { Icon } from "./ui";
 
@@ -81,12 +82,27 @@ const label = () => {
   return F.what === "time" ? `t = ${fmt("time", at)}` : `load factor ${num(at, 3)}`;
 };
 
-/** The bar: play or pause, the slider, the speed, looping. */
+/** The result the player's position belongs to. A new result starts at its end, still; mounting
+ * the panel never resets it (0.10.5: Play pressed on the ribbon while the panel was still loading
+ * was undone when it arrived, so the first Play after a solve often did nothing). */
+let seen: Results | null = null;
+const fresh = () => { const r = rawResults(); if (r !== seen) { seen = r; setPlaying(false); setPos(1); } };
+
+/** Play, or pause; at the end it starts again from the beginning (with Loop off it used to stop at once). */
+export const play = () => {
+  fresh();
+  if (playing()) { setPlaying(false); return; }
+  if (pos() >= 1 - 1e-9 && !modeOn()) setPos(0);
+  setPlaying(true);
+};
+/** Back to the start, still. */
+export const toStart = () => { fresh(); setPlaying(false); setPos(0); if (modeOn()) setPhase(0); };
+
+/** The panel: play or pause, the slider, the speed, looping. */
 export const Player = () => {
   setPlayView(() => (r: Results) => atPos(r, pos()));
   onCleanup(() => { setPlayView(null); setPlaying(false); setPos(1); });
-  // A new result starts at its end, still.
-  createEffect(() => { rawResults(); setPlaying(false); setPos(1); });
+  createEffect(fresh);
   // The clock: a whole run takes 3 s at speed 1 (a mode swings once in 1.2 s).
   createEffect(() => {
     if (!playing()) return;
@@ -106,17 +122,20 @@ export const Player = () => {
   });
   // Modes keep their own swinging until the player takes over.
   createEffect(() => { if (modeOn() && playing() && animate()) setAnimate(false); });
-  const toggle = () => { if (!playing() && pos() >= 1 && !modeOn()) setPos(0); setPlaying(!playing()); };
+  const Up = (p: { children: unknown }) => { onMount(() => setPlayerUp(true)); onCleanup(() => setPlayerUp(false)); return <>{p.children}</>; };
   return (
     <Show when={(playable(rawResults()) && !stale()) || (modeOn() && modes())}>
-      <div class="player" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
-        <button class="pbtn" title={playing() ? "Pause" : "Play the result: from no load to the whole load, through the increments or the time history"} onClick={toggle}><Icon n={playing() ? "pause" : "play"} /></button>
-        <button class="pbtn" title="Back to the start" onClick={() => { setPlaying(false); setPos(0); if (modeOn()) setPhase(0); }}><Icon n="first" /></button>
-        <input type="range" min="0" max="1000" value={Math.round(pos() * 1000)} title="Go to any moment" onInput={e => { setPlaying(false); setPos(+e.currentTarget.value / 1000); if (modeOn()) setPhase(Math.sin(pos() * 2 * Math.PI)); }} />
-        <span class="plabel mono">{label()}</span>
-        <select title="Speed" onChange={e => setSpeed(+e.currentTarget.value)}>{[0.25, 0.5, 1, 2, 4].map(s => <option value={s} selected={s === speed()}>{s}×</option>)}</select>
-        <label class="ploop" title="Start again at the end"><input type="checkbox" checked={loop()} onChange={e => setLoop(e.currentTarget.checked)} />Loop</label>
-      </div>
+      <Up><div class="player" onPointerDown={e => e.stopPropagation()} onPointerUp={e => e.stopPropagation()}>
+        <header><b>Animation</b><button class="x" title="Close the animation panel (Animate › Animation Panel opens it again)" onClick={() => { setPlaying(false); setPlayerShown(false); }}>×</button></header>
+        <div class="prow">
+          <button class="pbtn" title={playing() ? "Pause" : "Play the result: from no load to the whole load, through the increments or the time history"} onClick={play}><Icon n={playing() ? "pause" : "play"} /></button>
+          <button class="pbtn" title="Back to the start" onClick={toStart}><Icon n="first" /></button>
+          <span class="plabel mono">{label()}</span>
+        </div>
+        <input type="range" min="0" max="1000" value={Math.round(pos() * 1000)} title="Go to any moment" onInput={e => { fresh(); setPlaying(false); setPos(+e.currentTarget.value / 1000); if (modeOn()) setPhase(Math.sin(pos() * 2 * Math.PI)); }} />
+        <div class="prow small"><label>Speed <select title="Speed" onChange={e => setSpeed(+e.currentTarget.value)}>{[0.25, 0.5, 1, 2, 4].map(s => <option value={s} selected={s === speed()}>{s}×</option>)}</select></label>
+          <label class="ploop" title="Start again at the end"><input type="checkbox" checked={loop()} onChange={e => setLoop(e.currentTarget.checked)} />Loop</label></div>
+      </div></Up>
     </Show>
   );
 };

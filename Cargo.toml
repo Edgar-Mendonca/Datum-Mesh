@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/cad", "src-tauri"]
+members = ["crates/core", "crates/cad", "crates/cli", "src-tauri"]
 # app/: SolidCraft's crates (their own workspace), used only as the geometry engine behind
 # crates/cad (0.7.1).
 exclude = ["app"]

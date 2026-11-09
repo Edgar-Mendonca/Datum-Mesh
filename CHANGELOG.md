@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.5 — 2026-11-09
+
+Driving it: the animation player moves to a panel at the side and plays every time, and Datum Mesh runs without its window, from a command line or an AI agent.
+
+**Animation**
+- The player is a panel at the right of the view, not a bar over the drawing: play, back to the start, the slider, the speed and looping, with × to close it (Animate › Animation Panel brings it back).
+- Fixed: Play on the ribbon often did nothing just after a solve (the panel, arriving, undid it); Play at the end with Loop off stopped at once instead of starting again.
+
+**Command line and AI agents**
+- datum-mesh-cli, installed beside the program: make, open, edit, solve and check models with the same engine and the same edits as the window, answering in JSON; scripts of commands; the verification benchmarks.
+- An MCP server (datum-mesh-cli mcp) so AI agents drive the same commands; Help › Command Line shows where it is and the line to connect an agent.
+- Not yet from the command line: meshing solids made with the modelling tools, and pictures of results.
+
 ## 0.10.4 — 2026-11-09
 
 Design foundations, from mechanics formulas: the real beams and columns of a frame, what they carry along their length, and checks that show their working. Not a design code: every factor is yours, and the report says what is not checked.

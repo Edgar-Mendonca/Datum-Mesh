@@ -780,7 +780,7 @@ dependencies = [
 
 [[package]]
 name = "datum-core"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "faer",
  "i_overlay",
@@ -791,7 +791,7 @@ dependencies = [
 
 [[package]]
 name = "datum-mesh"
-version = "0.10.4"
+version = "0.10.5"
 dependencies = [
  "chrono",
  "datum-cad",
@@ -803,6 +803,15 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "ureq",
+]
+
+[[package]]
+name = "datum-mesh-cli"
+version = "0.10.5"
+dependencies = [
+ "datum-core",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

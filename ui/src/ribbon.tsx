@@ -1,7 +1,7 @@
 // Title bar, quick access toolbar, Tell Me and the ribbon (Home · Geometry · Mesh · Loads · Solve ·
 // Results · View · Help, with Format as a contextual tab on a selection). Copied from Datum Plan's
 // ribbon by way of Datum Sim; planned tools are shown dimmed with the release they arrive in.
-import { localAxes, setLocalAxes, sectionsOn, setSectionsOn, animate, setAnimate } from "./store";
+import { localAxes, setLocalAxes, sectionsOn, setSectionsOn, playerShown, setPlayerShown } from "./store";
 import { memberTruss, setMemberTruss, memberPlates, setMemberPlates } from "./cad";
 import { hasSolids, meshSolids } from "./study";
 import { For, Show, JSX, createSignal, createMemo, onMount } from "solid-js";
@@ -517,10 +517,10 @@ export const Ribbon = () => {
           <div class="rnote">{(m()?.contacts?.length ?? 0) ? `${m()!.contacts!.length} contact${m()!.contacts!.length === 1 ? "" : "s"}: pressure and sliding with friction, solved step by step.` : "Solids that touch are joined. A contact lets them press on each other and slide, held back by friction."}</div></G>
       </Show>
       <Show when={tab() === "animate"}>
-        <G l="Play" h="animate"><B big i="play" l="Play" off={!results()} run={() => import("./player").then(k => { setAnimate(true); k.setPlaying(!k.playing()); })} title="Play the result: a static one grows from no load, a nonlinear one goes through its increments, a time history through its times, a mode swings" />
-          <S><B i="first" l="To the Start" off={!results()} run={() => import("./player").then(k => { setAnimate(true); k.setPlaying(false); k.setPos(0); })} /><B i="repeat" l="Loop" off={!results()} run={() => import("./player").then(k => k.setLoop(!k.loop()))} title="Play again from the start at the end, or stop there" />
+        <G l="Play" h="animate"><B big i="play" l="Play" off={!results()} run={() => { setPlayerShown(true); import("./player").then(k => k.play()); }} title="Play the result: a static one grows from no load, a nonlinear one goes through its increments, a time history through its times, a mode swings" />
+          <S><B i="first" l="To the Start" off={!results()} run={() => { setPlayerShown(true); import("./player").then(k => k.toStart()); }} /><B i="repeat" l="Loop" off={!results()} run={() => import("./player").then(k => k.setLoop(!k.loop()))} title="Play again from the start at the end, or stop there" />
             <B i="play" l="Speed ▾" off={!results()} dd={e => import("./player").then(k => openMenu(e, [0.25, 0.5, 1, 2, 4].map(x => ({ label: `${x}×`, on: k.speed() === x, run: () => k.setSpeed(x) }))))} /></S></G>
-        <G l="Show" h="animate"><S><B i="view" l="Player Bar" on={animate()} run={() => setAnimate(!animate())} title="The bar over the drawing to play, pause and go to any moment" /><B i="deform" l="Deformed Shape" on={show().deformed} off={!results()} run={() => C.show({ deformed: !show().deformed })} /></S></G>
+        <G l="Show" h="animate"><S><B i="view" l="Animation Panel" on={playerShown()} run={() => setPlayerShown(!playerShown())} title="The panel at the right of the view to play, pause and go to any moment" /><B i="deform" l="Deformed Shape" on={show().deformed} off={!results()} run={() => C.show({ deformed: !show().deformed })} /></S></G>
       </Show>
       <Show when={tab() === "view"}>
         <G l="Zoom" h="zoom"><B big i="fit" l="Fit" run={C.fit} /><S><B i="zin" l="Zoom In" run={C.zoomIn} /><B i="zout" l="Zoom Out" run={C.zoomOut} /></S></G>
@@ -546,6 +546,7 @@ export const Ribbon = () => {
       <Show when={tab() === "help"}>
         <G l="Learn"><B big i="report" l="Getting Started" run={() => D.gettingStarted()} /><B big i="info" l="Glossary" run={() => D.glossary()} /><B big i="help" l="What Is This Tool?" dd={e => { const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); helpTopics().then(all => openMenu({ x: r.left, y: r.bottom + 2 }, all.map(([k, h]) => ({ label: h.t, run: () => helpCard(k) })))); }} /><B big i="keys" l="Shortcuts" run={() => D.shortcuts()} /><B big i="search" l="Tell Me" run={palette} /></G>
         <G l="Trust"><B big i="verify" l="Verification" run={() => D.verification()} /></G>
+        <G l="Automate"><B big i="report" l="Command Line" run={() => D.cliHelp()} title="Datum Mesh without its window: the command line, scripts and AI agents (MCP)" /></G>
         <G l="Datum Mesh on GitHub"><B big i="github" l="GitHub" run={() => call("open_url", { url: GH })} /><B big i="tag" l="Releases" run={() => call("open_url", { url: `${GH}/releases` })} /><B big i="bug" l="Report an Issue" run={() => call("open_url", { url: `${GH}/issues/new` })} /></G>
         <G l="Updates"><B big i="upd" l="Check for Updates" run={() => setBackstage("about")} /><B big i="list" l="Roadmap" run={() => setBackstage("roadmap")} /></G>
       </Show>

@@ -128,6 +128,15 @@ async fn cad_export(app: AppHandle, st: State<'_, CadSt>, name: String, format: 
     Ok(Some(path.display().to_string()))
 }
 
+/// The command line installed beside the program (0.10.5, `cli/datum-mesh-cli.exe`), for Help ›
+/// Command Line; None when it is not there (a development build).
+#[tauri::command]
+fn cli_path() -> Option<String> {
+    let exe = if cfg!(windows) { "datum-mesh-cli.exe" } else { "datum-mesh-cli" };
+    let d = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    [d.join("cli").join(exe), d.join("resources").join("cli").join(exe), d.join(exe)].into_iter().find(|p| p.exists()).map(|p| p.display().to_string())
+}
+
 /// Gmsh, the mesher (a separate program, GPL): `DATUM_GMSH`, then the copy installed with Datum
 /// Mesh (`gmsh/gmsh.exe` beside the program), then `gmsh` on the path.
 fn gmsh_path() -> PathBuf {
@@ -892,7 +901,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             stop_solve,
-            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, section_table, design_member, mech_checks, member_values, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, section_table, design_member, mech_checks, cli_path, member_values, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())
