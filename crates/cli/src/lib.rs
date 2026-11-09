@@ -157,7 +157,7 @@ impl Session {
             "verify" => {
                 let rows = datum_core::bench::run();
                 let failed: Vec<_> = rows.iter().filter(|r| !r.pass).collect();
-                let mut out = json!({ "rows": rows.len(), "passed": rows.len() - failed.len(), "failed": to(&failed)? });
+                let mut out = json!({ "rows": rows.len(), "passed": rows.len() - failed.len(), "failed": to(&failed)?, "not_verified": to(datum_core::bench::not_verified())? });
                 if p.get("all").and_then(Value::as_bool).unwrap_or(false) {
                     out["all"] = to(&rows)?;
                 }

@@ -190,6 +190,7 @@ fn main() {
         "platform_buckle": sent(&datum_core::buckling(&examples::get("platform").unwrap(), 6).unwrap()),
         "bracket_modes": sent(&datum_core::modes(&examples::get("bracket").unwrap(), 6).unwrap()),
         "verification": bench::run(),
+        "not_verified": bench::not_verified(),
         "noload": out_m(&noload),
         "offgrid": out_m(&offgrid),
         "noload_results": sent(&datum_core::solve(&noload).unwrap()),

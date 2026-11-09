@@ -341,6 +341,7 @@ export const cliHelp = () => openDialog(() => {
 
 export const verification = () => openDialog(() => {
   const [rows] = createResource(() => call<Check[]>("verification"));
+  const [gaps] = createResource(() => call<{ what: string; why: string }[]>("not_verified").catch(() => []));
   const [ver] = createResource(() => call<string>("version"));
   const val = (q: string, v: number) => (q === "ratio" ? num(v, 6) : q === "rad" ? `${num(v, 6)} rad` : fmt(q as Q, v, 6));
   return (
@@ -351,6 +352,13 @@ export const verification = () => openDialog(() => {
           <p classList={{ okline: r().every(x => x.pass), badline: !r().every(x => x.pass) }}><Icon n={r().every(x => x.pass) ? "check" : "info"} /> {r().filter(x => x.pass).length} of {r().length} checks pass.</p>
           <table class="tbl"><thead><tr><th>#</th><th>Benchmark</th><th>Quantity</th><th class="r">Datum Mesh</th><th class="r">Reference</th><th class="r">Error</th><th>Source</th><th /></tr></thead><tbody>
             <For each={r()}>{x => <tr><td>{x.bench}</td><td>{x.name}</td><td>{x.quantity}</td><td class="r">{val(x.q, x.result)}</td><td class="r">{val(x.q, x.reference)}</td><td class="r">{x.error < 1e-12 ? "< 1e-12" : x.error.toExponential(1)}</td><td>{x.source}</td><td>{x.pass ? "✓ pass" : "✗ fail"}</td></tr>}</For></tbody></table>
+          <h3>Failed</h3>
+          <Show when={r().some(x => !x.pass)} fallback={<p class="small okline" data-failed="0">None: every check above passed.</p>}>
+            <ul class="small badline" data-failed={r().filter(x => !x.pass).length}><For each={r().filter(x => !x.pass)}>{x => <li>{x.bench} · {x.name}: {x.quantity} ({val(x.q, x.result)} against {val(x.q, x.reference)})</li>}</For></ul>
+          </Show>
+          <h3>Not yet verified</h3>
+          <p class="muted small">What these checks do not yet cover, and what was measured. Nothing here is claimed as verified.</p>
+          <ul class="small gaps"><For each={gaps() ?? []}>{g => <li><b>{g.what}.</b> {g.why}</li>}</For></ul>
           <h3>Mesh convergence</h3>
           <p class="muted small">The same model on finer meshes: the error falls as the elements get smaller.</p>
           <div class="conv"><For each={r().filter(x => x.steps.length)}>{x => <table class="tbl"><thead><tr><th colSpan={2}>{x.name}: {x.quantity}</th></tr><tr><th class="r">Elements</th><th class="r">Error</th></tr></thead><tbody>

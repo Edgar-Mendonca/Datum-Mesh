@@ -10,6 +10,18 @@ fn main() {
         println!("| {} | {} | {} | {:.6e} | {:.6e} | {:.1e} | {} | {} |", r.bench, r.name, r.quantity, r.result, r.reference, r.error, r.source, if r.pass { "pass" } else { "FAIL" });
     }
     println!("\n{} of {} checks pass.", rows.iter().filter(|r| r.pass).count(), rows.len());
+    println!("\n## Failed\n");
+    let failed: Vec<_> = rows.iter().filter(|r| !r.pass).collect();
+    if failed.is_empty() {
+        println!("None: every check above passed.");
+    }
+    for r in failed {
+        println!("- {} · {}: {} ({:.6e} against {:.6e})", r.bench, r.name, r.quantity, r.result, r.reference);
+    }
+    println!("\n## Not yet verified\n\nWhat these checks do not yet cover, and what was measured. Nothing here is claimed as verified.\n");
+    for g in datum_core::bench::not_verified() {
+        println!("- **{}.** {}", g.what, g.why);
+    }
     println!("\n## Mesh convergence\n\nThe same model solved on finer meshes: the error falls as the elements get smaller.\n");
     for r in rows.iter().filter(|r| !r.steps.is_empty()) {
         println!("**{}: {}**\n\n| Elements | Error |\n| --- | --- |", r.name, r.quantity);

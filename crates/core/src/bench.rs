@@ -2990,6 +2990,7 @@ pub fn run() -> Vec<Check> {
     v.extend(member_loads());
     v.extend(spec_rows());
     v.extend(design_rows());
+    v.extend(proofs());
     v
 }
 
@@ -3070,11 +3071,232 @@ fn design_rows() -> Vec<Check> {
     out
 }
 
+/// The Newton residuals of a solve, increment by increment (each increment's out-of-balance force
+/// over the load's size, iteration by iteration), from the solver's own progress events.
+fn residuals(m: &Model) -> Vec<Vec<f64>> {
+    use crate::progress::{watch, Event};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    let seqs: Rc<RefCell<Vec<Vec<f64>>>> = Rc::default();
+    let s2 = seqs.clone();
+    let last = std::cell::Cell::new(usize::MAX);
+    let _ = watch(
+        move |e: &Event| {
+            if let Event::Iteration { it, residual } = e {
+                let mut s = s2.borrow_mut();
+                if *it <= last.get() || s.is_empty() {
+                    s.push(vec![]);
+                }
+                last.set(*it);
+                s.last_mut().unwrap().push(*residual);
+            }
+        },
+        Default::default(),
+        || crate::solve_for(m, None),
+    );
+    let out = seqs.borrow().clone();
+    out
+}
+
+/// How far a module's tangent stiffness is from the true derivative of its internal forces at
+/// movements `u`: ‖K v − (f(u + εv) − f(u − εv)) / 2ε‖ / ‖…‖ for a direction v over the free
+/// unknowns. A consistent tangent (the one Newton needs to converge quadratically) gives the
+/// finite difference's own error, about 1e-7; a tangent that misses terms, far more.
+fn tangent_error(p: &dyn crate::engine::path::Problem, u: &[f64]) -> f64 {
+    let n = p.size();
+    let held = p.held().to_vec();
+    let v: Vec<f64> = (0..n).map(|i| if held[i] { 0.0 } else { ((i as f64 * 0.7 + 0.3).sin()) * 1e-3 }).collect();
+    let (_, k) = p.state(u).expect("state");
+    let kv = k.mul(&v);
+    let h = 1e-4;
+    let up: Vec<f64> = p.add(u, &v.iter().map(|x| x * h).collect::<Vec<_>>());
+    let um: Vec<f64> = p.add(u, &v.iter().map(|x| -x * h).collect::<Vec<_>>());
+    let (fp, _) = p.state(&up).expect("state");
+    let (fm, _) = p.state(&um).expect("state");
+    let fd: Vec<f64> = (0..n).map(|i| (fp[i] - fm[i]) / (2.0 * h)).collect();
+    let free = |x: &[f64]| x.iter().zip(&held).filter(|(_, h)| !**h).map(|(a, _)| a * a).sum::<f64>().sqrt();
+    let diff: Vec<f64> = (0..n).map(|i| kv[i] - fd[i]).collect();
+    free(&diff) / free(&fd).max(1e-300)
+}
+
+/// A frame's state partway along a large-deflection path, for the tangent check.
+fn bent_frame(space: bool) -> (Box<dyn crate::engine::path::Problem>, Vec<f64>) {
+    use crate::engine::path::{follow, Control, Problem};
+    let (e, l) = (200e9, 1.0);
+    let ei = e * 0.05f64.powi(4) / 12.0;
+    if !space {
+        let mut d = frame(e, SectionShape::Rect { b: 0.05, h: 0.05 });
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -2.0 * ei / (l * l), fz: 0.0 });
+        let (p, f) = crate::frames::corot::Corot::new(&d.m, 8).expect("corot");
+        let n = p.size();
+        let path = follow(&p, &vec![0.0; n], &f, &vec![0.0; n], &Control { increments: 5, ..Default::default() }).expect("path");
+        let u = path.points.last().unwrap().u.clone();
+        (Box::new(p), u)
+    } else {
+        let mut d = space_frame(e, SectionShape::Rect { b: 0.05, h: 0.05 });
+        d.m.materials[0].rho = 0.0;
+        member3(&mut d, [0.0, 0.0, 0.0], [l, 0.0, 0.0], MemberKind::Beam);
+        support3(&mut d, [0.0, 0.0, 0.0], SupportKind::Fixed);
+        let tip = node3(&d, [l, 0.0, 0.0]);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -1.5 * ei / (l * l), fz: -ei / (l * l) });
+        let (p, f) = crate::frames::corot3::Corot3::new(&d.m, 8).expect("corot3");
+        let n = p.size();
+        let path = follow(&p, &vec![0.0; n], &f, &vec![0.0; n], &Control { increments: 5, ..Default::default() }).expect("path");
+        let u = path.points.last().unwrap().u.clone();
+        (Box::new(p), u)
+    }
+}
+
+/// The median order a solve's Newton iterations show, over every three running residuals that
+/// are falling, start below a tenth of the load and end above the rounding floor (1e-14).
+fn median_order(seqs: &[Vec<f64>]) -> f64 {
+    let mut q: Vec<f64> = seqs
+        .iter()
+        .flat_map(|r| r.windows(3).filter(|w| w[0] < 0.1 && w[1] < w[0] && w[2] < w[1] && w[2] > 1e-14).map(|w| (w[2] / w[1]).ln() / (w[1] / w[0]).ln()).collect::<Vec<_>>())
+        .collect();
+    q.sort_by(f64::total_cmp);
+    if q.is_empty() {
+        return f64::NAN;
+    }
+    q[q.len() / 2]
+}
+
+/// Benchmark 41 (0.10.6): proofs that the nonlinear solvers do what Newton's method promises and
+/// that the answers do not depend on the computer: the frames' tangent stiffness against the
+/// derivative of their internal forces, the order of convergence Newton shows on plasticity and
+/// large deformation, and one thread against four.
+fn proofs() -> Vec<Check> {
+    let mut v = vec![];
+    for (space, name) in [(false, "2D frame bent far by an end load (corotational beams)"), (true, "3D frame bent far both ways (corotational beams)")] {
+        let (p, u) = bent_frame(space);
+        v.push(check(41, name, "Tangent stiffness against the derivative of the internal forces (K v over a finite difference)", "ratio", 1.0, 1.0 + tangent_error(p.as_ref(), &u), 1e-6, "Newton's method converges quadratically only with the exact tangent (Bathe, Finite Element Procedures, §8.4); checked by central differences"));
+    }
+    let models = proof_models();
+    for (name, m) in models.iter().skip(1) {
+        let q = median_order(&residuals(m));
+        v.push(check(41, name, "Newton's order of convergence (median over the iterations, 2 = quadratic)", "ratio", 2.0, q, 0.3, "Newton's method with a consistent tangent: the force out of balance squares each iteration near the answer; rounding (about 1e-14) limits the last ones"));
+    }
+    // One thread against four: the same answers to the last digit.
+    let m = &models[2].1;
+    let disp = |par: faer::Par| -> Vec<f64> {
+        faer::set_global_parallelism(par);
+        let out = match crate::solve_for(m, None) { Ok(crate::Results::Solid(r)) => r.disp.into_iter().flatten().collect(), _ => vec![] };
+        faer::set_global_parallelism(faer::Par::rayon(0));
+        out
+    };
+    let (a, b) = (disp(faer::Par::Seq), disp(faer::Par::rayon(4)));
+    let big = a.iter().fold(0.0f64, |x, y| x.max(y.abs())).max(1e-300);
+    let diff = if a.len() == b.len() && !a.is_empty() { a.iter().zip(&b).fold(0.0f64, |x, (p, q)| x.max((p - q).abs())) / big } else { f64::NAN };
+    v.push(check(41, "3D rubber bar stretched, solved on one thread and on four", "Largest difference in the movements, over the largest movement", "ratio", 1.0, 1.0 + diff, 1e-15, "The same model must give the same answer on any computer and any number of threads"));
+    v
+}
+
+/// What the benchmarks do not yet check, said in the report beside what they do (0.10.6).
+#[derive(Clone, Debug, Serialize)]
+pub struct Gap {
+    pub what: &'static str,
+    pub why: &'static str,
+}
+
+/// The solver paths and claims with no check against a known answer yet, and what was measured.
+pub fn not_verified() -> Vec<Gap> {
+    vec![
+        Gap { what: "Mesh convergence rate of 4-node tetrahedra", why: "Measured on a clamped cantilever with 8, 16 and 32 elements along it: still far from converged (4-node tetrahedra are stiff in bending). Use 10-node tetrahedra, the default." },
+        Gap { what: "Mesh convergence rate of 10-node tetrahedra", why: "Observed order 1.7 on the same cantilever, held down by the corners of the clamp; not yet measured on a smooth problem against the textbook rate." },
+        Gap { what: "Newton's rate on the frames, from their residuals", why: "Their tangent is checked directly (benchmark 41); their iterations reach the rounding floor too soon for the rate to show in the residuals." },
+        Gap { what: "Plates joined to beams in 3D frames", why: "Only the balance of loads and reactions is checked (benchmark 23), not a known answer." },
+        Gap { what: "Tension-only and compression-only members in 3D frames", why: "Checked in 2D frames (benchmark 24) only." },
+        Gap { what: "Solids drawn with the modelling tools and meshed by Gmsh", why: "Their 10-node tetrahedra are checked on generated meshes (benchmarks 28–30, 37); the meshing itself is done by Gmsh, a separate program, and is not checked here." },
+    ]
+}
+
+/// The proof models (0.10.6): a solve each, with a tight tolerance so Newton shows its rate.
+fn proof_models() -> Vec<(&'static str, Model)> {
+    use crate::model::{SolverSettings, Step, StepKind};
+    let tight = Some(SolverSettings { tol: 1e-13, max_iter: 40, ..Default::default() });
+    let mut out = vec![];
+    // A 2D cantilever bent far by an end load (corotational beams).
+    {
+        let (e, l) = (200e9, 1.0);
+        let rect = SectionShape::Rect { b: 0.05, h: 0.05 };
+        let ei = e * 0.05f64.powi(4) / 12.0;
+        let mut d = frame(e, rect);
+        d.m.materials[0].rho = 0.0;
+        member(&mut d, [0.0, 0.0], [l, 0.0], MemberKind::Beam);
+        support(&mut d, 0.0, 0.0, SupportKind::Fixed);
+        let tip = node(&d, l, 0.0);
+        load(&mut d, Target::Node { id: tip }, LoadKind::Force { fx: 0.0, fy: -2.0 * ei / (l * l), fz: 0.0 });
+        add(&mut d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, increments: 5, pieces: 16, solver: tight.clone(), ..Default::default() }) });
+        out.push(("2D frame bent far (corotational beams)", d.m));
+    }
+    // A thick cylinder in plane strain, pressed into yielding (J2, perfectly plastic).
+    {
+        let q = 0.414_213_562_373_095;
+        let ring = Geom::Poly { pts: vec![[0.1, 0.0], [0.2, 0.0], [0.0, 0.2], [0.0, 0.1]], bulge: vec![0.0, q, 0.0, -q] };
+        let (mut d, ids) = part(Analysis::Strain, 200e9, 0.3, vec![(ring, false)]);
+        d.m.materials[0].fy = 250e6;
+        d.m.materials[0].rho = 0.0;
+        d.m.mesh.size = 0.02;
+        let id = ids[0];
+        edge_support(&mut d, id, 0, SupportKind::Roller);
+        edge_support(&mut d, id, 2, SupportKind::Roller);
+        let pc = 2.0 * 250e6 / 3f64.sqrt() * 2f64.ln();
+        edge_load(&mut d, id, 3, LoadKind::Pressure { p: 0.9 * pc });
+        add(&mut d, Op::Add { item: Item::Step(Step { kind: StepKind::Newton, increments: 6, solver: tight.clone(), ..Default::default() }) });
+        out.push(("Plane strain cylinder yielding (J2 plasticity)", d.m));
+    }
+    // A rubber bar stretched to 1.8 times its length (neo-Hookean, large deformation, 3D).
+    {
+        let (e, nu) = (2.98e6, 0.45);
+        let nh = crate::solids::hyper::NeoHooke::new(e, nu);
+        let (p, _) = nh.uniaxial(1.8);
+        let (mut d, ids) = part(Analysis::Solid, e, nu, vec![(Geom::rect(0.0, 0.0, 0.2, 0.02), false)]);
+        d.m.materials[0].rho = 0.0;
+        d.m.thickness = 0.02;
+        d.m.mesh.size = 0.01;
+        d.m.mesh.layers = 1;
+        let id = ids[0];
+        edge_support(&mut d, id, 3, SupportKind::Symmetry);
+        edge_support(&mut d, id, 0, SupportKind::Symmetry);
+        add_id(&mut d, Item::Support(Support { id: 0, at: Target::End { front: false }, kind: SupportKind::Symmetry }));
+        edge_load(&mut d, id, 1, LoadKind::Traction { fx: p * 0.02 * 0.02, fy: 0.0, total: true, fz: 0.0 });
+        add(&mut d, Op::Add { item: Item::Step(Step { kind: StepKind::Large, increments: 6, solver: tight.clone(), ..Default::default() }) });
+        out.push(("3D rubber bar stretched (neo-Hookean, total Lagrangian)", d.m));
+    }
+    // A 3D solid cantilever bent far by a dead end load (large deformation).
+    {
+        let (e, l, h) = (200e9, 1.0, 0.05f64);
+        let ei = e * h * h.powi(3) / 12.0;
+        let (mut d, ids) = part(Analysis::Solid, e, 0.3, vec![(Geom::rect(0.0, 0.0, l, h), false)]);
+        d.m.materials[0].rho = 0.0;
+        d.m.thickness = h;
+        d.m.mesh.size = 0.05;
+        d.m.mesh.layers = 1;
+        let id = ids[0];
+        edge_support(&mut d, id, 3, SupportKind::Fixed);
+        edge_load(&mut d, id, 1, LoadKind::Traction { fx: 0.0, fy: -ei / (l * l), total: true, fz: 0.0 });
+        add(&mut d, Op::Add { item: Item::Step(Step { kind: StepKind::Large, increments: 6, solver: tight.clone(), ..Default::default() }) });
+        out.push(("3D solid cantilever bent far (total Lagrangian)", d.m));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
     fn spec_rows_on_their_own() {
         for r in super::spec_rows() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
+    #[test]
+    fn proofs_on_their_own() {
+        for r in super::proofs() {
             assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
         }
     }

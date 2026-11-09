@@ -72,6 +72,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
           if (c === "model_check") return window.__checks ?? (window.__cur === f.checkdemo ? f.checkdemo_findings : []);
           if (c === "combos_preview") return f.braced_rule_preview;
           if (c === "design_member") return f.dmdemo_info;
+          if (c === "not_verified") return f.not_verified;
           if (c === "mech_checks") return window.__mech ?? f.dmdemo_checks;
           if (c === "member_values") return f.dmdemo_values;
           if (c === "section_table") return f.section_table_i;
@@ -394,6 +395,8 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await p.click('.tabs > button:text-is("Help")'); await p.click('.ribbon button[title="Verification"]'); await p.waitForTimeout(250);
   check("the window's text names no commercial product (Verification open)", named(await p.evaluate(() => document.body.innerText)).length === 0, named(await p.evaluate(() => document.body.innerText)).join());
   check("Help › Verification lists every benchmark, all passing", (await p.textContent(".dlg")).includes(`${fix.verification.length} of ${fix.verification.length} checks pass`));
+  check("Help › Verification says what failed (none) and lists what is not yet verified (0.10.6)", (await p.$eval(".dlg [data-failed]", el => el.getAttribute("data-failed"))) === "0" && (await p.$$(".dlg .gaps li")).length === fix.not_verified.length && fix.not_verified.length > 0);
+  check("…and the proofs: tangents, Newton's order and threads (benchmark 41, 0.10.6)", (await p.textContent(".dlg")).includes("Newton's order of convergence") && (await p.textContent(".dlg")).includes("on one thread and on four"));
   check("Help › Verification shows the mesh convergence tables", (await p.$$(".dlg .conv table")).length === fix.verification.filter(x => x.steps.length).length && (await p.textContent(".dlg")).includes("NAFEMS LE1"));
   await p.keyboard.press("Escape");
 

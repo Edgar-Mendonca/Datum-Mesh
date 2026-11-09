@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.6 — 2026-11-09
+
+Proving it: the verification report says what failed and what is not yet verified, and new checks prove the nonlinear solvers converge as Newton's method promises and give the same answers on any number of threads.
+
+**Verification**
+- Help › Verification, the dated record and `datum-mesh-cli verify` now say what failed (none) and list what is not yet verified, with what was measured: the mesh convergence rates of tetrahedra (4-node ones are stiff in bending; use 10-node ones, the default), plates joined to beams, tension-only members in 3D frames, and the meshing of modelled solids by Gmsh.
+- Benchmark 41, proofs: the frames' tangent stiffness equals the derivative of their internal forces (2D and 3D, within 1e-9); Newton's order of convergence measured on yielding (2.0), rubber (2.3) and a solid bent far (1.7, rounding stops the last iterations); a solid solved on one thread and on four gives the same movements to the last digit.
+
 ## 0.10.5 — 2026-11-09
 
 Driving it: the animation player moves to a panel at the side and plays every time, and Datum Mesh runs without its window, from a command line or an AI agent.

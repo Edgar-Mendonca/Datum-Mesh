@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "A verification report that says what failed and what is not yet verified, with proofs that Newton converges quadratically and that answers do not depend on the number of threads",
     "A command line and an MCP server: scripts and AI agents make, solve and check models with the same engine and edits as the window",
     "Design members with restraints and segments, values anywhere along a member, and mechanics checks (stress, Euler buckling, deflection, storey drift) that show their working and say what was not checked",
     "Four starting points: 2D frame, 3D frame, 2D part and 3D solid",
@@ -58,15 +59,6 @@
     "docs/images/fin-solved.png"
   ],
   "roadmap": [
-    {
-      "v": "0.10.6",
-      "title": "Proving it",
-      "when": "Next",
-      "items": [
-        "A verification report that lists known failures and what is not yet verified",
-        "Measured convergence of the nonlinear solvers; the same answers on any number of threads"
-      ]
-    },
     {
       "v": "0.10.7",
       "title": "Nonlinear done right",

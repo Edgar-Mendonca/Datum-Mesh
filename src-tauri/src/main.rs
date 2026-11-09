@@ -523,6 +523,12 @@ async fn verification() -> R<Vec<bench::Check>> {
     tauri::async_runtime::spawn_blocking(bench::run).await.map_err(|e| e.to_string())
 }
 
+/// What the benchmarks do not yet check (0.10.6), for Help › Verification.
+#[tauri::command]
+fn not_verified() -> Vec<bench::Gap> {
+    bench::not_verified()
+}
+
 /// Area, second moment of area and extreme-fibre distance of a section, for the window.
 #[tauri::command]
 fn section_props(shape: SectionShape) -> R<sections::Props> {
@@ -901,7 +907,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             stop_solve,
-            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, section_table, design_member, mech_checks, cli_path, member_values, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
+            cad_run, cad_scene, cad_mesh, cad_contacts, cad_import_step, cad_export, cad_auto_size, cad_members, cad_new, cad_query, state, apply, history, examples_list, new_model, section_props, section_table, design_member, mech_checks, cli_path, not_verified, member_values, model_check, combos_preview, solve, envelope, sections_library, import_dxf, export_dxf, modes, buckling, mesh, materials_library, verification, open, save, save_file,
             options, set_options, autosave, recovery, recover, recent, startup_file, open_url, send_link, read_link, import_mesh, version, quit, check_update, install_update
         ])
         .run(tauri::generate_context!())
