@@ -120,10 +120,19 @@ pub fn follow(p: &dyn Problem, base: &[f64], load: &[f64], u0: &[f64], ctl: &Con
 }
 
 /// Newton iterations at a fixed λ from `u`; Some((u, iterations, stable)) when converged.
+///
+/// With a line search (0.10.8; Crisfield 1991, §9.3): a correction that would leave more force
+/// out of balance than before is halved, up to four times, and the best of the tries is taken.
+/// Near the answer the whole correction is always better, so Newton keeps its quadratic rate and
+/// the state found there is reused for the next iteration (no extra work).
 fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, lambda: f64, mut u: Vec<f64>, max_iter: usize) -> Result<Option<(Vec<f64>, usize, bool)>, String> {
     let scale = (norm_free(base, held).max(norm_free(load, held))).max(f64::MIN_POSITIVE);
+    let mut cached: Option<(Vec<f64>, crate::sparse::System)> = None;
     for it in 0..=max_iter {
-        let (fint, k) = p.state(&u)?;
+        let (fint, k) = match cached.take() {
+            Some(s) => s,
+            None => p.state(&u)?,
+        };
         let r = residual(base, load, lambda, &fint, held);
         let rn = norm_free(&r, held);
         if !rn.is_finite() {
@@ -143,7 +152,30 @@ fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64,
         if it == max_iter {
             break;
         }
-        u = p.add(&u, &x[0]);
+        // The line search: the whole correction, then halves while that leaves more out of balance.
+        let mut best: Option<(f64, Vec<f64>, (Vec<f64>, crate::sparse::System))> = None;
+        let mut a = 1.0;
+        for _ in 0..5 {
+            let trial = p.add(&u, &x[0].iter().map(|v| a * v).collect::<Vec<f64>>());
+            if let Ok(st) = p.state(&trial) {
+                let rt = norm_free(&residual(base, load, lambda, &st.0, held), held);
+                if rt.is_finite() && best.as_ref().is_none_or(|b| rt < b.0) {
+                    let done = rt <= rn;
+                    best = Some((rt, trial, st));
+                    if done {
+                        break;
+                    }
+                }
+            }
+            a *= 0.5;
+        }
+        match best {
+            Some((_, un, st)) => {
+                u = un;
+                cached = Some(st);
+            }
+            None => return Ok(None),
+        }
     }
     Ok(None)
 }
@@ -351,6 +383,35 @@ mod tests {
             s.k.push((0, 0, k));
             Ok((vec![f], s))
         }
+    }
+
+    /// A spring whose force is atan(u): from u = 3 back to no load in one increment, plain Newton
+    /// overshoots further each time (u = 3 → −9.5 → …); the line search brings it home.
+    struct Atan {
+        held: Vec<bool>,
+    }
+    impl Problem for Atan {
+        fn size(&self) -> usize {
+            1
+        }
+        fn held(&self) -> &[bool] {
+            &self.held
+        }
+        fn state(&self, u: &[f64]) -> Result<(Vec<f64>, System), String> {
+            let mut k = System::new(1);
+            k.add(0, 0, 1.0 / (1.0 + u[0] * u[0]));
+            Ok((vec![u[0].atan()], k))
+        }
+    }
+
+    #[test]
+    fn the_line_search_brings_an_overshooting_newton_home() {
+        let p = Atan { held: vec![false] };
+        let f0 = 3f64.atan();
+        let path = follow(&p, &[f0], &[-f0], &[3.0], &Control { increments: 1, grow: false, ..Default::default() }).unwrap();
+        assert!(path.reached, "{:?}", path.note);
+        assert_eq!(path.points.len(), 2, "one increment, not cut");
+        assert!(path.points[1].u[0].abs() < 1e-8, "{}", path.points[1].u[0]);
     }
 
     #[test]

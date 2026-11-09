@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.8 — 2026-11-09
+
+A steadier nonlinear solver and a lighter start.
+
+- Newton's method with a line search: a correction that would leave more force out of balance than before is halved until it helps, so large-deflection steps of frames are cut back less often and a member is not folded through by one wild correction. Near the answer the whole correction is kept, so convergence stays quadratic (benchmark 41).
+- The window starts a little lighter: Help › Verification and Help › Command Line are loaded when first opened.
+
 ## 0.10.7 — 2026-11-09
 
 Progressive folding: a tube crushed between two platens folds over and over, each fold pressing on the last, with the force rising and falling as each new fold forms.
