@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.10.4 — 2026-11-09
+
+Design foundations, from mechanics formulas: the real beams and columns of a frame, what they carry along their length, and checks that show their working. Not a design code: every factor is yours, and the report says what is not checked.
+
+**Design members**
+- Form a design member from members end to end in a straight line (Geometry › Form Design Member); it is found again after splitting or adding nodes, and members that bend, branch, leave a gap or differ are refused with the reason.
+- Its card: the chain of members, restraints typed in (distance from the start; holds sideways, twisting or both) and the segments between them; Dissolve undoes it. A broken design member or a restraint off its length shows in the model check.
+- The whole section table in Materials › Sections: area, second moments, elastic and plastic moduli, radii of gyration and torsion constant, both ways.
+
+**Results › Design Members**
+- Mechanics Checks: stress |N|/A + |M|/Z against the yield strength; the largest compression against the Euler load π²EI/(KL)² both ways (the weak way over the longest length between sideways restraints); deflection from the line between the member's moved ends against span over your ratio. Each combination is solved on its own, so N and M always come from one combination at one place.
+- Statuses in words: pass, fail, not checked (and why), missing data (a yield strength, say); click a member for each check's formula and values; a list of what is never checked (lateral–torsional buckling, shear, local buckling, interaction, torsion, connections, any standard).
+- Storey Drift: each storey's movement against the one below over its height, against your limit.
+- Values Along: axial force, shear, moment and deflection at any distance along a design member, both sides of a point load or joint.
+
+**Verification**
+- Benchmark 40 (6 rows): the shear jump under a point load, PL/4 and PL/8 between nodes, 5wL⁴/384EI from the chord with a support sunk 20 mm, N/N_cr with a brace, and the drift of a cantilever column. All pass.
+
 ## 0.10.3 — 2026-11-08
 
 Model care and frames: the user's specifications turned into tools, every piece shown and approved before this release. Calculations stay on open, published formulas; no design code's numbers are built in.

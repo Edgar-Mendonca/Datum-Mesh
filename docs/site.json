@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "Design members with restraints and segments, values anywhere along a member, and mechanics checks (stress, Euler buckling, deflection, storey drift) that show their working and say what was not checked",
     "Four starting points: 2D frame, 3D frame, 2D part and 3D solid",
     "Frames: point and part-length loads, split, reverse and merge, member orientation, a model check, loads and assignments tables, and combinations by rule with your own factors",
     "Mesh statistics, solver settings and status badges that keep the model, the solve and the balance apart",
@@ -57,19 +58,44 @@
   ],
   "roadmap": [
     {
-      "v": "0.10.4",
-      "title": "Design foundations",
+      "v": "0.10.5",
+      "title": "Driving it",
       "when": "Next",
       "items": [
-        "Design members from a chain of members, with restraints and segments",
-        "Values at any point along a member; section properties",
-        "Mechanics checks: stress, Euler buckling, deflection and storey drift, with the working shown and what was not checked"
+        "The animation player as a panel at the side",
+        "A command line and an MCP server, so scripts and AI agents run the same commands as the window"
       ]
     },
     {
-      "v": "0.10.5",
-      "title": "Geometry tools",
+      "v": "0.10.6",
+      "title": "Proving it",
       "when": "Next",
+      "items": [
+        "A verification report that lists known failures and what is not yet verified",
+        "Measured convergence of the nonlinear solvers; the same answers on any number of threads"
+      ]
+    },
+    {
+      "v": "0.10.7",
+      "title": "Nonlinear done right",
+      "when": "Next",
+      "items": [
+        "Large deformation in 2D parts, follower pressure, line search",
+        "New nonlinear benchmarks"
+      ]
+    },
+    {
+      "v": "0.10.8",
+      "title": "Progressive folding",
+      "when": "Next",
+      "items": [
+        "A tube crushed into several folds: self-contact, an imperfection and a finer mesh"
+      ]
+    },
+    {
+      "v": "0.10.9",
+      "title": "Geometry tools",
+      "when": "Later",
       "items": [
         "Datum planes, axes and points; split a face; overlaps and exploded view",
         "Sketch: project edges, tangent arcs, driven dimensions; repairing imported STEP"
@@ -80,8 +106,8 @@
       "title": "Filling in the map",
       "when": "Later",
       "items": [
-        "Results tools, materials, setup (releases, links, springs, damping), more analyses",
-        "Hexahedra, refinement by itself, job queue and Python"
+        "Results tools, materials (Johnson–Cook, kinematic hardening, more rubber models), setup on named faces, more analyses",
+        "Swept hexahedra, refinement by itself, job queue and Python"
       ]
     },
     {

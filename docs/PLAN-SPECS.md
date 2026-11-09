@@ -39,7 +39,7 @@ Everything a small team can build in our own solver and with our own geometry en
 - Done on the branch: origin and eyes in the tree; an icon for each drawing way; the view cube; the workflow bar and Tools; standard parts; every planned feature in the window; point and part-length loads on members (benchmark 38); the four starting points; split, reverse and merge members, merge nodes; the model check (in the panel under the view); member orientation with local axes; loads and assignments tables; every planned feature shown on its ribbon tab with its release; combinations by rule (with the user's own factors); mesh statistics and quality; solver settings; status badges and the icon distinctions; benchmark 39 (axial bar, support movement, force on an arm, round shaft, CQC with close modes, tube volume).
 - Every piece of 0.10.3 is built; it goes out as one release when the user says.
 
-**0.10.4 · Design foundations, from mechanics formulas** (from the third specification) — built on the branch, waiting for the user's approval
+**0.10.4 · Design foundations, from mechanics formulas** (from the third specification) — released 2026-11-09
 - Design members: form one from a chain of members, dissolve it, inspect it; a selection mode for them.
 - Restraints and segments: where a member is braced; segments that extra mesh nodes never change.
 - Values at any distance along a design member, with both values at a jump.
@@ -50,19 +50,21 @@ Everything a small team can build in our own solver and with our own geometry en
 
 **Agreed 2026-11-09 (the user, after comparing with another open finite-element program): make it right first.** Driving the program from scripts and AI agents, an honest verification report and proofs of the nonlinear solvers come before more features. Fluids (CFD, lattice Boltzmann), blast and equations of state wait until much later. Never write files for commercial solvers (public words); open formats such as CalculiX's are fine.
 
-**0.10.5 · Driving and proving**
+**0.10.5 · Driving it** (the animation player as a panel at the side, its play bug) **and 0.10.6 · Proving it** (the report and proofs below)
 - A command line, `datum-mesh-cli`: open or start a model, apply edits (the same `Op`s as the window), solve, run the checks, write the report and the verification report; JSON in and out.
 - An MCP server (`datum-mesh-cli mcp`) so AI agents drive the same commands; one catalogue of commands for the window, the command line and agents. The same for every Datum app (a family rule, in FAMILY.md through the hub).
 - The verification report lists what passed, the known failures and the solver paths not yet verified, never only passes; rows from published benchmark sets (NAFEMS) added where we have the capability.
 - Proofs: Newton's convergence measured quadratic on frames, plasticity and large deformation; the same answers on one thread and on many; mesh convergence at the textbook rate for each element.
 
-**0.10.6 · Nonlinear done right**
+**0.10.7 · Nonlinear done right**
 - Large deformation in 2D parts (plane stress, plane strain, axisymmetric), not only 3D solids.
 - Follower pressure (pressure that turns with the surface).
 - Line search and tidier cutbacks, the convergence history in the solver monitor; one return-mapping routine for plasticity shared by the implicit and explicit solvers.
 - Benchmarks: the elastica, a shallow arch past its limit point, an inflated membrane, a large-strain plastic bar.
 
-**0.10.7 · Geometry the engine already has** (the old Batch 2, was 0.10.5)
+**0.10.8 · Progressive folding** (brought forward from 0.14 at the user's request): self-contact, an imperfection and a finer mesh so the crushed tube folds several times.
+
+**0.10.9 · Geometry the engine already has** (the old Batch 2, was 0.10.5)
 - Split a face; datum planes, axes and points; overlaps and clearances; exploded view; linked copies; place a part against another; sketch: project edges, open ends, tangent arcs, driven dimensions, freedom left; repairing an imported STEP; section view.
 
 **0.11 · Results tools:** results tree and exact colour bands, several cuts, display groups, free-body forces, stress through a wall, compare analyses, export, graphs of any result and along a path, energies, the forces of the governing case, CSV in and out, report builder, video.
