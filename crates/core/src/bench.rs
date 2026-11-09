@@ -2991,6 +2991,7 @@ pub fn run() -> Vec<Check> {
     v.extend(spec_rows());
     v.extend(design_rows());
     v.extend(proofs());
+    v.extend(crushing());
     v
 }
 
@@ -3195,6 +3196,59 @@ fn proofs() -> Vec<Check> {
     v
 }
 
+/// Benchmark 42 (0.10.7): crushing in time (explicit dynamics of an axisymmetric part with large
+/// deformation, yielding and contact): a ring squashed flat between frictionless platens (exact),
+/// a tube's first peak at its squash load, and the mean force of a tube folding over and over
+/// against the theory of axisymmetric folding.
+pub fn crushing() -> Vec<Check> {
+    use crate::doc::Doc;
+    use crate::model::{Geom, Load, Shape, Step, StepKind, Support};
+    let mut v = vec![];
+    let fy = 240e6;
+    let run = |m: &Model| -> crate::plane::PlaneResults { match crate::solve_for(m, None) { Ok(crate::Results::Plane(r)) => r, Ok(_) => panic!("not a part's results"), Err(e) => panic!("crush: {e}") } };
+    // A ring 20–30 mm from the axis, 10 mm tall, perfectly plastic, squashed 20 % between
+    // frictionless platens: a uniform state, so the force is σy A₀ L₀ / L exactly (the area grows
+    // as the height falls, the volume kept).
+    {
+        let mut d = Doc::new(Model::new(Analysis::Axi));
+        d.m.materials[0].e = 70e9;
+        d.m.materials[0].nu = 0.3;
+        d.m.materials[0].rho = 2700.0;
+        d.m.materials[0].fy = fy;
+        d.m.materials[0].hardening = 0.0;
+        let id = add_id(&mut d, Item::Shape(Shape { material: 1, geom: Geom::rect(0.02, 0.0, 0.03, 0.01), hole: false, ..Shape::default() }));
+        add_id(&mut d, Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: 0 }, kind: SupportKind::RollerX }));
+        add_id(&mut d, Item::Load(Load { id: 0, case: 0, at: Target::Edge { shape: id, edge: 2 }, kind: LoadKind::Settlement { dx: 0.0, dy: -0.002, dz: 0.0 } }));
+        add_id(&mut d, Item::Step(Step { kind: StepKind::Explicit, duration: 4e-3, dt: 1e-7, ..Default::default() }));
+        d.m.mesh.size = 0.001;
+        let r = run(&d.m);
+        let p = r.path.as_ref().expect("path");
+        let n = p.force.len();
+        let tail = &p.force[n - n / 10..];
+        let f = tail.iter().sum::<f64>() / tail.len() as f64;
+        let a0 = std::f64::consts::PI * (0.03f64.powi(2) - 0.02f64.powi(2));
+        // The mean over the last tenth stands at about 19.6 % squashed on the smooth curve.
+        let squash = p.umax[n - n / 20] / 0.01;
+        v.push(check(42, "Ring squashed 20 % between frictionless platens, axisymmetric, perfectly plastic", "Force σy A₀ L₀ / L (volume kept)", "force", fy * a0 / (1.0 - squash), f, 0.02, "Uniform compression of a perfectly plastic solid at finite strain (exact)"));
+    }
+    // A tube, mean radius 20 mm, wall 2 mm, 45 mm tall, its top driven down 30 mm.
+    {
+        let m = crate::solids::crush::tube(0.02, 0.002, 0.045, 0.03, fy, 0.0005, 0.012, 2e-7);
+        let r = run(&m);
+        let p = r.path.as_ref().expect("path");
+        let peak = p.force.iter().zip(&p.umax).filter(|(_, u)| **u < 0.002).map(|(f, _)| *f).fold(0.0, f64::max);
+        let a = 2.0 * std::f64::consts::PI * 0.02 * 0.002;
+        v.push(check(42, "Tube crushed into folds (mean radius 20 mm, wall 2 mm), axisymmetric", "First peak: the squash load σy × the wall's area", "force", fy * a, peak, 0.05, "Axial squash load of a thin tube (it yields all through before the first fold forms)"));
+        let after: Vec<f64> = p.force.iter().zip(&p.umax).filter(|(_, u)| **u > 0.005).map(|(f, _)| *f).collect();
+        let mean = after.iter().sum::<f64>() / after.len().max(1) as f64;
+        let (d, t) = (0.04f64, 0.002f64);
+        let m0 = fy * t * t / 4.0;
+        let theory = m0 * (20.79 * (d / t).sqrt() + 11.90) / (0.86 - 0.568 * (t / d).sqrt());
+        v.push(check(42, "Tube crushed into folds (mean radius 20 mm, wall 2 mm), axisymmetric", "Mean crushing force beyond 5 mm (axisymmetric folding theory)", "force", theory, mean, 0.15, "Abramowicz and Jones 1984, axisymmetric (concertina) folding with the effective crushing distance; the theory itself is within about 10–15 % of tests"));
+    }
+    v
+}
+
 /// What the benchmarks do not yet check, said in the report beside what they do (0.10.6).
 #[derive(Clone, Debug, Serialize)]
 pub struct Gap {
@@ -3290,6 +3344,14 @@ mod tests {
     #[test]
     fn spec_rows_on_their_own() {
         for r in super::spec_rows() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
+    #[test]
+    fn crushing_on_its_own() {
+        for r in super::crushing() {
+            eprintln!("{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
             assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
         }
     }

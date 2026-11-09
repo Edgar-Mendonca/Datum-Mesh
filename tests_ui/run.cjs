@@ -548,6 +548,22 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const vr = await p.$$eval('.dlg [data-table="values"] tbody tr', rs => rs.map(r => r.children[0].textContent));
   check("Values Along gives both sides of a jump (0.10.4)", JSON.stringify(vr) === JSON.stringify(["Just before", "Just after"]), JSON.stringify(vr));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  // 0.10.7: a tube crushed into folds, in time: the 2D part's Move an Edge tool, the crushing step,
+  // and its results: the force against the crush and the folds played in time.
+  await p.evaluate(f => { window.__next = f.crushtube; }, fix);
+  await open("blank-stress"); await p.waitForTimeout(400);
+  await p.click('.tabs > button:text-is("Loads & BCs")'); await p.waitForTimeout(150);
+  check("an axisymmetric part has Move an Edge on the Loads tab (0.10.7)", (await p.$$('.ribbon button:has-text("Move an Edge")')).length === 1);
+  check("the crushed tube's top edge is a moved edge, named so in the tree (0.10.7)", (await p.textContent(".tree")).includes("Moved edge"));
+  await p.evaluate(() => { window.__solveKey = "crushtube_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(800);
+  await p.evaluate(() => { window.__solveKey = null; });
+  await p.click('.tabs > button:text-is("Results")'); await p.waitForTimeout(150);
+  await p.click('.ribbon button:has-text("Load–Deflection")'); await p.waitForTimeout(400);
+  check("the crush's force against its movement is drawn, with its first peak (0.10.7)", (await p.$$(".dlg svg path")).length > 0 && (await p.textContent(".dlg")).includes("peak"), (await p.textContent(".dlg").catch(() => "")).slice(0, 200));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  check("the folds play in time (0.10.7)", (await p.textContent(".player .plabel").catch(() => "")).includes("t = "), await p.textContent(".player").catch(() => "none"));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "crushtube.png") });
   await open("platform"); await p.waitForTimeout(300);
   // 0.10.3: member orientation turns the picked members so their depth faces a direction; their
   // local axes are drawn meanwhile.
@@ -851,7 +867,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await open("tube"); await p.waitForTimeout(300);
   await stepHead(5); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   const tsd = await p.$$eval(".dlg table.steps select >> nth=0", ss => [...ss[0].options].map(o => o.textContent)).catch(() => []);
-  check("a part's steps offer linear or elastic-plastic, not frame-only kinds", tsd.length === 2 && tsd[1].startsWith("Elastic-plastic") && (await p.textContent(".dlg")).includes("Add an elastic-plastic step"), tsd.join("|"));
+  check("a part's steps offer linear, elastic-plastic and (axisymmetric or plane strain) crushing in time, not frame-only kinds", tsd.length === 3 && tsd[1].startsWith("Elastic-plastic") && tsd[2].startsWith("Crushing in time") && (await p.textContent(".dlg")).includes("Add an elastic-plastic step"), tsd.join("|"));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await p.evaluate(() => { window.__solveKey = "tube_results"; document.activeElement?.blur?.(); });
   await p.keyboard.press("F5"); await p.waitForTimeout(500);

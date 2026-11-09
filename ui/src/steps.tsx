@@ -19,7 +19,10 @@ export const isNonlinear = () => (model()?.steps ?? []).some(s => s.kind !== "li
 
 
 /** A new step of a kind, with the usual settings. */
-export const stepOf = (kind: StepKind): Step => ({ id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : kind === "explicit" ? [] : [[0, 1], [10, 1]], ground: kind === "history", dt: kind === "explicit" ? 0 : 0.005, duration: kind === "explicit" ? 0.001 : 2 });
+/** A crushing step in time for a 2D part (0.10.7): 0.02 s, a 0.2 µs step made stable by mass scaling. */
+const crush2d = (a?: string) => ["axi", "strain"].includes(a ?? "");
+export const stepOf = (kind: StepKind, analysis?: string): Step => kind === "explicit" && crush2d(analysis) ? { ...stepOf0(kind), duration: 0.02, dt: 2e-7, time: [] } : stepOf0(kind);
+const stepOf0 = (kind: StepKind): Step => ({ id: 0, name: "", kind, load: null, factor: 1, increments: 10, pieces: isDyn(kind) ? 4 : 10, monitor: null, along: [1, 0, 0], spectrum: [[0, 2.5], [0.5, 2.5], [4, 0.3125]], damping: 0.05, modes: 12, cqc: true, time: kind === "history" ? [[0, 0], [0.1, 1], [0.2, -1], [0.3, 0]] : kind === "explicit" ? [] : [[0, 1], [10, 1]], ground: kind === "history", dt: kind === "explicit" ? 0 : 0.005, duration: kind === "explicit" ? 0.001 : 2 });
 
 /** The analyses each kind of model offers (the Analysis stage, 0.6.0): a step kind, its name, what it is for. */
 export const analysesFor = (a: string): [StepKind, string, string][] => {
@@ -27,6 +30,7 @@ export const analysesFor = (a: string): [StepKind, string, string][] => {
   if (a === "frame") return [lin, ["newton", "Large deflection", "Second-order (P-delta) effects and large rotations, in increments"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
   if (a === "space") return [lin, ["newton", "Large deflection", "Large rotations and second-order effects, in increments (P-delta with plates)"], ["arc", "Past limit loads", "Follows snap-through past the largest load, by arc length (no plates)"], ["spectrum", "Earthquake (spectrum)", "Peak response to a design spectrum, modes combined by CQC"], ["history", "Time history", "Response to a record of ground shaking or a load in time"]];
   if (a === "solid") return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["largeplastic", "Crushing and collapse", "Yielding with large movements: a tube crushed, a part bent until it folds (meshed solids)"], ["large", "Large deformation", "Rubber, and parts that move or stretch far"], ["explicit", "Impact (explicit dynamics)", "Fast events in time: a sudden load, or a solid hitting at speed, stepped in time (meshed solids)"]];
+  if (["strain", "axi"].includes(a)) return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"], ["explicit", "Crushing in time", "An edge moved by a set amount: the part yields, folds and its folds press on each other, stepped in time (0.10.7)"]];
   if (["stress", "strain", "axi"].includes(a)) return [lin, ["newton", "Elastic-plastic", "Yielding (von Mises) up to collapse, in increments"]];
   return [];
 };
@@ -36,7 +40,7 @@ export const curAnalysis = (): StepKind => { const st = model()?.steps ?? []; re
 export const setAnalysis = (kind: StepKind) => {
   const m = model(); if (!m || curAnalysis() === kind && (m.steps ?? []).length <= 1) return;
   const st = m.steps ?? [], keep = st[st.length - 1];
-  act({ Batch: [...(st.length ? [{ Delete: { ids: st.map(s => s.id) } }] : []), ...(kind === "linear" ? [] : [{ Add: { item: { Step: { ...stepOf(kind), load: keep?.load ?? null, factor: keep?.factor ?? 1 } } } }])] });
+  act({ Batch: [...(st.length ? [{ Delete: { ids: st.map(s => s.id) } }] : []), ...(kind === "linear" ? [] : [{ Add: { item: { Step: { ...stepOf(kind, m.analysis), load: keep?.load ?? null, factor: keep?.factor ?? 1 } } } }])] });
 };
 
 // The dialogs live in stepdialogs.tsx, loaded when first opened (0.9.0: the window's startup

@@ -252,6 +252,9 @@ fn check_part(m: &Model) -> Result<(), String> {
     if !matches!(m.analysis, Analysis::Stress | Analysis::Strain | Analysis::Axi) {
         return Err("This solves plane stress, plane strain and axisymmetric models.".into());
     }
+    if m.loads.iter().any(|l| matches!((&l.kind, &l.at), (crate::model::LoadKind::Settlement { .. }, crate::model::Target::Edge { .. }))) {
+        return Err("An edge moved by a set amount is solved in time: make the step an explicit one (Solve › Steps), as for crushing (0.10.7).".into());
+    }
     if m.analysis == Analysis::Axi {
         if let Some(b) = m.bounds() {
             if b[0] < -1e-9 * (b[2] - b[0]).max(b[3] - b[1]) {

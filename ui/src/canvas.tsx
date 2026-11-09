@@ -275,12 +275,13 @@ const LoadGlyph = (p: { l: Load; m: Model; on: boolean; label: boolean; np: Map<
           else if (k.kind === "traction") out.push(arrowPath([x + nx * 10, y + ny * 10], [k.fx, -k.fy], 22));
           else if (k.kind === "bearing") { const c = -(nx * k.fx - ny * k.fy) / (Math.hypot(k.fx, k.fy) || 1); if (c > 0.05) out.push(arrowPath([x, y], [-nx, -ny], 6 + 18 * c)); }
           else if (k.kind === "flux") out.push(arrowPath([x, y], [-nx * Math.sign(k.q || 1), -ny * Math.sign(k.q || 1)], 18));
+          else if (k.kind === "settlement") { const L2 = Math.hypot(k.dx, k.dy) || 1; out.push(arrowPath([x + nx * 4, y + ny * 4], [k.dx / L2, -k.dy / L2], 18)); }
           else if (k.kind === "convection") out.push(`M${x + nx * 6 - ny * 5} ${y + ny * 6 + nx * 5}q${nx * 4 + ny * 2.5} ${ny * 4 - nx * 2.5} ${ny * 5} ${-nx * 5}t${ny * 5} ${-nx * 5}`);
         }
         if (acc <= total / 2 && acc + L >= total / 2) { const s = (total / 2 - acc) / L; mid = [a[0] + (b[0] - a[0]) * s + nx * 34, a[1] + (b[1] - a[1]) * s + ny * 34 + 4]; anchor = nx > 0.5 ? "start" : nx < -0.5 ? "end" : "middle"; }
         acc += L;
       }
-      const label = k.kind === "bearing" ? `pin ${fmt("force", Math.hypot(k.fx, k.fy), 3)}` : k.kind === "pressure" ? fmt("stress", k.p, 3) : k.kind === "traction" ? `${fmt(k.total ? "force" : "dist", Math.hypot(k.fx, k.fy), 3)}${k.total ? " total" : ""}` : k.kind === "flux" ? fmt("flux", k.q, 3) : k.kind === "convection" ? `h ${fmt("film", k.h, 3)}, ${fmt("temp", k.t_inf, 3)}` : "";
+      const label = k.kind === "settlement" ? `moves ${fmt("len", Math.hypot(k.dx, k.dy), 3)}` : k.kind === "bearing" ? `pin ${fmt("force", Math.hypot(k.fx, k.fy), 3)}` : k.kind === "pressure" ? fmt("stress", k.p, 3) : k.kind === "traction" ? `${fmt(k.total ? "force" : "dist", Math.hypot(k.fx, k.fy), 3)}${k.total ? " total" : ""}` : k.kind === "flux" ? fmt("flux", k.q, 3) : k.kind === "convection" ? `h ${fmt("film", k.h, 3)}, ${fmt("temp", k.t_inf, 3)}` : "";
       return <><path d={out.join("")} class="la thin" classList={{ heat: k.kind === "flux" || k.kind === "convection" }} /><Show when={p.label || p.on}><text x={mid[0]} y={mid[1]} class="ltxt" text-anchor={anchor}>{label}</text></Show></>;
     }
     return null;

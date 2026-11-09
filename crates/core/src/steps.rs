@@ -19,6 +19,12 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
         if m.steps.len() > 1 {
             return Err("An explicit-dynamics step stands on its own: make it the only step (Solve › Steps).".into());
         }
+        if matches!(m.analysis, Analysis::Axi | Analysis::Strain) {
+            // Crushing a 2D part in time (0.10.7).
+            let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+            let cr = crate::solids::crush::Crush { duration: st.duration, dt: st.dt, curve: st.time.clone() };
+            return crate::solids::crush::solve(&mm, &cr).map(Results::Plane);
+        }
         if m.analysis != Analysis::Solid || m.volume.is_none() || !m.parts.is_empty() {
             return Err("Explicit dynamics is for meshed solids: model the solid (step 1) or import its mesh.".into());
         }

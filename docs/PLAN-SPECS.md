@@ -56,13 +56,13 @@ Everything a small team can build in our own solver and with our own geometry en
 - The verification report lists what passed, the known failures and the solver paths not yet verified, never only passes; rows from published benchmark sets (NAFEMS) added where we have the capability.
 - Proofs: Newton's convergence measured quadratic on frames, plasticity and large deformation; the same answers on one thread and on many; mesh convergence at the textbook rate for each element.
 
-**0.10.7 · Nonlinear done right**
+**0.10.8 · Nonlinear done right**
 - Large deformation in 2D parts (plane stress, plane strain, axisymmetric), not only 3D solids.
 - Follower pressure (pressure that turns with the surface).
 - Line search and tidier cutbacks, the convergence history in the solver monitor; one return-mapping routine for plasticity shared by the implicit and explicit solvers.
 - Benchmarks: the elastica, a shallow arch past its limit point, an inflated membrane, a large-strain plastic bar.
 
-**0.10.8 · Progressive folding** (brought forward from 0.14 at the user's request): self-contact, an imperfection and a finer mesh so the crushed tube folds several times.
+**0.10.7 · Progressive folding** (brought forward from 0.14 at the user's request) — released 2026-11-09: a tube crushed into several folds, axisymmetric, in time, with self-contact.
 
 **0.10.9 · Geometry the engine already has** (the old Batch 2, was 0.10.5)
 - Split a face; datum planes, axes and points; overlaps and clearances; exploded view; linked copies; place a part against another; sketch: project edges, open ends, tangent arcs, driven dimensions, freedom left; repairing an imported STEP; section view.

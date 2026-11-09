@@ -54,12 +54,13 @@ export const stepsDialog = () => openDialog(() => {
   const m = () => model()!;
   const sts = () => m().steps ?? [];
   const set = (s: Step, ch: Partial<Step>) => act({ Set: { item: { Step: { ...s, ...ch } } } });
-  const add = (kind: StepKind) => act({ Add: { item: { Step: stepOf(kind) } } });
+  const add = (kind: StepKind) => act({ Add: { item: { Step: stepOf(kind, m().analysis) } } });
   const plane = () => m().analysis === "frame";
   /** Parts (0.5.0) and 3D solids (0.5.1): a nonlinear step is elastic-plastic; no arc length or dynamics yet. */
   const part = () => ["stress", "strain", "axi", "solid"].includes(m().analysis);
   const solid = () => m().analysis === "solid";
-  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(solid() ? [["largeplastic", "Crushing and collapse (yielding with large movements)"] as [StepKind, string], ["large", "Large deformation (rubber, large movements)"] as [StepKind, string], ["explicit", "Impact (explicit dynamics)"] as [StepKind, string]] : [])] : KINDS;
+  const crushes = () => ["axi", "strain"].includes(m().analysis);
+  const kinds = (): [StepKind, string][] => part() ? [["linear", "Linear (elastic)"], ["newton", "Elastic-plastic (yielding, in increments)"], ...(crushes() ? [["explicit", "Crushing in time (folds, contact)"] as [StepKind, string]] : []), ...(solid() ? [["largeplastic", "Crushing and collapse (yielding with large movements)"] as [StepKind, string], ["large", "Large deformation (rubber, large movements)"] as [StepKind, string], ["explicit", "Impact (explicit dynamics)"] as [StepKind, string]] : [])] : KINDS;
   return <Dialog title="Analysis steps" wide help="steps">
     <Show when={sts().length} fallback={<p class="muted small">No steps: the model is solved as one linear step, small deflections, for the load case or combination picked on the Loads tab. Add a large-deflection step to take second-order (P-delta) effects, large rotations and snap-through into account.</p>}>
       {/* 0.10.2 (the mock-ups): the step manager: the starting state, then each step in order with its status; every cell typed into in place. */}
@@ -68,7 +69,7 @@ export const stepsDialog = () => openDialog(() => {
         <For each={sts()}>{(s, i) => <tr>
           <td class="r mono">{i() + 1}</td>
           <td><input value={s.name} onChange={e => e.currentTarget.value.trim() && set(s, { name: e.currentTarget.value.trim() })} /></td>
-          <td><select value={s.kind} onChange={e => { const k = e.currentTarget.value as StepKind, d = stepOf(k); set(s, (k === "explicit") !== (s.kind === "explicit") ? { kind: k, duration: d.duration, dt: d.dt, time: d.time } : { kind: k }); }}><For each={kinds()}>{([k, l]) => <option value={k} selected={s.kind === k}>{l}</option>}</For></select></td>
+          <td><select value={s.kind} onChange={e => { const k = e.currentTarget.value as StepKind, d = stepOf(k, m().analysis); set(s, (k === "explicit") !== (s.kind === "explicit") ? { kind: k, duration: d.duration, dt: d.dt, time: d.time } : { kind: k }); }}><For each={kinds()}>{([k, l]) => <option value={k} selected={s.kind === k}>{l}</option>}</For></select></td>
           <td><select value={key(s.load)} onChange={e => set(s, { load: unkey(e.currentTarget.value) })}>
             <option value="" selected={!s.load}>As picked on the Loads tab</option>
             <For each={m().cases ?? []}>{c => <option value={key({ on: "case", id: c.id })} selected={key(s.load) === key({ on: "case", id: c.id })}>{c.name}</option>}</For>
@@ -130,7 +131,7 @@ export const stepsDialog = () => openDialog(() => {
         <label class="tbl2">Spectral acceleration (m/s²) against period (s): one “period, acceleration” a line, straight between, flat beyond the ends<textarea class="mono" rows={5} value={fromTable(s.spectrum)} onChange={e => { const t = toTable(e.currentTarget.value); if (t) set(s, { spectrum: t }); else e.currentTarget.value = fromTable(s.spectrum); }} /></label>
       </Show>
     </div>}</For>
-    <Show when={part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add an elastic-plastic step</button> <Show when={solid()}><button class="btn sm" onClick={() => add("largeplastic")}>Add a crushing step</button> <button class="btn sm" onClick={() => add("large")}>Add a large-deformation step</button> <button class="btn sm" onClick={() => add("explicit")}>Add an impact step</button> </Show><button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
+    <Show when={part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add an elastic-plastic step</button> <Show when={solid()}><button class="btn sm" onClick={() => add("largeplastic")}>Add a crushing step</button> <button class="btn sm" onClick={() => add("large")}>Add a large-deformation step</button> <button class="btn sm" onClick={() => add("explicit")}>Add an impact step</button> </Show><Show when={crushes()}><button class="btn sm" title="Crush the part in time: an edge moved by a set amount, the part folding and its folds pressing on each other" onClick={() => add("explicit")}>Add a crushing step (in time)</button> </Show><button class="btn sm" onClick={() => add("linear")}>Add a linear step</button></p>
       <Show when={solid()}><p class="muted small">A large-deformation step follows the solid through large movements and strains: every material is a neo-Hookean solid with its own E and ν (rubber: a few MPa, ν 0.49 or so; steel stays elastic, however far it bends). The loads keep their size and direction as it moves. The shape is drawn true to size.</p></Show>
       <p class="muted small">An elastic-plastic step puts the load on in increments; where the von Mises stress reaches a material's yield strength it yields, hardening as its Hardening says (0 for perfectly plastic). If the part cannot carry the whole load it collapses, and the solve says at what share of it. Small strains.</p></Show>
     <Show when={!part()}><p class="ibtns"><button class="btn sm" onClick={() => add("newton")}>Add a large-deflection step</button> <button class="btn sm" onClick={() => add("arc")}>Add a step past limit loads</button> <button class="btn sm" onClick={() => add("linear")}>Add a linear step</button> <button class="btn sm" onClick={() => add("spectrum")}>Add a response spectrum</button> <button class="btn sm" onClick={() => add("history")}>Add a time history</button></p></Show>
@@ -159,6 +160,12 @@ export const partPathDialog = () => openDialog(() => {
       <Show when={x().force?.length} fallback={<p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. {(results() as any)?.large ? "Large deformation (neo-Hookean)" : x().first_yield !== null ? <>It first yields at <b>{num(x().first_yield! * 100, 3)} %</b> of the load</> : "Nothing yields"}{x().reached ? "; it carries the whole load." : <>; it <b>collapses</b> at about {num(x().load[x().load.length - 1] * 100, 3)} % of it.</>}</p>}>{(() => {
         // Crushing (0.7.3): the force on the moved face, its peak and where it ends.
         const f = x().force!, i = f.reduce((b, v, k) => v > f[b] ? k : b, 0), last = f[f.length - 1];
+        // Crushed in time (0.10.7): no Newton iterations; the first peak and the mean force after it.
+        if (x().iterations === 0) {
+          const u = x().umax, top = u[u.length - 1], first = f.findIndex((v, k) => k > 0 && u[k] < 0.05 * top && v >= Math.max(...f.filter((_, j) => u[j] < 0.05 * top)) - 1e-9);
+          const after = f.filter((_, k) => u[k] > 0.1 * top), mean = after.reduce((a, b) => a + b, 0) / (after.length || 1);
+          return <p class="small" data-crush>Crushed in time ({u.length - 1} points recorded). The first peak is <b>{num(toU("force", f[Math.max(first, 0)]), 4)} {unit("force")}</b>, the squash load of the wall; after it the force swings round a mean of <b>{num(toU("force", mean), 4)} {unit("force")}</b> as fold after fold forms over {num(toU("len", top), 3)} {unit("len")}.</p>;
+        }
         return <p class="small">{x().load.length - 1} increments, {x().iterations} Newton iterations. Yielding with large movements: the force peaks at <b>{num(toU("force", f[i]), 4)} {unit("force")}</b> at {num(toU("len", x().umax[i]), 3)} {unit("len")}{last < 0.95 * f[i] ? <> and falls to {num(toU("force", last), 4)} {unit("force")} at {num(toU("len", x().umax[x().umax.length - 1]), 3)} {unit("len")}: it has <b>collapsed</b></> : ""}{x().reached ? "." : <>; the solve stopped at {num(x().load[x().load.length - 1] * 100, 3)} % of the movement.</>}</p>;
       })()}</Show>
       <Show when={plot()}>{q => <svg class="curve" viewBox={`0 0 ${W} ${H}`} width={W} height={H} role="img" aria-label="Load against the largest movement">
@@ -168,7 +175,8 @@ export const partPathDialog = () => openDialog(() => {
         <text x={W - P} y={H - P + 28} text-anchor="end" class="lbl">{x().force?.length ? "Movement of the moved face" : "Largest movement"} ({unit("len")})</text><text x={W - P} y={H - P + 14} text-anchor="end" class="lbl">{num(q().x1, 3)}</text>
         <text x={P - 6} y={P - 10} class="lbl">{x().force?.length ? `Force it takes (${unit("force")})` : "Load factor"}</text><text x={P - 6} y={q().sy(q().y1) + 4} text-anchor="end" class="lbl">{num(q().y1, 3)}</text>
       </svg>}</Show>
-      <Show when={x().force?.length}><p class="muted small">The peak is the collapse load: before it the part yields and stiffens less and less; after it, it folds and carries less while the platen keeps moving. Hollow points: the part has yielded somewhere.</p></Show>
+      <Show when={x().force?.length && x().iterations === 0}><p class="muted small">Each rise is a new fold starting: the wall bends out (or in) and the force falls as the fold grows, then rises again as the fold closes onto the last one and the next begins. Hollow points: the part has yielded somewhere.</p></Show>
+      <Show when={x().force?.length && x().iterations > 0}><p class="muted small">The peak is the collapse load: before it the part yields and stiffens less and less; after it, it folds and carries less while the platen keeps moving. Hollow points: the part has yielded somewhere.</p></Show>
       <Show when={!x().force?.length && (results() as any)?.large} fallback={!x().force?.length && <p class="muted small">Hollow points: the part has yielded somewhere. As it yields it softens, and the curve bends over; at collapse it would run flat.</p>}><p class="muted small">A stiffening curve (bending up) is the solid carrying load by stretching, as rubber and slender parts do once they move far; a softening one (bending over) is heading for buckling or snap-through.</p></Show>
     </>}</Show>
   </Dialog>;

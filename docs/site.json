@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "A tube crushed into folds: our own explicit solver for axisymmetric parts, with large deformation, yielding and the folds pressing on each other, checked against the theory of axisymmetric folding",
     "A verification report that says what failed and what is not yet verified, with proofs that Newton converges quadratically and that answers do not depend on the number of threads",
     "A command line and an MCP server: scripts and AI agents make, solve and check models with the same engine and edits as the window",
     "Design members with restraints and segments, values anywhere along a member, and mechanics checks (stress, Euler buckling, deflection, storey drift) that show their working and say what was not checked",
@@ -60,20 +61,12 @@
   ],
   "roadmap": [
     {
-      "v": "0.10.7",
+      "v": "0.10.8",
       "title": "Nonlinear done right",
       "when": "Next",
       "items": [
-        "Large deformation in 2D parts, follower pressure, line search",
+        "Large deformation in 2D parts solved in increments, follower pressure, line search",
         "New nonlinear benchmarks"
-      ]
-    },
-    {
-      "v": "0.10.8",
-      "title": "Progressive folding",
-      "when": "Next",
-      "items": [
-        "A tube crushed into several folds: self-contact, an imperfection and a finer mesh"
       ]
     },
     {

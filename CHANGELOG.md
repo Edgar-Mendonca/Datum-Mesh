@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.7 — 2026-11-09
+
+Progressive folding: a tube crushed between two platens folds over and over, each fold pressing on the last, with the force rising and falling as each new fold forms.
+
+**Crushing in time**
+- Axisymmetric and plane-strain parts can be crushed in time: Loads › Move an Edge (how far the platen travels) and Solve › Steps › Add a crushing step (in time).
+- Our own explicit solver for them: large deformation, yielding (J2 plasticity at finite strain), the folds pressing on each other and on the platens (frictionless contact), stepped in time by central differences. Quadrilaterals with the pressure taken once at each element's centre, so yielding does not lock them; a grid of even elements over a rectangular section.
+- Mass scaling, said in the messages: the time step you set is made stable by scaling the density, and elements squashed in the folds get the mass they need to stay stable; the kinetic energy is reported against the work done.
+- File › Examples › Tube crushed into folds: an aluminium tube (mean radius 20 mm, wall 2 mm) crushed 50 mm; it folds three times in about half a minute. Play it in Animate; Results › Load–Deflection shows the first peak (the squash load) and the mean force after it.
+
+**Verification**
+- Benchmark 42: a ring squashed 20 % between frictionless platens (exact: σy A₀ L₀/L, within 0.03 %), the tube's first peak against the squash load (within 3 %), and its mean crushing force against the theory of axisymmetric folding (Abramowicz and Jones 1984; within 11 % on a 30 mm crush, 1 % on the example's 50 mm).
+
 ## 0.10.6 — 2026-11-09
 
 Proving it: the verification report says what failed and what is not yet verified, and new checks prove the nonlinear solvers converge as Newton's method promises and give the same answers on any number of threads.

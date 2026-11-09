@@ -24,7 +24,7 @@ fn group_of(id: &str) -> &'static str {
         "platform" | "slab" | "bend45" => "3D frames",
         "lug" | "bracket" | "flange" | "fin" | "vessel" | "hotplate" => "Plane parts and heat",
         "bracket3d" | "fin3d" | "vessel3d" | "elbow" | "elbowheat" | "tubeplates" => "3D solids and assemblies",
-        "lee" | "tube" | "yield3d" | "rubber" => "Nonlinear: large deflection, yielding, rubber",
+        "lee" | "tube" | "crushtube" | "yield3d" | "rubber" => "Nonlinear: large deflection, yielding, rubber",
         "quake" | "building" => "Dynamics",
         _ => "Blank",
     }
@@ -46,6 +46,7 @@ pub fn list() -> Vec<Example> {
         e("xbrace", "Tension-only bracing", "A two-storey frame braced with crossed rods that only pull: under wind the rods being squeezed go slack and the others carry the push; one support has settled 10 mm.", Analysis::Frame),
         e("quake", "Frame in an earthquake", "A three-storey steel frame with its floors' masses, shaken sideways by a design response spectrum: the modes, their share of the mass, and the peak forces combined by CQC (Results › Dynamics).", Analysis::Frame),
         e("lee", "Snap-through frame", "Lee's frame: two slender members at right angles, pinned at their far ends, loaded near the knee. Solved past its limit load by arc length: it snaps through (Results › Load–Deflection).", Analysis::Frame),
+        e("crushtube", "Tube crushed into folds", "An aluminium tube (mean radius 20 mm, wall 2 mm, 70 mm tall) crushed 50 mm between two platens, in time: it folds over and over, each fold pressing on the last, and the force rises and falls with each new fold. Axisymmetric; solving takes about half a minute.", Analysis::Axi),
         e("tube", "Thick tube yielding", "A thick steel tube (bore 200 mm, outside 400 mm) under 250 MPa inside, in plane strain: past its first yield the plastic zone spreads out from the bore (Equivalent plastic strain), short of collapse at 284 MPa (Results › Load–Deflection).", Analysis::Strain),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
@@ -230,6 +231,12 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             }
             ops.push(Op::Add { item: Item::Step(crate::model::Step { name: "Earthquake along x".into(), kind: crate::model::StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: spec, damping: 0.05, modes: 6, cqc: true, pieces: 4, ..Default::default() }) });
             d.apply(Op::Batch(ops))?;
+        }
+        "crushtube" => {
+            let name = d.m.name.clone();
+            d.m = crate::solids::crush::tube(0.02, 0.002, 0.07, 0.05, 240e6, 0.0005, 0.02, 2e-7);
+            d.m.name = name;
+            d.m.notes = "The wall of a round aluminium tube as its half-section (x is the radius): mean radius 20 mm, wall 2 mm, 70 mm tall, perfectly plastic at 240 MPa. Its foot is held on the bottom platen; the top platen comes down 50 mm in 0.02 s (2.5 m/s, starting smoothly), holding the top edge from moving outwards. Solve › Steps: one crushing step in time (explicit), its time step 0.2 µs made stable by mass scaling. Watch it fold in Animate › Play, and see the force against the crush in Results › Load–Deflection: the first peak is the squash load σy × the wall's area (60 kN); after it the force swings round a mean near 34 kN, which the theory of axisymmetric folding (Abramowicz and Jones 1984) puts at 34 kN.".into();
         }
         "tube" => {
             d.m.notes = "A quarter of a thick tube, bore radius 100 mm, outside 200 mm, in plane strain (a long tube), of S355 steel, perfectly plastic. 250 MPa inside, in an elastic-plastic step of 10 increments. It first yields at the bore near 177 MPa; the plastic zone then spreads outwards. Hill's limit analysis gives collapse at 2(σy/√3) ln 2 = 284 MPa: try 300 MPa and it collapses.".into();

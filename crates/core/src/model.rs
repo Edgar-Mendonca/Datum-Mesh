@@ -1348,7 +1348,7 @@ impl Model {
                 (LoadKind::Convection { h, t_inf }, Target::Edge { .. } | Target::End { .. } | Target::PartEnd { .. } | Target::Face { .. }) => h.is_finite() && *h >= 0.0 && t_inf.is_finite(),
                 (LoadKind::Heat { q }, Target::Body) => q.is_finite(),
                 (LoadKind::Mass { m }, Target::Node { .. }) => m.is_finite() && *m >= 0.0,
-                (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. } | Target::Face { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
+                (LoadKind::Settlement { dx, dy, dz }, Target::Node { .. } | Target::Face { .. } | Target::Edge { .. }) => dx.is_finite() && dy.is_finite() && dz.is_finite(),
                 (LoadKind::Warming { dt }, Target::Body) => dt.is_finite(),
                 (LoadKind::Remote { at, f, m }, Target::Face { .. }) => at.iter().chain(f).chain(m).all(|x| x.is_finite()),
                 (LoadKind::Velocity { v }, Target::Body | Target::Face { .. }) => v.iter().all(|x| x.is_finite()),

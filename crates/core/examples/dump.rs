@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 //! Writes the engine's real output for the UI tests (tests_ui/fixture.json):
 //! cargo run -q -p datum-core --example dump > tests_ui/fixture.json
 use datum_core::{bench, examples, materials, mesh, wire};
@@ -135,6 +135,8 @@ fn main() {
         "building": out("building"),
         "tube": out("tube"),
         "tube_results": sent(&datum_core::solve_for(&examples::get("tube").unwrap(), None).unwrap()),
+        "crushtube": out_m(&examples::get("crushtube").unwrap()),
+        "crushtube_results": sent(&datum_core::solve_for(&examples::get("crushtube").unwrap(), None).unwrap()),
         "yield3d": out("yield3d"),
         "rubber": out("rubber"),
         "elbow": out("elbow"),

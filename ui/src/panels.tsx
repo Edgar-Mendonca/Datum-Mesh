@@ -83,7 +83,7 @@ export const LOAD_NAMES: Record<string, string> = { force: "Force", moment: "Mom
 /** On a solid, a settlement is a face moved by a set amount (0.7.4). */
 const MOVED = "Moved face";
 /** A load's name: a force spread over a solid's face is a face force (0.7.3). */
-export const loadName = (l: { kind: { kind: string }; at: Target }) => l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : l.kind.kind === "settlement" && l.at.on === "face" ? MOVED : LOAD_NAMES[l.kind.kind];
+export const loadName = (l: { kind: { kind: string }; at: Target }) => l.kind.kind === "traction" && l.at.on === "face" ? "Face force" : l.kind.kind === "settlement" && l.at.on === "face" ? MOVED : l.kind.kind === "settlement" && l.at.on === "edge" ? "Moved edge" : LOAD_NAMES[l.kind.kind];
 
 export const targetName = (m: Model, t: Target) => {
   if (t.on === "node") return `Node ${m.nodes.findIndex(n => n.id === t.id) + 1}`;
