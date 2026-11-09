@@ -48,18 +48,32 @@ Everything a small team can build in our own solver and with our own geometry en
 - Honest statuses (pass, fail, not checked, not supported, missing data), a calculation trace for every check and a report that lists what was not checked.
 - Tests from the specification: F01 section properties, F07 segments under remeshing, F08 values at stations and jumps, F09 relative deflection with moving ends, F11 combined actions kept together, F12 unlike sections refused.
 
-**0.10.5 · Geometry the engine already has** (the old Batch 2)
+**Agreed 2026-11-09 (the user, after comparing with another open finite-element program): make it right first.** Driving the program from scripts and AI agents, an honest verification report and proofs of the nonlinear solvers come before more features. Fluids (CFD, lattice Boltzmann), blast and equations of state wait until much later. Never write files for commercial solvers (public words); open formats such as CalculiX's are fine.
+
+**0.10.5 · Driving and proving**
+- A command line, `datum-mesh-cli`: open or start a model, apply edits (the same `Op`s as the window), solve, run the checks, write the report and the verification report; JSON in and out.
+- An MCP server (`datum-mesh-cli mcp`) so AI agents drive the same commands; one catalogue of commands for the window, the command line and agents. The same for every Datum app (a family rule, in FAMILY.md through the hub).
+- The verification report lists what passed, the known failures and the solver paths not yet verified, never only passes; rows from published benchmark sets (NAFEMS) added where we have the capability.
+- Proofs: Newton's convergence measured quadratic on frames, plasticity and large deformation; the same answers on one thread and on many; mesh convergence at the textbook rate for each element.
+
+**0.10.6 · Nonlinear done right**
+- Large deformation in 2D parts (plane stress, plane strain, axisymmetric), not only 3D solids.
+- Follower pressure (pressure that turns with the surface).
+- Line search and tidier cutbacks, the convergence history in the solver monitor; one return-mapping routine for plasticity shared by the implicit and explicit solvers.
+- Benchmarks: the elastica, a shallow arch past its limit point, an inflated membrane, a large-strain plastic bar.
+
+**0.10.7 · Geometry the engine already has** (the old Batch 2, was 0.10.5)
 - Split a face; datum planes, axes and points; overlaps and clearances; exploded view; linked copies; place a part against another; sketch: project edges, open ends, tangent arcs, driven dimensions, freedom left; repairing an imported STEP; section view.
 
 **0.11 · Results tools:** results tree and exact colour bands, several cuts, display groups, free-body forces, stress through a wall, compare analyses, export, graphs of any result and along a path, energies, the forces of the governing case, CSV in and out, report builder, video.
 
-**0.12 · Materials:** orthotropic, kinematic hardening, Johnson–Cook, damage, rubber models, properties with temperature, fitting to test data, rate dependence.
+**0.12 · Materials:** orthotropic, kinematic hardening, Johnson–Cook (yield stress with strain, strain rate and temperature; its damage law for fracture), damage, rubber models (Mooney–Rivlin, Yeoh), properties with temperature, fitting to test data, rate dependence.
 
-**0.13 · Setup** (the old Batch 3): sets, area springs, six-direction releases and partial springs, inclined supports, eccentric offsets, rigid links, ties and couplings, connectors, bolt pretension, load curves, mass ledger, temperature gradients, equipment loads, Rayleigh damping, frame generators (portal, truss, building grid).
+**0.13 · Setup** (the old Batch 3): sets tied to named faces, edges and bodies so supports and loads survive remeshing, area springs, six-direction releases and partial springs, inclined supports, eccentric offsets, rigid links, ties and couplings, connectors, bolt pretension, load curves, mass ledger, temperature gradients, equipment loads, Rayleigh damping, frame generators (portal, truss, building grid).
 
-**0.14 · Analyses** (the old Batch 4): steady vibration, missing mass, line search, buckling with an imperfection, notional loads, heat in time, heat and stress together, sliding and self-contact, crash.
+**0.14 · Analyses** (the old Batch 4): steady vibration, missing mass, line search, buckling with an imperfection, notional loads, heat in time, heat and stress together, sliding and self-contact, crash (explicit with damage, erosion and rigid walls).
 
-**0.15 · Meshing and jobs:** hexahedra, refinement by itself, convergence study, seeds, element types, job queue, restarts, all cores, input files, building in stages, Python console, templates.
+**0.15 · Meshing and jobs:** swept hexahedra for our extruded and revolved solids with hex8 and hex20 elements, Lanczos for many modes on large models, Timoshenko beams and MITC4 shells, hexahedra, refinement by itself, convergence study, seeds, element types, job queue, restarts, all cores, input files, building in stages, Python console, templates.
 
 **1.0 · Complete:** design checks to a standard that is free to use, plate reinforcement, wind, earthquake and moving loads, concrete and composites, several models in one file, every planned feature working.
 
