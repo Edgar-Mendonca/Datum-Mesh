@@ -121,11 +121,22 @@ pub fn follow(p: &dyn Problem, base: &[f64], load: &[f64], u0: &[f64], ctl: &Con
 
 /// Newton iterations at a fixed λ from `u`; Some((u, iterations, stable)) when converged.
 ///
-/// With a line search (0.10.8; Crisfield 1991, §9.3): a correction that would leave more force
-/// out of balance than before is halved, up to four times, and the best of the tries is taken.
-/// Near the answer the whole correction is always better, so Newton keeps its quadratic rate and
-/// the state found there is reused for the next iteration (no extra work).
-fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, lambda: f64, mut u: Vec<f64>, max_iter: usize) -> Result<Option<(Vec<f64>, usize, bool)>, String> {
+/// Plain Newton first; only when that does not settle, the same increment again with a line search
+/// (0.10.8), before the increment is cut. Plain Newton's force out of balance may rise on the way to
+/// the answer (corotational frames jump and then settle), so a line search on every iteration
+/// would damp good corrections and cost increments.
+fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, lambda: f64, u: Vec<f64>, max_iter: usize) -> Result<Option<(Vec<f64>, usize, bool)>, String> {
+    match newton_at(p, base, load, held, tol, lambda, u.clone(), max_iter, false)? {
+        Some(x) => Ok(Some(x)),
+        None => newton_at(p, base, load, held, tol, lambda, u, max_iter, true),
+    }
+}
+
+/// Newton iterations at a fixed λ from `u`. With `search` (Crisfield 1991, §9.3): a correction that
+/// would leave more force out of balance than before is halved, up to four times, and the best of
+/// the tries is taken; the state found there is reused for the next iteration.
+#[allow(clippy::too_many_arguments)]
+fn newton_at(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, lambda: f64, mut u: Vec<f64>, max_iter: usize, search: bool) -> Result<Option<(Vec<f64>, usize, bool)>, String> {
     let scale = (norm_free(base, held).max(norm_free(load, held))).max(f64::MIN_POSITIVE);
     let mut cached: Option<(Vec<f64>, crate::sparse::System)> = None;
     for it in 0..=max_iter {
@@ -151,6 +162,10 @@ fn correct(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64,
         }
         if it == max_iter {
             break;
+        }
+        if !search {
+            u = p.add(&u, &x[0]);
+            continue;
         }
         // The line search: the whole correction, then halves while that leaves more out of balance.
         let mut best: Option<(f64, Vec<f64>, (Vec<f64>, crate::sparse::System))> = None;

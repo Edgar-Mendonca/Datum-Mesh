@@ -1182,7 +1182,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const bMax = Math.max(...fix.bend45_results.members.flatMap(mr => mr.d.map(d => Math.hypot(...d))));
   check("a 3D frame's large rotations are drawn true to size, as far as the nodes went (0.5.8: the pieces' small local movements were drawn)", (await p.textContent(".legend")).includes("true to size") && bMax > 1.4 && (await p.textContent(".legend")).includes(String(Math.round(bMax * 1000)).slice(0, 3)), await p.textContent(".legend") + " " + bMax);
   await p.click('.ribbon button:has-text("Load–Deflection")'); await p.waitForTimeout(250);
-  const bR = fix.bend45_results;
+  const bR = unpack(fix.bend45_results);
   check("the 3D curve has a point per increment", (await p.$$(".dlg svg.curve circle.pt")).length === bR.path.load.length && bR.path.load.length > 2, String(bR.path.load.length));
   await p.click('.dlg button:text-is("Movement in z")'); await p.waitForTimeout(100);
   check("the 3D curve can show the movement in z and the turn", (await p.textContent(".dlg svg.curve")).includes("Movement in z") && (await p.$$('.dlg button:text-is("Turn")')).length === 1);
