@@ -1,6 +1,6 @@
 [package]
 name = "datum-mesh-cli"
-version = "0.10.8"
+version = "0.10.9"
 license = "MIT"
 edition = "2021"
 description = "Datum Mesh from the command line and for AI agents (MCP): the same engine and edits as the window."

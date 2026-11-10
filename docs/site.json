@@ -61,7 +61,7 @@
   ],
   "roadmap": [
     {
-      "v": "0.10.9",
+      "v": "0.10.10",
       "title": "Nonlinear done right",
       "when": "Next",
       "items": [
@@ -70,7 +70,7 @@
       ]
     },
     {
-      "v": "0.10.10",
+      "v": "0.10.11",
       "title": "Geometry tools",
       "when": "Later",
       "items": [

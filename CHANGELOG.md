@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.9 — 2026-11-10
+
+A fix to 0.10.8's solver.
+
+- Fixed: 0.10.8's line search acted on every Newton iteration and slowed large-rotation frames (the curved cantilever bent out of its plane took 81 increments instead of 11; the answers were right). Plain Newton now runs first, as before; an increment that will not settle is tried again with the line search before it is cut.
+
 ## 0.10.8 — 2026-11-09
 
 A steadier nonlinear solver and a lighter start.
