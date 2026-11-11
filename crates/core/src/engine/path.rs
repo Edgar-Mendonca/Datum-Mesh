@@ -22,6 +22,12 @@ pub trait Problem {
     fn held(&self) -> &[bool];
     /// The internal forces and the tangent stiffness at movements `u`.
     fn state(&self, u: &[f64]) -> Result<(Vec<f64>, System), String>;
+    /// The same at load factor `lambda`, for loads that move with the body (0.10.10: pressure that
+    /// turns with the surface, taken as part of the internal forces); most problems ignore λ.
+    fn state_at(&self, u: &[f64], lambda: f64) -> Result<(Vec<f64>, System), String> {
+        let _ = lambda;
+        self.state(u)
+    }
     /// Movements `u` moved on by an increment `du` the tangent was solved for: a plain sum, unless
     /// the module's unknowns compose otherwise (finite rotations in 3D, 0.5.8).
     fn add(&self, u: &[f64], du: &[f64]) -> Vec<f64> {
@@ -142,7 +148,7 @@ fn newton_at(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f6
     for it in 0..=max_iter {
         let (fint, k) = match cached.take() {
             Some(s) => s,
-            None => p.state(&u)?,
+            None => p.state_at(&u, lambda)?,
         };
         let r = residual(base, load, lambda, &fint, held);
         let rn = norm_free(&r, held);
@@ -172,7 +178,7 @@ fn newton_at(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f6
         let mut a = 1.0;
         for _ in 0..5 {
             let trial = p.add(&u, &x[0].iter().map(|v| a * v).collect::<Vec<f64>>());
-            if let Ok(st) = p.state(&trial) {
+            if let Ok(st) = p.state_at(&trial, lambda) {
                 let rt = norm_free(&residual(base, load, lambda, &st.0, held), held);
                 if rt.is_finite() && best.as_ref().is_none_or(|b| rt < b.0) {
                     let done = rt <= rn;
@@ -262,7 +268,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
             return Ok(());
         }
         crate::progress::increment(lambda);
-        let (_, k) = p.state(&u)?;
+        let (_, k) = p.state_at(&u, lambda)?;
         let (t, _) = k.solve_many(held, &[load])?;
         let t = &t[0];
         let tt = dot(t, t).sqrt();
@@ -293,7 +299,7 @@ fn arc(p: &dyn Problem, base: &[f64], load: &[f64], held: &[bool], tol: f64, ctl
         let mut done = None;
         for it in 1..=ctl.max_iter {
             let ut = p.add(&u, &du);
-            let (fint, k) = p.state(&ut)?;
+            let (fint, k) = p.state_at(&ut, lambda + dlam)?;
             let r = residual(base, load, lambda + dlam, &fint, held);
             let rn = norm_free(&r, held);
             if !rn.is_finite() {

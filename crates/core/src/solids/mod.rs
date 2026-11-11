@@ -12,4 +12,5 @@ pub mod tet;
 pub mod assembly;
 pub mod contact;
 pub mod crush;
+pub mod large2d;
 pub mod modelling;

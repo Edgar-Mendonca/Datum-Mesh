@@ -38,6 +38,7 @@
     }
   ],
   "highlights": [
+    "Rubber in 2D parts: large deformation of axisymmetric and plane-strain parts, with pressure that turns with the surface, checked against exact answers",
     "A tube crushed into folds: our own explicit solver for axisymmetric parts, with large deformation, yielding and the folds pressing on each other, checked against the theory of axisymmetric folding",
     "A verification report that says what failed and what is not yet verified, with proofs that Newton converges quadratically and that answers do not depend on the number of threads",
     "A command line and an MCP server: scripts and AI agents make, solve and check models with the same engine and edits as the window",
@@ -60,15 +61,6 @@
     "docs/images/fin-solved.png"
   ],
   "roadmap": [
-    {
-      "v": "0.10.10",
-      "title": "Nonlinear done right",
-      "when": "Next",
-      "items": [
-        "Large deformation in 2D parts solved in increments, follower pressure",
-        "New nonlinear benchmarks"
-      ]
-    },
     {
       "v": "0.10.11",
       "title": "Geometry tools",

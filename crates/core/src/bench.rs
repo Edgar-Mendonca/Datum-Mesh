@@ -2992,6 +2992,7 @@ pub fn run() -> Vec<Check> {
     v.extend(design_rows());
     v.extend(proofs());
     v.extend(crushing());
+    v.extend(rubber2d());
     v
 }
 
@@ -3249,6 +3250,96 @@ pub fn crushing() -> Vec<Check> {
     v
 }
 
+/// Benchmark 43 (0.10.10): large deformation of 2D parts (neo-Hookean rubber, total Lagrangian,
+/// in increments): a strip pulled in plane strain and a tube pulled about its axis (both uniform,
+/// so exact), and a thick cylinder blown up by pressure that follows its inner surface, against
+/// the incompressible solution.
+pub fn rubber2d() -> Vec<Check> {
+    use crate::model::{Step, StepKind};
+    use crate::solids::hyper::NeoHooke;
+    let mut v = vec![];
+    let large = |d: &mut Doc, n: u32| { add_id(d, Item::Step(Step { kind: StepKind::Large, increments: n, ..Default::default() })); };
+    let run = |m: &Model| -> crate::plane::PlaneResults { match crate::solve_for(m, None) { Ok(crate::Results::Plane(r)) => r, Ok(_) => panic!("not a part"), Err(e) => panic!("rubber 2D: {e}") } };
+    let (e, nu) = (2.98e6, 0.45);
+    let nh = NeoHooke::new(e, nu);
+    // A strip 200 × 20 mm in plane strain pulled to 1.8 times its length by a dead load: rollers on
+    // two sides leave it free to thin; F = diag(λ, s, 1), s found so the stress across is zero.
+    {
+        let lam = 1.8;
+        let across = |s: f64| nh.piola(&[[lam, 0.0, 0.0], [0.0, s, 0.0], [0.0, 0.0, 1.0]]).map_or(f64::NAN, |p| p[1][1]);
+        let (mut lo, mut hi) = (0.3, 1.0);
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if across(mid) > 0.0 { hi = mid } else { lo = mid }
+        }
+        let side = 0.5 * (lo + hi);
+        let p11 = nh.piola(&[[lam, 0.0, 0.0], [0.0, side, 0.0], [0.0, 0.0, 1.0]]).unwrap()[0][0];
+        let (mut d, ids) = part(Analysis::Strain, e, nu, vec![(Geom::rect(0.0, 0.0, 0.2, 0.02), false)]);
+        d.m.mesh.size = 0.005;
+        let id = ids[0];
+        edge_support(&mut d, id, 3, SupportKind::Symmetry);
+        edge_support(&mut d, id, 0, SupportKind::Symmetry);
+        edge_load(&mut d, id, 1, LoadKind::Traction { fx: p11 * 0.02, fy: 0.0, total: true, fz: 0.0 });
+        large(&mut d, 8);
+        let r = run(&d.m);
+        let name = "Rubber strip pulled to 1.8 times its length, plane strain (neo-Hookean, ν = 0.45)";
+        let src = "Uniform plane-strain tension of the neo-Hookean solid (exact; the stretch across found so the stress across is zero)";
+        v.push(check(43, name, "End movement (λ − 1) L", "len", 0.8 * 0.2, at(&r, "ux", [0.2, 0.01]), 1e-6, src));
+        v.push(check(43, name, "Side movement (s − 1) h", "len", (side - 1.0) * 0.02, at(&r, "uy", [0.1, 0.02]), 1e-6, src));
+    }
+    // A tube 10–20 mm from the axis, 100 mm long, pulled to 1.6 times its length: uniaxial, exact.
+    {
+        let lam = 1.6;
+        let (p, side) = nh.uniaxial(lam);
+        let a0 = std::f64::consts::PI * (0.02f64.powi(2) - 0.01f64.powi(2));
+        let (mut d, ids) = part(Analysis::Axi, e, nu, vec![(Geom::rect(0.01, 0.0, 0.02, 0.1), false)]);
+        d.m.mesh.size = 0.005;
+        let id = ids[0];
+        edge_support(&mut d, id, 0, SupportKind::RollerX);
+        // An axisymmetric edge force of `total` is spread per length and turned round the axis:
+        // fy/len × 2πr over the edge, so the whole force is fy × 2π r̄.
+        edge_load(&mut d, id, 2, LoadKind::Traction { fx: 0.0, fy: p * a0 / (std::f64::consts::TAU * 0.015), total: true, fz: 0.0 });
+        large(&mut d, 8);
+        let r = run(&d.m);
+        let name = "Rubber tube pulled to 1.6 times its length, axisymmetric (neo-Hookean, ν = 0.45)";
+        let src = "Neo-Hookean uniaxial tension, exact (Bonet and Wood §6.5): the sides' stretch found so the stress across is zero";
+        v.push(check(43, name, "End movement (λ − 1) L", "len", 0.6 * 0.1, at(&r, "uy", [0.015, 0.1]), 1e-6, src));
+        v.push(check(43, name, "Outer radius movement (λ⊥ − 1) b", "len", (side - 1.0) * 0.02, at(&r, "ux", [0.02, 0.05]), 1e-6, src));
+    }
+    // A thick cylinder (bore 10 mm, outside 20 mm, plane strain) blown up until its bore is 1.5
+    // times as wide, by pressure that follows the bore: the incompressible neo-Hookean answer
+    // p = μ ∫ (λ² − λ⁻²) dr / r, r² = R² + c, λ = r/R (Rivlin 1949), against ν = 0.499.
+    {
+        let nu = 0.499;
+        let mu = e / (2.0 * (1.0 + nu));
+        let (a, b) = (0.01f64, 0.02f64);
+        let la = 1.5;
+        let c = (la * la - 1.0) * a * a;
+        let (ra, rb) = (la * a, (b * b + c).sqrt());
+        let n = 20_000;
+        let mut pr = 0.0;
+        for k in 0..n {
+            let r = ra + (rb - ra) * (k as f64 + 0.5) / n as f64;
+            let l = r / (r * r - c).sqrt();
+            pr += mu * (l * l - 1.0 / (l * l)) / r * (rb - ra) / n as f64;
+        }
+        let q = 0.414_213_562_373_095;
+        let ring = Geom::Poly { pts: vec![[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], bulge: vec![0.0, q, 0.0, -q] };
+        let (mut d, ids) = part(Analysis::Strain, e, nu, vec![(ring, false)]);
+        d.m.mesh.size = 0.0015;
+        let id = ids[0];
+        edge_support(&mut d, id, 0, SupportKind::Roller);
+        edge_support(&mut d, id, 2, SupportKind::Roller);
+        edge_load(&mut d, id, 3, LoadKind::Pressure { p: pr });
+        large(&mut d, 20);
+        let r = run(&d.m);
+        let name = "Thick rubber cylinder blown up by pressure following its bore, plane strain (ν = 0.499)";
+        v.push(check(43, name, "Bore radius under the pressure that makes it 1.5 a", "len", ra, a + at(&r, "ux", [a, 0.0]), 0.02, "Rivlin 1949: inflation of an incompressible neo-Hookean tube (plane strain), by quadrature"));
+        v.push(check(43, name, "Equilibrium (the pressure where the bore now is, over the reactions)", "ratio", 1.0, 1.0 + r.imbalance, 1e-8, "Statics on the deformed part"));
+    }
+    v
+}
+
 /// What the benchmarks do not yet check, said in the report beside what they do (0.10.6).
 #[derive(Clone, Debug, Serialize)]
 pub struct Gap {
@@ -3344,6 +3435,14 @@ mod tests {
     #[test]
     fn spec_rows_on_their_own() {
         for r in super::spec_rows() {
+            assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
+        }
+    }
+
+    #[test]
+    fn rubber2d_on_its_own() {
+        for r in super::rubber2d() {
+            eprintln!("{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
             assert!(r.pass, "{}: {} gave {} against {} (error {:.2e})", r.name, r.quantity, r.result, r.reference, r.error);
         }
     }

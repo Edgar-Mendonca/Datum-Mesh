@@ -60,7 +60,7 @@ Everything a small team can build in our own solver and with our own geometry en
 
 **0.10.9 · Fix** — released 2026-11-10: the line search only when plain Newton does not settle.
 
-**0.10.10 · Nonlinear done right**
+**0.10.10 · Nonlinear done right** — released 2026-11-11 (large deformation of 2D parts, follower pressure, benchmark 43; the shared return map moves to 0.12)
 - Large deformation in 2D parts (plane stress, plane strain, axisymmetric), not only 3D solids.
 - Follower pressure (pressure that turns with the surface).
 - Line search and tidier cutbacks, the convergence history in the solver monitor; one return-mapping routine for plasticity shared by the implicit and explicit solvers.

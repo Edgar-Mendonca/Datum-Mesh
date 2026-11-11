@@ -54,18 +54,18 @@ fn factor_at(c: &[[f64; 2]], t: f64, duration: f64) -> f64 {
 
 /// The part cut into quadrilaterals: nodes, the four corners of each (counter-clockwise), its
 /// material, and for each outline edge (shape, edge) its nodes.
-struct Quads {
-    nodes: Vec<[f64; 2]>,
-    q: Vec<[usize; 4]>,
-    mat: Vec<usize>,
-    edges: HashMap<(u32, u32), Vec<usize>>,
+pub(crate) struct Quads {
+    pub(crate) nodes: Vec<[f64; 2]>,
+    pub(crate) q: Vec<[usize; 4]>,
+    pub(crate) mat: Vec<usize>,
+    pub(crate) edges: HashMap<(u32, u32), Vec<usize>>,
     /// The outline's pieces, for drawing supports and loads.
-    bedges: Vec<crate::solids::mesh::BEdge>,
+    pub(crate) bedges: Vec<crate::solids::mesh::BEdge>,
 }
 
 /// A part that is one upright rectangle gets a grid of near-square quadrilaterals about `h`
 /// across: even elements, so the time step is not held down by a sliver.
-fn grid(m: &Model, h: f64) -> Option<Quads> {
+pub(crate) fn grid(m: &Model, h: f64) -> Option<Quads> {
     use crate::model::Geom;
     use crate::solids::mesh::BEdge;
     let [sh] = &m.shapes[..] else { return None };
@@ -106,7 +106,7 @@ fn grid(m: &Model, h: f64) -> Option<Quads> {
     Some(Quads { nodes, q, mat, edges, bedges })
 }
 
-fn quads(ms: &Mesh) -> Quads {
+pub(crate) fn quads(ms: &Mesh) -> Quads {
     let mut nodes = ms.nodes.clone();
     let mut mid: HashMap<(u32, u32), usize> = HashMap::new();
     let mut at_mid = |a: u32, b: u32, nodes: &mut Vec<[f64; 2]>| -> usize {
@@ -164,10 +164,10 @@ struct Gp {
     sig: [f64; 4],
 }
 
-const G: f64 = 0.577_350_269_189_625_8;
+pub(crate) const G: f64 = 0.577_350_269_189_625_8;
 
 /// Shape-function derivatives of a quadrilateral at (ξ, η), against x and y, with N and det J.
-fn shape(x: &[[f64; 2]; 4], xi: f64, eta: f64) -> Option<([[f64; 2]; 4], [f64; 4], f64)> {
+pub(crate) fn shape(x: &[[f64; 2]; 4], xi: f64, eta: f64) -> Option<([[f64; 2]; 4], [f64; 4], f64)> {
     let s = [[-1.0, -1.0], [1.0, -1.0], [1.0, 1.0], [-1.0, 1.0]];
     let mut n = [0.0; 4];
     let mut dxi = [[0.0; 2]; 4];
@@ -787,6 +787,7 @@ pub fn solve(m: &Model, cr: &Crush) -> Result<PlaneResults, String> {
         warnings,
         path: Some(path),
         frames: Some(fr),
+        large: true,
     })
 }
 

@@ -24,7 +24,7 @@ fn group_of(id: &str) -> &'static str {
         "platform" | "slab" | "bend45" => "3D frames",
         "lug" | "bracket" | "flange" | "fin" | "vessel" | "hotplate" => "Plane parts and heat",
         "bracket3d" | "fin3d" | "vessel3d" | "elbow" | "elbowheat" | "tubeplates" => "3D solids and assemblies",
-        "lee" | "tube" | "crushtube" | "yield3d" | "rubber" => "Nonlinear: large deflection, yielding, rubber",
+        "lee" | "tube" | "crushtube" | "rubberpipe" | "yield3d" | "rubber" => "Nonlinear: large deflection, yielding, rubber",
         "quake" | "building" => "Dynamics",
         _ => "Blank",
     }
@@ -47,6 +47,7 @@ pub fn list() -> Vec<Example> {
         e("quake", "Frame in an earthquake", "A three-storey steel frame with its floors' masses, shaken sideways by a design response spectrum: the modes, their share of the mass, and the peak forces combined by CQC (Results › Dynamics).", Analysis::Frame),
         e("lee", "Snap-through frame", "Lee's frame: two slender members at right angles, pinned at their far ends, loaded near the knee. Solved past its limit load by arc length: it snaps through (Results › Load–Deflection).", Analysis::Frame),
         e("crushtube", "Tube crushed into folds", "An aluminium tube (mean radius 20 mm, wall 2 mm, 70 mm tall) crushed 50 mm between two platens, in time: it folds over and over, each fold pressing on the last, and the force rises and falls with each new fold. Axisymmetric; solving takes about half a minute.", Analysis::Axi),
+        e("rubberpipe", "Rubber pipe blown up", "A thick rubber pipe (bore 20 mm, outside 40 mm, a quarter of it, plane strain) blown up by pressure inside until its bore is half as wide again: the pressure turns with the bore as it grows, and the pipe thins. Large deformation in increments; Results › Load–Deflection shows it stiffening less and less.", Analysis::Strain),
         e("tube", "Thick tube yielding", "A thick steel tube (bore 200 mm, outside 400 mm) under 250 MPa inside, in plane strain: past its first yield the plastic zone spreads out from the bore (Equivalent plastic strain), short of collapse at 284 MPa (Results › Load–Deflection).", Analysis::Strain),
         e("lug", "Lifting lug", "A plate with a pin hole, pulled through the pin.", Analysis::Stress),
         e("bracket", "L-bracket", "An L-bracket with a fillet in the corner, where the stress gathers.", Analysis::Stress),
@@ -231,6 +232,25 @@ fn build(id: &str, d: &mut Doc) -> Result<(), String> {
             }
             ops.push(Op::Add { item: Item::Step(crate::model::Step { name: "Earthquake along x".into(), kind: crate::model::StepKind::Spectrum, along: [1.0, 0.0, 0.0], spectrum: spec, damping: 0.05, modes: 6, cqc: true, pieces: 4, ..Default::default() }) });
             d.apply(Op::Batch(ops))?;
+        }
+        "rubberpipe" => {
+            d.m.notes = "A quarter of a long rubber pipe (bore radius 10 mm, outside 20 mm), plane strain, held by rollers on its two cut faces. Rubber: E = 3 MPa, ν = 0.499 (nearly incompressible), neo-Hookean. 0.426 MPa inside, in a large-deformation step of 20 increments: the pressure follows the bore as it grows, and the bore ends 1.5 times as wide, as the incompressible solution (Rivlin 1949) says for this pressure (benchmark 43).".into();
+            let (a, b) = (10.0, 20.0);
+            d.apply(shape(poly(&[[a, 0.0], [b, 0.0], [0.0, b], [0.0, a]], &[(1, QUARTER), (3, -QUARTER)]), false))?;
+            d.m.mesh.size = 0.0015;
+            let mt = &mut d.m.materials[0];
+            mt.name = "Rubber (neo-Hookean)".into();
+            mt.e = 2.98e6;
+            mt.nu = 0.499;
+            mt.rho = 1100.0;
+            mt.fy = 0.0;
+            let id = d.m.shapes[0].id;
+            d.apply(Op::Batch(vec![
+                Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: 0 }, kind: SupportKind::Roller }) },
+                Op::Add { item: Item::Support(Support { id: 0, at: Target::Edge { shape: id, edge: 2 }, kind: SupportKind::Roller }) },
+                Op::Add { item: Item::Load(Load { id: 0, case: 0, at: Target::Edge { shape: id, edge: 3 }, kind: LoadKind::Pressure { p: 0.4257e6 } }) },
+                Op::Add { item: Item::Step(crate::model::Step { kind: crate::model::StepKind::Large, increments: 20, name: "Blow up".into(), ..Default::default() }) },
+            ]))?;
         }
         "crushtube" => {
             let name = d.m.name.clone();

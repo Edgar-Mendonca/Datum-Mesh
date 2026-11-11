@@ -122,7 +122,7 @@ export const deformOf = (r: PartResults | null): number => {
   const u = r.fields.find(f => f.key === "umag")!.max, b = boundsOf(r.mesh), size = Math.max(b[2] - b[0], b[3] - b[1]);
   if (!(u > 1e-12 * size)) return 0;
   // A crush solved in time (0.10.7) moves far: drawn true to size, as it happened.
-  if ((r as any).frames?.what === "time" && (r as any).path?.force?.length) return show().scale;
+  if ((r as any).large) return show().scale;
   const f = 0.06 * size / u, p = 10 ** Math.floor(Math.log10(f)), k = f / p;
   return (k >= 5 ? 5 : k >= 2 ? 2 : 1) * p * show().scale;
 };

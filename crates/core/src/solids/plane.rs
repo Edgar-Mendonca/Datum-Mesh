@@ -58,6 +58,9 @@ pub struct PlaneResults {
     /// The increments as frames to play (0.6.4), at the mesh nodes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frames: Option<crate::engine::frames::Frames>,
+    /// Moved far, so drawn true to size (0.10.10: large deformation, crushing).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub large: bool,
 }
 
 /// An elastic-plastic solve's record (0.5.0).
@@ -773,7 +776,7 @@ fn run(m: &Model, ms: Mesh, modes_wanted: Option<usize>, plastic: Option<usize>)
     } else {
         imbalance(applied.sum, reacted.sum, applied.scale)
     };
-    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings, path, frames })))
+    Ok(Out::Static(Box::new(PlaneResults { mesh: ms, draw, disp, fields, elem, reactions, applied: applied.sum, reacted: reacted.sum, scale: applied.scale, imbalance, stats, warnings, path, frames, large: false })))
 }
 
 /// What the elastic-plastic solve hands back to `run`.

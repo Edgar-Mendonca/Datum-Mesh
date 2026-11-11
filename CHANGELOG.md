@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.10.10 — 2026-11-11
+
+Rubber and large movements in 2D parts, with pressure that turns with the surface.
+
+- Large deformation of axisymmetric and plane-strain parts: Solve › Steps › Large deformation (rubber, in increments). Neo-Hookean rubber, total Lagrangian, followed through large movements by the same Newton solver as frames and solids; drawn true to size and played increment by increment.
+- Pressure turns with the surface in these steps: normal to the deformed edge, over its deformed length and, round an axis, its deformed radius (a follower load, with its own stiffness).
+- Elements that do not lock as rubber nears incompressibility (each element's mean volume change), with consistent edge loads round an axis: a uniform stretch comes out exact.
+- File › Examples › Rubber pipe blown up: a thick rubber pipe inflated until its bore is half as wide again.
+- Fixed: Help's topic on crushing showed its 0.10.7 paragraph in its title.
+
+**Verification**
+- Benchmark 43: a rubber strip pulled to 1.8 times its length in plane strain and a rubber tube pulled to 1.6 times about its axis (both exact, within 1e-15), and a thick rubber cylinder blown up by pressure following its bore against the incompressible solution (Rivlin 1949; within 0.2 %), with its balance on the deformed shape.
+
 ## 0.10.9 — 2026-11-10
 
 A fix to 0.10.8's solver.

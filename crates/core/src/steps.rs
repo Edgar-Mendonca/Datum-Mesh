@@ -49,8 +49,17 @@ pub fn run(m: &Model, which: Option<Which>) -> Result<Results, String> {
     if m.analysis != Analysis::Solid && m.steps.iter().any(|s| s.kind == StepKind::LargePlastic) {
         return Err("Yielding with large movements is for 3D solids (modelled or imported).".into());
     }
+    if matches!(m.analysis, Analysis::Axi | Analysis::Strain) && m.steps.iter().any(|s| s.kind == StepKind::Large) {
+        // Large deformation of 2D parts (0.10.10): the last step's load, in increments.
+        if m.steps.len() > 1 {
+            return Err("A large-deformation step of a part stands on its own: make it the only step (Solve › Steps).".into());
+        }
+        let st = &m.steps[0];
+        let mm = cases::scale(&cases::select(m, st.load.or(which))?, st.factor)?;
+        return crate::solids::large2d::solve(&mm, st.increments as usize, false, st.solver.as_ref()).map(Results::Plane);
+    }
     if m.analysis != Analysis::Solid && m.steps.iter().any(|s| s.kind == StepKind::Large) {
-        return Err("Large-deformation steps (rubber) are for 3D solids in this release; frames use large-deflection steps.".into());
+        return Err("Large-deformation steps (rubber) are for 3D solids and for axisymmetric and plane-strain parts; frames use large-deflection steps.".into());
     }
     if m.analysis == Analysis::Space && !m.shapes.iter().any(|s| s.plate.is_some()) {
         // 3D frames (0.5.8): large rotations by corotational beams, Newton or arc length.

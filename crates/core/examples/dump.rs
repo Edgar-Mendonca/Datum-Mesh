@@ -136,6 +136,8 @@ fn main() {
         "tube": out("tube"),
         "tube_results": sent(&datum_core::solve_for(&examples::get("tube").unwrap(), None).unwrap()),
         "crushtube": out_m(&examples::get("crushtube").unwrap()),
+        "rubberpipe": out_m(&examples::get("rubberpipe").unwrap()),
+        "rubberpipe_results": sent(&datum_core::solve_for(&examples::get("rubberpipe").unwrap(), None).unwrap()),
         "crushtube_results": sent(&datum_core::solve_for(&examples::get("crushtube").unwrap(), None).unwrap()),
         "yield3d": out("yield3d"),
         "rubber": out("rubber"),

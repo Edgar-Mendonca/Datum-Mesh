@@ -548,6 +548,18 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   const vr = await p.$$eval('.dlg [data-table="values"] tbody tr', rs => rs.map(r => r.children[0].textContent));
   check("Values Along gives both sides of a jump (0.10.4)", JSON.stringify(vr) === JSON.stringify(["Just before", "Just after"]), JSON.stringify(vr));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  // 0.10.10: a rubber pipe blown up: a large-deformation step for a 2D part, drawn true to size.
+  await p.evaluate(f => { window.__next = f.rubberpipe; }, fix);
+  await open("blank-stress"); await p.waitForTimeout(400);
+  await stepHead(5); await p.waitForTimeout(150);
+  await p.click('.ribbon button:has-text("Steps")').catch(() => {}); await p.waitForTimeout(300);
+  check("a plane-strain part's steps offer large deformation (0.10.10)", (await p.$$eval(".dlg table.steps select option", os => os.map(o => o.textContent))).some(t => t.startsWith("Large deformation")), await p.textContent(".dlg").catch(() => ""));
+  await p.keyboard.press("Escape"); await p.waitForTimeout(100);
+  await p.evaluate(() => { window.__solveKey = "rubberpipe_results"; document.activeElement?.blur?.(); });
+  await p.keyboard.press("F5"); await p.waitForTimeout(800);
+  await p.evaluate(() => { window.__solveKey = null; });
+  check("the blown-up pipe is drawn true to size and balances (0.10.10)", (await p.textContent(".legend")).includes("× 1") && !(await p.textContent(".legend")).includes("do not balance"), (await p.textContent(".legend")).slice(0, 300));
+  if (process.env.SHOTS) await p.screenshot({ path: path.join(process.env.SHOTS, "rubberpipe.png") });
   // 0.10.7: a tube crushed into folds, in time: the 2D part's Move an Edge tool, the crushing step,
   // and its results: the force against the crush and the folds played in time.
   await p.evaluate(f => { window.__next = f.crushtube; }, fix);
@@ -867,7 +879,7 @@ const stepHead = async n => { const t = await __page.$('.tree .ttabs button:has-
   await open("tube"); await p.waitForTimeout(300);
   await stepHead(5); await p.click('.ribbon button:has-text("Steps")'); await p.waitForTimeout(200);
   const tsd = await p.$$eval(".dlg table.steps select >> nth=0", ss => [...ss[0].options].map(o => o.textContent)).catch(() => []);
-  check("a part's steps offer linear, elastic-plastic and (axisymmetric or plane strain) crushing in time, not frame-only kinds", tsd.length === 3 && tsd[1].startsWith("Elastic-plastic") && tsd[2].startsWith("Crushing in time") && (await p.textContent(".dlg")).includes("Add an elastic-plastic step"), tsd.join("|"));
+  check("a part's steps offer linear, elastic-plastic and (axisymmetric or plane strain) large deformation and crushing in time, not frame-only kinds", tsd.length === 4 && tsd[1].startsWith("Elastic-plastic") && tsd[2].startsWith("Large deformation") && tsd[3].startsWith("Crushing in time") && (await p.textContent(".dlg")).includes("Add an elastic-plastic step"), tsd.join("|"));
   await p.keyboard.press("Escape"); await p.waitForTimeout(100);
   await p.evaluate(() => { window.__solveKey = "tube_results"; document.activeElement?.blur?.(); });
   await p.keyboard.press("F5"); await p.waitForTimeout(500);
