@@ -580,6 +580,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 
 - **0.10.10 (2026-11-11, the user: "go ahead with 0.10.10").** `solids/large2d.rs`; `engine::path::Problem::state_at(u, λ)` (default `state`) called by Newton, the line search and arc length; steps.rs sends a Large step on Axi/Strain parts there (on its own); `PlaneResults.large` (crush and large2d set it; the window draws those true to size). Benchmark 43: plane-strain strip and axisymmetric tube pulled (exact; the first try was off by 2e-5 round the axis, fixed by consistent edge loads and the mean-volume F-bar), Rivlin's inflation with follower pressure (0.13 %) and its balance (1e-13; the first check compared with the undeformed pressure and had a sign slip). Example `rubberpipe` (0.426 MPa makes the bore 1.5 a), fixture and window checks (the step offered, drawn × 1 and balanced). Examples test leaves out `rubberpipe` (it always says the pressure follows), as `crushtube`.
 
+- **CI after 0.10.10 (2026-11-11).** The app-deny job failed on an advisory published that day (RUSTSEC-2026-0486, rustix 1.1.5, unsound xattr functions; reached through SolidCraft's window crates in app/). app/Cargo.lock updated: rustix 1.1.6, and the yanked async-executor 1.14.1, clipboard-win 5.4.3. cargo deny on app/ passes, datum-analysis tests pass. Not in the Windows installer's code path (rustix is the Unix system layer), so no new release.
+
 ## 5. Known limits (0.10.1)
 - Everything dimmed in the window is planned, not built: its dialog shows what it will ask, and nothing in it runs.
 - Recent models on File › Home show the app's mark, not a picture of the model (the recent list keeps a name, a path and a date).
