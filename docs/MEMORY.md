@@ -585,6 +585,8 @@ From 0.7.0 `release.yml` builds `app/` (the version is read from `app/Cargo.toml
 
 - **CI kept short (2026-11-12, the user: GitHub Free only, no long runs).** The re-run of `check` on c1fe207 hung in apt during Ubuntu's mirror outage from 14:29 to 16:52 UTC and then failed; not a usage limit and not the code (every other job passed). ci.yml: timeouts on every job and on apt and Playwright steps, apt retries, concurrency cancel-in-progress, paths-ignore for docs/*.md/NOTICE, macOS only weekly and on workflow_dispatch.
 
+- **README pictures (2026-11-12, the user).** docs/images bracket-solved, portal-solved, fin-solved and verification retaken from the 0.10.10 window (the built window with the engine fixture, 1440×900, animation card closed); they were from 0.1.x. Used by README and site.json `screens`.
+
 ## 5. Known limits (0.10.1)
 - Everything dimmed in the window is planned, not built: its dialog shows what it will ask, and nothing in it runs.
 - Recent models on File › Home show the app's mark, not a picture of the model (the recent list keeps a name, a path and a date).
