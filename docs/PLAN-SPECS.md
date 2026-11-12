@@ -11,7 +11,7 @@ Everything a small team can build in our own solver and with our own geometry en
 - National design codes and their copyrighted tables. If one steel check comes at 1.0, it is written from a published edition we may use, with worked examples.
 - Other programs' native files and database round trips. STEP, DXF, CSV and a CalculiX input file cover exchange.
 - Offshore suites, blast, fire, fatigue, reliability; detailing (rebar schedules, connection design).
-- Freeform and class-A surfaces, scan fitting, mould tools, sheet-metal unfolding, motion studies, 3D sketching, automatic midsurfacing, cyclic sectors, fluid domains.
+- Freeform and class-A surfaces, scan fitting, mould tools, sheet-metal unfolding, motion studies, 3D sketching, automatic midsurfacing, cyclic sectors, fluid domains (fluid flow is Datum Flow's).
 
 ## Rules we follow
 
@@ -48,7 +48,7 @@ Everything a small team can build in our own solver and with our own geometry en
 - Honest statuses (pass, fail, not checked, not supported, missing data), a calculation trace for every check and a report that lists what was not checked.
 - Tests from the specification: F01 section properties, F07 segments under remeshing, F08 values at stations and jumps, F09 relative deflection with moving ends, F11 combined actions kept together, F12 unlike sections refused.
 
-**Agreed 2026-11-09 (the user, after comparing with another open finite-element program): make it right first.** Driving the program from scripts and AI agents, an honest verification report and proofs of the nonlinear solvers come before more features. Fluids (CFD, lattice Boltzmann), blast and equations of state wait until much later. Never write files for commercial solvers (public words); open formats such as CalculiX's are fine.
+**Agreed 2026-11-09 (the user, after comparing with another open finite-element program): make it right first.** Driving the program from scripts and AI agents, an honest verification report and proofs of the nonlinear solvers come before more features. Fluid flow is Datum Flow's, a separate app with its own flow solver (hub session 46, 2026-11-12); Mesh takes its pressures and temperatures as loads later. Blast and equations of state wait until much later. Never write files for commercial solvers (public words); open formats such as CalculiX's are fine.
 
 **0.10.5 · Driving it** (the animation player as a panel at the side, its play bug) **and 0.10.6 · Proving it** (the report and proofs below)
 - A command line, `datum-mesh-cli`: open or start a model, apply edits (the same `Op`s as the window), solve, run the checks, write the report and the verification report; JSON in and out.

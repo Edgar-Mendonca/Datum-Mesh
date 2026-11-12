@@ -23,7 +23,7 @@ Quality bar (brief §5):
 - Never cut the benchmarks, the equilibrium check or the report.
 - Report only checks that actually ran; say what was not verified.
 
-Checks before pushing:
+Checks before pushing (FAMILY §9 build budget: CI only runs a fast job on push, the Windows, app and UI jobs run nightly, so run all of these locally first; push in batches and release in batches):
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace` (includes the `hardening` tests and the benchmarks)
 - `npm run check:ui`, then `npm run test:ui` (dumps the engine fixture, builds the window, runs the Playwright checks)

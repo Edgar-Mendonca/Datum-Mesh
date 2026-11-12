@@ -1,28 +1,32 @@
 name: CI
+# The family build budget (FAMILY §9): every Datum repo shares one account's job capacity, so CI
+# is a safety net, not the place checks are first run. The full checks run locally before a push
+# (CLAUDE.md). On a push or pull request: one fast Linux job and the two licence checks. Nightly
+# (only when something changed) and by hand: the release build of app/, Windows, and the UI tests.
 on:
   push:
-    branches: ["**"]
-    # Words only (docs, changelog, notes) do not need the engine rebuilt.
-    paths-ignore: ["docs/**", "**.md", "NOTICE"]
+    # This repository's default branch is the session branch (it has no main); both are listed.
+    branches: [main, claude/upbeat-maxwell-xxve2b]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "NOTICE"]
   pull_request:
-    paths-ignore: ["docs/**", "**.md", "NOTICE"]
-  # macOS once a week and by hand (Actions › CI › Run workflow); Windows and Linux on every push.
+    paths-ignore: ["**.md", "docs/**", "LICENSE", "NOTICE"]
   schedule:
-    - cron: "17 3 * * 1"
+    - cron: "23 2 * * *"
   workflow_dispatch:
 
-# A newer push to the same branch cancels the run still going for the older one.
+# A newer push cancels the run still going for the older one.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # The fast job: the window's types, build and size budget; clippy and every engine test (debug).
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      # Give up quickly when Ubuntu's mirrors do not answer, instead of hanging for hours.
+      # Give up quickly when Ubuntu's mirrors do not answer, instead of hanging.
       - name: System libraries for Tauri
         timeout-minutes: 10
         run: |
@@ -43,13 +47,6 @@ jobs:
         run: node tools/size.cjs
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-      - name: UI tests (Playwright)
-        timeout-minutes: 20
-        run: |
-          npm i -g playwright@1.63.0
-          npx -y playwright@1.63.0 install --with-deps chromium
-          cargo run -q -p datum-core --example dump > tests_ui/fixture.json
-          NODE_PATH=$(npm root -g) node tests_ui/run.cjs
 
   # Licences, security advisories and crate sources (deny.toml).
   deny:
@@ -59,29 +56,39 @@ jobs:
       - uses: actions/checkout@v4
       - uses: EmbarkStudios/cargo-deny-action@v2
 
-  # The engine and the app build and pass their tests on Windows and macOS too.
-  platforms:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["windows-latest","macos-latest"]' || '["windows-latest"]') }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+  # The application's licences and sources (app/deny.toml).
+  app-deny:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: EmbarkStudios/cargo-deny-action@v2
         with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npm run build:ui
-      - run: cargo test --workspace
+          manifest-path: app/Cargo.toml
 
-  # The application (built on SolidCraft, in app/) with the analysis: it builds, the analysis
-  # crate's tests pass, and its own clippy is clean.
+  # Nightly and by hand only. A nightly run with no commit in the last 24 hours stops here.
+  changed:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.c.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: c
+        run: |
+          last=$(git log -1 --format=%ct); now=$(date +%s)
+          if [ "${{ github.event_name }}" != "schedule" ] || [ $((now - last)) -lt 86400 ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No new commits since the last nightly run: nothing to do."; echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The application built on SolidCraft (app/) with the analysis: it builds in release, the
+  # analysis crate's tests pass, and its own clippy is clean.
   app:
+    needs: changed
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changed.outputs.run == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -102,12 +109,44 @@ jobs:
         working-directory: app
         run: cargo build --release -p solidcraft --bin datum-mesh
 
-  # The application's licences and sources (app/deny.toml).
-  app-deny:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # The engine and the shell build and pass their tests on Windows, the system Datum ships for.
+  # (No macOS job for now: a CI cost decision, not a product one; the code stays cross-platform.)
+  windows:
+    needs: changed
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changed.outputs.run == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
         with:
-          manifest-path: app/Cargo.toml
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:ui
+      - run: cargo test --workspace
+
+  # The window in Chromium with the engine's real results (the fixture is made fresh here).
+  ui:
+    needs: changed
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.changed.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build:ui
+      - name: UI tests (Playwright)
+        run: |
+          npm i -g playwright@1.63.0
+          npx -y playwright@1.63.0 install --with-deps chromium
+          cargo run -q -p datum-core --example dump > tests_ui/fixture.json
+          NODE_PATH=$(npm root -g) node tests_ui/run.cjs

@@ -86,6 +86,7 @@
       "items": [
         "Design checks to a standard that is free to use",
         "Several models in one file",
+        "Loads from Datum Flow: pressures and temperatures from a flow result put on Mesh models (one way first); heat and stress solved together",
         "Every planned feature working"
       ]
     }

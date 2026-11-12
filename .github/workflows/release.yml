@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write   # build provenance: proves the installer was built here, from this commit
+  attestations: write
 
 jobs:
   windows:
@@ -87,6 +89,11 @@ jobs:
           N=$(wc -c < "out/DatumMesh-$V-setup.exe")
           echo "Installer: $N bytes (budget 150000000)"
           test "$N" -le 150000000 || { echo "The installer is over its 150 MB budget."; exit 1; }
+      # Build provenance. Anyone can check it with: gh attestation verify DatumMesh-<version>-setup.exe --repo Edgar-Mendonca/Datum-Mesh
+      - name: Build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: out/DatumMesh-${{ env.V }}-setup.exe
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.V }}
